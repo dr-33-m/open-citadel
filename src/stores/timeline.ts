@@ -1,10 +1,12 @@
-import { create } from 'zustand';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, like } from "drizzle-orm";
+import { create } from "zustand";
 
-import { db } from '@/db/client';
-import { books, highlights, notes } from '@/db/schema';
+import { db } from "@/db/client";
+import { books, highlights, notes, thoughts } from "@/db/schema";
+import { useSettingsStore } from "@/stores/settings";
 
 export type TimelineItem = {
+  type: "highlight" | "thought";
   id: string;
   bookId: string;
   bookTitle: string;
@@ -15,6 +17,7 @@ export type TimelineItem = {
   timestamp: string;
   colorIndicator: string;
   createdAt: string;
+  updatedAt: string | null;
 };
 
 export type TimelineGroup = {
@@ -25,53 +28,70 @@ export type TimelineGroup = {
 
 interface TimelineState {
   groups: TimelineGroup[];
+  selectedDate: string;
   isLoading: boolean;
 
-  loadTimeline: () => Promise<void>;
+  loadTimeline: (date?: string) => Promise<void>;
+  setSelectedDate: (date: string) => void;
+  addThought: (text: string, color: string, tags: string[]) => Promise<void>;
+  updateThought: (
+    id: string,
+    text: string,
+    color: string,
+    tags: string[],
+  ) => Promise<void>;
 }
 
-function formatDateLabel(dateStr: string): string {
-  const date = new Date(dateStr + 'T00:00:00');
+export function formatDateLabel(dateStr: string): string {
+  const date = new Date(dateStr + "T00:00:00");
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  if (date.getTime() === today.getTime()) return 'Today';
-  if (date.getTime() === yesterday.getTime()) return 'Yesterday';
+  if (date.getTime() === today.getTime()) return "Today";
+  if (date.getTime() === yesterday.getTime()) return "Yesterday";
 
   const day = date.getDate();
   const suffix =
     day === 1 || day === 21 || day === 31
-      ? 'st'
+      ? "st"
       : day === 2 || day === 22
-        ? 'nd'
+        ? "nd"
         : day === 3 || day === 23
-          ? 'rd'
-          : 'th';
-  const month = date.toLocaleDateString('en-US', { month: 'long' });
+          ? "rd"
+          : "th";
+  const month = date.toLocaleDateString("en-US", { month: "long" });
   const year = date.getFullYear();
   return `${day}${suffix} of ${month}, ${year}`;
 }
 
 function formatTime(isoString: string): string {
   const date = new Date(isoString);
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
     hour12: true,
   });
 }
 
-export const useTimelineStore = create<TimelineState>((set) => ({
+function todayDateString(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+export const useTimelineStore = create<TimelineState>((set, get) => ({
   groups: [],
+  selectedDate: todayDateString(),
   isLoading: false,
 
-  loadTimeline: async () => {
-    set({ isLoading: true });
+  loadTimeline: async (date?: string) => {
+    const targetDate = date ?? get().selectedDate;
+    set({ isLoading: true, selectedDate: targetDate });
 
-    // Query highlights with their books and optional notes
+    const datePrefix = `${targetDate}%`;
+
+    // Query highlights for the selected date
     const rows = await db
       .select({
         highlightId: highlights.id,
@@ -88,20 +108,24 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       .from(highlights)
       .innerJoin(books, eq(highlights.bookId, books.id))
       .leftJoin(notes, eq(notes.highlightId, highlights.id))
+      .where(like(highlights.createdAt, datePrefix))
       .orderBy(desc(highlights.createdAt));
 
-    // Aggregate: collect all notes per highlight (LEFT JOIN gives one row per note)
+    // Aggregate notes per highlight
     const highlightOrder: string[] = [];
-    const highlightData = new Map<string, {
-      bookId: string;
-      bookTitle: string;
-      highlightText: string;
-      highlightLocator: string | null;
-      highlightColor: string;
-      highlightTags: string | null;
-      highlightCreatedAt: string;
-      noteTexts: string[];
-    }>();
+    const highlightData = new Map<
+      string,
+      {
+        bookId: string;
+        bookTitle: string;
+        highlightText: string;
+        highlightLocator: string | null;
+        highlightColor: string;
+        highlightTags: string | null;
+        highlightCreatedAt: string;
+        noteTexts: string[];
+      }
+    >();
 
     for (const row of rows) {
       if (!highlightData.has(row.highlightId)) {
@@ -111,7 +135,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
           bookTitle: row.bookTitle,
           highlightText: row.highlightText,
           highlightLocator: row.highlightLocator,
-          highlightColor: row.highlightColor || '#f2ca50',
+          highlightColor: row.highlightColor || "#f2ca50",
           highlightTags: row.highlightTags,
           highlightCreatedAt: row.highlightCreatedAt,
           noteTexts: [],
@@ -122,12 +146,11 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       }
     }
 
-    const groupMap = new Map<string, TimelineItem[]>();
-    for (const id of highlightOrder) {
+    // Build highlight timeline items
+    const highlightItems: TimelineItem[] = highlightOrder.map((id) => {
       const h = highlightData.get(id)!;
-      const date = h.highlightCreatedAt.split('T')[0];
-      if (!groupMap.has(date)) groupMap.set(date, []);
-      groupMap.get(date)!.push({
+      return {
+        type: "highlight" as const,
         id,
         bookId: h.bookId,
         bookTitle: h.bookTitle,
@@ -138,17 +161,94 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         timestamp: formatTime(h.highlightCreatedAt),
         colorIndicator: h.highlightColor,
         createdAt: h.highlightCreatedAt,
-      });
-    }
+        updatedAt: null,
+      };
+    });
 
-    const groups: TimelineGroup[] = Array.from(groupMap.entries()).map(
-      ([date, entries]) => ({
-        date,
-        label: formatDateLabel(date),
-        entries,
-      })
+    // Query thoughts for the selected date
+    const thoughtRows = await db
+      .select()
+      .from(thoughts)
+      .where(like(thoughts.createdAt, datePrefix))
+      .orderBy(desc(thoughts.createdAt));
+
+    const username = useSettingsStore.getState().username;
+    const thoughtLabel = username ? `Thought — ${username}` : "Thought";
+
+    const thoughtItems: TimelineItem[] = thoughtRows.map((t) => {
+      const hasBeenEdited = !!(t.updatedAt && t.updatedAt.length > 0);
+      return {
+        type: "thought" as const,
+        id: t.id,
+        bookId: "",
+        bookTitle: thoughtLabel,
+        highlightText: t.text,
+        highlightLocator: null,
+        noteTexts: [],
+        tags: t.tags ? JSON.parse(t.tags) : [],
+        timestamp: formatTime(hasBeenEdited ? t.updatedAt! : t.createdAt),
+        colorIndicator: t.color || "#f2ca50",
+        createdAt: t.createdAt,
+        updatedAt: hasBeenEdited ? t.updatedAt! : null,
+      };
+    });
+
+    // Merge and sort by createdAt descending
+    const allItems = [...highlightItems, ...thoughtItems].sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
 
+    const groups: TimelineGroup[] =
+      allItems.length > 0
+        ? [
+            {
+              date: targetDate,
+              label: formatDateLabel(targetDate),
+              entries: allItems,
+            },
+          ]
+        : [];
+
     set({ groups, isLoading: false });
+  },
+
+  setSelectedDate: (date: string) => {
+    get().loadTimeline(date);
+  },
+
+  addThought: async (text: string, color: string, tags: string[]) => {
+    const id = `th-${Date.now()}`;
+    const now = new Date().toISOString();
+
+    await db.insert(thoughts).values({
+      id,
+      text,
+      color,
+      tags: tags.length > 0 ? JSON.stringify(tags) : null,
+      createdAt: now,
+    });
+
+    await get().loadTimeline();
+  },
+
+  updateThought: async (
+    id: string,
+    text: string,
+    color: string,
+    tags: string[],
+  ) => {
+    const now = new Date().toISOString();
+    await db
+      .update(thoughts)
+      .set({
+        text,
+        color,
+        tags: tags.length > 0 ? JSON.stringify(tags) : null,
+        updatedAt: now,
+      })
+      .where(eq(thoughts.id, id));
+
+    await get().loadTimeline();
   },
 }));

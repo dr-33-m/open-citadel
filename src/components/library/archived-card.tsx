@@ -3,7 +3,8 @@ import React from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { colors, spacing } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
+import { spacing } from '@/constants/theme';
 import type { books as booksTable } from '@/db/schema';
 
 type Book = typeof booksTable.$inferSelect;
@@ -15,6 +16,41 @@ type ArchivedCardProps = {
 };
 
 export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedCardProps) {
+  const colors = useColors();
+  const styles = React.useMemo(() => StyleSheet.create({
+    scrollContent: {
+      paddingHorizontal: spacing[6],
+      gap: spacing[4],
+    },
+    item: {
+      width: 130,
+      gap: spacing[2],
+    },
+    cover: {
+      width: 130,
+      height: 170,
+      backgroundColor: colors.surface.low,
+    },
+    coverImage: {
+      width: 130,
+      height: 170,
+    },
+    coverPlaceholder: {
+      flex: 1,
+      backgroundColor: colors.surface.mid,
+    },
+    checkBadge: {
+      position: 'absolute',
+      top: spacing[2],
+      left: spacing[2],
+      backgroundColor: colors.surface.base,
+      borderRadius: 11,
+    },
+    title: {
+      marginTop: spacing[1],
+    },
+  }), [colors]);
+
   return (
     <ScrollView
       horizontal
@@ -49,37 +85,3 @@ export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedC
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  scrollContent: {
-    paddingHorizontal: spacing[6],
-    gap: spacing[4],
-  },
-  item: {
-    width: 130,
-    gap: spacing[2],
-  },
-  cover: {
-    width: 130,
-    height: 170,
-    backgroundColor: colors.surface.low,
-  },
-  coverImage: {
-    width: 130,
-    height: 170,
-  },
-  coverPlaceholder: {
-    flex: 1,
-    backgroundColor: colors.surface.mid,
-  },
-  checkBadge: {
-    position: 'absolute',
-    top: spacing[2],
-    left: spacing[2],
-    backgroundColor: colors.surface.base,
-    borderRadius: 11,
-  },
-  title: {
-    marginTop: spacing[1],
-  },
-});

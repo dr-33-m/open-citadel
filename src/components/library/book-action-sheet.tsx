@@ -1,9 +1,10 @@
-import { BookOpen, CheckCircle, Clock, MinusCircle, Star, StarOff } from 'lucide-react-native';
+import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, Star, StarOff } from 'lucide-react-native';
 import React from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { colors, spacing } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
+import { spacing } from '@/constants/theme';
 import type { BookStatus } from '@/stores/books';
 import type { books as booksTable } from '@/db/schema';
 
@@ -16,6 +17,7 @@ type BookActionSheetProps = {
   onOpen: (bookId: string) => void;
   onToggleFavorite: (bookId: string) => void;
   onSetStatus: (bookId: string, status: BookStatus | null) => void;
+  onAddToCollection?: (bookId: string) => void;
 };
 
 export function BookActionSheet({
@@ -25,7 +27,46 @@ export function BookActionSheet({
   onOpen,
   onToggleFavorite,
   onSetStatus,
+  onAddToCollection,
 }: BookActionSheetProps) {
+  const colors = useColors();
+  const styles = React.useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    overlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    sheet: {
+      backgroundColor: colors.surface.low,
+      paddingHorizontal: spacing[6],
+      paddingTop: spacing[4],
+      paddingBottom: spacing[10],
+    },
+    handle: {
+      width: 40,
+      height: 4,
+      backgroundColor: colors.surface.highest,
+      alignSelf: 'center',
+      marginBottom: spacing[4],
+    },
+    bookTitle: {
+      marginBottom: spacing[2],
+    },
+    separator: {
+      height: 1,
+      backgroundColor: colors.surface.highest,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[4],
+      paddingVertical: spacing[4],
+    },
+  }), [colors]);
+
   if (!book) return null;
 
   const isArchived = book.status === 'archived';
@@ -101,6 +142,19 @@ export function BookActionSheet({
             </ThemedText>
           </Pressable>
 
+          {/* Add to Collection */}
+          {onAddToCollection && (
+            <>
+              <View style={styles.separator} />
+              <Pressable style={styles.row} onPress={() => { onAddToCollection(book.id); onClose(); }}>
+                <FolderPlus size={20} color={colors.text.primary} />
+                <ThemedText type="bodyMd" color={colors.text.primary}>
+                  Add to Collection
+                </ThemedText>
+              </Pressable>
+            </>
+          )}
+
           {/* Add to Queue — only if not already queued or archived */}
           {!isQueued && !isArchived && (
             <>
@@ -144,40 +198,3 @@ export function BookActionSheet({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  sheet: {
-    backgroundColor: colors.surface.low,
-    paddingHorizontal: spacing[6],
-    paddingTop: spacing[4],
-    paddingBottom: spacing[10],
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    backgroundColor: colors.surface.highest,
-    alignSelf: 'center',
-    marginBottom: spacing[4],
-  },
-  bookTitle: {
-    marginBottom: spacing[2],
-  },
-  separator: {
-    height: 1,
-    backgroundColor: colors.surface.highest,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[4],
-    paddingVertical: spacing[4],
-  },
-});

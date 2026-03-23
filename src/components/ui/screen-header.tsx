@@ -17,6 +17,26 @@ export function ScreenHeader({
   rightIcon,
   titleItalic = false,
 }: ScreenHeaderProps) {
+  const styles = React.useMemo(() => StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing[6],
+      paddingVertical: spacing[4],
+    },
+    title: {
+      flex: 1,
+      textAlign: 'center',
+    },
+    iconButton: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  }), []);
+
   return (
     <View style={styles.container}>
       <ThemedText
@@ -35,23 +55,3 @@ export function ScreenHeader({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[6],
-    paddingVertical: spacing[4],
-  },
-  title: {
-    flex: 1,
-    textAlign: 'center',
-  },
-  iconButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

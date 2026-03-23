@@ -1,40 +1,43 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-} from 'react';
+} from "react";
 import {
   ActivityIndicator,
   Animated,
   Pressable,
   StyleSheet,
+  TextInput,
   View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ReadiumView } from 'react-native-readium';
+} from "react-native";
 import type {
-  Locator,
+  DecorationActivatedEvent,
   DecorationGroup,
+  Locator,
+  PublicationReadyEvent,
+  ReadiumViewRef,
   SelectionAction,
   SelectionActionEvent,
-  DecorationActivatedEvent,
-  PublicationReadyEvent,
-} from 'react-native-readium';
-import type { ReadiumViewRef } from 'react-native-readium';
+} from "react-native-readium";
+import { ReadiumView } from "react-native-readium";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ThemedText } from '@/components/themed-text';
-import { ReaderHeader } from '@/components/reader/reader-header';
-import { HighlightMenu } from '@/components/reader/highlight-menu';
-import { TocSheet } from '@/components/reader/toc-sheet';
-import { colors, spacing } from '@/constants/theme';
-import { useReaderStore } from '@/stores/reader';
-import { useBooksStore } from '@/stores/books';
+import { HighlightMenu } from "@/components/reader/highlight-menu";
+import { ReaderHeader } from "@/components/reader/reader-header";
+import { TocSheet } from "@/components/reader/toc-sheet";
+import { ThemedText } from "@/components/themed-text";
+import { spacing } from "@/constants/theme";
+import { useColors } from "@/hooks/use-colors";
+import { useBooksStore } from "@/stores/books";
+import { useReaderStore } from "@/stores/reader";
+import { useSettingsStore } from "@/stores/settings";
 
 const selectionActions: SelectionAction[] = [
-  { id: 'highlight', label: 'Highlight' },
+  { id: "highlight", label: "Highlight" },
 ];
 
 const HEADER_HIDE_DELAY = 4000;
@@ -42,6 +45,9 @@ const HEADER_HIDE_DELAY = 4000;
 const HEADER_CONTENT_HEIGHT = 52;
 
 export default function ReaderScreen() {
+  const colors = useColors();
+  const appTheme = useSettingsStore((s) => s.theme);
+  const styles = useReaderStyles(colors);
   const { id, locator: locatorParam } = useLocalSearchParams<{
     id: string;
     locator?: string;
@@ -54,6 +60,7 @@ export default function ReaderScreen() {
     currentBook,
     savedLocator,
     currentLocator,
+    bookmarkList,
     highlights,
     highlightNotes,
     allTags,
@@ -61,6 +68,9 @@ export default function ReaderScreen() {
     isLoading,
     openBook,
     updateProgress,
+    addBookmark,
+    removeBookmark,
+    updateBookmarkNote,
     addHighlight,
     updateHighlight,
     deleteHighlight,
@@ -83,6 +93,11 @@ export default function ReaderScreen() {
   const [showToc, setShowToc] = useState(false);
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
   const [publicationReady, setPublicationReady] = useState(false);
+  // Bookmark note prompt — shown after adding a bookmark
+  const [bookmarkNotePrompt, setBookmarkNotePrompt] = useState<{
+    id: string;
+    note: string;
+  } | null>(null);
 
   // ── Animated header ────────────────────────────────────────────────
   const headerAnim = useRef(new Animated.Value(1)).current;
@@ -144,7 +159,12 @@ export default function ReaderScreen() {
       const jumpLoc = JSON.parse(decodeURIComponent(locatorParam)) as Locator;
       const jumpPage = jumpLoc.locations?.position;
       const savedPage = savedLocator.locations?.position;
-      if (jumpPage !== undefined && savedPage !== undefined && jumpPage === savedPage) return;
+      if (
+        jumpPage !== undefined &&
+        savedPage !== undefined &&
+        jumpPage === savedPage
+      )
+        return;
     } catch {
       // parse failed — show banner anyway
     }
@@ -164,7 +184,7 @@ export default function ReaderScreen() {
     (loc: Locator) => {
       updateProgress(loc);
     },
-    [updateProgress]
+    [updateProgress],
   );
 
   const handlePublicationReady = useCallback(
@@ -172,26 +192,25 @@ export default function ReaderScreen() {
       setPublicationReady(true);
       setTableOfContents(event.tableOfContents);
 
-      if (currentBook && currentBook.author === 'Unknown') {
+      if (currentBook && currentBook.author === "Unknown") {
         const metadata = event.metadata;
         updateBookMetadata(currentBook.id, {
           title: metadata.title || currentBook.title,
-          author:
-            metadata.author?.map((c) => c.name).join(', ') || 'Unknown',
+          author: metadata.author?.map((c) => c.name).join(", ") || "Unknown",
           totalPages: event.positions?.length || undefined,
         });
       }
     },
-    [currentBook, setTableOfContents, updateBookMetadata]
+    [currentBook, setTableOfContents, updateBookMetadata],
   );
 
   const handleSelectionAction = useCallback(
     (event: SelectionActionEvent) => {
-      if (event.actionId === 'highlight') {
+      if (event.actionId === "highlight") {
         addHighlight(event.selectedText, event.locator);
       }
     },
-    [addHighlight]
+    [addHighlight],
   );
 
   const handleDecorationActivated = useCallback(
@@ -202,32 +221,44 @@ export default function ReaderScreen() {
         setMenuHighlight({
           id: highlightData.id,
           text: highlightData.text,
-          color: highlightData.color || '#f2ca50',
+          color: highlightData.color || "#f2ca50",
           tags: highlightData.tags ? JSON.parse(highlightData.tags) : [],
         });
       }
     },
-    [highlights]
+    [highlights],
   );
 
   const handleChapterPress = useCallback(
     (link: { href: string }) => {
-      if (currentLocator) setPreJumpLocator(currentLocator);
-      readerRef.current?.goTo({ href: link.href, type: 'application/xhtml+xml' });
+      // Only save return position if we're navigating to a different chapter
+      const sameChapter =
+        currentLocator?.href &&
+        (currentLocator.href.includes(link.href.split("#")[0]) ||
+          link.href.split("#")[0].endsWith(currentLocator.href.split("#")[0]));
+      if (currentLocator && !sameChapter) setPreJumpLocator(currentLocator);
+      readerRef.current?.goTo({
+        href: link.href,
+        type: "application/xhtml+xml",
+      });
       setShowToc(false);
       showHeader();
     },
-    [currentLocator, showHeader]
+    [currentLocator, showHeader],
   );
 
   const handleHighlightPress = useCallback(
     (locator: Locator) => {
-      if (currentLocator) setPreJumpLocator(currentLocator);
+      // Only save return position if the highlight is on a different page
+      const samePage =
+        currentLocator?.locations?.position === locator.locations?.position &&
+        currentLocator?.href === locator.href;
+      if (currentLocator && !samePage) setPreJumpLocator(currentLocator);
       readerRef.current?.goTo(locator);
       setShowToc(false);
       showHeader();
     },
-    [currentLocator, showHeader]
+    [currentLocator, showHeader],
   );
 
   const handleReturnToProgress = useCallback(() => {
@@ -239,23 +270,91 @@ export default function ReaderScreen() {
     setPreJumpLocator(null);
   }, []);
 
+  // Match bookmark by href + position + progression for accurate per-page icon.
+  // Using all three fields avoids the off-by-one that occurs at page boundaries
+  // when position alone is ambiguous.
+  const isBookmarked = useMemo(() => {
+    if (!currentLocator) return false;
+    return bookmarkList.some((bm) => {
+      try {
+        const loc = JSON.parse(bm.locator) as Locator;
+        return (
+          loc.href === currentLocator.href &&
+          loc.locations?.position === currentLocator.locations?.position &&
+          loc.locations?.progression === currentLocator.locations?.progression
+        );
+      } catch {
+        return false;
+      }
+    });
+  }, [bookmarkList, currentLocator]);
+
+  const handleBookmarkToggle = useCallback(async () => {
+    if (!currentLocator) return;
+    if (isBookmarked) {
+      // Remove: match on href + position so we only remove this page's bookmark
+      const bm = bookmarkList.find((b) => {
+        try {
+          const loc = JSON.parse(b.locator) as Locator;
+          return (
+            loc.href === currentLocator.href &&
+            loc.locations?.position === currentLocator.locations?.position
+          );
+        } catch {
+          return false;
+        }
+      });
+      if (bm) removeBookmark(bm.id);
+    } else {
+      await addBookmark();
+      // After adding, find the newly created bookmark and show the note prompt
+      const { bookmarkList: updated } = useReaderStore.getState();
+      const newBm = updated.find((b) => {
+        try {
+          const loc = JSON.parse(b.locator) as Locator;
+          return (
+            loc.href === currentLocator.href &&
+            loc.locations?.position === currentLocator.locations?.position
+          );
+        } catch {
+          return false;
+        }
+      });
+      if (newBm) setBookmarkNotePrompt({ id: newBm.id, note: "" });
+    }
+  }, [currentLocator, isBookmarked, bookmarkList, addBookmark, removeBookmark]);
+
+  const handleBookmarkPress = useCallback(
+    (locator: Locator) => {
+      // Only save return position if the bookmark is on a different page
+      const samePage =
+        currentLocator?.locations?.position === locator.locations?.position &&
+        currentLocator?.href === locator.href;
+      if (currentLocator && !samePage) setPreJumpLocator(currentLocator);
+      readerRef.current?.goTo(locator);
+      setShowToc(false);
+      showHeader();
+    },
+    [currentLocator, showHeader],
+  );
+
   const decorations: DecorationGroup[] = useMemo(
     () => [
       {
-        name: 'highlights',
+        name: "highlights",
         decorations: highlights
           .filter((h) => h.locator)
           .map((h) => ({
             id: h.id,
             locator: JSON.parse(h.locator!) as Locator,
             style: {
-              type: 'highlight',
+              type: "highlight",
               tint: h.color || colors.primary.default,
             },
           })),
       },
     ],
-    [highlights]
+    [highlights],
   );
 
   const initialLocation = useMemo(() => {
@@ -307,10 +406,10 @@ export default function ReaderScreen() {
             initialLocation,
           }}
           preferences={{
-            theme: 'dark',
+            theme: appTheme === "light" ? "light" : "dark",
             backgroundColor: colors.surface.base,
             textColor: colors.text.primary,
-            fontFamily: 'serif',
+            fontFamily: "serif",
             pageMargins: 1.5,
             lineHeight: 1.6,
           }}
@@ -346,12 +445,13 @@ export default function ReaderScreen() {
         <ReaderHeader
           title={currentBook.title}
           progress={progress}
+          isBookmarked={isBookmarked}
+          onBookmarkToggle={handleBookmarkToggle}
           onBack={() => setLeaving(true)}
           onContents={() => {
             showHeader();
             setShowToc(true);
           }}
-
         />
       </Animated.View>
 
@@ -372,7 +472,7 @@ export default function ReaderScreen() {
             ? `${currentLocator.locations.position} of ${currentBook.totalPages}`
             : progress !== undefined
               ? `${Math.round(progress * 100)}%`
-              : ''}
+              : ""}
         </ThemedText>
       </Animated.View>
 
@@ -387,7 +487,9 @@ export default function ReaderScreen() {
           allTags={allTags}
           existingNotes={highlightNotes[menuHighlight.id] ?? []}
           onAddNote={addNote}
-          onUpdateNote={(noteId, text) => updateNote(noteId, menuHighlight.id, text)}
+          onUpdateNote={(noteId, text) =>
+            updateNote(noteId, menuHighlight.id, text)
+          }
           onDeleteNote={(noteId) => deleteNote(noteId, menuHighlight.id)}
           onDelete={deleteHighlight}
           onUpdateHighlight={updateHighlight}
@@ -395,18 +497,24 @@ export default function ReaderScreen() {
         />
       )}
 
-
-      {/* Table of contents sheet */}
       {/* Return to progress banner */}
       {preJumpLocator && publicationReady && (
-        <View style={[styles.returnBanner, { bottom: insets.bottom + spacing[4] }]}>
+        <View
+          style={[styles.returnBanner, { bottom: insets.bottom + spacing[4] }]}
+        >
           <Pressable style={styles.returnBtn} onPress={handleReturnToProgress}>
             <ThemedText type="labelSm" color={colors.primary.default}>
               ← RETURN TO PROGRESS
             </ThemedText>
           </Pressable>
-          <Pressable style={styles.returnDismiss} onPress={handleDismissReturn} hitSlop={8}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>✕</ThemedText>
+          <Pressable
+            style={styles.returnDismiss}
+            onPress={handleDismissReturn}
+            hitSlop={8}
+          >
+            <ThemedText type="labelSm" color={colors.text.secondary}>
+              ✕
+            </ThemedText>
           </Pressable>
         </View>
       )}
@@ -416,62 +524,157 @@ export default function ReaderScreen() {
         toc={tableOfContents}
         currentHref={currentLocator?.href}
         highlights={highlights}
+        bookmarkItems={bookmarkList}
         onChapterPress={handleChapterPress}
         onHighlightPress={handleHighlightPress}
+        onBookmarkPress={handleBookmarkPress}
+        onUpdateBookmarkNote={updateBookmarkNote}
         onClose={() => setShowToc(false)}
       />
+
+      {/* Bookmark note prompt — appears after adding a bookmark */}
+      {bookmarkNotePrompt && (
+        <BookmarkNotePrompt
+          note={bookmarkNotePrompt.note}
+          onNoteChange={(text) =>
+            setBookmarkNotePrompt((p) => p && { ...p, note: text })
+          }
+          onSave={() => {
+            if (bookmarkNotePrompt.note.trim()) {
+              updateBookmarkNote(
+                bookmarkNotePrompt.id,
+                bookmarkNotePrompt.note.trim(),
+              );
+            }
+            setBookmarkNotePrompt(null);
+          }}
+          onSkip={() => setBookmarkNotePrompt(null)}
+          colors={colors}
+          top={headerZoneHeight}
+        />
+      )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.surface.base,
-  },
-  headerTapZone: {
-    width: '100%',
-    // transparent — just a touch target
-  },
-  reader: {
-    flex: 1,
-  },
-  loading: {
-    flex: 1,
-    backgroundColor: colors.surface.base,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-  },
-  bottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    paddingVertical: spacing[2],
-    backgroundColor: colors.surface.base,
-  },
-  returnBanner: {
-    position: 'absolute',
-    left: spacing[6],
-    right: spacing[6],
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface.low,
-    borderWidth: 1,
-    borderColor: colors.surface.highest,
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-  },
-  returnBtn: {
-    flex: 1,
-  },
-  returnDismiss: {
-    paddingLeft: spacing[4],
-  },
-});
+// ── Bookmark note prompt component ────────────────────────────────────
+function BookmarkNotePrompt({
+  note,
+  onNoteChange,
+  onSave,
+  onSkip,
+  colors,
+  top,
+}: {
+  note: string;
+  onNoteChange: (text: string) => void;
+  onSave: () => void;
+  onSkip: () => void;
+  colors: ReturnType<typeof useColors>;
+  top: number;
+}) {
+  return (
+    <View
+      style={[
+        {
+          position: "absolute",
+          left: spacing[6],
+          right: spacing[6],
+          top: top + spacing[3],
+          backgroundColor: colors.surface.low,
+          borderWidth: 1,
+          borderColor: colors.surface.highest,
+          padding: spacing[4],
+          gap: spacing[3],
+        },
+      ]}
+    >
+      <ThemedText type="labelSm" color={colors.text.secondary}>
+        ADD A NOTE TO THIS BOOKMARK
+      </ThemedText>
+      <View
+        style={{
+          backgroundColor: colors.surface.mid,
+          paddingHorizontal: spacing[3],
+          paddingVertical: spacing[2],
+        }}
+      >
+        <TextInput
+          value={note}
+          onChangeText={onNoteChange}
+          placeholder="What caught your attention here?"
+          placeholderTextColor={colors.text.secondary}
+          style={{
+            color: colors.text.primary,
+            fontSize: 14,
+            minHeight: 40,
+          }}
+          multiline
+          autoFocus
+          returnKeyType="done"
+          blurOnSubmit
+          onSubmitEditing={onSave}
+        />
+      </View>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "flex-end",
+          gap: spacing[4],
+        }}
+      >
+        <Pressable onPress={onSkip} hitSlop={8}>
+          <ThemedText type="labelSm" color={colors.text.secondary}>
+            SKIP
+          </ThemedText>
+        </Pressable>
+        <Pressable onPress={onSave} hitSlop={8}>
+          <ThemedText type="labelSm" color={colors.primary.default}>
+            SAVE
+          </ThemedText>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function useReaderStyles(colors: ReturnType<typeof useColors>) {
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        container: { flex: 1, backgroundColor: colors.surface.base },
+        headerTapZone: { width: "100%" },
+        reader: { flex: 1 },
+        loading: {
+          flex: 1,
+          backgroundColor: colors.surface.base,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        headerOverlay: { position: "absolute", top: 0, left: 0, right: 0 },
+        bottomBar: {
+          position: "absolute",
+          left: 0,
+          right: 0,
+          alignItems: "center",
+          paddingVertical: spacing[2],
+          backgroundColor: colors.surface.base,
+        },
+        returnBanner: {
+          position: "absolute",
+          left: spacing[6],
+          right: spacing[6],
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: colors.surface.low,
+          borderWidth: 1,
+          borderColor: colors.surface.highest,
+          paddingHorizontal: spacing[4],
+          paddingVertical: spacing[3],
+        },
+        returnBtn: { flex: 1 },
+        returnDismiss: { paddingLeft: spacing[4] },
+      }),
+    [colors],
+  );
+}

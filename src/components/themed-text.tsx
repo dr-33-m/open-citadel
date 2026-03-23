@@ -1,6 +1,8 @@
+import React from 'react';
 import { Text, type TextProps } from 'react-native';
 
-import { colors, typography, type TypographyVariant } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
+import { typography, type TypographyVariant } from '@/constants/theme';
 
 export type ThemedTextProps = TextProps & {
   type?: TypographyVariant;
@@ -11,18 +13,20 @@ export type ThemedTextProps = TextProps & {
 export function ThemedText({
   style,
   type = 'bodyMd',
-  color = colors.text.primary,
+  color,
   italic,
   ...rest
 }: ThemedTextProps) {
+  const colors = useColors();
+  const resolvedColor = color !== undefined ? color : colors.text.primary;
   const typeStyle = typography[type];
 
   return (
     <Text
       style={[
         typeStyle,
-        { color },
-        italic && { fontStyle: 'italic' as const },
+        { color: resolvedColor },
+        italic && { fontStyle: 'italic' },
         style,
       ]}
       {...rest}

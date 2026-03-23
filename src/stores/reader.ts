@@ -1,12 +1,20 @@
-import { create } from 'zustand';
-import { eq } from 'drizzle-orm';
-import type { Locator, Link } from 'react-native-readium';
+import { eq } from "drizzle-orm";
+import type { Link, Locator } from "react-native-readium";
+import { create } from "zustand";
 
-import { db } from '@/db/client';
-import { books, highlights, notes, readingProgress } from '@/db/schema';
-import { useBooksStore } from '@/stores/books';
+import { db } from "@/db/client";
+import {
+  bookmarks,
+  books,
+  highlights,
+  notes,
+  readingProgress,
+  thoughts,
+} from "@/db/schema";
+import { useBooksStore } from "@/stores/books";
 
 type Book = typeof books.$inferSelect;
+type Bookmark = typeof bookmarks.$inferSelect;
 type Highlight = typeof highlights.$inferSelect;
 type Note = typeof notes.$inferSelect;
 
@@ -14,19 +22,34 @@ interface ReaderState {
   currentBook: Book | null;
   currentLocator: Locator | null;
   savedLocator: Locator | null;
+  bookmarkList: Bookmark[];
   highlights: Highlight[];
   highlightNotes: Record<string, Note[]>; // highlightId -> notes[]
-  allTags: string[]; // unique tags across all books, for suggestions
+  allTags: string[]; // unique tags across all books AND thoughts, for suggestions
   tableOfContents: Link[];
   isLoading: boolean;
 
   openBook: (bookId: string) => Promise<void>;
   updateProgress: (locator: Locator) => void;
-  addHighlight: (text: string, locator: Locator, color?: string) => Promise<void>;
-  updateHighlight: (id: string, updates: { color?: string; tags?: string }) => Promise<void>;
+  addBookmark: () => Promise<void>;
+  removeBookmark: (id: string) => Promise<void>;
+  updateBookmarkNote: (id: string, note: string) => Promise<void>;
+  addHighlight: (
+    text: string,
+    locator: Locator,
+    color?: string,
+  ) => Promise<void>;
+  updateHighlight: (
+    id: string,
+    updates: { color?: string; tags?: string },
+  ) => Promise<void>;
   deleteHighlight: (id: string) => Promise<void>;
   addNote: (highlightId: string, text: string) => Promise<void>;
-  updateNote: (noteId: string, highlightId: string, text: string) => Promise<void>;
+  updateNote: (
+    noteId: string,
+    highlightId: string,
+    text: string,
+  ) => Promise<void>;
   deleteNote: (noteId: string, highlightId: string) => Promise<void>;
   setTableOfContents: (toc: Link[]) => void;
   closeBook: () => void;
@@ -34,10 +57,13 @@ interface ReaderState {
 
 let progressTimeout: ReturnType<typeof setTimeout> | null = null;
 
-async function fetchAllTags(): Promise<string[]> {
-  const rows = await db.select({ tags: highlights.tags }).from(highlights);
+export async function fetchAllTags(): Promise<string[]> {
+  const highlightRows = await db
+    .select({ tags: highlights.tags })
+    .from(highlights);
+  const thoughtRows = await db.select({ tags: thoughts.tags }).from(thoughts);
   const unique = new Set<string>();
-  for (const { tags } of rows) {
+  for (const { tags } of [...highlightRows, ...thoughtRows]) {
     if (tags) {
       try {
         for (const t of JSON.parse(tags) as string[]) unique.add(t);
@@ -78,6 +104,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   currentBook: null,
   currentLocator: null,
   savedLocator: null,
+  bookmarkList: [],
   highlights: [],
   highlightNotes: {},
   allTags: [],
@@ -103,6 +130,12 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       ? (JSON.parse(progress.locator) as Locator)
       : null;
 
+    // Load bookmarks for this book
+    const bookBookmarks = await db
+      .select()
+      .from(bookmarks)
+      .where(eq(bookmarks.bookId, bookId));
+
     // Load highlights and notes for this book
     const bookHighlights = await db
       .select()
@@ -124,12 +157,12 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
 
     // Only auto-move to reading from queued or null — never touch archived books
     let effectiveBook = book;
-    if (book.status === 'queued' || !book.status) {
+    if (book.status === "queued" || !book.status) {
       await db
         .update(books)
-        .set({ status: 'reading' })
+        .set({ status: "reading" })
         .where(eq(books.id, bookId));
-      effectiveBook = { ...book, status: 'reading' };
+      effectiveBook = { ...book, status: "reading" };
       useBooksStore.getState().loadBooks();
     }
 
@@ -138,6 +171,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     set({
       currentBook: effectiveBook,
       savedLocator,
+      bookmarkList: bookBookmarks,
       highlights: bookHighlights,
       highlightNotes: notesMap,
       allTags: allTagsList,
@@ -157,6 +191,72 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     }, 2000);
   },
 
+  addBookmark: async () => {
+    const { currentBook, currentLocator, bookmarkList, tableOfContents } =
+      get();
+    if (!currentBook || !currentLocator) return;
+
+    // Prevent duplicate bookmarks for the exact same page (same href + position)
+    const alreadyExists = bookmarkList.some((bm) => {
+      try {
+        const loc = JSON.parse(bm.locator) as Locator;
+        return (
+          loc.href === currentLocator.href &&
+          loc.locations?.position === currentLocator.locations?.position
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (alreadyExists) return;
+
+    const id = `bm-${Date.now()}`;
+    const now = new Date().toISOString();
+    const chapter =
+      tableOfContents.find((l) =>
+        currentLocator.href.includes(l.href.split("#")[0]),
+      )?.title ?? null;
+
+    await db.insert(bookmarks).values({
+      id,
+      bookId: currentBook.id,
+      locator: JSON.stringify(currentLocator),
+      page: currentLocator.locations?.position ?? null,
+      chapter,
+      createdAt: now,
+    });
+
+    const updated = await db
+      .select()
+      .from(bookmarks)
+      .where(eq(bookmarks.bookId, currentBook.id));
+    set({ bookmarkList: updated });
+  },
+
+  removeBookmark: async (id: string) => {
+    await db.delete(bookmarks).where(eq(bookmarks.id, id));
+
+    const { currentBook } = get();
+    if (!currentBook) return;
+
+    const updated = await db
+      .select()
+      .from(bookmarks)
+      .where(eq(bookmarks.bookId, currentBook.id));
+    set({ bookmarkList: updated });
+  },
+
+  updateBookmarkNote: async (id: string, note: string) => {
+    await db.update(bookmarks).set({ note }).where(eq(bookmarks.id, id));
+
+    const { bookmarkList } = get();
+    set({
+      bookmarkList: bookmarkList.map((bm) =>
+        bm.id === id ? { ...bm, note } : bm,
+      ),
+    });
+  },
+
   addHighlight: async (text: string, locator: Locator, color?: string) => {
     const { currentBook } = get();
     if (!currentBook) return;
@@ -169,7 +269,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       bookId: currentBook.id,
       text,
       locator: JSON.stringify(locator),
-      color: color || '#f2ca50',
+      color: color || "#f2ca50",
       createdAt: now,
     });
 
@@ -181,7 +281,10 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     set({ highlights: bookHighlights });
   },
 
-  updateHighlight: async (id: string, updates: { color?: string; tags?: string }) => {
+  updateHighlight: async (
+    id: string,
+    updates: { color?: string; tags?: string },
+  ) => {
     const { currentBook } = get();
     if (!currentBook) return;
 
@@ -192,7 +295,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       .from(highlights)
       .where(eq(highlights.bookId, currentBook.id));
 
-    const allTagsList = 'tags' in updates ? await fetchAllTags() : get().allTags;
+    const allTagsList =
+      "tags" in updates ? await fetchAllTags() : get().allTags;
 
     set({ highlights: bookHighlights, allTags: allTagsList });
   },
@@ -219,25 +323,41 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
 
     const id = `note-${Date.now()}`;
     const now = new Date().toISOString();
-    const noteRow = { id, highlightId, bookId: currentBook.id, text, createdAt: now };
+    const noteRow: Note = {
+      id,
+      highlightId,
+      bookId: currentBook.id,
+      text,
+      createdAt: now,
+      updatedAt: null,
+    };
 
     await db.insert(notes).values(noteRow);
 
     const existing = highlightNotes[highlightId] ?? [];
     set({
-      highlightNotes: { ...highlightNotes, [highlightId]: [...existing, noteRow] },
+      highlightNotes: {
+        ...highlightNotes,
+        [highlightId]: [...existing, noteRow],
+      },
     });
   },
 
   updateNote: async (noteId: string, highlightId: string, text: string) => {
-    await db.update(notes).set({ text }).where(eq(notes.id, noteId));
+    const now = new Date().toISOString();
+    await db
+      .update(notes)
+      .set({ text, updatedAt: now })
+      .where(eq(notes.id, noteId));
 
     const { highlightNotes } = get();
     const existing = highlightNotes[highlightId] ?? [];
     set({
       highlightNotes: {
         ...highlightNotes,
-        [highlightId]: existing.map((n) => (n.id === noteId ? { ...n, text } : n)),
+        [highlightId]: existing.map((n) =>
+          n.id === noteId ? { ...n, text, updatedAt: now } : n,
+        ),
       },
     });
   },
@@ -273,6 +393,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       currentBook: null,
       currentLocator: null,
       savedLocator: null,
+      bookmarkList: [],
       highlights: [],
       highlightNotes: {},
       allTags: [],

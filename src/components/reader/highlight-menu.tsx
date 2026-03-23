@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { Check, Pencil, StickyNote, Trash2, X } from "lucide-react-native";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -8,25 +9,26 @@ import {
   StyleSheet,
   TextInput,
   View,
-} from 'react-native';
-import { Check, Pencil, StickyNote, Trash2, X } from 'lucide-react-native';
+} from "react-native";
 
-import { ThemedText } from '@/components/themed-text';
-import { GoldButton } from '@/components/ui/gold-button';
-import { colors, fontFamily, spacing } from '@/constants/theme';
+import { ThemedText } from "@/components/themed-text";
+import { GoldButton } from "@/components/ui/gold-button";
+import { fontFamily, spacing } from "@/constants/theme";
+import { useColors } from "@/hooks/use-colors";
 
 const COLORS = [
-  '#f2ca50', // gold
-  '#e05252', // red
-  '#52b788', // green
-  '#4a90d9', // blue
-  '#9b72cf', // purple
+  "#f2ca50", // gold
+  "#e05252", // red
+  "#52b788", // green
+  "#4a90d9", // blue
+  "#9b72cf", // purple
 ];
 
 type NoteItem = {
   id: string;
   text: string;
   createdAt: string;
+  updatedAt?: string | null;
 };
 
 type HighlightMenuProps = {
@@ -41,7 +43,10 @@ type HighlightMenuProps = {
   onUpdateNote: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
   onDelete: (highlightId: string) => void;
-  onUpdateHighlight: (id: string, updates: { color?: string; tags?: string }) => void;
+  onUpdateHighlight: (
+    id: string,
+    updates: { color?: string; tags?: string },
+  ) => void;
   onClose: () => void;
 };
 
@@ -60,25 +65,132 @@ export function HighlightMenu({
   onUpdateHighlight,
   onClose,
 }: HighlightMenuProps) {
-  const [noteText, setNoteText] = useState('');
+  const colors = useColors();
+  const styles = React.useMemo(
+    () =>
+      StyleSheet.create({
+        container: { flex: 1, justifyContent: "flex-end" },
+        overlay: {
+          ...StyleSheet.absoluteFillObject,
+          backgroundColor: "rgba(0,0,0,0.5)",
+        },
+        kavWrapper: { backgroundColor: colors.surface.low },
+        sheet: {
+          backgroundColor: colors.surface.low,
+          paddingHorizontal: spacing[6],
+          paddingTop: spacing[4],
+          paddingBottom: spacing[10],
+          gap: spacing[4],
+        },
+        handle: {
+          width: 40,
+          height: 4,
+          backgroundColor: colors.surface.highest,
+          alignSelf: "center",
+          marginBottom: spacing[2],
+        },
+        quoteText: { fontFamily: fontFamily.serifItalic, fontSize: 14 },
+        colorRow: { flexDirection: "row", gap: spacing[3] },
+        swatch: { width: 28, height: 28, borderRadius: 14 },
+        swatchSelected: { borderWidth: 3, borderColor: colors.text.primary },
+        tagSection: { gap: spacing[2] },
+        tagChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+        chip: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing[2],
+          backgroundColor: colors.surface.mid,
+          paddingHorizontal: spacing[3],
+          paddingVertical: spacing[1],
+          borderRadius: 99,
+        },
+        chipText: { fontSize: 12 },
+        tagInputRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: colors.surface.mid,
+        },
+        tagInput: {
+          flex: 1,
+          color: colors.text.primary,
+          fontFamily: fontFamily.sans,
+          fontSize: 14,
+          paddingHorizontal: spacing[4],
+          paddingVertical: spacing[2],
+        },
+        tagInputBtn: {
+          paddingHorizontal: spacing[3],
+          paddingVertical: spacing[2],
+        },
+        tagInputBtnDisabled: { opacity: 0.4 },
+        notesList: { maxHeight: 140 },
+        noteRow: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: spacing[3],
+          backgroundColor: colors.surface.mid,
+          padding: spacing[3],
+          marginBottom: spacing[2],
+        },
+        noteRowEditing: { borderWidth: 1, borderColor: colors.primary.default },
+        noteIcon: { marginTop: 2 },
+        noteText: { flex: 1 },
+        noteAction: { paddingTop: 2 },
+        noteInput: {
+          backgroundColor: colors.surface.mid,
+          color: colors.text.primary,
+          fontFamily: fontFamily.sans,
+          fontSize: 16,
+          padding: spacing[4],
+          minHeight: 80,
+          textAlignVertical: "top",
+        },
+        actions: { gap: spacing[3] },
+        secondaryButton: { alignItems: "center", paddingVertical: spacing[3] },
+        suggestionsScroll: { marginTop: spacing[1] },
+        suggestionsContent: { gap: spacing[2] },
+        suggestionChip: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing[1],
+          backgroundColor: colors.surface.mid,
+          borderWidth: 1,
+          borderColor: colors.surface.highest,
+          paddingHorizontal: spacing[3],
+          paddingVertical: spacing[1],
+          borderRadius: 99,
+        },
+        suggestionChipAdded: { opacity: 0.5 },
+      }),
+    [colors],
+  );
+
+  const [noteText, setNoteText] = useState("");
   const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [tagInput, setTagInput] = useState('');
+  const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(currentTags);
   const [selectedColor, setSelectedColor] = useState(currentColor);
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
-    return () => { show.remove(); hide.remove(); };
+    const show = Keyboard.addListener("keyboardDidShow", () =>
+      setKeyboardVisible(true),
+    );
+    const hide = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardVisible(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
   }, []);
 
   // Reset when the menu opens for a different highlight
   useEffect(() => {
-    setNoteText('');
+    setNoteText("");
     setEditingNote(null);
-    setTagInput('');
+    setTagInput("");
     setTags(currentTags);
     setSelectedColor(currentColor);
   }, [highlightId]);
@@ -97,7 +209,7 @@ export function HighlightMenu({
       Keyboard.dismiss();
     } else if (editingNote) {
       setEditingNote(null);
-      setNoteText('');
+      setNoteText("");
     } else {
       onClose();
     }
@@ -119,10 +231,9 @@ export function HighlightMenu({
   };
 
   const commitTag = () => {
-    addTag(tagInput.trim().replace(/,+$/, ''));
-    setTagInput('');
+    addTag(tagInput.trim().replace(/,+$/, ""));
+    setTagInput("");
   };
-
 
   const removeTag = (tag: string) => {
     const newTags = tags.filter((t) => t !== tag);
@@ -138,7 +249,7 @@ export function HighlightMenu({
     } else {
       onAddNote(highlightId, trimmed);
     }
-    setNoteText('');
+    setNoteText("");
     setEditingNote(null);
   };
 
@@ -150,7 +261,7 @@ export function HighlightMenu({
 
   const handleCancelEdit = () => {
     setEditingNote(null);
-    setNoteText('');
+    setNoteText("");
     Keyboard.dismiss();
   };
 
@@ -169,316 +280,224 @@ export function HighlightMenu({
       <View style={styles.container}>
         <Pressable style={styles.overlay} onPress={onClose} />
 
-        <KeyboardAvoidingView
-          behavior="padding"
-          style={styles.kavWrapper}
-        >
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
+        <KeyboardAvoidingView behavior="padding" style={styles.kavWrapper}>
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
 
-          <ThemedText
-            type="bodySm"
-            color={colors.text.secondary}
-            style={styles.quoteText}
-            numberOfLines={3}
-          >
-            &ldquo;{highlightText}&rdquo;
-          </ThemedText>
+            {/* Highlight quote */}
+            <ThemedText
+              type="bodySm"
+              color={colors.text.secondary}
+              style={styles.quoteText}
+              numberOfLines={3}
+            >
+              &ldquo;{highlightText}&rdquo;
+            </ThemedText>
 
-          {/* Color swatches */}
-          <View style={styles.colorRow}>
-            {COLORS.map((c) => (
-              <Pressable
-                key={c}
-                style={[
-                  styles.swatch,
-                  { backgroundColor: c },
-                  selectedColor === c && styles.swatchSelected,
-                ]}
-                onPress={() => handleColorSelect(c)}
-              />
-            ))}
-          </View>
-
-          {/* Tags */}
-          <View style={styles.tagSection}>
-            {tags.length > 0 && (
-              <View style={styles.tagChips}>
-                {tags.map((tag) => (
-                  <View key={tag} style={styles.chip}>
-                    <ThemedText type="labelSm" color={colors.text.primary} style={styles.chipText}>
-                      {tag}
-                    </ThemedText>
-                    <Pressable onPress={() => removeTag(tag)} hitSlop={6}>
-                      <X size={11} color={colors.text.secondary} />
+            {/* Existing notes list */}
+            {existingNotes.length > 0 && (
+              <ScrollView
+                style={styles.notesList}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {existingNotes.map((note) => (
+                  <View
+                    key={note.id}
+                    style={[
+                      styles.noteRow,
+                      editingNote?.id === note.id && styles.noteRowEditing,
+                    ]}
+                  >
+                    <StickyNote
+                      size={14}
+                      color={colors.primary.default}
+                      style={styles.noteIcon}
+                    />
+                    <View style={styles.noteText}>
+                      <ThemedText type="bodySm" color={colors.text.primary}>
+                        {note.text}
+                      </ThemedText>
+                      {note.updatedAt && (
+                        <ThemedText
+                          type="labelSm"
+                          color={colors.text.secondary}
+                          style={{ fontStyle: "italic", fontSize: 10 }}
+                        >
+                          edited
+                        </ThemedText>
+                      )}
+                    </View>
+                    <Pressable
+                      onPress={() => handleEditNote(note)}
+                      style={styles.noteAction}
+                      hitSlop={8}
+                    >
+                      <Pencil size={14} color={colors.text.secondary} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => onDeleteNote(note.id)}
+                      style={styles.noteAction}
+                      hitSlop={8}
+                    >
+                      <Trash2 size={14} color={colors.text.secondary} />
                     </Pressable>
                   </View>
                 ))}
-              </View>
+              </ScrollView>
             )}
-            <View style={styles.tagInputRow}>
-              <TextInput
-                style={styles.tagInput}
-                placeholder="Add tag…"
-                placeholderTextColor={colors.text.secondary}
-                value={tagInput}
-                onChangeText={(v) => {
-                  if (v.endsWith(',')) {
-                    commitTag();
-                  } else {
-                    setTagInput(v);
-                  }
-                }}
-                returnKeyType="done"
-                onSubmitEditing={commitTag}
-              />
-              <Pressable
-                style={[styles.tagInputBtn, !tagInput.trim() && styles.tagInputBtnDisabled]}
-                onPress={commitTag}
-                hitSlop={8}
-              >
-                <Check size={16} color={tagInput.trim() ? colors.primary.default : colors.text.secondary} />
-              </Pressable>
+
+            {/* Note input */}
+            <TextInput
+              ref={inputRef}
+              style={styles.noteInput}
+              placeholder={editingNote ? "Edit your note…" : "Add a note…"}
+              placeholderTextColor={colors.text.secondary}
+              value={noteText}
+              onChangeText={setNoteText}
+              multiline
+            />
+
+            {/* Color swatches */}
+            <View style={styles.colorRow}>
+              {COLORS.map((c) => (
+                <Pressable
+                  key={c}
+                  style={[
+                    styles.swatch,
+                    { backgroundColor: c },
+                    selectedColor === c && styles.swatchSelected,
+                  ]}
+                  onPress={() => handleColorSelect(c)}
+                />
+              ))}
             </View>
 
-            {allTags.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.suggestionsScroll}
-                contentContainerStyle={styles.suggestionsContent}
-                keyboardShouldPersistTaps="handled"
-              >
-                {allTags.map((tag) => {
-                  const isAdded = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
-                  return (
-                    <Pressable
-                      key={tag}
-                      style={[styles.suggestionChip, isAdded && styles.suggestionChipAdded]}
-                      onPress={() => !isAdded && addTag(tag)}
-                    >
-                      {isAdded && <Check size={11} color={colors.text.secondary} />}
+            {/* Tags */}
+            <View style={styles.tagSection}>
+              {tags.length > 0 && (
+                <View style={styles.tagChips}>
+                  {tags.map((tag) => (
+                    <View key={tag} style={styles.chip}>
                       <ThemedText
                         type="labelSm"
-                        color={isAdded ? colors.text.secondary : colors.text.primary}
+                        color={colors.text.primary}
                         style={styles.chipText}
                       >
                         {tag}
                       </ThemedText>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            )}
-          </View>
-
-          {/* Existing notes list */}
-          {existingNotes.length > 0 && (
-            <ScrollView
-              style={styles.notesList}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {existingNotes.map((note) => (
-                <View
-                  key={note.id}
-                  style={[
-                    styles.noteRow,
-                    editingNote?.id === note.id && styles.noteRowEditing,
-                  ]}
-                >
-                  <StickyNote size={14} color={colors.primary.default} style={styles.noteIcon} />
-                  <ThemedText type="bodySm" color={colors.text.primary} style={styles.noteText}>
-                    {note.text}
-                  </ThemedText>
-                  <Pressable onPress={() => handleEditNote(note)} style={styles.noteAction} hitSlop={8}>
-                    <Pencil size={14} color={colors.text.secondary} />
-                  </Pressable>
-                  <Pressable onPress={() => onDeleteNote(note.id)} style={styles.noteAction} hitSlop={8}>
-                    <Trash2 size={14} color={colors.text.secondary} />
-                  </Pressable>
+                      <Pressable onPress={() => removeTag(tag)} hitSlop={6}>
+                        <X size={11} color={colors.text.secondary} />
+                      </Pressable>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </ScrollView>
-          )}
+              )}
+              <View style={styles.tagInputRow}>
+                <TextInput
+                  style={styles.tagInput}
+                  placeholder="Add tag…"
+                  placeholderTextColor={colors.text.secondary}
+                  value={tagInput}
+                  onChangeText={(v) => {
+                    if (v.endsWith(",")) {
+                      commitTag();
+                    } else {
+                      setTagInput(v);
+                    }
+                  }}
+                  returnKeyType="done"
+                  onSubmitEditing={commitTag}
+                />
+                <Pressable
+                  style={[
+                    styles.tagInputBtn,
+                    !tagInput.trim() && styles.tagInputBtnDisabled,
+                  ]}
+                  onPress={commitTag}
+                  hitSlop={8}
+                >
+                  <Check
+                    size={16}
+                    color={
+                      tagInput.trim()
+                        ? colors.primary.default
+                        : colors.text.secondary
+                    }
+                  />
+                </Pressable>
+              </View>
 
-          {/* Note input */}
-          <TextInput
-            ref={inputRef}
-            style={styles.noteInput}
-            placeholder={editingNote ? 'Edit your note…' : 'Add a note…'}
-            placeholderTextColor={colors.text.secondary}
-            value={noteText}
-            onChangeText={setNoteText}
-            multiline
-          />
+              {allTags.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.suggestionsScroll}
+                  contentContainerStyle={styles.suggestionsContent}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {allTags.map((tag) => {
+                    const isAdded = tags.some(
+                      (t) => t.toLowerCase() === tag.toLowerCase(),
+                    );
+                    return (
+                      <Pressable
+                        key={tag}
+                        style={[
+                          styles.suggestionChip,
+                          isAdded && styles.suggestionChipAdded,
+                        ]}
+                        onPress={() => !isAdded && addTag(tag)}
+                      >
+                        {isAdded && (
+                          <Check size={11} color={colors.text.secondary} />
+                        )}
+                        <ThemedText
+                          type="labelSm"
+                          color={
+                            isAdded
+                              ? colors.text.secondary
+                              : colors.text.primary
+                          }
+                          style={styles.chipText}
+                        >
+                          {tag}
+                        </ThemedText>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
 
-          <View style={styles.actions}>
-            <GoldButton
-              label={editingNote ? 'UPDATE NOTE' : 'ADD NOTE'}
-              onPress={handleSave}
-            />
-            {editingNote ? (
-              <Pressable onPress={handleCancelEdit} style={styles.secondaryButton}>
-                <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-              </Pressable>
-            ) : (
-              <Pressable onPress={handleDelete} style={styles.secondaryButton}>
-                <ThemedText type="labelSm" color={colors.text.secondary}>DELETE HIGHLIGHT</ThemedText>
-              </Pressable>
-            )}
+            <View style={styles.actions}>
+              <GoldButton
+                label={editingNote ? "UPDATE NOTE" : "ADD NOTE"}
+                onPress={handleSave}
+              />
+              {editingNote ? (
+                <Pressable
+                  onPress={handleCancelEdit}
+                  style={styles.secondaryButton}
+                >
+                  <ThemedText type="labelSm" color={colors.text.secondary}>
+                    CANCEL
+                  </ThemedText>
+                </Pressable>
+              ) : (
+                <Pressable
+                  onPress={handleDelete}
+                  style={styles.secondaryButton}
+                >
+                  <ThemedText type="labelSm" color={colors.text.secondary}>
+                    DELETE HIGHLIGHT
+                  </ThemedText>
+                </Pressable>
+              )}
+            </View>
           </View>
-        </View>
         </KeyboardAvoidingView>
       </View>
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  kavWrapper: {
-    backgroundColor: colors.surface.low,
-  },
-  sheet: {
-    backgroundColor: colors.surface.low,
-    paddingHorizontal: spacing[6],
-    paddingTop: spacing[4],
-    paddingBottom: spacing[10],
-    gap: spacing[4],
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    backgroundColor: colors.surface.highest,
-    alignSelf: 'center',
-    marginBottom: spacing[2],
-  },
-  quoteText: {
-    fontFamily: fontFamily.serifItalic,
-    fontSize: 14,
-  },
-  // Colors
-  colorRow: {
-    flexDirection: 'row',
-    gap: spacing[3],
-  },
-  swatch: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-  },
-  swatchSelected: {
-    borderWidth: 3,
-    borderColor: colors.text.primary,
-  },
-  // Tags
-  tagSection: {
-    gap: spacing[2],
-  },
-  tagChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    backgroundColor: colors.surface.mid,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[1],
-    borderRadius: 99,
-  },
-  chipText: {
-    fontSize: 12,
-  },
-  tagInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface.mid,
-  },
-  tagInput: {
-    flex: 1,
-    color: colors.text.primary,
-    fontFamily: fontFamily.sans,
-    fontSize: 14,
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-  },
-  tagInputBtn: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-  },
-  tagInputBtnDisabled: {
-    opacity: 0.4,
-  },
-  // Notes
-  notesList: {
-    maxHeight: 140,
-  },
-  noteRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing[3],
-    backgroundColor: colors.surface.mid,
-    padding: spacing[3],
-    marginBottom: spacing[2],
-  },
-  noteRowEditing: {
-    borderWidth: 1,
-    borderColor: colors.primary.default,
-  },
-  noteIcon: {
-    marginTop: 2,
-  },
-  noteText: {
-    flex: 1,
-  },
-  noteAction: {
-    paddingTop: 2,
-  },
-  noteInput: {
-    backgroundColor: colors.surface.mid,
-    color: colors.text.primary,
-    fontFamily: fontFamily.sans,
-    fontSize: 16,
-    padding: spacing[4],
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  actions: {
-    gap: spacing[3],
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    paddingVertical: spacing[3],
-  },
-  suggestionsScroll: {
-    marginTop: spacing[1],
-  },
-  suggestionsContent: {
-    gap: spacing[2],
-  },
-  suggestionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-    backgroundColor: colors.surface.mid,
-    borderWidth: 1,
-    borderColor: colors.surface.highest,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[1],
-    borderRadius: 99,
-  },
-  suggestionChipAdded: {
-    opacity: 0.5,
-  },
-});

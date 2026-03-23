@@ -2,7 +2,8 @@ import React from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { colors, spacing } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
+import { spacing } from '@/constants/theme';
 import type { books as booksTable } from '@/db/schema';
 
 type Book = typeof booksTable.$inferSelect;
@@ -14,6 +15,41 @@ type BookQueueProps = {
 };
 
 export function BookQueue({ books, onBookPress, onBookLongPress }: BookQueueProps) {
+  const colors = useColors();
+  const styles = React.useMemo(() => StyleSheet.create({
+    scrollContent: {
+      paddingHorizontal: spacing[6],
+      gap: spacing[4],
+    },
+    item: {
+      width: 130,
+      gap: spacing[2],
+    },
+    cover: {
+      width: 130,
+      height: 170,
+      backgroundColor: colors.surface.low,
+    },
+    coverImage: {
+      width: 130,
+      height: 170,
+    },
+    bookmarkContainer: {
+      flex: 1,
+      alignItems: 'flex-end',
+      paddingTop: spacing[3],
+      paddingRight: spacing[4],
+    },
+    bookmark: {
+      width: 16,
+      height: 24,
+      backgroundColor: colors.surface.highest,
+    },
+    title: {
+      marginTop: spacing[1],
+    },
+  }), [colors]);
+
   return (
     <ScrollView
       horizontal
@@ -47,37 +83,3 @@ export function BookQueue({ books, onBookPress, onBookLongPress }: BookQueueProp
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  scrollContent: {
-    paddingHorizontal: spacing[6],
-    gap: spacing[4],
-  },
-  item: {
-    width: 130,
-    gap: spacing[2],
-  },
-  cover: {
-    width: 130,
-    height: 170,
-    backgroundColor: colors.surface.low,
-  },
-  coverImage: {
-    width: 130,
-    height: 170,
-  },
-  bookmarkContainer: {
-    flex: 1,
-    alignItems: 'flex-end',
-    paddingTop: spacing[3],
-    paddingRight: spacing[4],
-  },
-  bookmark: {
-    width: 16,
-    height: 24,
-    backgroundColor: colors.surface.highest,
-  },
-  title: {
-    marginTop: spacing[1],
-  },
-});

@@ -2,7 +2,8 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { colors, spacing } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
+import { spacing } from '@/constants/theme';
 
 type SectionHeaderProps = {
   label?: string;
@@ -25,6 +26,28 @@ export function SectionHeader({
   rightIcon,
   count,
 }: SectionHeaderProps) {
+  const colors = useColors();
+  const styles = React.useMemo(() => StyleSheet.create({
+    container: {
+      gap: spacing[2],
+      paddingHorizontal: spacing[6],
+    },
+    titleRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: spacing[3],
+    },
+    title: {
+      flex: 1,
+    },
+    iconButton: {
+      width: 28,
+      height: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  }), [colors]);
+
   return (
     <View style={styles.container}>
       {label && (
@@ -57,24 +80,3 @@ export function SectionHeader({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    gap: spacing[2],
-    paddingHorizontal: spacing[6],
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing[3],
-  },
-  title: {
-    flex: 1,
-  },
-  iconButton: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

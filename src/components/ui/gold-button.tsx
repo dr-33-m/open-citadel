@@ -3,7 +3,8 @@ import React from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { colors, spacing } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
+import { spacing } from '@/constants/theme';
 
 type GoldButtonProps = {
   label: string;
@@ -11,6 +12,16 @@ type GoldButtonProps = {
 };
 
 export function GoldButton({ label, onPress }: GoldButtonProps) {
+  const colors = useColors();
+  const styles = React.useMemo(() => StyleSheet.create({
+    gradient: {
+      paddingHorizontal: spacing[6],
+      paddingVertical: spacing[4],
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  }), [colors]);
+
   return (
     <Pressable onPress={onPress}>
       <LinearGradient
@@ -26,12 +37,3 @@ export function GoldButton({ label, onPress }: GoldButtonProps) {
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  gradient: {
-    paddingHorizontal: spacing[6],
-    paddingVertical: spacing[4],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

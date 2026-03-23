@@ -4,13 +4,39 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
-import { colors, spacing } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
+import { spacing } from '@/constants/theme';
 
 type DirectoryPromptProps = {
   onSelectDirectory: () => void;
 };
 
 export function DirectoryPrompt({ onSelectDirectory }: DirectoryPromptProps) {
+  const colors = useColors();
+  const styles = React.useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing[10],
+      gap: spacing[5],
+    },
+    iconContainer: {
+      marginBottom: spacing[4],
+    },
+    title: {
+      textAlign: 'center',
+    },
+    description: {
+      textAlign: 'center',
+      lineHeight: 24,
+    },
+    buttonContainer: {
+      marginTop: spacing[6],
+      alignSelf: 'stretch',
+    },
+  }), [colors]);
+
   return (
     <View style={styles.container}>
       <View style={styles.iconContainer}>
@@ -36,27 +62,3 @@ export function DirectoryPrompt({ onSelectDirectory }: DirectoryPromptProps) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing[10],
-    gap: spacing[5],
-  },
-  iconContainer: {
-    marginBottom: spacing[4],
-  },
-  title: {
-    textAlign: 'center',
-  },
-  description: {
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  buttonContainer: {
-    marginTop: spacing[6],
-    alignSelf: 'stretch',
-  },
-});

@@ -1,13 +1,25 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { colors } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
 
 type ProgressBarProps = {
   progress: number; // 0 to 1
 };
 
 export function ProgressBar({ progress }: ProgressBarProps) {
+  const colors = useColors();
+  const styles = React.useMemo(() => StyleSheet.create({
+    track: {
+      height: 3,
+      backgroundColor: colors.surface.highest,
+    },
+    fill: {
+      height: 3,
+      backgroundColor: colors.primary.default,
+    },
+  }), [colors]);
+
   return (
     <View style={styles.track}>
       <View
@@ -16,14 +28,3 @@ export function ProgressBar({ progress }: ProgressBarProps) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  track: {
-    height: 3,
-    backgroundColor: colors.surface.highest,
-  },
-  fill: {
-    height: 3,
-    backgroundColor: colors.primary.default,
-  },
-});

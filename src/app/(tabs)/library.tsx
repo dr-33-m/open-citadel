@@ -1,35 +1,47 @@
-import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
-
-import { ArchivedCards } from '@/components/library/archived-card';
-import { BookActionSheet } from '@/components/library/book-action-sheet';
-import { BookQueue } from '@/components/library/book-queue';
-import { CurrentlyReadingCard } from '@/components/library/currently-reading-card';
-import { DirectoryPrompt } from '@/components/library/directory-prompt';
-import { Favorites } from '@/components/library/favorites';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { SectionHeader } from '@/components/ui/section-header';
-import { ScreenHeader } from '@/components/ui/screen-header';
-import { colors, spacing } from '@/constants/theme';
+import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { ArchivedCards } from "@/components/library/archived-card";
+import { BookActionSheet } from "@/components/library/book-action-sheet";
+import { BookQueue } from "@/components/library/book-queue";
+import { CollectionGrid } from "@/components/library/collection-grid";
+import { CollectionPickerSheet } from "@/components/library/collection-picker-sheet";
+import { CurrentlyReadingCard } from "@/components/library/currently-reading-card";
+import { DirectoryPrompt } from "@/components/library/directory-prompt";
+import { Favorites } from "@/components/library/favorites";
+import { NewCollectionPrompt } from "@/components/library/new-collection-prompt";
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { ScreenHeader } from "@/components/ui/screen-header";
+import { SectionHeader } from "@/components/ui/section-header";
+import { spacing } from "@/constants/theme";
+import type { books as booksTable } from "@/db/schema";
+import { useColors } from "@/hooks/use-colors";
+import { pickBooksDirectory } from "@/services/book-sync";
+import {
+  useAllBooks,
+  useArchivedBooks,
   useBooksStore,
   useCurrentlyReading,
-  useQueuedBooks,
-  useArchivedBooks,
   useFavoriteBooks,
-  useAllBooks,
-} from '@/stores/books';
-import type { books as booksTable } from '@/db/schema';
+  useQueuedBooks,
+} from "@/stores/books";
+import { useCollectionsStore } from "@/stores/collections";
 
 type Book = typeof booksTable.$inferSelect;
-import { pickBooksDirectory } from '@/services/book-sync';
-
 
 export default function LibraryScreen() {
+  const colors = useColors();
+  const styles = useStyles(colors);
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -47,7 +59,15 @@ export default function LibraryScreen() {
 
   const [currentReadingIndex, setCurrentReadingIndex] = useState(0);
   const [actionBook, setActionBook] = useState<Book | null>(null);
+  const [showNewCollection, setShowNewCollection] = useState(false);
+  const [collectionPickerBook, setCollectionPickerBook] = useState<
+    string | null
+  >(null);
+  const [bookCollectionIds, setBookCollectionIds] = useState<string[]>([]);
   const readingScrollRef = useRef<ScrollView>(null);
+
+  const { collections, loadCollections, createCollection } =
+    useCollectionsStore();
 
   const currentlyReading = useCurrentlyReading();
   const queuedBooks = useQueuedBooks();
@@ -65,7 +85,7 @@ export default function LibraryScreen() {
       const next = currentlyReading.length - 1;
       setCurrentReadingIndex(next);
       readingScrollRef.current?.scrollTo({
-        x: next * Dimensions.get('window').width,
+        x: next * Dimensions.get("window").width,
         animated: true,
       });
     }
@@ -83,7 +103,8 @@ export default function LibraryScreen() {
   useFocusEffect(
     useCallback(() => {
       loadBooks();
-    }, [loadBooks])
+      loadCollections();
+    }, [loadBooks, loadCollections]),
   );
 
   const handleSelectDirectory = async () => {
@@ -100,7 +121,7 @@ export default function LibraryScreen() {
   if (!booksDirectoryUri && !isLoading) {
     return (
       <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-        <ScreenHeader title="Open Citadel"  />
+        <ScreenHeader title="Open Citadel" />
         <DirectoryPrompt onSelectDirectory={handleSelectDirectory} />
       </ThemedView>
     );
@@ -108,7 +129,7 @@ export default function LibraryScreen() {
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Open Citadel"  />
+      <ScreenHeader title="Open Citadel" />
 
       {isSyncing && (
         <View style={styles.syncIndicator}>
@@ -129,7 +150,10 @@ export default function LibraryScreen() {
           <View style={styles.section}>
             <SectionHeader
               title="Currently Reading"
-              rightAction={{ text: 'VIEW ALL', onPress: () => router.push('/section/reading' as any) }}
+              rightAction={{
+                text: "VIEW ALL",
+                onPress: () => router.push("/section/reading" as any),
+              }}
             />
             <ScrollView
               ref={readingScrollRef}
@@ -139,7 +163,8 @@ export default function LibraryScreen() {
               scrollEventThrottle={16}
               onScroll={(e) => {
                 const index = Math.round(
-                  e.nativeEvent.contentOffset.x / Dimensions.get('window').width
+                  e.nativeEvent.contentOffset.x /
+                    Dimensions.get("window").width,
                 );
                 setCurrentReadingIndex(index);
               }}
@@ -147,7 +172,10 @@ export default function LibraryScreen() {
               {currentlyReading.map((book) => (
                 <View
                   key={book.id}
-                  style={{ width: Dimensions.get('window').width, paddingHorizontal: spacing[6] }}
+                  style={{
+                    width: Dimensions.get("window").width,
+                    paddingHorizontal: spacing[6],
+                  }}
                 >
                   <CurrentlyReadingCard
                     book={book}
@@ -179,9 +207,16 @@ export default function LibraryScreen() {
           <View style={styles.section}>
             <SectionHeader
               title="Queue"
-              rightAction={{ text: 'VIEW ALL', onPress: () => router.push('/section/queue' as any) }}
+              rightAction={{
+                text: "VIEW ALL",
+                onPress: () => router.push("/section/queue" as any),
+              }}
             />
-            <BookQueue books={queuedBooks} onBookPress={openReader} onBookLongPress={setActionBook} />
+            <BookQueue
+              books={queuedBooks}
+              onBookPress={openReader}
+              onBookLongPress={setActionBook}
+            />
           </View>
         )}
 
@@ -190,9 +225,16 @@ export default function LibraryScreen() {
           <View style={styles.section}>
             <SectionHeader
               title="Favorites"
-              rightAction={{ text: 'VIEW ALL', onPress: () => router.push('/section/favorites' as any) }}
+              rightAction={{
+                text: "VIEW ALL",
+                onPress: () => router.push("/section/favorites" as any),
+              }}
             />
-            <Favorites books={favoriteBooks} onBookPress={openReader} onBookLongPress={setActionBook} />
+            <Favorites
+              books={favoriteBooks}
+              onBookPress={openReader}
+              onBookLongPress={setActionBook}
+            />
           </View>
         )}
 
@@ -201,24 +243,33 @@ export default function LibraryScreen() {
           <View style={styles.section}>
             <SectionHeader
               title="Have Read"
-              rightAction={{ text: 'VIEW ALL', onPress: () => router.push('/section/archived' as any) }}
+              rightAction={{
+                text: "VIEW ALL",
+                onPress: () => router.push("/section/archived" as any),
+              }}
             />
-            <ArchivedCards books={archivedBooks} onBookPress={openReader} onBookLongPress={setActionBook} />
+            <ArchivedCards
+              books={archivedBooks}
+              onBookPress={openReader}
+              onBookLongPress={setActionBook}
+            />
           </View>
         )}
 
-        {/* Collections — placeholder with create button */}
+        {/* Collections */}
         <View style={styles.section}>
-          <SectionHeader title="Collections" />
-          <Pressable style={styles.createCollectionBtn} onPress={() => {}}>
-            <View style={styles.plusIcon}>
-              <View style={styles.plusH} />
-              <View style={styles.plusV} />
-            </View>
-            <ThemedText type="bodyMd" color={colors.text.secondary}>
-              Create Collection
-            </ThemedText>
-          </Pressable>
+          <SectionHeader
+            title="Collections"
+            rightAction={{
+              text: "VIEW ALL",
+              onPress: () => router.push("/section/collections" as any),
+            }}
+          />
+          <CollectionGrid
+            collections={collections}
+            onPress={(colId) => router.push(`/collection/${colId}` as any)}
+            onCreateCollection={() => setShowNewCollection(true)}
+          />
         </View>
 
         {/* All Books */}
@@ -226,12 +277,18 @@ export default function LibraryScreen() {
           <View style={styles.section}>
             <SectionHeader
               title="All Books"
-              rightAction={{ text: 'VIEW ALL', onPress: () => router.push('/section/all' as any) }}
+              rightAction={{
+                text: "VIEW ALL",
+                onPress: () => router.push("/section/all" as any),
+              }}
             />
-            <BookQueue books={allBooks} onBookPress={openReader} onBookLongPress={setActionBook} />
+            <BookQueue
+              books={allBooks}
+              onBookPress={openReader}
+              onBookLongPress={setActionBook}
+            />
           </View>
         )}
-
       </ScrollView>
 
       <BookActionSheet
@@ -241,77 +298,82 @@ export default function LibraryScreen() {
         onOpen={openReader}
         onToggleFavorite={toggleFavorite}
         onSetStatus={updateBookStatus}
+        onAddToCollection={async (bookId) => {
+          const ids = await useCollectionsStore
+            .getState()
+            .getBookCollectionIds(bookId);
+          setBookCollectionIds(ids);
+          setCollectionPickerBook(bookId);
+        }}
+      />
+
+      <NewCollectionPrompt
+        visible={showNewCollection}
+        onClose={() => setShowNewCollection(false)}
+        onCreate={async (name) => {
+          await createCollection(name);
+          setShowNewCollection(false);
+        }}
+      />
+
+      <CollectionPickerSheet
+        visible={collectionPickerBook !== null}
+        collections={collections}
+        bookCollectionIds={bookCollectionIds}
+        onToggle={async (collectionId, isAdded) => {
+          if (isAdded) {
+            await useCollectionsStore
+              .getState()
+              .removeBookFromCollection(collectionPickerBook!, collectionId);
+          } else {
+            await useCollectionsStore
+              .getState()
+              .addBookToCollection(collectionPickerBook!, collectionId);
+          }
+          const ids = await useCollectionsStore
+            .getState()
+            .getBookCollectionIds(collectionPickerBook!);
+          setBookCollectionIds(ids);
+        }}
+        onClose={() => setCollectionPickerBook(null)}
       />
     </ThemedView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: spacing[8],
-  },
-  section: {
-    gap: spacing[5],
-    marginBottom: spacing[16],
-  },
-  syncIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[3],
-    paddingVertical: spacing[2],
-  },
-  createCollectionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[4],
-    marginHorizontal: spacing[6],
-    paddingVertical: spacing[5],
-    paddingHorizontal: spacing[5],
-    backgroundColor: colors.surface.low,
-    borderWidth: 1,
-    borderColor: colors.surface.highest,
-    borderStyle: 'dashed',
-  },
-  plusIcon: {
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  plusH: {
-    position: 'absolute',
-    width: 14,
-    height: 1.5,
-    backgroundColor: colors.text.secondary,
-  },
-  plusV: {
-    position: 'absolute',
-    width: 1.5,
-    height: 14,
-    backgroundColor: colors.text.secondary,
-  },
-  dotsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing[2],
-    paddingTop: spacing[2],
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.surface.highest,
-  },
-  dotActive: {
-    backgroundColor: colors.primary.default,
-    width: 16,
-    borderRadius: 3,
-  },
-});
+function useStyles(colors: ReturnType<typeof useColors>) {
+  return React.useMemo(
+    () =>
+      StyleSheet.create({
+        container: { flex: 1 },
+        scroll: { flex: 1 },
+        scrollContent: { paddingBottom: spacing[8] },
+        section: { gap: spacing[5], marginBottom: spacing[16] },
+        syncIndicator: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: spacing[3],
+          paddingVertical: spacing[2],
+        },
+        dotsRow: {
+          flexDirection: "row",
+          justifyContent: "center",
+          gap: spacing[2],
+          paddingTop: spacing[2],
+        },
+        dot: {
+          width: 6,
+          height: 6,
+          borderRadius: 3,
+          backgroundColor: colors.surface.highest,
+        },
+        dotActive: {
+          backgroundColor: colors.primary.default,
+          width: 16,
+          borderRadius: 3,
+        },
+      }),
+    [colors],
+  );
+}

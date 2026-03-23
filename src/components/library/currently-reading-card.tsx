@@ -4,7 +4,8 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ProgressBar } from '@/components/ui/progress-bar';
-import { colors, fontFamily, spacing } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
+import { fontFamily, spacing } from '@/constants/theme';
 import type { books } from '@/db/schema';
 import { db } from '@/db/client';
 import { readingProgress } from '@/db/schema';
@@ -19,7 +20,49 @@ type CurrentlyReadingCardProps = {
 };
 
 export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyReadingCardProps) {
+  const colors = useColors();
   const [progress, setProgress] = useState(0);
+
+  const styles = React.useMemo(() => StyleSheet.create({
+    card: {
+      flexDirection: 'row',
+      backgroundColor: colors.surface.low,
+      padding: spacing[5],
+      gap: spacing[5],
+    },
+    cover: {
+      width: 90,
+      height: 130,
+      backgroundColor: colors.surface.mid,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    initial: {
+      fontSize: 36,
+      fontFamily: fontFamily.serif,
+    },
+    coverTitle: {
+      position: 'absolute',
+      bottom: spacing[2],
+      paddingHorizontal: spacing[2],
+      textAlign: 'center',
+      fontSize: 9,
+    },
+    info: {
+      flex: 1,
+      gap: spacing[2],
+      justifyContent: 'center',
+    },
+    progressSection: {
+      marginTop: spacing[3],
+      gap: spacing[2],
+    },
+    progressLabels: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+  }), [colors]);
 
   useFocusEffect(
     useCallback(() => {
@@ -80,44 +123,3 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface.low,
-    padding: spacing[5],
-    gap: spacing[5],
-  },
-  cover: {
-    width: 90,
-    height: 130,
-    backgroundColor: colors.surface.mid,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  initial: {
-    fontSize: 36,
-    fontFamily: fontFamily.serif,
-  },
-  coverTitle: {
-    position: 'absolute',
-    bottom: spacing[2],
-    paddingHorizontal: spacing[2],
-    textAlign: 'center',
-    fontSize: 9,
-  },
-  info: {
-    flex: 1,
-    gap: spacing[2],
-    justifyContent: 'center',
-  },
-  progressSection: {
-    marginTop: spacing[3],
-    gap: spacing[2],
-  },
-  progressLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-});

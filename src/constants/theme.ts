@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
-// ── Colors: Obsidian & Gold ──────────────────────────────────────────
-export const colors = {
+// ── Colors: Obsidian & Gold (dark) ───────────────────────────────────
+export const darkColors = {
   surface: {
     base: '#131313',
     low: '#1c1b1b',
@@ -21,6 +21,33 @@ export const colors = {
     variant: 'rgba(208, 197, 175, 0.15)',
   },
 } as const;
+
+// ── Colors: Parchment & Gold (light) ─────────────────────────────────
+export const lightColors = {
+  surface: {
+    base: '#F5EEE0',
+    low: '#FDFAF4',
+    mid: '#EDE5D4',
+    highest: '#C4B89A',
+  },
+  primary: {
+    default: '#B8861A',
+    container: '#9A7015',
+  },
+  text: {
+    primary: '#1C1510',
+    secondary: '#6B6050',
+    inverse: '#F5EEE0',
+  },
+  outline: {
+    variant: 'rgba(28, 21, 16, 0.12)',
+  },
+} as const;
+
+export type AppColors = typeof darkColors;
+
+// Default export kept for non-component usage (always dark)
+export const colors = darkColors;
 
 // ── Typography: Font families ────────────────────────────────────────
 // These match the keys loaded via useFonts in _layout.tsx

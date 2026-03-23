@@ -1,8 +1,10 @@
+import React from 'react';
 import { View, type ViewProps } from 'react-native';
 
-import { colors } from '@/constants/theme';
+import { useColors } from '@/hooks/use-colors';
+import type { AppColors } from '@/constants/theme';
 
-type SurfaceLevel = keyof typeof colors.surface;
+type SurfaceLevel = keyof AppColors['surface'];
 
 export type ThemedViewProps = ViewProps & {
   surface?: SurfaceLevel;
@@ -13,6 +15,7 @@ export function ThemedView({
   surface = 'base',
   ...otherProps
 }: ThemedViewProps) {
+  const colors = useColors();
   return (
     <View
       style={[{ backgroundColor: colors.surface[surface] }, style]}
