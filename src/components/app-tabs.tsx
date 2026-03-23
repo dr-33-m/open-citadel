@@ -1,33 +1,85 @@
-import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import {
+  Tabs,
+  TabList,
+  TabTrigger,
+  TabSlot,
+  type TabTriggerSlotProps,
+} from 'expo-router/ui';
 import React from 'react';
-import { useColorScheme } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors } from '@/constants/theme';
+import { ThemedText } from '@/components/themed-text';
+import { colors, spacing } from '@/constants/theme';
 
 export default function AppTabs() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
-
   return (
-    <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/home.png')}
-          renderingMode="template"
-        />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="explore">
-        <NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
-          renderingMode="template"
-        />
-      </NativeTabs.Trigger>
-    </NativeTabs>
+    <Tabs>
+      <TabSlot style={{ flex: 1 }} />
+      <TabList asChild>
+        <CustomTabBar>
+          <TabTrigger name="index" href="/" asChild>
+            <TabButton>TIMELINE</TabButton>
+          </TabTrigger>
+          <TabTrigger name="library" href="/library" asChild>
+            <TabButton>LIBRARY</TabButton>
+          </TabTrigger>
+        </CustomTabBar>
+      </TabList>
+    </Tabs>
   );
 }
+
+function TabButton({
+  children,
+  isFocused,
+  ...props
+}: TabTriggerSlotProps) {
+  return (
+    <Pressable {...props} style={styles.tabButton}>
+      <ThemedText
+        type="labelSm"
+        color={isFocused ? colors.primary.default : colors.text.secondary}
+      >
+        {children}
+      </ThemedText>
+      {isFocused && <View style={styles.activeIndicator} />}
+    </Pressable>
+  );
+}
+
+function CustomTabBar(props: { children: React.ReactNode }) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View
+      {...props}
+      style={[
+        styles.tabBar,
+        { paddingBottom: Math.max(insets.bottom, spacing[3]) },
+      ]}
+    >
+      {props.children}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface.low,
+    justifyContent: 'center',
+    gap: spacing[16],
+    paddingTop: spacing[4],
+  },
+  tabButton: {
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingVertical: spacing[2],
+  },
+  activeIndicator: {
+    width: 24,
+    height: 2,
+    backgroundColor: colors.primary.default,
+  },
+});

@@ -1,65 +1,123 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
-import '@/global.css';
-
 import { Platform } from 'react-native';
 
-export const Colors = {
-  light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+// ── Colors: Obsidian & Gold ──────────────────────────────────────────
+export const colors = {
+  surface: {
+    base: '#131313',
+    low: '#1c1b1b',
+    mid: '#252525',
+    highest: '#353534',
   },
-  dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+  primary: {
+    default: '#f2ca50',
+    container: '#d4af37',
+  },
+  text: {
+    primary: '#d0c5af',
+    secondary: '#8a8378',
+    inverse: '#131313',
+  },
+  outline: {
+    variant: 'rgba(208, 197, 175, 0.15)',
   },
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
-
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
-
-export const Spacing = {
-  half: 2,
-  one: 4,
-  two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+// ── Typography: Font families ────────────────────────────────────────
+// These match the keys loaded via useFonts in _layout.tsx
+export const fontFamily = {
+  serif: 'Newsreader_400Regular',
+  serifItalic: 'Newsreader_400Regular_Italic',
+  serifMedium: 'Newsreader_500Medium',
+  serifBold: 'Newsreader_700Bold',
+  serifBoldItalic: 'Newsreader_700Bold_Italic',
+  sans: 'Manrope_400Regular',
+  sansMedium: 'Manrope_500Medium',
+  sansSemiBold: 'Manrope_600SemiBold',
+  sansBold: 'Manrope_700Bold',
 } as const;
 
+// ── Typography: Type scale ───────────────────────────────────────────
+export const typography = {
+  displayLg: {
+    fontFamily: fontFamily.serifBold,
+    fontSize: 48,
+    lineHeight: 56,
+  },
+  displayMd: {
+    fontFamily: fontFamily.serifBold,
+    fontSize: 36,
+    lineHeight: 44,
+  },
+  headlineLg: {
+    fontFamily: fontFamily.serifMedium,
+    fontSize: 28,
+    lineHeight: 36,
+  },
+  headlineMd: {
+    fontFamily: fontFamily.serifMedium,
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  headlineSm: {
+    fontFamily: fontFamily.serifMedium,
+    fontSize: 18,
+    lineHeight: 24,
+  },
+  bodyLg: {
+    fontFamily: fontFamily.sans,
+    fontSize: 18,
+    lineHeight: 28,
+  },
+  bodyMd: {
+    fontFamily: fontFamily.sans,
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  bodySm: {
+    fontFamily: fontFamily.sans,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  labelLg: {
+    fontFamily: fontFamily.sansSemiBold,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase' as const,
+  },
+  labelMd: {
+    fontFamily: fontFamily.sansSemiBold,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase' as const,
+  },
+  labelSm: {
+    fontFamily: fontFamily.sansSemiBold,
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase' as const,
+  },
+} as const;
+
+export type TypographyVariant = keyof typeof typography;
+
+// ── Spacing ──────────────────────────────────────────────────────────
+export const spacing = {
+  1: 4,
+  2: 8,
+  3: 12,
+  4: 16,
+  5: 20,
+  6: 24,
+  8: 32,
+  10: 40,
+  12: 48,
+  16: 64,
+  20: 80,
+} as const;
+
+// ── Layout ───────────────────────────────────────────────────────────
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;

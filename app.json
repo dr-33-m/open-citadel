@@ -1,37 +1,59 @@
 {
   "expo": {
-    "name": "open-citadel",
+    "name": "Open Citadel",
     "slug": "open-citadel",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icons/ios-dark.png",
     "scheme": "opencitadel",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": {
+        "light": "./assets/icons/ios-light.png",
+        "dark": "./assets/icons/ios-dark.png",
+        "tinted": "./assets/icons/ios-tinted.png"
+      },
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/icons/oc-adaptive-icon.png",
+        "backgroundColor": "#131313"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.dr33m.opencitadel"
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/icons/ios-dark.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/icons/splash-icon-light.png",
+          "imageWidth": 200,
+          "dark": {
+            "backgroundColor": "#131313",
+            "image": "./assets/icons/oc-splash-icon-dark.png"
+          }
+        }
+      ],
+      "expo-sqlite",
+      "expo-document-picker",
+      "./plugins/withCoreDesugaring",
+      "./plugins/withCleartextTraffic",
+      [
+        "expo-build-properties",
+        {
           "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24,
+            "kotlinVersion": "2.0.21",
+            "enableCoreLibraryDesugaring": true
           }
         }
       ]
@@ -39,6 +61,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5cb454f2-63c2-4422-85c4-61cf5b57a0c5"
+      }
     }
   }
 }

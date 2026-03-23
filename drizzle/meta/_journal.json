@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1774122935487,
+      "tag": "0000_magical_starjammers",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1774191427393,
+      "tag": "0001_loose_inhumans",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1774196107231,
+      "tag": "0002_easy_pet_avengers",
+      "breakpoints": true
+    }
+  ]
+}
