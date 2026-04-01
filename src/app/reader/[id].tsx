@@ -25,8 +25,8 @@ import type {
   SelectionEvent,
   TTSState,
   TTSUtteranceEvent,
-} from "react-native-readium";
-import { ReadiumView } from "react-native-readium";
+} from "@dr33m/react-native-readium";
+import { ReadiumView } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HighlightMenu } from "@/components/reader/highlight-menu";

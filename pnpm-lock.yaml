@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@dr33m/react-native-readium':
+        specifier: next
+        version: 5.0.0-rc.18(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       '@expo-google-fonts/manrope':
         specifier: ^0.4.2
         version: 0.4.2
@@ -107,9 +110,6 @@ importers:
       react-native-nitro-modules:
         specifier: ^0.35.2
         version: 0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
-      react-native-readium:
-        specifier: file:react-native-readium-5.0.0-rc.17.tgz
-        version: file:react-native-readium-5.0.0-rc.17.tgz(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       react-native-reanimated:
         specifier: 4.2.1
         version: 4.2.1(react-native-worklets@0.7.2(@babel/core@7.29.0)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
@@ -672,6 +672,14 @@ packages:
   '@babel/types@7.29.0':
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
+
+  '@dr33m/react-native-readium@5.0.0-rc.18':
+    resolution: {integrity: sha512-SklKY4InBnAWBmXVvdXmL+2buW2Ogue33VrGpPKcHfUCvHoSbaT+sC/UDD7nZRL3HrBD60PCV/pdQn61brJecQ==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      react: '*'
+      react-native: '>=0.78.0'
+      react-native-nitro-modules: '*'
 
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
@@ -3435,15 +3443,6 @@ packages:
       react: '*'
       react-native: '*'
 
-  react-native-readium@file:react-native-readium-5.0.0-rc.17.tgz:
-    resolution: {integrity: sha512-db57U/Y8xNb0l80fewqxCtUB1qBrloRsRCi9WcE06YPsxwyB3VWTMo8SkGEX9tY+i+RPWyEzj/pqqMbSTgnFkg==, tarball: file:react-native-readium-5.0.0-rc.17.tgz}
-    version: 5.0.0-rc.17
-    engines: {node: '>=20'}
-    peerDependencies:
-      react: '*'
-      react-native: '>=0.78.0'
-      react-native-nitro-modules: '*'
-
   react-native-reanimated@4.2.1:
     resolution: {integrity: sha512-/NcHnZMyOvsD/wYXug/YqSKw90P9edN0kEPL5lP4PFf1aQ4F1V7MKe/E0tvfkXKIajy3Qocp5EiEnlcrK/+BZg==}
     peerDependencies:
@@ -4689,6 +4688,17 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
+
+  '@dr33m/react-native-readium@5.0.0-rc.18(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
+    dependencies:
+      '@readium/css': 2.0.0
+      '@readium/navigator': 2.3.1
+      '@readium/navigator-html-injectables': 2.3.0
+      '@readium/shared': 2.1.5
+      react: 19.2.0
+      react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
+      react-native-nitro-modules: 0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+      use-deep-compare: 1.3.0(react@19.2.0)
 
   '@drizzle-team/brocli@0.10.2': {}
 
@@ -7725,17 +7735,6 @@ snapshots:
     dependencies:
       react: 19.2.0
       react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
-
-  react-native-readium@file:react-native-readium-5.0.0-rc.17.tgz(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0):
-    dependencies:
-      '@readium/css': 2.0.0
-      '@readium/navigator': 2.3.1
-      '@readium/navigator-html-injectables': 2.3.0
-      '@readium/shared': 2.1.5
-      react: 19.2.0
-      react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
-      react-native-nitro-modules: 0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
-      use-deep-compare: 1.3.0(react@19.2.0)
 
   react-native-reanimated@4.2.1(react-native-worklets@0.7.2(@babel/core@7.29.0)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0):
     dependencies:

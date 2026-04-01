@@ -14,7 +14,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type { Link, Locator } from "react-native-readium";
+import type { Link, Locator } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";

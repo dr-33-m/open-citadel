@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { Link, Locator } from "react-native-readium";
+import type { Link, Locator } from "@dr33m/react-native-readium";
 import { create } from "zustand";
 
 import { db } from "@/db/client";
