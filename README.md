@@ -1,56 +1,147 @@
-# Welcome to your Expo app 👋
+# Open Citadel
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A personal knowledge companion for serious readers. Open Citadel helps you collect, organise, and action the insights, highlights, and thoughts that come from the books, blogs, and podcasts you consume — so nothing valuable gets lost.
 
-## Get started
+Built with Expo / React Native. Android-first, iOS coming.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## What it does
 
-2. Start the app
+Most reading apps stop at reading. Open Citadel treats the reader as a starting point, not an end point. Every highlight, bookmark, and stray thought you capture while reading feeds into a unified timeline — your personal knowledge base, organised by date and tagged however you like.
 
-   ```bash
-   npx expo start
-   ```
+### Core features
 
-In the output, you'll find options to open the app in a
+**Library**
+- Sync your EPUB library from a local folder on your device (Android Storage Access Framework)
+- Automatic metadata enrichment — title, author, cover pulled from the book file
+- Organise books into collections, mark favourites, archive finished reads
+- Queue and reading progress tracked per book
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+**Reader**
+- Full EPUB reader powered by the [Readium](https://readium.org/) toolkit
+- Dark, light, and sepia themes; custom font size and margins
+- Highlight text with colour-coded highlights
+- Bookmark pages
+- Table of contents navigation
+- Text-to-Speech — listen to any book with a single tap, follows your reading position
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+**Timeline**
+- A chronological feed of everything you capture: highlights, bookmarks, and your own thoughts
+- Add freeform thoughts at any time, tag them, link them back to a book
+- Filter by date with a calendar picker
+- Edit or delete any entry
 
-## Get a fresh project
+**Settings**
+- Choose your EPUB library folder
+- Reader appearance preferences (theme, font, size, margins)
 
-When you're ready, run:
+---
 
-```bash
-npm run reset-project
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Framework | Expo 55 / React Native 0.83 |
+| Navigation | Expo Router (file-based) |
+| Database | Expo SQLite + Drizzle ORM |
+| State | Zustand |
+| Reader | `@dr33m/react-native-readium` (Readium fork) |
+| TTS | Readium Navigator Media TTS (Android platform TextToSpeech) |
+| Sync | Custom SAF-based sync coordinator |
+
+---
+
+## Getting started
+
+### Prerequisites
+
+- Node 20+
+- pnpm 10+
+- Android: JDK 17, Android SDK with `compileSdkVersion` >= 31
+- iOS: Xcode 16.2+, iOS deployment target >= 13.4
+
+### Install
+
+```sh
+pnpm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Development build
 
-### Other setup steps
+```sh
+# Android
+pnpm android
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+# iOS
+pnpm ios
+```
 
-## Learn more
+### EAS build (cloud)
 
-To learn more about developing your project with Expo, look at the following resources:
+```sh
+# Preview APK
+eas build --profile preview --platform android
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+# Production
+eas build --profile production --platform android
+```
 
-## Join the community
+---
 
-Join our community of developers creating universal apps.
+## Project structure
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+src/
+  app/              # Expo Router screens
+    (tabs)/         # Tab navigator: Timeline, Library, Settings
+    reader/[id]     # Full-screen reader
+    collection/[id] # Collection detail
+    section/[type]  # Library section views (queue, favourites, archived)
+  components/
+    library/        # Library UI components
+    reader/         # Reader UI (header, TTS controls, selection bar, highlights)
+    timeline/       # Timeline entries and thought sheet
+    ui/             # Shared primitives
+  db/               # Drizzle schema and migrations
+  services/         # Sync pipeline (SAF scan → metadata → DB)
+  stores/           # Zustand stores (books, collections, reader, timeline, settings)
+  constants/        # Theme tokens
+```
+
+---
+
+## Roadmap
+
+### v1 — Books (complete)
+- [x] EPUB library sync from device folder
+- [x] Full Readium-powered reader
+- [x] Highlights with colour coding
+- [x] Bookmarks
+- [x] Text-to-Speech
+- [x] Thoughts — capture and tag freeform notes linked to books
+- [x] Collections and library organisation
+
+### v2 — AI Companion (next)
+- [ ] Chat with your own highlights and thoughts
+- [ ] Surfaces connections between ideas across books
+- [ ] Suggests related passages from your library
+- [ ] On-device first, privacy preserving
+
+### v3 — Podcasts
+- [ ] Add podcast feeds (RSS)
+- [ ] In-app player with chapter support
+- [ ] Capture timestamped highlights while listening
+- [ ] Thoughts and highlights flow into the same timeline
+
+### v4 — Blogs
+- [ ] Add articles by URL or RSS feed
+- [ ] Distraction-free reader view
+- [ ] Highlights and thoughts sync to timeline
+- [ ] Archive for offline reading
+
+---
+
+## License
+
+Private — all rights reserved.
