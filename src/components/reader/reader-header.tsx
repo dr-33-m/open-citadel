@@ -1,4 +1,4 @@
-import { Bookmark, BookmarkCheck, List } from 'lucide-react-native';
+import { AudioLines, Bookmark, BookmarkCheck, List } from 'lucide-react-native';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,18 +11,24 @@ type ReaderHeaderProps = {
   title: string;
   progress?: number;
   isBookmarked?: boolean;
+  isTTSActive?: boolean;
   onBack: () => void;
   onBookmarkToggle?: () => void;
   onContents?: () => void;
+  onTTSToggle?: () => void;
+  onToggle?: () => void;
 };
 
 export function ReaderHeader({
   title,
   progress,
   isBookmarked,
+  isTTSActive,
   onBack,
   onBookmarkToggle,
   onContents,
+  onTTSToggle,
+  onToggle,
 }: ReaderHeaderProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -54,7 +60,7 @@ export function ReaderHeader({
   }), [colors]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + spacing[2] }]}>
+    <Pressable style={[styles.container, { paddingTop: insets.top + spacing[2] }]} onPress={onToggle}>
       <Pressable onPress={onBack} style={styles.iconButton}>
         <ThemedText type="bodyMd" color={colors.primary.default}>
           ←
@@ -81,12 +87,18 @@ export function ReaderHeader({
         <Pressable onPress={onContents} style={styles.iconButton}>
           <List size={20} color={colors.text.primary} />
         </Pressable>
+        <Pressable onPress={onTTSToggle} style={styles.iconButton}>
+          <AudioLines
+            size={20}
+            color={isTTSActive ? colors.primary.default : colors.text.primary}
+          />
+        </Pressable>
         {progress !== undefined && (
           <ThemedText type="labelSm" color={colors.text.secondary}>
             {Math.round(progress * 100)}%
           </ThemedText>
         )}
       </View>
-    </View>
+    </Pressable>
   );
 }

@@ -1,9 +1,10 @@
+import { RefreshCw } from 'lucide-react-native';
 import React from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
+import { fontFamily, spacing } from '@/constants/theme';
 import type { books as booksTable } from '@/db/schema';
 
 type Book = typeof booksTable.$inferSelect;
@@ -34,16 +35,30 @@ export function BookQueue({ books, onBookPress, onBookLongPress }: BookQueueProp
       width: 130,
       height: 170,
     },
-    bookmarkContainer: {
+    coverPlaceholder: {
       flex: 1,
-      alignItems: 'flex-end',
-      paddingTop: spacing[3],
-      paddingRight: spacing[4],
+      backgroundColor: colors.surface.mid,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    bookmark: {
-      width: 16,
-      height: 24,
-      backgroundColor: colors.surface.highest,
+    initial: {
+      fontSize: 36,
+      fontFamily: fontFamily.serif,
+    },
+    coverTitle: {
+      position: 'absolute',
+      bottom: spacing[2],
+      paddingHorizontal: spacing[2],
+      textAlign: 'center',
+      fontSize: 9,
+    },
+    syncBadge: {
+      position: 'absolute',
+      top: spacing[2],
+      left: spacing[2],
+      backgroundColor: colors.surface.base,
+      borderRadius: 11,
+      padding: 3,
     },
     title: {
       marginTop: spacing[1],
@@ -67,8 +82,18 @@ export function BookQueue({ books, onBookPress, onBookLongPress }: BookQueueProp
             {book.coverUrl ? (
               <Image source={{ uri: book.coverUrl }} style={styles.coverImage} />
             ) : (
-              <View style={styles.bookmarkContainer}>
-                <View style={styles.bookmark} />
+              <View style={styles.coverPlaceholder}>
+                <ThemedText type="displayLg" color={colors.surface.highest} style={styles.initial}>
+                  {book.title.charAt(0).toUpperCase()}
+                </ThemedText>
+                <ThemedText type="labelSm" color={colors.text.secondary} style={styles.coverTitle} numberOfLines={2}>
+                  {book.title}
+                </ThemedText>
+              </View>
+            )}
+            {!book.filePath && (
+              <View style={styles.syncBadge}>
+                <RefreshCw size={14} color={colors.text.secondary} />
               </View>
             )}
           </View>

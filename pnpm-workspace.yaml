@@ -1,4 +1,2 @@
+packages: []
 nodeLinker: hoisted
-
-patchedDependencies:
-  react-native-readium: patches/react-native-readium.patch

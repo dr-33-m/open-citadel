@@ -1,38 +1,118 @@
-import { create } from 'zustand';
-import { useShallow } from 'zustand/shallow';
-import { eq } from 'drizzle-orm';
+import { eq } from "drizzle-orm";
+import { create } from "zustand";
+import { useShallow } from "zustand/shallow";
 
-import { db } from '@/db/client';
-import { books, appSettings } from '@/db/schema';
-import { syncBooksFromDirectory } from '@/services/book-sync';
+import { db } from "@/db/client";
+import { appSettings, books } from "@/db/schema";
+import {
+  getActiveSyncJob,
+  resumeRunningSyncIfAny,
+  startOrResumeSync,
+  type SyncJobView,
+  type SyncPhase,
+  type SyncStatus,
+} from "@/services/sync-coordinator";
 
 type Book = typeof books.$inferSelect;
-export type BookStatus = 'reading' | 'queued' | 'archived' | 'favorite';
+export type BookStatus = "reading" | "queued" | "archived" | "favorite";
+
+// ── Sync state shape ─────────────────────────────────────────────────────────
+
+export type SyncState = {
+  jobId: string | null;
+  status: SyncStatus | "idle";
+  phase: SyncPhase | null;
+  /** Progress counters for the current phase */
+  done: number;
+  total: number;
+  failedCount: number;
+  updatedAt: string | null;
+};
+
+const IDLE_SYNC: SyncState = {
+  jobId: null,
+  status: "idle",
+  phase: null,
+  done: 0,
+  total: 0,
+  failedCount: 0,
+  updatedAt: null,
+};
+
+function jobToSyncState(job: SyncJobView): SyncState {
+  // Pick the most meaningful done/total for the current phase
+  let done = 0;
+  let total = 0;
+  switch (job.phase) {
+    case "scanning":
+      done = job.scanDone;
+      total = job.scanTotal;
+      break;
+    case "importing":
+      done = job.importDone;
+      total = job.importTotal;
+      break;
+    case "preparing":
+      done = job.prepareDone;
+      total = job.prepareTotal;
+      break;
+    case "finalizing":
+      done = job.prepareDone;
+      total = job.prepareTotal;
+      break;
+  }
+  return {
+    jobId: job.id,
+    status: job.status,
+    phase: job.phase,
+    done,
+    total,
+    failedCount: job.failedCount,
+    updatedAt: job.updatedAt,
+  };
+}
+
+// ── Store ────────────────────────────────────────────────────────────────────
 
 interface BooksState {
   books: Book[];
   booksDirectoryUri: string | null;
   isLoading: boolean;
-  isSyncing: boolean;
+  sync: SyncState;
 
   loadBooks: () => Promise<void>;
   loadDirectoryUri: () => Promise<void>;
   setDirectoryUri: (uri: string) => Promise<void>;
+  /** Hydrate sync state from DB on app launch (restores progress banner) */
+  hydrateSyncState: () => Promise<void>;
+  /** Start a new sync or attach to an existing running one */
   syncBooks: () => Promise<void>;
-  updateBookStatus: (bookId: string, status: BookStatus | null) => Promise<void>;
+  updateBookStatus: (
+    bookId: string,
+    status: BookStatus | null,
+  ) => Promise<void>;
   clearQueue: () => Promise<void>;
   toggleFavorite: (bookId: string) => Promise<void>;
   updateBookMetadata: (
     bookId: string,
-    metadata: { title?: string; author?: string; coverUrl?: string; totalPages?: number }
+    metadata: {
+      title?: string;
+      author?: string;
+      coverUrl?: string;
+      totalPages?: number;
+    },
   ) => Promise<void>;
 }
+
+/** How often to do a full loadBooks() during the preparing phase */
+const LOAD_BOOKS_EVERY_N = 50;
+let _preparedSinceLastLoad = 0;
 
 export const useBooksStore = create<BooksState>((set, get) => ({
   books: [],
   booksDirectoryUri: null,
   isLoading: false,
-  isSyncing: false,
+  sync: IDLE_SYNC,
 
   loadBooks: async () => {
     set({ isLoading: true });
@@ -44,7 +124,7 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     const result = await db
       .select()
       .from(appSettings)
-      .where(eq(appSettings.key, 'booksDirectoryUri'));
+      .where(eq(appSettings.key, "booksDirectoryUri"));
     if (result.length > 0) {
       set({ booksDirectoryUri: result[0].value });
     }
@@ -53,7 +133,7 @@ export const useBooksStore = create<BooksState>((set, get) => ({
   setDirectoryUri: async (uri: string) => {
     await db
       .insert(appSettings)
-      .values({ key: 'booksDirectoryUri', value: uri })
+      .values({ key: "booksDirectoryUri", value: uri })
       .onConflictDoUpdate({
         target: appSettings.key,
         set: { value: uri },
@@ -62,19 +142,89 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     await get().syncBooks();
   },
 
+  /**
+   * Called at app launch to restore sync progress from DB.
+   * If a job was running when the app was killed, this restores the banner
+   * and resumes the pipeline.
+   */
+  hydrateSyncState: async () => {
+    const job = await getActiveSyncJob();
+    if (!job) {
+      set({ sync: IDLE_SYNC });
+      return;
+    }
+
+    // Restore banner immediately
+    set({ sync: jobToSyncState(job) });
+
+    // Resume pipeline in background
+    resumeRunningSyncIfAny((updatedJob) => {
+      set({ sync: jobToSyncState(updatedJob) });
+
+      // Refresh books list periodically during preparing phase
+      if (updatedJob.phase === "preparing") {
+        _preparedSinceLastLoad++;
+        if (
+          _preparedSinceLastLoad >= LOAD_BOOKS_EVERY_N ||
+          updatedJob.prepareDone === updatedJob.prepareTotal
+        ) {
+          _preparedSinceLastLoad = 0;
+          get().loadBooks();
+        }
+      }
+
+      // Final refresh when done
+      if (updatedJob.status === "completed" || updatedJob.status === "failed") {
+        get().loadBooks();
+        if (updatedJob.status === "completed") {
+          setTimeout(() => set({ sync: IDLE_SYNC }), 2000);
+        }
+      }
+    }).catch((e) => console.warn("[books-store] resume error", e));
+  },
+
   syncBooks: async () => {
     const { booksDirectoryUri } = get();
     if (!booksDirectoryUri) return;
 
-    set({ isSyncing: true });
-    await syncBooksFromDirectory(booksDirectoryUri);
-    await get().loadBooks();
-    set({ isSyncing: false });
+    // Don't start a second sync if one is already running
+    if (get().sync.status === "running") return;
+
+    _preparedSinceLastLoad = 0;
+
+    await startOrResumeSync(booksDirectoryUri, (job) => {
+      set({ sync: jobToSyncState(job) });
+
+      // After importing phase: show books immediately
+      if (job.phase === "importing" && job.importDone === job.importTotal) {
+        get().loadBooks();
+      }
+
+      // During preparing: refresh every N books
+      if (job.phase === "preparing") {
+        _preparedSinceLastLoad++;
+        if (
+          _preparedSinceLastLoad >= LOAD_BOOKS_EVERY_N ||
+          job.prepareDone === job.prepareTotal
+        ) {
+          _preparedSinceLastLoad = 0;
+          get().loadBooks();
+        }
+      }
+
+      // Final refresh
+      if (job.status === "completed" || job.status === "failed") {
+        get().loadBooks();
+        if (job.status === "completed") {
+          setTimeout(() => set({ sync: IDLE_SYNC }), 2000);
+        }
+      }
+    });
   },
 
   updateBookStatus: async (bookId: string, status: BookStatus | null) => {
     const updates: Record<string, unknown> = { status };
-    if (status === 'archived') {
+    if (status === "archived") {
       updates.completedAt = new Date().toISOString();
     }
     await db.update(books).set(updates).where(eq(books.id, bookId));
@@ -82,7 +232,10 @@ export const useBooksStore = create<BooksState>((set, get) => ({
   },
 
   clearQueue: async () => {
-    await db.update(books).set({ status: null }).where(eq(books.status, 'queued'));
+    await db
+      .update(books)
+      .set({ status: null })
+      .where(eq(books.status, "queued"));
     await get().loadBooks();
   },
 
@@ -90,7 +243,10 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     const book = get().books.find((b) => b.id === bookId);
     if (!book) return;
     const newValue = book.isFavorite === 1 ? 0 : 1;
-    await db.update(books).set({ isFavorite: newValue }).where(eq(books.id, bookId));
+    await db
+      .update(books)
+      .set({ isFavorite: newValue })
+      .where(eq(books.id, bookId));
     await get().loadBooks();
   },
 
@@ -100,14 +256,21 @@ export const useBooksStore = create<BooksState>((set, get) => ({
   },
 }));
 
-// Selectors — useShallow prevents infinite re-renders from .filter() creating new arrays
+// ── Selectors ────────────────────────────────────────────────────────────────
+
 export const useCurrentlyReading = () =>
-  useBooksStore(useShallow((s) => s.books.filter((b) => b.status === 'reading')));
+  useBooksStore(
+    useShallow((s) => s.books.filter((b) => b.status === "reading")),
+  );
 export const useQueuedBooks = () =>
-  useBooksStore(useShallow((s) => s.books.filter((b) => b.status === 'queued')));
+  useBooksStore(
+    useShallow((s) => s.books.filter((b) => b.status === "queued")),
+  );
 export const useArchivedBooks = () =>
-  useBooksStore(useShallow((s) => s.books.filter((b) => b.status === 'archived')));
+  useBooksStore(
+    useShallow((s) => s.books.filter((b) => b.status === "archived")),
+  );
 export const useFavoriteBooks = () =>
   useBooksStore(useShallow((s) => s.books.filter((b) => b.isFavorite === 1)));
-export const useAllBooks = () =>
-  useBooksStore(useShallow((s) => s.books));
+export const useAllBooks = () => useBooksStore(useShallow((s) => s.books));
+export const useSyncState = () => useBooksStore((s) => s.sync);

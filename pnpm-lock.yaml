@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  react-native-readium:
-    hash: 782cc4107ee22f9347f60e2d0a30372010a064ac772c27af7a2691f536ced9ef
-    path: patches/react-native-readium.patch
-
 importers:
 
   .:
@@ -37,6 +32,9 @@ importers:
       expo-build-properties:
         specifier: ^55.0.10
         version: 55.0.10(expo@55.0.8)
+      expo-clipboard:
+        specifier: ^55.0.9
+        version: 55.0.9(expo@55.0.8)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       expo-constants:
         specifier: ~55.0.9
         version: 55.0.9(expo@55.0.8)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(typescript@5.9.3)
@@ -67,6 +65,9 @@ importers:
       expo-router:
         specifier: ~55.0.7
         version: 55.0.7(@expo/log-box@55.0.7)(@expo/metro-runtime@55.0.6)(@types/react@19.2.14)(expo-constants@55.0.9)(expo-font@55.0.4)(expo-linking@55.0.8)(expo@55.0.8)(react-dom@19.2.0(react@19.2.0))(react-native-gesture-handler@2.30.0(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native-reanimated@4.2.1(react-native-worklets@0.7.2(@babel/core@7.29.0)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native-safe-area-context@5.6.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native-screens@4.23.0(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native-web@0.21.2(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+      expo-speech:
+        specifier: ~55.0.9
+        version: 55.0.9(expo@55.0.8)
       expo-splash-screen:
         specifier: ~55.0.12
         version: 55.0.12(expo@55.0.8)(typescript@5.9.3)
@@ -107,8 +108,8 @@ importers:
         specifier: ^0.35.2
         version: 0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       react-native-readium:
-        specifier: 5.0.0-rc.17
-        version: 5.0.0-rc.17(patch_hash=782cc4107ee22f9347f60e2d0a30372010a064ac772c27af7a2691f536ced9ef)(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+        specifier: file:react-native-readium-5.0.0-rc.17.tgz
+        version: file:react-native-readium-5.0.0-rc.17.tgz(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       react-native-reanimated:
         specifier: 4.2.1
         version: 4.2.1(react-native-worklets@0.7.2(@babel/core@7.29.0)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
@@ -2368,6 +2369,13 @@ packages:
     peerDependencies:
       expo: '*'
 
+  expo-clipboard@55.0.9:
+    resolution: {integrity: sha512-WJ9ougE8fEDu3/RV5Vz3gE5aNgnj1C0WByXCz3WUj8y/06bJyaIUDMq8FDLv3n0AO3guiErmkUunsD0EzSDUUw==}
+    peerDependencies:
+      expo: '*'
+      react: '*'
+      react-native: '*'
+
   expo-constants@55.0.9:
     resolution: {integrity: sha512-iBiXjZeuU5S/8docQeNzsVvtDy4w0zlmXBpFEi1ypwugceEpdQQab65TVRbusXAcwpNVxCPMpNlDssYp0Pli2g==}
     peerDependencies:
@@ -2510,6 +2518,11 @@ packages:
   expo-server@55.0.6:
     resolution: {integrity: sha512-xI72FTm469FfuuBL2R5aNtthgH+GR7ygOpsx/KcPS0K8AZaZd7VjtEExbzn9/qyyYkWW3T+3dAmCDKOMX8gdmQ==}
     engines: {node: '>=20.16.0'}
+
+  expo-speech@55.0.9:
+    resolution: {integrity: sha512-xDUHeMb3Zp9ICHscSzwCtmeRMCYD/zSPoQn75yjEjgQUzyIwfthUpEiUGwIo1DUC728PdRSvBegnYqv+3MQJPA==}
+    peerDependencies:
+      expo: '*'
 
   expo-splash-screen@55.0.12:
     resolution: {integrity: sha512-+QYsmW+fIF4bL6zXDeVRkxQr+i6w3UJRwDGOybT1NgN9GWxAO7J/lT9Q0IKVPyW4hDiQrdEMbVISOfpYm6QPIw==}
@@ -2909,24 +2922,28 @@ packages:
     engines: {node: '>= 12.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   lightningcss-linux-arm64-musl@1.32.0:
     resolution: {integrity: sha512-UpQkoenr4UJEzgVIYpI80lDFvRmPVg6oqboNHfoH4CQIfNA+HOrZ7Mo7KZP02dC6LjghPQJeBsvXhJod/wnIBg==}
     engines: {node: '>= 12.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   lightningcss-linux-x64-gnu@1.32.0:
     resolution: {integrity: sha512-V7Qr52IhZmdKPVr+Vtw8o+WLsQJYCTd8loIfpDaMRWGUZfBOYEJeyJIkqGIDMZPwPx24pUMfwSxxI8phr/MbOA==}
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   lightningcss-linux-x64-musl@1.32.0:
     resolution: {integrity: sha512-bYcLp+Vb0awsiXg/80uCRezCYHNg1/l3mt0gzHnWV9XP1W5sKa5/TCdGWaR/zBM2PeF/HbsQv/j2URNOiVuxWg==}
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   lightningcss-win32-arm64-msvc@1.32.0:
     resolution: {integrity: sha512-8SbC8BR40pS6baCM8sbtYDSwEVQd4JlFTOlaD3gWGHfThTcABnNDBda6eTZeqbofalIJhFx0qKzgHJmcPTnGdw==}
@@ -3418,8 +3435,9 @@ packages:
       react: '*'
       react-native: '*'
 
-  react-native-readium@5.0.0-rc.17:
-    resolution: {integrity: sha512-6C9vapDWSS87W6wTRS3VuAf7mwlQaFibWdOXOyO4sOtLlvjTanSEYB0FGP5tloEzxCt/pifYoCLYFgtAm5laUw==}
+  react-native-readium@file:react-native-readium-5.0.0-rc.17.tgz:
+    resolution: {integrity: sha512-db57U/Y8xNb0l80fewqxCtUB1qBrloRsRCi9WcE06YPsxwyB3VWTMo8SkGEX9tY+i+RPWyEzj/pqqMbSTgnFkg==, tarball: file:react-native-readium-5.0.0-rc.17.tgz}
+    version: 5.0.0-rc.17
     engines: {node: '>=20'}
     peerDependencies:
       react: '*'
@@ -3760,8 +3778,8 @@ packages:
     resolution: {integrity: sha512-cAGWPIyOHU6zlmg88jwm7VRyXnMN7iV68OGAbYDk/Mh/xC/pzVPlQtY6ngoIH/5/tciuhGfvESU8GrHrcxD56w==}
     engines: {node: '>=8'}
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/6b11dcbe19c8378b43729d0ee8b4a2e03f59aca5:
-    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/6b11dcbe19c8378b43729d0ee8b4a2e03f59aca5}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/1680aa167c97909ff3204347a7177631dd598374:
+    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/1680aa167c97909ff3204347a7177631dd598374}
     version: 1.0.0
 
   throat@5.0.0:
@@ -5738,7 +5756,7 @@ snapshots:
 
   '@readium/shared@2.1.5':
     dependencies:
-      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/6b11dcbe19c8378b43729d0ee8b4a2e03f59aca5
+      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/1680aa167c97909ff3204347a7177631dd598374
 
   '@sinclair/typebox@0.27.10': {}
 
@@ -6408,6 +6426,12 @@ snapshots:
       resolve-from: 5.0.0
       semver: 7.7.4
 
+  expo-clipboard@55.0.9(expo@55.0.8)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0):
+    dependencies:
+      expo: 55.0.8(@babel/core@7.29.0)(@expo/dom-webview@55.0.3)(@expo/metro-runtime@55.0.6)(expo-router@55.0.7)(react-dom@19.2.0(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
+      react: 19.2.0
+      react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
+
   expo-constants@55.0.9(expo@55.0.8)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(typescript@5.9.3):
     dependencies:
       '@expo/config': 55.0.10(typescript@5.9.3)
@@ -6583,6 +6607,10 @@ snapshots:
       - supports-color
 
   expo-server@55.0.6: {}
+
+  expo-speech@55.0.9(expo@55.0.8):
+    dependencies:
+      expo: 55.0.8(@babel/core@7.29.0)(@expo/dom-webview@55.0.3)(@expo/metro-runtime@55.0.6)(expo-router@55.0.7)(react-dom@19.2.0(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
 
   expo-splash-screen@55.0.12(expo@55.0.8)(typescript@5.9.3):
     dependencies:
@@ -7698,7 +7726,7 @@ snapshots:
       react: 19.2.0
       react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
 
-  react-native-readium@5.0.0-rc.17(patch_hash=782cc4107ee22f9347f60e2d0a30372010a064ac772c27af7a2691f536ced9ef)(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0):
+  react-native-readium@file:react-native-readium-5.0.0-rc.17.tgz(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0):
     dependencies:
       '@readium/css': 2.0.0
       '@readium/navigator': 2.3.1
@@ -8079,7 +8107,7 @@ snapshots:
       glob: 7.2.3
       minimatch: 3.1.5
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/6b11dcbe19c8378b43729d0ee8b4a2e03f59aca5: {}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/1680aa167c97909ff3204347a7177631dd598374: {}
 
   throat@5.0.0: {}
 

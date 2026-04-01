@@ -45,6 +45,7 @@
       "expo-document-picker",
       "./plugins/withCoreDesugaring",
       "./plugins/withCleartextTraffic",
+      ["./plugins/withGradleVersion", "8.13"],
       [
         "expo-build-properties",
         {

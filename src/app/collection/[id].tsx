@@ -210,6 +210,14 @@ export default function CollectionScreen() {
                         >
                           {book.title.charAt(0).toUpperCase()}
                         </ThemedText>
+                        <ThemedText
+                          type="labelSm"
+                          color={colors.text.secondary}
+                          style={styles.coverTitle}
+                          numberOfLines={2}
+                        >
+                          {book.title}
+                        </ThemedText>
                       </View>
                     )}
                   </View>
@@ -311,6 +319,13 @@ function useCollectionStyles(colors: ReturnType<typeof useColors>) {
           backgroundColor: colors.surface.mid,
         },
         initial: { fontSize: 28, fontFamily: fontFamily.serif },
+        coverTitle: {
+          position: "absolute",
+          bottom: spacing[2],
+          paddingHorizontal: spacing[2],
+          textAlign: "center",
+          fontSize: 9,
+        },
         bookTitle: { lineHeight: 18 },
         empty: { paddingTop: spacing[16], alignItems: "center", width: "100%" },
       }),

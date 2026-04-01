@@ -17,6 +17,13 @@ export const books = sqliteTable("books", {
   isFavorite: integer("is_favorite").notNull().default(0),
   addedAt: text("added_at").notNull(),
   completedAt: text("completed_at"),
+  format: text("format").$type<"epub">(),
+  // Sync pipeline fields
+  syncState: text("sync_state")
+    .$type<"ready" | "pending_meta" | "processing_meta" | "meta_failed">()
+    .default("ready"),
+  metaFingerprint: text("meta_fingerprint"),
+  metaError: text("meta_error"),
 });
 
 export const readingProgress = sqliteTable("reading_progress", {
@@ -95,4 +102,50 @@ export const thoughts = sqliteTable("thoughts", {
 export const appSettings = sqliteTable("app_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
+});
+
+// ── Sync pipeline tables ─────────────────────────────────────────────────────
+
+export const syncJobs = sqliteTable("sync_jobs", {
+  id: text("id").primaryKey(),
+  directoryUri: text("directory_uri").notNull(),
+  status: text("status")
+    .$type<"running" | "completed" | "failed" | "cancelled">()
+    .notNull()
+    .default("running"),
+  phase: text("phase")
+    .$type<"scanning" | "importing" | "preparing" | "finalizing">()
+    .notNull()
+    .default("scanning"),
+  scanDone: integer("scan_done").notNull().default(0),
+  scanTotal: integer("scan_total").notNull().default(0),
+  importDone: integer("import_done").notNull().default(0),
+  importTotal: integer("import_total").notNull().default(0),
+  prepareDone: integer("prepare_done").notNull().default(0),
+  prepareTotal: integer("prepare_total").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  startedAt: text("started_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  finishedAt: text("finished_at"),
+  lastError: text("last_error"),
+});
+
+export const syncItems = sqliteTable("sync_items", {
+  id: text("id").primaryKey(),
+  jobId: text("job_id")
+    .notNull()
+    .references(() => syncJobs.id),
+  bookId: text("book_id").references(() => books.id),
+  sourceUri: text("source_uri").notNull(),
+  format: text("format").$type<"epub">().notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  status: text("status")
+    .$type<"pending" | "processing" | "done" | "retry" | "failed" | "skipped">()
+    .notNull()
+    .default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  nextRetryAt: text("next_retry_at"),
+  error: text("error"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });

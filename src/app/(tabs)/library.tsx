@@ -34,6 +34,7 @@ import {
   useCurrentlyReading,
   useFavoriteBooks,
   useQueuedBooks,
+  useSyncState,
 } from "@/stores/books";
 import { useCollectionsStore } from "@/stores/collections";
 
@@ -48,14 +49,16 @@ export default function LibraryScreen() {
   const {
     booksDirectoryUri,
     isLoading,
-    isSyncing,
     loadBooks,
     loadDirectoryUri,
     setDirectoryUri,
     syncBooks,
+    hydrateSyncState,
     updateBookStatus,
     toggleFavorite,
   } = useBooksStore();
+
+  const sync = useSyncState();
 
   const [currentReadingIndex, setCurrentReadingIndex] = useState(0);
   const [actionBook, setActionBook] = useState<Book | null>(null);
@@ -94,7 +97,7 @@ export default function LibraryScreen() {
   useEffect(() => {
     loadDirectoryUri().then(() => {
       loadBooks();
-      syncBooks();
+      hydrateSyncState();
     });
   }, []);
 
@@ -115,6 +118,8 @@ export default function LibraryScreen() {
   };
 
   const openReader = (bookId: string) => {
+    const book = allBooks.find((b) => b.id === bookId);
+    if (!book?.filePath) return; // still being copied in Phase 2
     router.push(`/reader/${bookId}` as any);
   };
 
@@ -131,11 +136,25 @@ export default function LibraryScreen() {
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
       <ScreenHeader title="Open Citadel" />
 
-      {isSyncing && (
+      {sync.status === "running" && (
         <View style={styles.syncIndicator}>
           <ActivityIndicator color={colors.primary.default} size="small" />
           <ThemedText type="labelSm" color={colors.text.secondary}>
-            SYNCING BOOKS...
+            {sync.phase === "scanning"
+              ? sync.total > 0
+                ? `SCANNING ${sync.done}/${sync.total}`
+                : "SCANNING..."
+              : sync.phase === "importing"
+                ? sync.total > 0
+                  ? `IMPORTING ${sync.done}/${sync.total}`
+                  : "IMPORTING..."
+                : sync.phase === "preparing"
+                  ? sync.total > 0
+                    ? `PREPARING ${sync.done}/${sync.total}`
+                    : "PREPARING..."
+                  : sync.phase === "finalizing"
+                    ? "FINALIZING..."
+                    : "SYNCING BOOKS..."}
           </ThemedText>
         </View>
       )}
@@ -283,7 +302,7 @@ export default function LibraryScreen() {
               }}
             />
             <BookQueue
-              books={allBooks}
+              books={allBooks.slice(0, 20)}
               onBookPress={openReader}
               onBookLongPress={setActionBook}
             />

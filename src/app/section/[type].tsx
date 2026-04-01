@@ -10,6 +10,7 @@ import {
 import React, { useMemo, useState } from "react";
 import {
   Dimensions,
+  FlatList,
   Image,
   Pressable,
   ScrollView,
@@ -33,6 +34,7 @@ import {
   useCurrentlyReading,
   useFavoriteBooks,
   useQueuedBooks,
+  useSyncState,
 } from "@/stores/books";
 import { useCollectionsStore } from "@/stores/collections";
 
@@ -47,7 +49,7 @@ const SECTION_LABELS: Record<string, string> = {
   collections: "Collections",
 };
 
-const COLUMNS = 2;
+const NUM_COLUMNS = 2;
 
 export default function SectionScreen() {
   const colors = useColors();
@@ -58,8 +60,9 @@ export default function SectionScreen() {
   const [query, setQuery] = useState("");
   const [actionBook, setActionBook] = useState<Book | null>(null);
   const [showNewCollection, setShowNewCollection] = useState(false);
-  const { syncBooks, isSyncing, clearQueue, updateBookStatus, toggleFavorite } =
+  const { syncBooks, clearQueue, updateBookStatus, toggleFavorite } =
     useBooksStore();
+  const sync = useSyncState();
 
   const readingBooks = useCurrentlyReading();
   const allBooks = useAllBooks();
@@ -105,18 +108,10 @@ export default function SectionScreen() {
   const title = SECTION_LABELS[type ?? ""] ?? "Books";
 
   const openReader = (bookId: string) => {
+    const book = allBooks.find((b) => b.id === bookId);
+    if (!book?.filePath) return;
     router.push(`/reader/${bookId}` as any);
   };
-
-  // Pad rows so the last row fills evenly
-  const padded = useMemo(() => {
-    const remainder = filtered.length % COLUMNS;
-    if (remainder === 0) return filtered;
-    return [
-      ...filtered,
-      ...Array(COLUMNS - remainder).fill(null),
-    ] as (Book | null)[];
-  }, [filtered]);
 
   // ── Collections section ──────────────────────────────────────────────────
   if (type === "collections") {
@@ -187,7 +182,6 @@ export default function SectionScreen() {
               </ThemedText>
             </Pressable>
           ))}
-
         </ScrollView>
 
         <NewCollectionPrompt
@@ -223,7 +217,11 @@ export default function SectionScreen() {
           <Pressable onPress={syncBooks} style={styles.backButton} hitSlop={8}>
             <RefreshCw
               size={16}
-              color={isSyncing ? colors.primary.default : colors.text.secondary}
+              color={
+                sync.status === "running"
+                  ? colors.primary.default
+                  : colors.text.secondary
+              }
             />
           </Pressable>
         )}
@@ -253,71 +251,79 @@ export default function SectionScreen() {
       </View>
 
       {/* Grid */}
-      <ScrollView
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        numColumns={NUM_COLUMNS}
         style={styles.scroll}
-        contentContainerStyle={[
-          styles.grid,
-          { paddingBottom: insets.bottom + spacing[8] },
-        ]}
+        contentContainerStyle={{
+          paddingHorizontal: SIDE_PAD,
+          paddingBottom: insets.bottom + spacing[8],
+        }}
+        columnWrapperStyle={{ gap: ITEM_GAP, marginBottom: ITEM_GAP }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-      >
-        {filtered.length === 0 ? (
+        ListEmptyComponent={
           <View style={styles.empty}>
             <ThemedText type="bodySm" color={colors.text.secondary}>
               {query ? "No results." : "Nothing here yet."}
             </ThemedText>
           </View>
-        ) : (
-          <View style={styles.row}>
-            {padded.map((book, i) =>
-              book ? (
-                <Pressable
-                  key={book.id}
-                  style={styles.bookItem}
-                  onPress={() => openReader(book.id)}
-                  onLongPress={() => setActionBook(book)}
-                >
-                  <View style={styles.cover}>
-                    {book.coverUrl ? (
-                      <Image
-                        source={{ uri: book.coverUrl }}
-                        style={styles.coverImage}
-                      />
-                    ) : (
-                      <View style={styles.coverPlaceholder}>
-                        <ThemedText
-                          type="headlineSm"
-                          color={colors.surface.highest}
-                          style={styles.initial}
-                        >
-                          {book.title.charAt(0).toUpperCase()}
-                        </ThemedText>
-                      </View>
-                    )}
-                  </View>
+        }
+        renderItem={({ item: book }) => (
+          <Pressable
+            style={styles.bookItem}
+            onPress={() => openReader(book.id)}
+            onLongPress={() => setActionBook(book)}
+          >
+            <View style={styles.cover}>
+              {book.coverUrl ? (
+                <Image
+                  source={{ uri: book.coverUrl }}
+                  style={styles.coverImage}
+                />
+              ) : (
+                <View style={styles.coverPlaceholder}>
                   <ThemedText
-                    type="bodySm"
-                    numberOfLines={2}
-                    style={styles.bookTitle}
+                    type="headlineSm"
+                    color={colors.surface.highest}
+                    style={styles.initial}
                   >
-                    {book.title}
+                    {book.title.charAt(0).toUpperCase()}
                   </ThemedText>
                   <ThemedText
                     type="labelSm"
                     color={colors.text.secondary}
-                    numberOfLines={1}
+                    style={styles.coverTitle}
+                    numberOfLines={2}
                   >
-                    {book.author}
+                    {book.title}
                   </ThemedText>
-                </Pressable>
-              ) : (
-                <View key={`pad-${i}`} style={styles.bookItem} />
-              ),
-            )}
-          </View>
+                </View>
+              )}
+              {!book.filePath && (
+                <View style={styles.syncBadge}>
+                  <RefreshCw size={14} color={colors.text.secondary} />
+                </View>
+              )}
+            </View>
+            <ThemedText
+              type="bodySm"
+              numberOfLines={2}
+              style={styles.bookTitle}
+            >
+              {book.title}
+            </ThemedText>
+            <ThemedText
+              type="labelSm"
+              color={colors.text.secondary}
+              numberOfLines={1}
+            >
+              {book.author}
+            </ThemedText>
+          </Pressable>
         )}
-      </ScrollView>
+      />
 
       <BookActionSheet
         visible={actionBook !== null}
@@ -382,13 +388,19 @@ function useSectionStyles(colors: ReturnType<typeof useColors>) {
         },
         scroll: { flex: 1 },
         // Books grid
-        grid: { paddingHorizontal: SIDE_PAD },
-        row: { flexDirection: "row", flexWrap: "wrap", gap: ITEM_GAP },
         bookItem: { width: ITEM_WIDTH, gap: spacing[2] },
         cover: {
           aspectRatio: 2 / 3,
           backgroundColor: colors.surface.low,
           overflow: "hidden",
+        },
+        syncBadge: {
+          position: "absolute",
+          top: spacing[2],
+          left: spacing[2],
+          backgroundColor: colors.surface.base,
+          borderRadius: 11,
+          padding: 3,
         },
         coverImage: { width: "100%", height: "100%" },
         coverPlaceholder: {
@@ -398,6 +410,13 @@ function useSectionStyles(colors: ReturnType<typeof useColors>) {
           backgroundColor: colors.surface.mid,
         },
         initial: { fontSize: 28, fontFamily: fontFamily.serif },
+        coverTitle: {
+          position: "absolute",
+          bottom: spacing[2],
+          paddingHorizontal: spacing[2],
+          textAlign: "center",
+          fontSize: 9,
+        },
         bookTitle: { lineHeight: 18 },
         empty: {
           paddingTop: spacing[16],

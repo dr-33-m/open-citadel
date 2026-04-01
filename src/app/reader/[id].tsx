@@ -1,3 +1,4 @@
+import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -8,6 +9,7 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Pressable,
   StyleSheet,
@@ -20,15 +22,18 @@ import type {
   Locator,
   PublicationReadyEvent,
   ReadiumViewRef,
-  SelectionAction,
-  SelectionActionEvent,
+  SelectionEvent,
+  TTSState,
+  TTSUtteranceEvent,
 } from "react-native-readium";
 import { ReadiumView } from "react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader } from "@/components/reader/reader-header";
+import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
+import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
 import { spacing } from "@/constants/theme";
 import { useColors } from "@/hooks/use-colors";
@@ -36,13 +41,8 @@ import { useBooksStore } from "@/stores/books";
 import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
 
-const selectionActions: SelectionAction[] = [
-  { id: "highlight", label: "Highlight" },
-];
-
-const HEADER_HIDE_DELAY = 4000;
 // Height of the header content below the status bar
-const HEADER_CONTENT_HEIGHT = 52;
+const HEADER_CONTENT_HEIGHT = 10;
 
 export default function ReaderScreen() {
   const colors = useColors();
@@ -82,6 +82,7 @@ export default function ReaderScreen() {
   } = useReaderStore();
 
   const { updateBookMetadata } = useBooksStore();
+  const { ttsVoice, ttsVoiceLanguage, ttsRate } = useSettingsStore();
 
   const [menuHighlight, setMenuHighlight] = useState<{
     id: string;
@@ -99,17 +100,28 @@ export default function ReaderScreen() {
     note: string;
   } | null>(null);
 
+  // TTS
+  const [ttsState, setTtsState] = useState<TTSState | null>(null);
+  const [currentUtterance, setCurrentUtterance] =
+    useState<TTSUtteranceEvent | null>(null);
+  const isTTSActive = ttsState !== null;
+  // Tracks the last known TTS utterance locator
+  const ttsLastLocatorRef = useRef<Locator | null>(null);
+  // Locator saved when TTS was paused (for resume-or-continue banner)
+  const ttsPausedLocatorRef = useRef<Locator | null>(null);
+  // Banner shown when user navigates away from paused TTS position
+  const [ttsMismatch, setTtsMismatch] = useState(false);
+  // For detecting rate changes mid-session
+  const prevTtsRateRef = useRef(ttsRate);
+  // Always-current locator ref — lets callbacks read the latest locator without stale closure
+  const currentLocatorRef = useRef<Locator | null>(null);
+
   // ── Animated header ────────────────────────────────────────────────
   const headerAnim = useRef(new Animated.Value(1)).current;
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerShownRef = useRef(true);
 
   const hideHeader = useCallback(() => {
     headerShownRef.current = false;
-    if (hideTimerRef.current) {
-      clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = null;
-    }
     Animated.timing(headerAnim, {
       toValue: 0,
       duration: 280,
@@ -124,9 +136,7 @@ export default function ReaderScreen() {
       duration: 180,
       useNativeDriver: true,
     }).start();
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(hideHeader, HEADER_HIDE_DELAY);
-  }, [headerAnim, hideHeader]);
+  }, [headerAnim]);
 
   const toggleHeader = useCallback(() => {
     if (headerShownRef.current) {
@@ -139,9 +149,6 @@ export default function ReaderScreen() {
   // Show header on mount
   useEffect(() => {
     showHeader();
-    return () => {
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    };
   }, []);
 
   useEffect(() => {
@@ -182,7 +189,16 @@ export default function ReaderScreen() {
 
   const handleLocationChange = useCallback(
     (loc: Locator) => {
+      currentLocatorRef.current = loc;
       updateProgress(loc);
+      // Detect mismatch: TTS is paused but user navigated away (different chapter OR page)
+      if (ttsPausedLocatorRef.current) {
+        const sameLocation =
+          loc.href === ttsPausedLocatorRef.current.href &&
+          loc.locations?.position ===
+            ttsPausedLocatorRef.current.locations?.position;
+        setTtsMismatch(!sameLocation);
+      }
     },
     [updateProgress],
   );
@@ -192,26 +208,48 @@ export default function ReaderScreen() {
       setPublicationReady(true);
       setTableOfContents(event.tableOfContents);
 
-      if (currentBook && currentBook.author === "Unknown") {
-        const metadata = event.metadata;
-        updateBookMetadata(currentBook.id, {
-          title: metadata.title || currentBook.title,
-          author: metadata.author?.map((c) => c.name).join(", ") || "Unknown",
-          totalPages: event.positions?.length || undefined,
-        });
+      if (currentBook) {
+        const updates: {
+          title?: string;
+          author?: string;
+          totalPages?: number;
+          coverUrl?: string;
+        } = { totalPages: event.positions?.length || undefined };
+
+        if (currentBook.author === "Unknown") {
+          const metadata = event.metadata;
+          updates.title =
+            metadata.title && metadata.title !== "Untitled"
+              ? metadata.title
+              : currentBook.title;
+          updates.author =
+            metadata.author?.map((c) => c.name).join(", ") || "Unknown";
+        }
+
+        // Save cover extracted by Readium (first open only)
+        if (event.coverPath && !currentBook.coverUrl) {
+          updates.coverUrl = event.coverPath;
+        }
+
+        updateBookMetadata(currentBook.id, updates);
       }
     },
     [currentBook, setTableOfContents, updateBookMetadata],
   );
 
-  const handleSelectionAction = useCallback(
-    (event: SelectionActionEvent) => {
-      if (event.actionId === "highlight") {
-        addHighlight(event.selectedText, event.locator);
-      }
-    },
-    [addHighlight],
-  );
+  // Text selection
+  const [selectionEvent, setSelectionEvent] = useState<{
+    text: string;
+    locator: Locator;
+  } | null>(null);
+
+  const handleSelectionChange = useCallback((event: SelectionEvent) => {
+    if (event.selectedText && event.locator) {
+      setSelectionEvent({ text: event.selectedText, locator: event.locator });
+    } else {
+      setSelectionEvent(null);
+    }
+  }, []);
 
   const handleDecorationActivated = useCallback(
     (event: DecorationActivatedEvent) => {
@@ -269,6 +307,117 @@ export default function ReaderScreen() {
   const handleDismissReturn = useCallback(() => {
     setPreJumpLocator(null);
   }, []);
+
+  const handleTTSStateChange = useCallback((state: TTSState) => {
+    if (!state.isPlaying && !state.isPaused) {
+      setTtsState(null);
+      setCurrentUtterance(null);
+      ttsPausedLocatorRef.current = null;
+    } else {
+      setTtsState(state);
+      if (state.isPaused) {
+        // Snapshot the current utterance locator so we can resume from here
+        ttsPausedLocatorRef.current = ttsLastLocatorRef.current;
+      } else {
+        // Playing — clear the paused snapshot and any mismatch banner
+        ttsPausedLocatorRef.current = null;
+        setTtsMismatch(false);
+      }
+    }
+  }, []);
+
+  const handleTTSUtterance = useCallback((event: TTSUtteranceEvent) => {
+    setCurrentUtterance(event);
+    ttsLastLocatorRef.current = event.locator;
+    // Auto page-turn: navigate the visual reader on every utterance so it
+    // follows TTS both within a chapter (page flips) and across chapters.
+    readerRef.current?.goTo(event.locator);
+  }, []);
+
+  const handleTTSToggle = useCallback(() => {
+    if (!isTTSActive) {
+      setTtsMismatch(false);
+      readerRef.current?.ttsStart({
+        voice: ttsVoice ?? undefined,
+        language: ttsVoiceLanguage ?? undefined,
+        rate: ttsRate,
+      });
+      setTtsState({ isPlaying: true, isPaused: false, rate: ttsRate });
+    } else {
+      readerRef.current?.ttsStop();
+      setTtsState(null);
+      setCurrentUtterance(null);
+      setTtsMismatch(false);
+      ttsPausedLocatorRef.current = null;
+    }
+  }, [isTTSActive, ttsVoice, ttsVoiceLanguage, ttsRate]);
+
+  const handleTTSPlayPause = useCallback(() => {
+    if (ttsState?.isPlaying) {
+      readerRef.current?.ttsPause();
+    } else {
+      readerRef.current?.ttsResume();
+    }
+  }, [ttsState]);
+
+  const handleTTSError = useCallback((error: string) => {
+    setTtsState(null);
+    setCurrentUtterance(null);
+    Alert.alert(
+      "TTS Unavailable",
+      error || "Text-to-speech is not supported for this file.",
+    );
+  }, []);
+
+  // Resume TTS from the paused position (navigate back + resume)
+  const handleTTSResumeFromPaused = useCallback(() => {
+    if (ttsPausedLocatorRef.current) {
+      readerRef.current?.goTo(ttsPausedLocatorRef.current);
+    }
+    setTtsMismatch(false);
+    readerRef.current?.ttsResume();
+  }, []);
+
+  // Dismiss banner and restart TTS from the current visible page
+  const handleTTSContinueFromHere = useCallback(() => {
+    setTtsMismatch(false);
+    ttsPausedLocatorRef.current = null;
+    readerRef.current?.ttsStop();
+    // Capture current locator now (before any async delays lose it)
+    const targetLocator = currentLocatorRef.current;
+    setTimeout(() => {
+      // Explicitly navigate to anchor the EPUB navigator at the current page.
+      // This ensures navigator.currentLocator.value is correct when ttsStart
+      // reads it to pick the fromLocator.
+      if (targetLocator) readerRef.current?.goTo(targetLocator);
+      setTimeout(() => {
+        readerRef.current?.ttsStart({
+          voice: ttsVoice ?? undefined,
+          language: ttsVoiceLanguage ?? undefined,
+          rate: ttsRate,
+        });
+      }, 150);
+    }, 100);
+  }, [ttsVoice, ttsVoiceLanguage, ttsRate]);
+
+  // Rate sync: if the user changes rate in Settings while TTS is playing, restart
+  // so audio and highlight are always in sync at the new speed.
+  useEffect(() => {
+    const rateChanged = prevTtsRateRef.current !== ttsRate;
+    prevTtsRateRef.current = ttsRate;
+    if (rateChanged && isTTSActive) {
+      readerRef.current?.ttsStop();
+      setTtsState(null);
+      setTimeout(() => {
+        readerRef.current?.ttsStart({
+          voice: ttsVoice ?? undefined,
+          language: ttsVoiceLanguage ?? undefined,
+          rate: ttsRate,
+        });
+        setTtsState({ isPlaying: true, isPaused: false, rate: ttsRate });
+      }, 200);
+    }
+  }, [ttsRate]); // intentionally only ttsRate — isTTSActive read inline
 
   // Match bookmark by href + position + progression for accurate per-page icon.
   // Using all three fields avoids the off-by-one that occurs at page boundaries
@@ -338,8 +487,15 @@ export default function ReaderScreen() {
     [currentLocator, showHeader],
   );
 
-  const decorations: DecorationGroup[] = useMemo(
-    () => [
+  const decorations: DecorationGroup[] = useMemo(() => {
+    // Convert hex primary color to rgba so Readium renders it correctly on both platforms
+    const hex = colors.primary.default;
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const ttsTint = `rgba(${r}, ${g}, ${b}, 0.35)`;
+
+    const groups: DecorationGroup[] = [
       {
         name: "highlights",
         decorations: highlights
@@ -353,9 +509,21 @@ export default function ReaderScreen() {
             },
           })),
       },
-    ],
-    [highlights],
-  );
+    ];
+    groups.push({
+      name: "tts",
+      decorations: currentUtterance
+        ? [
+            {
+              id: "tts-current",
+              locator: currentUtterance.locator,
+              style: { type: "highlight", tint: ttsTint },
+            },
+          ]
+        : [],
+    });
+    return groups;
+  }, [highlights, currentUtterance, colors]);
 
   const initialLocation = useMemo(() => {
     if (locatorParam) {
@@ -373,7 +541,7 @@ export default function ReaderScreen() {
   // completely unaffected — swipes and text selection work normally.
   const headerZoneHeight = insets.top + HEADER_CONTENT_HEIGHT;
 
-  if (isLoading || !currentBook) {
+  if (isLoading || !currentBook || !currentBook.filePath) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={colors.primary.default} size="large" />
@@ -414,11 +582,15 @@ export default function ReaderScreen() {
             lineHeight: 1.6,
           }}
           decorations={decorations}
-          selectionActions={selectionActions}
+          selectionActions={[]}
+          suppressNativeSelectionMenu={true}
           onLocationChange={handleLocationChange}
           onPublicationReady={handlePublicationReady}
-          onSelectionAction={handleSelectionAction}
+          onSelectionChange={handleSelectionChange}
           onDecorationActivated={handleDecorationActivated}
+          onTTSStateChange={handleTTSStateChange}
+          onTTSUtterance={handleTTSUtterance}
+          onTTSError={handleTTSError}
         />
       )}
 
@@ -446,35 +618,102 @@ export default function ReaderScreen() {
           title={currentBook.title}
           progress={progress}
           isBookmarked={isBookmarked}
+          isTTSActive={isTTSActive}
           onBookmarkToggle={handleBookmarkToggle}
-          onBack={() => setLeaving(true)}
+          onBack={() => {
+            if (isTTSActive) readerRef.current?.ttsStop();
+            setLeaving(true);
+          }}
           onContents={() => {
             showHeader();
             setShowToc(true);
           }}
+          onTTSToggle={handleTTSToggle}
+          onToggle={toggleHeader}
         />
       </Animated.View>
 
-      {/* Bottom page indicator — shows/hides with header */}
-      <Animated.View
-        style={[
-          styles.bottomBar,
-          {
-            opacity: headerAnim,
-            bottom: insets.bottom + spacing[4],
-          },
-        ]}
-        pointerEvents="none"
-      >
-        <ThemedText type="labelSm" color={colors.text.secondary}>
-          {currentLocator?.locations?.position !== undefined &&
-          currentBook?.totalPages
-            ? `${currentLocator.locations.position} of ${currentBook.totalPages}`
-            : progress !== undefined
-              ? `${Math.round(progress * 100)}%`
-              : ""}
-        </ThemedText>
-      </Animated.View>
+      {/* TTS controls — float at bottom, animate in/out with header */}
+      {isTTSActive && (
+        <Animated.View
+          style={[
+            styles.bottomFloating,
+            {
+              opacity: headerAnim,
+              bottom: insets.bottom + spacing[4],
+              transform: [
+                {
+                  translateY: headerAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [60, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+          pointerEvents="box-none"
+        >
+          <TTSControls
+            isPlaying={ttsState?.isPlaying ?? false}
+            onPlayPause={handleTTSPlayPause}
+            onSkipPrevious={() => readerRef.current?.ttsSkipPrevious()}
+            onSkipNext={() => readerRef.current?.ttsSkipNext()}
+          />
+        </Animated.View>
+      )}
+
+      {/* Page indicator — floating pill, shows/hides with header when TTS is off */}
+      {!isTTSActive && !selectionEvent && (
+        <Animated.View
+          style={[
+            styles.bottomFloating,
+            {
+              opacity: headerAnim,
+              bottom: insets.bottom + spacing[4],
+              transform: [
+                {
+                  translateY: headerAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [60, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <View style={styles.progressPill}>
+            <ThemedText type="labelSm" color={colors.text.secondary}>
+              {currentLocator?.locations?.position !== undefined &&
+              currentBook?.totalPages
+                ? `${currentLocator.locations.position} of ${currentBook.totalPages}`
+                : progress !== undefined
+                  ? `${Math.round(progress * 100)}%`
+                  : ""}
+            </ThemedText>
+          </View>
+        </Animated.View>
+      )}
+
+      {/* Selection bar — appears when user selects text, positioned just below the header */}
+      {selectionEvent && (
+        <View
+          style={[styles.topFloating, { top: headerZoneHeight + spacing[2] }]}
+          pointerEvents="box-none"
+        >
+          <SelectionBar
+            selectedText={selectionEvent.text}
+            onHighlight={() => {
+              addHighlight(selectionEvent.text, selectionEvent.locator);
+              setSelectionEvent(null);
+            }}
+            onCopy={() => {
+              Clipboard.setStringAsync(selectionEvent.text);
+              setSelectionEvent(null);
+            }}
+          />
+        </View>
+      )}
 
       {/* Highlight menu */}
       {menuHighlight && (
@@ -497,8 +736,8 @@ export default function ReaderScreen() {
         />
       )}
 
-      {/* Return to progress banner */}
-      {preJumpLocator && publicationReady && (
+      {/* Return to progress banner — hidden when TTS is active to avoid conflicting banners */}
+      {preJumpLocator && publicationReady && !isTTSActive && (
         <View
           style={[styles.returnBanner, { bottom: insets.bottom + spacing[4] }]}
         >
@@ -514,6 +753,33 @@ export default function ReaderScreen() {
           >
             <ThemedText type="labelSm" color={colors.text.secondary}>
               ✕
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
+
+      {/* TTS page-mismatch banner — shown when TTS is paused and user navigates away */}
+      {ttsMismatch && isTTSActive && (
+        <View
+          style={[
+            styles.returnBanner,
+            { bottom: insets.bottom + spacing[4] + 60 },
+          ]}
+        >
+          <Pressable
+            style={styles.returnBtn}
+            onPress={handleTTSResumeFromPaused}
+          >
+            <ThemedText type="labelSm" color={colors.primary.default}>
+              ← RESUME FROM PAUSED
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            style={styles.returnBtn}
+            onPress={handleTTSContinueFromHere}
+          >
+            <ThemedText type="labelSm" color={colors.text.secondary}>
+              READ FROM HERE
             </ThemedText>
           </Pressable>
         </View>
@@ -652,13 +918,23 @@ function useReaderStyles(colors: ReturnType<typeof useColors>) {
           justifyContent: "center",
         },
         headerOverlay: { position: "absolute", top: 0, left: 0, right: 0 },
-        bottomBar: {
+        bottomFloating: {
           position: "absolute",
           left: 0,
           right: 0,
           alignItems: "center",
+        },
+        topFloating: {
+          position: "absolute",
+          left: 0,
+          right: 0,
+          alignItems: "center",
+        },
+        progressPill: {
+          backgroundColor: colors.surface.mid,
+          paddingHorizontal: spacing[3],
           paddingVertical: spacing[2],
-          backgroundColor: colors.surface.base,
+          borderRadius: 20,
         },
         returnBanner: {
           position: "absolute",
