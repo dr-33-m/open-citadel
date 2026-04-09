@@ -25,6 +25,9 @@ export default function AppTabs() {
           <TabTrigger name="library" href="/library" asChild>
             <TabButton>LIBRARY</TabButton>
           </TabTrigger>
+          <TabTrigger name="chat" href="/chat" asChild>
+            <TabButton>CHAT</TabButton>
+          </TabTrigger>
           <TabTrigger name="settings" href="/settings" asChild>
             <TabButton>SETTINGS</TabButton>
           </TabTrigger>
@@ -74,7 +77,7 @@ function CustomTabBar(props: { children: React.ReactNode }) {
       flexDirection: 'row',
       backgroundColor: colors.surface.low,
       justifyContent: 'center',
-      gap: spacing[16],
+      gap: spacing[8],
       paddingTop: spacing[4],
     },
   }), [colors]);

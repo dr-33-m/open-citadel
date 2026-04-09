@@ -11,11 +11,13 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@dr33m/react-native-readium": "next",
     "@expo-google-fonts/manrope": "^0.4.2",
     "@expo-google-fonts/newsreader": "^0.4.1",
     "@react-navigation/bottom-tabs": "^7.15.5",
     "@react-navigation/elements": "^2.9.10",
     "@react-navigation/native": "^7.1.33",
+    "@shopify/flash-list": "^2.3.1",
     "drizzle-orm": "^0.45.1",
     "expo": "~55.0.8",
     "expo-build-properties": "^55.0.10",
@@ -24,6 +26,7 @@
     "expo-dev-client": "~55.0.18",
     "expo-device": "~55.0.10",
     "expo-document-picker": "^55.0.9",
+    "expo-file-system": "^55.0.15",
     "expo-font": "~55.0.4",
     "expo-glass-effect": "~55.0.8",
     "expo-image": "~55.0.6",
@@ -38,13 +41,14 @@
     "expo-system-ui": "~55.0.10",
     "expo-web-browser": "~55.0.10",
     "jszip": "^3.10.1",
+    "llama.rn": "0.12.0-rc.6",
     "lucide-react-native": "^0.577.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.2",
     "react-native-gesture-handler": "~2.30.0",
+    "react-native-marked": "^8.0.1",
     "react-native-nitro-modules": "^0.35.2",
-    "@dr33m/react-native-readium": "next",
     "react-native-reanimated": "4.2.1",
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.23.0",
@@ -60,5 +64,10 @@
     "typescript": "~5.9.2"
   },
   "private": true,
-  "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be"
+  "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "llama.rn"
+    ]
+  }
 }

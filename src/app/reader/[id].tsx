@@ -38,8 +38,10 @@ import { ThemedText } from "@/components/themed-text";
 import { spacing } from "@/constants/theme";
 import { useColors } from "@/hooks/use-colors";
 import { useBooksStore } from "@/stores/books";
+import { useChatStore } from "@/stores/chat";
 import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
+import { extractChapterTextToLocator } from "@/services/book-context";
 
 // Height of the header content below the status bar
 const HEADER_CONTENT_HEIGHT = 10;
@@ -80,6 +82,8 @@ export default function ReaderScreen() {
     setTableOfContents,
     closeBook,
   } = useReaderStore();
+
+  const createChatSession = useChatStore((s) => s.createSession);
 
   const { updateBookMetadata } = useBooksStore();
   const { ttsVoice, ttsVoiceLanguage, ttsRate } = useSettingsStore();
@@ -266,6 +270,34 @@ export default function ReaderScreen() {
     },
     [highlights],
   );
+
+  const [chatLoading, setChatLoading] = useState(false);
+
+  const handleChatFromSelection = useCallback(async () => {
+    if (!selectionEvent || !currentBook || chatLoading) return;
+    const { text, locator } = selectionEvent;
+
+    setChatLoading(true);
+    let contextText = text;
+    if (currentBook.filePath) {
+      try {
+        contextText = await extractChapterTextToLocator(currentBook.filePath, locator);
+      } catch {
+        // fallback to selected text only
+      }
+    }
+
+    const sessionId = await createChatSession({
+      bookId: currentBook.id,
+      title: text.slice(0, 60),
+      contextText,
+      contextLocator: JSON.stringify(locator),
+    });
+
+    setChatLoading(false);
+    setSelectionEvent(null);
+    router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
+  }, [selectionEvent, currentBook, chatLoading, createChatSession, router]);
 
   const handleChapterPress = useCallback(
     (link: { href: string }) => {
@@ -711,6 +743,8 @@ export default function ReaderScreen() {
               Clipboard.setStringAsync(selectionEvent.text);
               setSelectionEvent(null);
             }}
+            onChat={handleChatFromSelection}
+            chatLoading={chatLoading}
           />
         </View>
       )}

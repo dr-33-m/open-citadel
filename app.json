@@ -43,9 +43,11 @@
       ],
       "expo-sqlite",
       "expo-document-picker",
+      "expo-file-system",
       "./plugins/withCoreDesugaring",
       "./plugins/withCleartextTraffic",
       ["./plugins/withGradleVersion", "8.13"],
+      "./plugins/withAbiFilters",
       [
         "expo-build-properties",
         {

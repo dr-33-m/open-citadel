@@ -104,6 +104,40 @@ export const appSettings = sqliteTable("app_settings", {
   value: text("value").notNull(),
 });
 
+// ── Chat / Local AI tables ────────────────────────────────────────────────────
+
+export const llamaModels = sqliteTable("llama_models", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  filename: text("filename").notNull(),
+  filePath: text("file_path"),
+  downloadUrl: text("download_url").notNull(),
+  sizeBytes: integer("size_bytes"),
+  isDownloaded: integer("is_downloaded").notNull().default(0),
+  isActive: integer("is_active").notNull().default(0),
+  downloadedAt: text("downloaded_at"),
+});
+
+export const chatSessions = sqliteTable("chat_sessions", {
+  id: text("id").primaryKey(),
+  bookId: text("book_id").references(() => books.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  contextText: text("context_text"),
+  contextLocator: text("context_locator"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const chatMessages = sqliteTable("chat_messages", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => chatSessions.id, { onDelete: "cascade" }),
+  role: text("role", { enum: ["system", "user", "assistant"] }).notNull(),
+  content: text("content").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 // ── Sync pipeline tables ─────────────────────────────────────────────────────
 
 export const syncJobs = sqliteTable("sync_jobs", {

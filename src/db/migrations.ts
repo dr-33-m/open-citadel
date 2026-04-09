@@ -70,8 +70,45 @@ async function ensureSyncPipelineSchema(): Promise<void> {
     ON \`sync_jobs\` (\`status\`, \`updated_at\`)`);
 }
 
+async function ensureChatSchema(): Promise<void> {
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`llama_models\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`name\` text NOT NULL,
+    \`filename\` text NOT NULL,
+    \`file_path\` text,
+    \`download_url\` text NOT NULL,
+    \`size_bytes\` integer,
+    \`is_downloaded\` integer NOT NULL DEFAULT 0,
+    \`is_active\` integer NOT NULL DEFAULT 0,
+    \`downloaded_at\` text
+  )`);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`chat_sessions\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`book_id\` text REFERENCES \`books\`(\`id\`) ON DELETE SET NULL,
+    \`title\` text NOT NULL,
+    \`context_text\` text,
+    \`context_locator\` text,
+    \`created_at\` text NOT NULL,
+    \`updated_at\` text NOT NULL
+  )`);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`chat_messages\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`session_id\` text NOT NULL REFERENCES \`chat_sessions\`(\`id\`) ON DELETE CASCADE,
+    \`role\` text NOT NULL,
+    \`content\` text NOT NULL,
+    \`created_at\` text NOT NULL
+  )`);
+
+  db.run(sql`CREATE INDEX IF NOT EXISTS \`chat_messages_session_idx\`
+    ON \`chat_messages\` (\`session_id\`, \`created_at\`)`);
+}
+
 export async function runMigrations() {
   await migrate(db, migrations);
   // Self-heal: ensure sync pipeline tables exist regardless of migration history
   await ensureSyncPipelineSchema();
+  // Self-heal: ensure chat / local AI tables exist
+  await ensureChatSchema();
 }

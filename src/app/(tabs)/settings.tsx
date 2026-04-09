@@ -1,8 +1,10 @@
 import * as Speech from 'expo-speech';
-import { Volume2 } from 'lucide-react-native';
-import React, { useCallback, useState } from 'react';
+import { CheckCircle, Download, Search, Trash2, Volume2, X } from 'lucide-react-native';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
   Modal,
   Pressable,
   ScrollView,
@@ -20,10 +22,13 @@ import { ScreenHeader } from '@/components/ui/screen-header';
 import { useColors } from '@/hooks/use-colors';
 import { fontFamily, spacing } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
+import { useLlamaStore, type LlamaModel } from '@/stores/llama';
 
 const TTS_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 type VoiceItem = { identifier: string; name: string; language: string; quality: string };
+type HFRepo = { id: string; downloads: number; likes: number };
+type HFFile = { rfilename: string; size?: number };
 
 export default function SettingsScreen() {
   const colors = useColors();
@@ -35,6 +40,103 @@ export default function SettingsScreen() {
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
   const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [voicesLoading, setVoicesLoading] = useState(false);
+
+  const {
+    models,
+    activeModelId,
+    isLoaded,
+    isLoading: llamaLoading,
+    loadError,
+    downloadProgress,
+    loadModels,
+    setActiveModel,
+    downloadModel,
+    cancelDownload,
+    deleteModel,
+    releaseContext,
+    addCustomModel,
+  } = useLlamaStore();
+  const [modelSheetVisible, setModelSheetVisible] = useState(false);
+  const [modelSheetView, setModelSheetView] = useState<'list' | 'hf'>('list');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [samwellMode, setSamwellMode] = useState<'offline' | 'cloud'>('offline');
+
+  // HuggingFace search state (lives inside the model picker sheet)
+  const [hfQuery, setHfQuery] = useState('');
+  const [hfResults, setHfResults] = useState<HFRepo[]>([]);
+  const [hfSearching, setHfSearching] = useState(false);
+  const [hfRepo, setHfRepo] = useState<string | null>(null);
+  const [hfFiles, setHfFiles] = useState<HFFile[]>([]);
+  const [hfLoadingFiles, setHfLoadingFiles] = useState(false);
+
+  useEffect(() => { loadModels(); }, []);
+
+  const activeModel = models.find((m) => m.id === activeModelId);
+
+  function formatBytes(bytes: number | null | undefined): string {
+    if (!bytes) return '';
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+  }
+
+  function formatDownloads(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
+    return String(n);
+  }
+
+  async function searchHF() {
+    if (!hfQuery.trim()) return;
+    setHfSearching(true);
+    setHfResults([]);
+    try {
+      const res = await fetch(
+        `https://huggingface.co/api/models?search=${encodeURIComponent(hfQuery.trim())}&filter=gguf&limit=20&sort=downloads`,
+      );
+      const data: HFRepo[] = await res.json();
+      setHfResults(data);
+    } catch { /* ignore */ } finally {
+      setHfSearching(false);
+    }
+  }
+
+  async function loadRepoFiles(repoId: string) {
+    setHfRepo(repoId);
+    setHfFiles([]);
+    setHfLoadingFiles(true);
+    try {
+      const res = await fetch(`https://huggingface.co/api/models/${repoId}`);
+      const data = await res.json();
+      const gguf: HFFile[] = (data.siblings ?? []).filter(
+        (f: { rfilename: string }) => f.rfilename.endsWith('.gguf'),
+      );
+      setHfFiles(gguf);
+    } catch { /* ignore */ } finally {
+      setHfLoadingFiles(false);
+    }
+  }
+
+  async function pickFile(file: HFFile) {
+    if (!hfRepo) return;
+    const url = `https://huggingface.co/${hfRepo}/resolve/main/${file.rfilename}`;
+    const name = file.rfilename.replace(/\.gguf$/i, '').replace(/-/g, ' ');
+    await addCustomModel(name, url);
+    resetHfState();
+    setModelSheetView('list');
+  }
+
+  function resetHfState() {
+    setHfQuery('');
+    setHfResults([]);
+    setHfRepo(null);
+    setHfFiles([]);
+  }
+
+  function closeModelSheet() {
+    setModelSheetVisible(false);
+    setModelSheetView('list');
+    resetHfState();
+  }
 
   const styles = React.useMemo(() => StyleSheet.create({
     container: { flex: 1 },
@@ -128,6 +230,108 @@ export default function SettingsScreen() {
     formatNote: {
       marginTop: spacing[2],
     },
+    // SAMWELL / MODEL
+    modelCard: {
+      backgroundColor: colors.surface.low,
+      padding: spacing[4],
+      gap: spacing[3],
+    },
+    modelCardRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    progressBarTrack: {
+      height: 4,
+      backgroundColor: colors.surface.highest,
+      borderRadius: 2,
+      overflow: 'hidden',
+    },
+    progressBarFill: {
+      height: 4,
+      backgroundColor: colors.primary.default,
+      borderRadius: 2,
+    },
+    aiActionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+      backgroundColor: colors.surface.mid,
+    },
+    modelSheetItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+      borderBottomWidth: 1,
+      borderBottomColor: colors.outline.variant,
+      gap: spacing[3],
+    },
+    modelSheetInfo: { flex: 1 },
+    // Mode cards
+    modeCards: {
+      flexDirection: 'row',
+      gap: spacing[3],
+    },
+    modeCard: {
+      flex: 1,
+      padding: spacing[4],
+      gap: spacing[1],
+      borderWidth: 1,
+      borderColor: colors.surface.highest,
+      backgroundColor: colors.surface.low,
+    },
+    modeCardActive: {
+      borderColor: colors.primary.default,
+    },
+    comingSoonBadge: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: spacing[2],
+      paddingVertical: 2,
+      backgroundColor: colors.surface.highest,
+      marginBottom: spacing[1],
+    },
+    // HF search
+    hfSearchRow: {
+      flexDirection: 'row',
+      gap: spacing[2],
+      paddingHorizontal: spacing[4],
+      paddingBottom: spacing[3],
+    },
+    hfInput: {
+      flex: 1,
+      backgroundColor: colors.surface.mid,
+      color: colors.text.primary,
+      fontFamily: fontFamily.sans,
+      fontSize: 15,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+    },
+    hfResultItem: {
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+      borderBottomWidth: 1,
+      borderBottomColor: colors.outline.variant,
+      gap: 2,
+    },
+    hfFileItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+      borderBottomWidth: 1,
+      borderBottomColor: colors.outline.variant,
+    },
+    hfBackRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      paddingHorizontal: spacing[4],
+      paddingBottom: spacing[3],
+    },
   }), [colors, insets.top]);
 
   const handleNameBlur = () => {
@@ -170,7 +374,6 @@ export default function SettingsScreen() {
     });
   }, [previewingVoice]);
 
-  // Group voices by language for SectionList
   const voiceSections = React.useMemo(() => {
     const byLang: Record<string, VoiceItem[]> = {};
     for (const v of voices) {
@@ -181,7 +384,6 @@ export default function SettingsScreen() {
     const sections = Object.entries(byLang)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([title, data]) => ({ title, data }));
-    // Prepend "System default" section
     return [{ title: 'DEFAULT', data: [{ identifier: '', name: 'System default', language: '', quality: '' }] }, ...sections];
   }, [voices]);
 
@@ -242,10 +444,169 @@ export default function SettingsScreen() {
           <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
             BOOKS
           </ThemedText>
-
           <ThemedText type="bodySm" color={colors.text.secondary} style={styles.formatNote}>
             Open Citadel is EPUB-only. EPUB is the best format for knowledge capture — it supports themes, custom fonts, and text-to-speech.
           </ThemedText>
+        </View>
+
+        <View style={styles.divider} />
+
+        {/* SAMWELL */}
+        <View style={styles.section}>
+          <View style={{ gap: spacing[1] }}>
+            <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
+              SAMWELL
+            </ThemedText>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              Your AI reading companion
+            </ThemedText>
+          </View>
+
+          {/* Mode cards */}
+          <View style={styles.modeCards}>
+            <Pressable
+              style={[styles.modeCard, samwellMode === 'offline' && styles.modeCardActive]}
+              onPress={() => setSamwellMode('offline')}
+            >
+              <ThemedText type="labelSm" color={samwellMode === 'offline' ? colors.primary.default : colors.text.primary}>
+                Offline & Private
+              </ThemedText>
+              <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                Runs on your device. No internet.
+              </ThemedText>
+            </Pressable>
+            <Pressable
+              style={[styles.modeCard, samwellMode === 'cloud' && styles.modeCardActive]}
+              onPress={() => setSamwellMode('cloud')}
+            >
+              <View style={styles.comingSoonBadge}>
+                <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 9 }}>
+                  COMING SOON
+                </ThemedText>
+              </View>
+              <ThemedText type="labelSm" color={samwellMode === 'cloud' ? colors.primary.default : colors.text.primary}>
+                Cloud
+              </ThemedText>
+              <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                Fast inference. No device limits.
+              </ThemedText>
+            </Pressable>
+          </View>
+
+          {samwellMode === 'cloud' ? (
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              Cloud support is on the way. For now, wake Samwell up with an offline model below.
+            </ThemedText>
+          ) : (
+            <>
+              {/* Active model card */}
+              <View style={styles.modelCard}>
+                <View style={styles.modelCardRow}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <ThemedText type="bodyMd">{activeModel?.name ?? 'No model selected'}</ThemedText>
+                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                      {activeModel
+                        ? activeModel.isDownloaded
+                          ? `${formatBytes(activeModel.sizeBytes)} · Downloaded`
+                          : `${formatBytes(activeModel.sizeBytes)} · Not downloaded`
+                        : 'Tap to choose a model'}
+                    </ThemedText>
+                    {isLoaded && (
+                      <ThemedText type="labelSm" color="#4caf50">
+                        Ready
+                      </ThemedText>
+                    )}
+                    {loadError && (
+                      <ThemedText type="labelSm" color="#e53935" numberOfLines={2}>
+                        {loadError}
+                      </ThemedText>
+                    )}
+                  </View>
+                  <Pressable style={styles.aiActionBtn} onPress={() => setModelSheetVisible(true)}>
+                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                      CHANGE
+                    </ThemedText>
+                  </Pressable>
+                </View>
+
+                {/* Download progress */}
+                {activeModel && downloadProgress[activeModel.id] !== undefined && (
+                  <View style={{ gap: spacing[1] }}>
+                    <View style={styles.progressBarTrack}>
+                      <View
+                        style={[
+                          styles.progressBarFill,
+                          { width: `${Math.round((downloadProgress[activeModel.id] ?? 0) * 100)}%` },
+                        ]}
+                      />
+                    </View>
+                    <View style={styles.modelCardRow}>
+                      <ThemedText type="labelSm" color={colors.text.secondary}>
+                        {Math.round((downloadProgress[activeModel.id] ?? 0) * 100)}%
+                      </ThemedText>
+                      <Pressable onPress={() => cancelDownload(activeModel.id)}>
+                        <ThemedText type="labelSm" color="#e53935">
+                          CANCEL
+                        </ThemedText>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+
+                {/* Action buttons */}
+                {activeModel && downloadProgress[activeModel.id] === undefined && (
+                  <View style={{ flexDirection: 'row', gap: spacing[2], flexWrap: 'wrap' }}>
+                    {!activeModel.isDownloaded ? (
+                      <Pressable
+                        style={styles.aiActionBtn}
+                        onPress={() => downloadModel(activeModel.id)}
+                      >
+                        <Download size={14} color={colors.primary.default} />
+                        <ThemedText type="labelSm" color={colors.primary.default}>
+                          DOWNLOAD
+                        </ThemedText>
+                      </Pressable>
+                    ) : (
+                      <>
+                        {isLoaded ? (
+                          <Pressable
+                            style={styles.aiActionBtn}
+                            onPress={releaseContext}
+                            disabled={llamaLoading}
+                          >
+                            <ThemedText type="labelSm" color={colors.text.secondary}>
+                              POWER DOWN
+                            </ThemedText>
+                          </Pressable>
+                        ) : (
+                          <Pressable
+                            style={styles.aiActionBtn}
+                            onPress={() => useLlamaStore.getState().initContext()}
+                            disabled={llamaLoading}
+                          >
+                            <CheckCircle size={14} color={colors.primary.default} />
+                            <ThemedText type="labelSm" color={colors.primary.default}>
+                              {llamaLoading ? 'WAKING UP…' : 'WAKE UP'}
+                            </ThemedText>
+                          </Pressable>
+                        )}
+                        <Pressable
+                          style={styles.aiActionBtn}
+                          onPress={() => setConfirmDeleteId(activeModel.id)}
+                        >
+                          <Trash2 size={14} color="#e53935" />
+                          <ThemedText type="labelSm" color="#e53935">
+                            DELETE
+                          </ThemedText>
+                        </Pressable>
+                      </>
+                    )}
+                  </View>
+                )}
+              </View>
+
+            </>
+          )}
         </View>
 
         <View style={styles.divider} />
@@ -256,7 +617,6 @@ export default function SettingsScreen() {
             TEXT TO SPEECH
           </ThemedText>
 
-          {/* Rate chips */}
           <ThemedText type="labelSm" color={colors.text.secondary}>READING SPEED</ThemedText>
           <View style={styles.rateRow}>
             {TTS_RATES.map((r) => {
@@ -278,7 +638,6 @@ export default function SettingsScreen() {
             })}
           </View>
 
-          {/* Voice row */}
           <Pressable style={styles.row} onPress={openVoiceModal}>
             <ThemedText type="bodyMd">Voice</ThemedText>
             <ThemedText type="bodySm" color={colors.text.secondary}>
@@ -365,6 +724,199 @@ export default function SettingsScreen() {
             />
           )}
         </View>
+      </Modal>
+
+      {/* Model picker + HuggingFace search — unified sheet */}
+      <Modal
+        visible={modelSheetVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={closeModelSheet}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' }}
+            onPress={closeModelSheet}
+          />
+          <KeyboardAvoidingView behavior="padding" style={{ backgroundColor: colors.surface.low, maxHeight: '80%' }}>
+            <Pressable onPress={() => {}} style={{ paddingBottom: insets.bottom + spacing[4] }}>
+              {/* Handle */}
+              <View style={{ width: 40, height: 2, backgroundColor: colors.surface.highest, alignSelf: 'center', marginTop: spacing[2], marginBottom: spacing[3] }} />
+
+              {/* Header */}
+              <View style={[styles.modelCardRow, { paddingHorizontal: spacing[4], paddingBottom: spacing[3] }]}>
+                {modelSheetView === 'hf' ? (
+                  hfRepo ? (
+                    <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2], flex: 1 }} onPress={() => { setHfRepo(null); setHfFiles([]); }}>
+                      <ThemedText type="labelSm" color={colors.primary.default}>← BACK</ThemedText>
+                      <ThemedText type="headlineSm" numberOfLines={1} style={{ flex: 1 }}>{hfRepo.split('/')[1] ?? hfRepo}</ThemedText>
+                    </Pressable>
+                  ) : (
+                    <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }} onPress={() => { setModelSheetView('list'); resetHfState(); }}>
+                      <ThemedText type="labelSm" color={colors.primary.default}>← BACK</ThemedText>
+                      <ThemedText type="headlineSm">Find Models</ThemedText>
+                    </Pressable>
+                  )
+                ) : (
+                  <ThemedText type="headlineSm">Choose Model</ThemedText>
+                )}
+                <Pressable onPress={closeModelSheet}>
+                  <X size={20} color={colors.text.secondary} />
+                </Pressable>
+              </View>
+
+              {modelSheetView === 'list' ? (
+                /* Model list view */
+                <>
+                  <FlatList
+                    data={models}
+                    keyExtractor={(m) => m.id}
+                    style={{ maxHeight: 320 }}
+                    renderItem={({ item: m }) => (
+                      <Pressable
+                        style={styles.modelSheetItem}
+                        onPress={() => {
+                          setActiveModel(m.id);
+                          closeModelSheet();
+                        }}
+                      >
+                        <View style={styles.modelSheetInfo}>
+                          <ThemedText type="bodyMd">{m.name}</ThemedText>
+                          <ThemedText type="labelSm" color={colors.text.secondary}>
+                            {formatBytes(m.sizeBytes)}
+                            {m.isDownloaded ? ' · Downloaded' : ''}
+                          </ThemedText>
+                        </View>
+                        {m.id === activeModelId && (
+                          <ThemedText type="bodyMd" color={colors.primary.default}>✓</ThemedText>
+                        )}
+                      </Pressable>
+                    )}
+                  />
+                  {/* Find models entry point */}
+                  <Pressable
+                    style={[styles.modelSheetItem, { borderBottomWidth: 0, gap: spacing[2] }]}
+                    onPress={() => setModelSheetView('hf')}
+                  >
+                    <Search size={14} color={colors.primary.default} />
+                    <ThemedText type="labelSm" color={colors.primary.default}>FIND MODELS ON HUGGING FACE</ThemedText>
+                  </Pressable>
+                </>
+              ) : hfRepo ? (
+                /* Phase 2: file list */
+                hfLoadingFiles ? (
+                  <View style={{ alignItems: 'center', padding: spacing[6] }}>
+                    <ActivityIndicator color={colors.primary.default} />
+                  </View>
+                ) : (
+                  <FlatList
+                    data={hfFiles}
+                    keyExtractor={(f) => f.rfilename}
+                    style={{ maxHeight: 320 }}
+                    renderItem={({ item }) => (
+                      <Pressable style={styles.hfFileItem} onPress={() => pickFile(item)}>
+                        <ThemedText type="bodyMd" style={{ flex: 1 }} numberOfLines={2}>{item.rfilename}</ThemedText>
+                        <ThemedText type="labelSm" color={colors.text.secondary}>{formatBytes(item.size)}</ThemedText>
+                      </Pressable>
+                    )}
+                    ListEmptyComponent={
+                      <View style={{ padding: spacing[4] }}>
+                        <ThemedText type="bodySm" color={colors.text.secondary}>No GGUF files found in this repo.</ThemedText>
+                      </View>
+                    }
+                  />
+                )
+              ) : (
+                /* Phase 1: HF search */
+                <>
+                  <View style={styles.hfSearchRow}>
+                    <TextInput
+                      style={styles.hfInput}
+                      placeholder="Search Hugging Face…"
+                      placeholderTextColor={colors.text.secondary}
+                      value={hfQuery}
+                      onChangeText={setHfQuery}
+                      onSubmitEditing={searchHF}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      returnKeyType="search"
+                    />
+                    <Pressable style={styles.aiActionBtn} onPress={searchHF}>
+                      <Search size={14} color={colors.primary.default} />
+                      <ThemedText type="labelSm" color={colors.primary.default}>SEARCH</ThemedText>
+                    </Pressable>
+                  </View>
+                  {hfSearching ? (
+                    <View style={{ alignItems: 'center', padding: spacing[6] }}>
+                      <ActivityIndicator color={colors.primary.default} />
+                    </View>
+                  ) : (
+                    <FlatList
+                      data={hfResults}
+                      keyExtractor={(r) => r.id}
+                      style={{ maxHeight: 280 }}
+                      renderItem={({ item }) => (
+                        <Pressable style={styles.hfResultItem} onPress={() => loadRepoFiles(item.id)}>
+                          <ThemedText type="bodyMd" numberOfLines={1}>{item.id}</ThemedText>
+                          <ThemedText type="labelSm" color={colors.text.secondary}>
+                            {formatDownloads(item.downloads)} downloads
+                          </ThemedText>
+                        </Pressable>
+                      )}
+                      ListEmptyComponent={
+                        <View style={{ padding: spacing[4] }}>
+                          <ThemedText type="bodySm" color={colors.text.secondary}>Search for GGUF models to get started.</ThemedText>
+                        </View>
+                      }
+                    />
+                  )}
+                </>
+              )}
+            </Pressable>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Confirm delete modal */}
+      <Modal
+        visible={confirmDeleteId !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setConfirmDeleteId(null)}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
+          onPress={() => setConfirmDeleteId(null)}
+        >
+          <Pressable
+            style={{
+              backgroundColor: colors.surface.low,
+              padding: spacing[5],
+              width: '80%',
+              gap: spacing[4],
+            }}
+            onPress={() => {}}
+          >
+            <ThemedText type="headlineSm">Delete model file?</ThemedText>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              The model will be removed from your device. You can re-download it later.
+            </ThemedText>
+            <View style={{ flexDirection: 'row', gap: spacing[3], justifyContent: 'flex-end' }}>
+              <Pressable style={styles.aiActionBtn} onPress={() => setConfirmDeleteId(null)}>
+                <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
+              </Pressable>
+              <Pressable
+                style={[styles.aiActionBtn, { backgroundColor: '#e53935' }]}
+                onPress={() => {
+                  if (confirmDeleteId) deleteModel(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                }}
+              >
+                <ThemedText type="labelSm" color="#fff">DELETE</ThemedText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </ThemedView>
   );
