@@ -32,9 +32,18 @@ Most reading apps stop at reading. Open Citadel treats the reader as a starting 
 - Filter by date with a calendar picker
 - Edit or delete any entry
 
+**Samwell — AI Reading Companion**
+- On-device LLM powered by llama.rn (offline & private)
+- Samwell persona injected at the system level — he knows he's a reading companion
+- Download any GGUF model from Hugging Face directly inside the app (search → repo → file → download)
+- Start a chat from any highlight in the reader — context is carried into the conversation
+- Attach a book to a chat session for passage-level context
+- Model lifecycle controls: Wake Up / Power Down, status indicator in the chat header
+
 **Settings**
 - Choose your EPUB library folder
 - Reader appearance preferences (theme, font, size, margins)
+- Samwell AI section: model picker with HuggingFace search, offline vs cloud mode
 
 ---
 
@@ -122,11 +131,13 @@ src/
 - [x] Thoughts — capture and tag freeform notes linked to books
 - [x] Collections and library organisation
 
-### v2 — AI Companion (next)
-- [ ] Chat with your own highlights and thoughts
-- [ ] Surfaces connections between ideas across books
-- [ ] Suggests related passages from your library
-- [ ] On-device first, privacy preserving
+### v2 — AI Companion (in progress)
+- [x] On-device LLM via llama.rn — offline and private
+- [x] Samwell persona — system prompt gives him identity as your reading companion
+- [x] HuggingFace model search — browse, pick a GGUF, download, all in-app
+- [x] Highlight-to-chat — start a conversation from any reader selection with full context
+- [x] Book context — attach a book to a session so Samwell can reference it
+- [ ] **Tool calling** — let Samwell query your local database to pull in your highlights, thoughts, and notes, and read relevant passages from books in your library, so his answers are grounded in your actual reading
 
 ### v3 — Podcasts
 - [ ] Add podcast feeds (RSS)
