@@ -38,10 +38,11 @@ interface ReaderState {
     text: string,
     locator: Locator,
     color?: string,
-  ) => Promise<void>;
+    chatSessionId?: string,
+  ) => Promise<string>;
   updateHighlight: (
     id: string,
-    updates: { color?: string; tags?: string },
+    updates: { color?: string; tags?: string; chatSessionId?: string },
   ) => Promise<void>;
   deleteHighlight: (id: string) => Promise<void>;
   addNote: (highlightId: string, text: string) => Promise<void>;
@@ -257,9 +258,14 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     });
   },
 
-  addHighlight: async (text: string, locator: Locator, color?: string) => {
+  addHighlight: async (
+    text: string,
+    locator: Locator,
+    color?: string,
+    chatSessionId?: string,
+  ) => {
     const { currentBook } = get();
-    if (!currentBook) return;
+    if (!currentBook) return "";
 
     const id = `hl-${Date.now()}`;
     const now = new Date().toISOString();
@@ -270,6 +276,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       text,
       locator: JSON.stringify(locator),
       color: color || "#f2ca50",
+      chatSessionId: chatSessionId ?? null,
       createdAt: now,
     });
 
@@ -279,11 +286,12 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       .where(eq(highlights.bookId, currentBook.id));
 
     set({ highlights: bookHighlights });
+    return id;
   },
 
   updateHighlight: async (
     id: string,
-    updates: { color?: string; tags?: string },
+    updates: { color?: string; tags?: string; chatSessionId?: string },
   ) => {
     const { currentBook } = get();
     if (!currentBook) return;

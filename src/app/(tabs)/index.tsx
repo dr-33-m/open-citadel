@@ -1,7 +1,8 @@
+import { eq } from 'drizzle-orm';
 import { useRouter } from 'expo-router';
-import { Calendar } from 'lucide-react-native';
+import { Calendar, MessageSquare, Pencil, Trash2 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -15,20 +16,25 @@ import { Fab } from '@/components/ui/fab';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { useColors } from '@/hooks/use-colors';
 import { spacing } from '@/constants/theme';
+import { db } from '@/db/client';
+import { highlights, thoughts } from '@/db/schema';
 import { fetchAllTags } from '@/stores/reader';
-import { formatDateLabel, useTimelineStore } from '@/stores/timeline';
+import { formatDateLabel, useTimelineStore, type TimelineItem } from '@/stores/timeline';
+import { useChatStore } from '@/stores/chat';
 
 
 export default function TimelineScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { groups, selectedDate, loadTimeline, setSelectedDate, addThought, updateThought } = useTimelineStore();
+  const { groups, selectedDate, loadTimeline, setSelectedDate, addThought, updateThought, deleteThought, deleteHighlight } = useTimelineStore();
+  const createChatSession = useChatStore((s) => s.createSession);
 
   const [showCalendar, setShowCalendar] = useState(false);
   const [showThoughtSheet, setShowThoughtSheet] = useState(false);
   const [editingThought, setEditingThought] = useState<ThoughtEditData | null>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [longPressEntry, setLongPressEntry] = useState<TimelineItem | null>(null);
 
   // Reload timeline when tab is focused
   useFocusEffect(
@@ -49,9 +55,8 @@ export default function TimelineScreen() {
     ? dateLabel
     : dateLabel.replace(', ', ',\n');
 
-  const handleEntryPress = (entry: typeof groups[0]['entries'][0]) => {
+  const handleEntryPress = (entry: TimelineItem) => {
     if (entry.type === 'thought') {
-      // Open edit sheet for thoughts
       setEditingThought({
         id: entry.id,
         text: entry.highlightText,
@@ -71,7 +76,67 @@ export default function TimelineScreen() {
     }
   };
 
+  const handleStartChat = async (entry: TimelineItem) => {
+    setLongPressEntry(null);
+    const sessionId = await createChatSession({
+      bookId: entry.bookId || undefined,
+      title: entry.highlightText.slice(0, 60),
+      contextText: entry.highlightText,
+      contextLocator: entry.highlightLocator ?? undefined,
+    });
+    // Link the chat back to the entry so it shows View Chat next time
+    if (entry.type === 'highlight') {
+      await db.update(highlights).set({ chatSessionId: sessionId }).where(eq(highlights.id, entry.id));
+    } else if (entry.type === 'thought') {
+      await db.update(thoughts).set({ chatSessionId: sessionId }).where(eq(thoughts.id, entry.id));
+    }
+    await loadTimeline();
+    router.push({ pathname: '/chat/[id]', params: { id: sessionId } } as any);
+  };
+
+  const handleViewChat = (entry: TimelineItem) => {
+    setLongPressEntry(null);
+    if (entry.chatSessionId) {
+      router.push({ pathname: '/chat/[id]', params: { id: entry.chatSessionId } } as any);
+    }
+  };
+
+  const handleDeleteEntry = async (entry: TimelineItem) => {
+    setLongPressEntry(null);
+    if (entry.type === 'thought') {
+      await deleteThought(entry.id);
+    } else if (entry.type === 'highlight') {
+      await deleteHighlight(entry.id);
+    }
+  };
+
   const hasEntries = groups.length > 0 && groups[0].entries.length > 0;
+
+  const sheetStyles = React.useMemo(() => StyleSheet.create({
+    sheet: {
+      backgroundColor: colors.surface.low,
+      paddingHorizontal: spacing[6],
+      paddingTop: spacing[4],
+      gap: spacing[1],
+    },
+    sheetHandle: {
+      width: 40,
+      height: 4,
+      backgroundColor: colors.surface.highest,
+      alignSelf: 'center' as const,
+      marginBottom: spacing[3],
+    },
+    sheetRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: spacing[4],
+      paddingVertical: spacing[4],
+    },
+    sheetSeparator: {
+      height: 1,
+      backgroundColor: colors.outline.variant,
+    },
+  }), [colors]);
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
@@ -113,6 +178,7 @@ export default function TimelineScreen() {
               entry={entry}
               isLast={index === groups[0].entries.length - 1}
               onPress={() => handleEntryPress(entry)}
+              onLongPress={() => setLongPressEntry(entry)}
             />
           ))}
       </ScrollView>
@@ -144,6 +210,83 @@ export default function TimelineScreen() {
         }}
         onClose={() => setShowCalendar(false)}
       />
+
+      {/* Entry long-press action sheet */}
+      <Modal
+        visible={longPressEntry !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLongPressEntry(null)}
+      >
+        <View style={styles.sheetContainer}>
+          <Pressable style={styles.sheetOverlay} onPress={() => setLongPressEntry(null)} />
+          <View style={[sheetStyles.sheet, { paddingBottom: insets.bottom + spacing[4] }]}>
+            <View style={sheetStyles.sheetHandle} />
+
+            {longPressEntry && (
+              <ThemedText
+                type="bodySm"
+                color={colors.text.secondary}
+                numberOfLines={2}
+                style={styles.sheetTitle}
+              >
+                {longPressEntry.highlightText}
+              </ThemedText>
+            )}
+
+            {/* Edit — only for thoughts */}
+            {longPressEntry?.type === 'thought' && (
+              <>
+                <Pressable
+                  style={sheetStyles.sheetRow}
+                  onPress={() => {
+                    setLongPressEntry(null);
+                    setEditingThought({
+                      id: longPressEntry.id,
+                      text: longPressEntry.highlightText,
+                      color: longPressEntry.colorIndicator,
+                      tags: longPressEntry.tags,
+                    });
+                    setShowThoughtSheet(true);
+                  }}
+                >
+                  <Pencil size={20} color={colors.text.primary} />
+                  <ThemedText type="bodyMd" color={colors.text.primary}>Edit</ThemedText>
+                </Pressable>
+                <View style={sheetStyles.sheetSeparator} />
+              </>
+            )}
+
+            {/* View Chat — if linked */}
+            {longPressEntry?.chatSessionId ? (
+              <>
+                <Pressable style={sheetStyles.sheetRow} onPress={() => handleViewChat(longPressEntry)}>
+                  <MessageSquare size={20} color={colors.text.primary} />
+                  <ThemedText type="bodyMd" color={colors.text.primary}>View Chat</ThemedText>
+                </Pressable>
+                <View style={sheetStyles.sheetSeparator} />
+              </>
+            ) : (
+              <>
+                <Pressable style={sheetStyles.sheetRow} onPress={() => longPressEntry && handleStartChat(longPressEntry)}>
+                  <MessageSquare size={20} color={colors.text.primary} />
+                  <ThemedText type="bodyMd" color={colors.text.primary}>Start Chat</ThemedText>
+                </Pressable>
+                <View style={sheetStyles.sheetSeparator} />
+              </>
+            )}
+
+            {/* Delete */}
+            <Pressable
+              style={sheetStyles.sheetRow}
+              onPress={() => longPressEntry && handleDeleteEntry(longPressEntry)}
+            >
+              <Trash2 size={20} color={colors.text.secondary} />
+              <ThemedText type="bodyMd" color={colors.text.secondary}>Delete</ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -170,5 +313,16 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     textAlign: 'center',
+  },
+  sheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheetOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  sheetTitle: {
+    marginBottom: spacing[3],
   },
 });

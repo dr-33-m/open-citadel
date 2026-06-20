@@ -126,11 +126,18 @@ export default function ChatSessionScreen() {
       flex: 1,
       gap: 2,
     },
+    headerSubRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing[2],
+      flexWrap: "nowrap",
+    },
     bookChip: {
       alignSelf: "flex-start",
       paddingHorizontal: spacing[2],
       paddingVertical: 2,
       backgroundColor: colors.surface.mid,
+      maxWidth: "55%",
     },
     backBtn: {
       padding: spacing[1],
@@ -265,19 +272,34 @@ export default function ChatSessionScreen() {
           <ThemedText type="bodyMd" numberOfLines={1}>
             {activeSession?.title ?? "…"}
           </ThemedText>
-          <ModelStatusBar onPress={initContext} />
-        </View>
-        {activeSession?.bookTitle && (
-          <View style={styles.bookChip}>
-            <ThemedText
-              type="labelSm"
-              color={colors.primary.default}
-              numberOfLines={1}
-            >
-              {activeSession.bookTitle}
-            </ThemedText>
+          <View style={styles.headerSubRow}>
+            <ModelStatusBar onPress={initContext} />
+            {activeSession?.bookTitle && (
+              <Pressable
+                style={styles.bookChip}
+                onPress={() => {
+                  if (activeSession.bookId && activeSession.contextLocator) {
+                    router.push({
+                      pathname: '/reader/[id]' as any,
+                      params: {
+                        id: activeSession.bookId,
+                        locator: activeSession.contextLocator,
+                      },
+                    });
+                  }
+                }}
+              >
+                <ThemedText
+                  type="labelSm"
+                  color={colors.primary.default}
+                  numberOfLines={1}
+                >
+                  {activeSession.bookTitle}
+                </ThemedText>
+              </Pressable>
+            )}
           </View>
-        )}
+        </View>
       </View>
 
       {/* Banner area */}
@@ -302,10 +324,10 @@ export default function ChatSessionScreen() {
           style={styles.textInput}
           placeholder={
             !modelDownloaded
-              ? "Download a model in Settings…"
+              ? "Set up Samwell in Settings…"
               : !modelReady
-                ? "Load the model to chat…"
-                : "Message…"
+                ? "Wake up Samwell…"
+                : "Message Samwell…"
           }
           placeholderTextColor={colors.text.secondary}
           value={inputText}

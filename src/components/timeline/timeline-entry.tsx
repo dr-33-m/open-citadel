@@ -11,9 +11,10 @@ type TimelineEntryProps = {
   entry: TimelineItem;
   isLast?: boolean;
   onPress?: () => void;
+  onLongPress?: () => void;
 };
 
-export function TimelineEntry({ entry, isLast, onPress }: TimelineEntryProps) {
+export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineEntryProps) {
   const colors = useColors();
   const [noteIndex, setNoteIndex] = useState(0);
   const { noteTexts } = entry;
@@ -134,7 +135,7 @@ export function TimelineEntry({ entry, isLast, onPress }: TimelineEntryProps) {
       </View>
 
       {/* Quote card */}
-      <Pressable onPress={onPress}>
+      <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={400}>
         <View style={styles.quoteCard}>
           <ThemedText
             type="bodyLg"

@@ -1,4 +1,4 @@
-import { Check, Pencil, StickyNote, Trash2, X } from "lucide-react-native";
+import { Check, MessageSquare, Pencil, StickyNote, Trash2, X } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -37,6 +37,7 @@ type HighlightMenuProps = {
   highlightText: string;
   currentColor: string;
   currentTags: string[];
+  chatSessionId?: string | null;
   allTags: string[];
   existingNotes: NoteItem[];
   onAddNote: (highlightId: string, text: string) => void;
@@ -47,6 +48,7 @@ type HighlightMenuProps = {
     id: string,
     updates: { color?: string; tags?: string },
   ) => void;
+  onStartChat?: () => void;
   onClose: () => void;
 };
 
@@ -56,6 +58,7 @@ export function HighlightMenu({
   highlightText,
   currentColor,
   currentTags,
+  chatSessionId,
   allTags,
   existingNotes,
   onAddNote,
@@ -63,6 +66,7 @@ export function HighlightMenu({
   onDeleteNote,
   onDelete,
   onUpdateHighlight,
+  onStartChat,
   onClose,
 }: HighlightMenuProps) {
   const colors = useColors();
@@ -147,6 +151,13 @@ export function HighlightMenu({
         },
         actions: { gap: spacing[3] },
         secondaryButton: { alignItems: "center", paddingVertical: spacing[3] },
+        chatBtn: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: spacing[2],
+          paddingVertical: spacing[3],
+        },
         suggestionsScroll: { marginTop: spacing[1] },
         suggestionsContent: { gap: spacing[2] },
         suggestionChip: {
@@ -475,6 +486,14 @@ export function HighlightMenu({
                 label={editingNote ? "UPDATE NOTE" : "ADD NOTE"}
                 onPress={handleSave}
               />
+              {onStartChat && (
+                <Pressable style={styles.chatBtn} onPress={onStartChat}>
+                  <MessageSquare size={16} color={colors.text.secondary} />
+                  <ThemedText type="labelSm" color={colors.text.secondary}>
+                    {chatSessionId ? "VIEW CHAT" : "START CHAT"}
+                  </ThemedText>
+                </Pressable>
+              )}
               {editingNote ? (
                 <Pressable
                   onPress={handleCancelEdit}

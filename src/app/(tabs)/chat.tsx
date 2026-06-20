@@ -106,12 +106,12 @@ export default function ChatTab() {
       return (
         <View style={styles.emptyContainer}>
           <Bot size={48} color={colors.text.secondary} style={styles.emptyIcon} />
-          <ThemedText type="headlineSm" color={colors.text.secondary}>No AI model yet</ThemedText>
+          <ThemedText type="headlineSm" color={colors.text.secondary}>Meet Samwell</ThemedText>
           <ThemedText type="bodySm" color={colors.text.secondary} style={{ textAlign: 'center' }}>
-            Download a model in Settings to start chatting about your books.
+            Set up Samwell in Settings to start discussing your books.
           </ThemedText>
           <Pressable style={styles.settingsLink} onPress={() => router.push({ pathname: '/settings' })}>
-            <ThemedText type="labelMd" color={colors.primary.default}>GO TO SETTINGS</ThemedText>
+            <ThemedText type="labelMd" color={colors.primary.default}>SET UP SAMWELL</ThemedText>
           </Pressable>
         </View>
       );
@@ -119,9 +119,9 @@ export default function ChatTab() {
     return (
       <View style={styles.emptyContainer}>
         <MessageSquarePlus size={48} color={colors.text.secondary} style={styles.emptyIcon} />
-        <ThemedText type="headlineSm" color={colors.text.secondary}>No chats yet</ThemedText>
+        <ThemedText type="headlineSm" color={colors.text.secondary}>Start a conversation</ThemedText>
         <ThemedText type="bodySm" color={colors.text.secondary} style={{ textAlign: 'center' }}>
-          Start a new chat or tap a highlight in the reader to discuss a passage.
+          Highlight a passage in any book and tap Chat to begin.
         </ThemedText>
       </View>
     );

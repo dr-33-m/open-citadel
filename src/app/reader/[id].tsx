@@ -93,6 +93,8 @@ export default function ReaderScreen() {
     text: string;
     color: string;
     tags: string[];
+    chatSessionId: string | null;
+    locator: Locator | null;
   } | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [showToc, setShowToc] = useState(false);
@@ -106,11 +108,14 @@ export default function ReaderScreen() {
 
   // TTS
   const [ttsState, setTtsState] = useState<TTSState | null>(null);
-  const [currentUtterance, setCurrentUtterance] =
-    useState<TTSUtteranceEvent | null>(null);
   const isTTSActive = ttsState !== null;
   // Tracks the last known TTS utterance locator
   const ttsLastLocatorRef = useRef<Locator | null>(null);
+  // Tracks the last utterance TEXT seen during TTS. iOS fires many word-level
+  // events per sentence (same text, different locator); Android fires one per
+  // utterance. Deduping by text coalesces iOS to sentence granularity and is a
+  // no-op on Android.
+  const ttsLastUtteranceRef = useRef<string | null>(null);
   // Locator saved when TTS was paused (for resume-or-continue banner)
   const ttsPausedLocatorRef = useRef<Locator | null>(null);
   // Banner shown when user navigates away from paused TTS position
@@ -265,6 +270,8 @@ export default function ReaderScreen() {
           text: highlightData.text,
           color: highlightData.color || "#f2ca50",
           tags: highlightData.tags ? JSON.parse(highlightData.tags) : [],
+          chatSessionId: highlightData.chatSessionId ?? null,
+          locator: highlightData.locator ? JSON.parse(highlightData.locator) as Locator : null,
         });
       }
     },
@@ -287,17 +294,56 @@ export default function ReaderScreen() {
       }
     }
 
+    // Create a highlight and a chat session, then link them
+    const highlightId = await addHighlight(text, locator);
     const sessionId = await createChatSession({
       bookId: currentBook.id,
       title: text.slice(0, 60),
       contextText,
       contextLocator: JSON.stringify(locator),
     });
+    // Link the highlight to the chat session
+    await updateHighlight(highlightId, { chatSessionId: sessionId });
 
     setChatLoading(false);
     setSelectionEvent(null);
     router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
-  }, [selectionEvent, currentBook, chatLoading, createChatSession, router]);
+  }, [selectionEvent, currentBook, chatLoading, addHighlight, updateHighlight, createChatSession, router]);
+
+  const handleChatFromHighlight = useCallback(async (
+    highlightId: string,
+    text: string,
+    locator: Locator | null,
+    existingChatSessionId?: string | null,
+  ) => {
+    // Navigate to existing chat session if one is already linked
+    if (existingChatSessionId) {
+      setMenuHighlight(null);
+      router.push({ pathname: '/chat/[id]', params: { id: existingChatSessionId } });
+      return;
+    }
+
+    if (!currentBook || chatLoading) return;
+    setChatLoading(true);
+    let contextText = text;
+    if (currentBook.filePath && locator) {
+      try {
+        contextText = await extractChapterTextToLocator(currentBook.filePath, locator);
+      } catch {
+        // fallback to selected text only
+      }
+    }
+    const sessionId = await createChatSession({
+      bookId: currentBook.id,
+      title: text.slice(0, 60),
+      contextText,
+      contextLocator: locator ? JSON.stringify(locator) : undefined,
+    });
+    await updateHighlight(highlightId, { chatSessionId: sessionId });
+    setChatLoading(false);
+    setMenuHighlight(null);
+    router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
+  }, [currentBook, chatLoading, createChatSession, updateHighlight, router]);
 
   const handleChapterPress = useCallback(
     (link: { href: string }) => {
@@ -343,8 +389,8 @@ export default function ReaderScreen() {
   const handleTTSStateChange = useCallback((state: TTSState) => {
     if (!state.isPlaying && !state.isPaused) {
       setTtsState(null);
-      setCurrentUtterance(null);
       ttsPausedLocatorRef.current = null;
+      ttsLastUtteranceRef.current = null;
     } else {
       setTtsState(state);
       if (state.isPaused) {
@@ -359,11 +405,20 @@ export default function ReaderScreen() {
   }, []);
 
   const handleTTSUtterance = useCallback((event: TTSUtteranceEvent) => {
-    setCurrentUtterance(event);
+    // Dedup: iOS fires many word-level events per sentence (same text, different
+    // locator); Android fires one per utterance. Deduping reduces bridge traffic
+    // on iOS and is a no-op on Android.
+    if (event.utterance === ttsLastUtteranceRef.current) return;
+    ttsLastUtteranceRef.current = event.utterance;
     ttsLastLocatorRef.current = event.locator;
-    // Auto page-turn: navigate the visual reader on every utterance so it
-    // follows TTS both within a chapter (page flips) and across chapters.
-    readerRef.current?.goTo(event.locator);
+
+    // Page-turn: only call goTo when the utterance crosses a virtual page boundary.
+    // Calling goTo on every utterance causes webview reflows that compete with audio.
+    const newPosition = event.locator.locations?.position;
+    const currentPosition = currentLocatorRef.current?.locations?.position;
+    if (newPosition === undefined || newPosition !== currentPosition) {
+      readerRef.current?.goTo(event.locator);
+    }
   }, []);
 
   const handleTTSToggle = useCallback(() => {
@@ -378,9 +433,9 @@ export default function ReaderScreen() {
     } else {
       readerRef.current?.ttsStop();
       setTtsState(null);
-      setCurrentUtterance(null);
       setTtsMismatch(false);
       ttsPausedLocatorRef.current = null;
+      ttsLastUtteranceRef.current = null;
     }
   }, [isTTSActive, ttsVoice, ttsVoiceLanguage, ttsRate]);
 
@@ -394,7 +449,6 @@ export default function ReaderScreen() {
 
   const handleTTSError = useCallback((error: string) => {
     setTtsState(null);
-    setCurrentUtterance(null);
     Alert.alert(
       "TTS Unavailable",
       error || "Text-to-speech is not supported for this file.",
@@ -519,43 +573,23 @@ export default function ReaderScreen() {
     [currentLocator, showHeader],
   );
 
-  const decorations: DecorationGroup[] = useMemo(() => {
-    // Convert hex primary color to rgba so Readium renders it correctly on both platforms
-    const hex = colors.primary.default;
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    const ttsTint = `rgba(${r}, ${g}, ${b}, 0.35)`;
-
-    const groups: DecorationGroup[] = [
-      {
-        name: "highlights",
-        decorations: highlights
-          .filter((h) => h.locator)
-          .map((h) => ({
-            id: h.id,
-            locator: JSON.parse(h.locator!) as Locator,
-            style: {
-              type: "highlight",
-              tint: h.color || colors.primary.default,
-            },
-          })),
-      },
-    ];
-    groups.push({
-      name: "tts",
-      decorations: currentUtterance
-        ? [
-            {
-              id: "tts-current",
-              locator: currentUtterance.locator,
-              style: { type: "highlight", tint: ttsTint },
-            },
-          ]
-        : [],
-    });
-    return groups;
-  }, [highlights, currentUtterance, colors]);
+  // TTS decoration is now applied natively (BaseReaderFragment / HybridReadiumView),
+  // so this prop only needs to manage user highlights.
+  const decorations: DecorationGroup[] = useMemo(() => [
+    {
+      name: "highlights",
+      decorations: highlights
+        .filter((h) => h.locator)
+        .map((h) => ({
+          id: h.id,
+          locator: JSON.parse(h.locator!) as Locator,
+          style: {
+            type: "highlight",
+            tint: h.color || colors.primary.default,
+          },
+        })),
+    },
+  ], [highlights, colors]);
 
   const initialLocation = useMemo(() => {
     if (locatorParam) {
@@ -757,6 +791,7 @@ export default function ReaderScreen() {
           highlightText={menuHighlight.text}
           currentColor={menuHighlight.color}
           currentTags={menuHighlight.tags}
+          chatSessionId={menuHighlight.chatSessionId}
           allTags={allTags}
           existingNotes={highlightNotes[menuHighlight.id] ?? []}
           onAddNote={addNote}
@@ -766,6 +801,14 @@ export default function ReaderScreen() {
           onDeleteNote={(noteId) => deleteNote(noteId, menuHighlight.id)}
           onDelete={deleteHighlight}
           onUpdateHighlight={updateHighlight}
+          onStartChat={() =>
+            handleChatFromHighlight(
+              menuHighlight.id,
+              menuHighlight.text,
+              menuHighlight.locator,
+              menuHighlight.chatSessionId,
+            )
+          }
           onClose={() => setMenuHighlight(null)}
         />
       )}

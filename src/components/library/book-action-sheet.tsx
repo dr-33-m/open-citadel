@@ -1,4 +1,4 @@
-import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, Star, StarOff } from 'lucide-react-native';
+import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, RotateCcw, Star, StarOff } from 'lucide-react-native';
 import React from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
@@ -98,6 +98,11 @@ export function BookActionSheet({
     onClose();
   };
 
+  const handleUnfinish = () => {
+    onSetStatus(book.id, null);
+    onClose();
+  };
+
   return (
     <Modal
       visible={visible}
@@ -189,6 +194,19 @@ export function BookActionSheet({
                 <CheckCircle size={20} color={colors.primary.default} />
                 <ThemedText type="bodyMd" color={colors.primary.default}>
                   Mark as Finished
+                </ThemedText>
+              </Pressable>
+            </>
+          )}
+
+          {/* Mark as Unfinished — only if already archived */}
+          {isArchived && (
+            <>
+              <View style={styles.separator} />
+              <Pressable style={styles.row} onPress={handleUnfinish}>
+                <RotateCcw size={20} color={colors.text.secondary} />
+                <ThemedText type="bodyMd" color={colors.text.secondary}>
+                  Mark as Unfinished
                 </ThemedText>
               </Pressable>
             </>

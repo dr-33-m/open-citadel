@@ -10,7 +10,7 @@ importers:
     dependencies:
       '@dr33m/react-native-readium':
         specifier: next
-        version: 5.0.0-rc.18(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+        version: 5.0.0-rc.29(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       '@expo-google-fonts/manrope':
         specifier: ^0.4.2
         version: 0.4.2
@@ -685,8 +685,8 @@ packages:
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
 
-  '@dr33m/react-native-readium@5.0.0-rc.18':
-    resolution: {integrity: sha512-SklKY4InBnAWBmXVvdXmL+2buW2Ogue33VrGpPKcHfUCvHoSbaT+sC/UDD7nZRL3HrBD60PCV/pdQn61brJecQ==}
+  '@dr33m/react-native-readium@5.0.0-rc.29':
+    resolution: {integrity: sha512-S+uALlfRypXnx04cOBhtZA8eY8PSsw2+vMdUM0BdDxOgVfVm3IJylEZEivSz+zuZBfJuNJZC2Z4jhFLPZ6TtiA==}
     engines: {node: '>=20'}
     peerDependencies:
       react: '*'
@@ -4754,7 +4754,7 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@dr33m/react-native-readium@5.0.0-rc.18(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
+  '@dr33m/react-native-readium@5.0.0-rc.29(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
     dependencies:
       '@readium/css': 2.0.0
       '@readium/navigator': 2.3.1

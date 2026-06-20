@@ -103,6 +103,24 @@ async function ensureChatSchema(): Promise<void> {
 
   db.run(sql`CREATE INDEX IF NOT EXISTS \`chat_messages_session_idx\`
     ON \`chat_messages\` (\`session_id\`, \`created_at\`)`);
+
+  // Add chat_session_id to highlights if missing
+  const highlightsInfo: { name: string }[] = db.all(
+    sql`PRAGMA table_info(highlights)`,
+  ) as { name: string }[];
+  const highlightCols = new Set(highlightsInfo.map((r) => r.name));
+  if (!highlightCols.has("chat_session_id")) {
+    db.run(sql`ALTER TABLE \`highlights\` ADD \`chat_session_id\` text`);
+  }
+
+  // Add chat_session_id to thoughts if missing
+  const thoughtsInfo: { name: string }[] = db.all(
+    sql`PRAGMA table_info(thoughts)`,
+  ) as { name: string }[];
+  const thoughtCols = new Set(thoughtsInfo.map((r) => r.name));
+  if (!thoughtCols.has("chat_session_id")) {
+    db.run(sql`ALTER TABLE \`thoughts\` ADD \`chat_session_id\` text`);
+  }
 }
 
 export async function runMigrations() {

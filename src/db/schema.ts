@@ -48,6 +48,7 @@ export const highlights = sqliteTable("highlights", {
   chapter: text("chapter"),
   color: text("color").default("#f2ca50"),
   tags: text("tags"),
+  chatSessionId: text("chat_session_id"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -95,6 +96,7 @@ export const thoughts = sqliteTable("thoughts", {
   text: text("text").notNull(),
   color: text("color").default("#f2ca50"),
   tags: text("tags"),
+  chatSessionId: text("chat_session_id"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at"),
 });

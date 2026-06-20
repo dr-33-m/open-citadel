@@ -12,6 +12,7 @@ export type TimelineItem = {
   bookTitle: string;
   highlightText: string;
   highlightLocator: string | null;
+  chatSessionId: string | null;
   noteTexts: string[];
   tags: string[];
   timestamp: string;
@@ -40,6 +41,8 @@ interface TimelineState {
     color: string,
     tags: string[],
   ) => Promise<void>;
+  deleteThought: (id: string) => Promise<void>;
+  deleteHighlight: (id: string) => Promise<void>;
 }
 
 export function formatDateLabel(dateStr: string): string {
@@ -100,6 +103,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         highlightColor: highlights.color,
         highlightTags: highlights.tags,
         highlightCreatedAt: highlights.createdAt,
+        chatSessionId: highlights.chatSessionId,
         bookId: books.id,
         bookTitle: books.title,
         noteId: notes.id,
@@ -123,6 +127,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         highlightColor: string;
         highlightTags: string | null;
         highlightCreatedAt: string;
+        chatSessionId: string | null;
         noteTexts: string[];
       }
     >();
@@ -138,6 +143,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
           highlightColor: row.highlightColor || "#f2ca50",
           highlightTags: row.highlightTags,
           highlightCreatedAt: row.highlightCreatedAt,
+          chatSessionId: row.chatSessionId ?? null,
           noteTexts: [],
         });
       }
@@ -156,6 +162,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookTitle: h.bookTitle,
         highlightText: h.highlightText,
         highlightLocator: h.highlightLocator,
+        chatSessionId: h.chatSessionId,
         noteTexts: h.noteTexts,
         tags: h.highlightTags ? JSON.parse(h.highlightTags) : [],
         timestamp: formatTime(h.highlightCreatedAt),
@@ -184,6 +191,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookTitle: thoughtLabel,
         highlightText: t.text,
         highlightLocator: null,
+        chatSessionId: t.chatSessionId ?? null,
         noteTexts: [],
         tags: t.tags ? JSON.parse(t.tags) : [],
         timestamp: formatTime(hasBeenEdited ? t.updatedAt! : t.createdAt),
@@ -249,6 +257,17 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       })
       .where(eq(thoughts.id, id));
 
+    await get().loadTimeline();
+  },
+
+  deleteThought: async (id: string) => {
+    await db.delete(thoughts).where(eq(thoughts.id, id));
+    await get().loadTimeline();
+  },
+
+  deleteHighlight: async (id: string) => {
+    await db.delete(notes).where(eq(notes.highlightId, id));
+    await db.delete(highlights).where(eq(highlights.id, id));
     await get().loadTimeline();
   },
 }));

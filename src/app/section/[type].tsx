@@ -21,6 +21,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BookActionSheet } from "@/components/library/book-action-sheet";
+import { CollectionPickerSheet } from "@/components/library/collection-picker-sheet";
 import { NewCollectionPrompt } from "@/components/library/new-collection-prompt";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -60,6 +61,8 @@ export default function SectionScreen() {
   const [query, setQuery] = useState("");
   const [actionBook, setActionBook] = useState<Book | null>(null);
   const [showNewCollection, setShowNewCollection] = useState(false);
+  const [collectionPickerBook, setCollectionPickerBook] = useState<string | null>(null);
+  const [bookCollectionIds, setBookCollectionIds] = useState<string[]>([]);
   const { syncBooks, clearQueue, updateBookStatus, toggleFavorite } =
     useBooksStore();
   const sync = useSyncState();
@@ -332,6 +335,35 @@ export default function SectionScreen() {
         onOpen={openReader}
         onToggleFavorite={toggleFavorite}
         onSetStatus={updateBookStatus}
+        onAddToCollection={async (bookId) => {
+          const ids = await useCollectionsStore
+            .getState()
+            .getBookCollectionIds(bookId);
+          setBookCollectionIds(ids);
+          setCollectionPickerBook(bookId);
+        }}
+      />
+
+      <CollectionPickerSheet
+        visible={collectionPickerBook !== null}
+        collections={collections}
+        bookCollectionIds={bookCollectionIds}
+        onToggle={async (collectionId, isAdded) => {
+          if (isAdded) {
+            await useCollectionsStore
+              .getState()
+              .removeBookFromCollection(collectionPickerBook!, collectionId);
+          } else {
+            await useCollectionsStore
+              .getState()
+              .addBookToCollection(collectionPickerBook!, collectionId);
+          }
+          const ids = await useCollectionsStore
+            .getState()
+            .getBookCollectionIds(collectionPickerBook!);
+          setBookCollectionIds(ids);
+        }}
+        onClose={() => setCollectionPickerBook(null)}
       />
     </ThemedView>
   );
