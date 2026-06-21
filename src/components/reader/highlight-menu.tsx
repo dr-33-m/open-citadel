@@ -1,4 +1,4 @@
-import { Check, MessageSquare, Pencil, StickyNote, Trash2, X } from "lucide-react-native";
+import { Check, MessageSquare, Pencil, Share, StickyNote, Trash2, X } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -9,6 +9,10 @@ import {
   TextInput,
   View,
 } from "react-native";
+
+import { ExportImageCard } from "@/components/export/export-image-card";
+import { NotePickerModal } from "@/components/export/note-picker-modal";
+import { captureAndShare } from "@/utils/export-image";
 
 import { Touchable } from "@/components/ui/touchable";
 
@@ -41,6 +45,9 @@ type HighlightMenuProps = {
   chatSessionId?: string | null;
   allTags: string[];
   existingNotes: NoteItem[];
+  bookTitle: string;
+  authorName: string;
+  bookCoverUri: string | null;
   onAddNote: (highlightId: string, text: string) => void;
   onUpdateNote: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
@@ -62,6 +69,9 @@ export function HighlightMenu({
   chatSessionId,
   allTags,
   existingNotes,
+  bookTitle,
+  authorName,
+  bookCoverUri,
   onAddNote,
   onUpdateNote,
   onDeleteNote,
@@ -151,13 +161,15 @@ export function HighlightMenu({
           textAlignVertical: "top",
         },
         actions: { gap: spacing[3] },
-        secondaryButton: { alignItems: "center", paddingVertical: spacing[3] },
-        chatBtn: {
+        actionsRow: {
           flexDirection: "row",
+          justifyContent: "space-evenly",
+        },
+        actionItem: {
           alignItems: "center",
-          justifyContent: "center",
-          gap: spacing[2],
-          paddingVertical: spacing[3],
+          gap: spacing[1],
+          paddingVertical: spacing[2],
+          flex: 1,
         },
         suggestionsScroll: { marginTop: spacing[1] },
         suggestionsContent: { gap: spacing[2] },
@@ -184,6 +196,12 @@ export function HighlightMenu({
   const [tags, setTags] = useState<string[]>(currentTags);
   const [selectedColor, setSelectedColor] = useState(currentColor);
   const inputRef = useRef<TextInput>(null);
+
+  // Export state
+  const exportViewRef = useRef<View>(null);
+  const [showExport, setShowExport] = useState(false);
+  const [exportNoteText, setExportNoteText] = useState<string | null>(null);
+  const [showNotePicker, setShowNotePicker] = useState(false);
 
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", () =>
@@ -281,6 +299,24 @@ export function HighlightMenu({
     onDelete(highlightId);
     onClose();
   };
+
+  const handleExport = () => {
+    if (existingNotes.length > 1) {
+      setShowNotePicker(true);
+    } else {
+      setExportNoteText(existingNotes.length === 1 ? existingNotes[0].text : null);
+      setShowExport(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!showExport) return;
+    const timer = setTimeout(async () => {
+      await captureAndShare(exportViewRef);
+      setShowExport(false);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [showExport]);
 
   return (
     <Modal
@@ -487,37 +523,67 @@ export function HighlightMenu({
                 label={editingNote ? "UPDATE NOTE" : "ADD NOTE"}
                 onPress={handleSave}
               />
-              {onStartChat && (
-                <Touchable style={styles.chatBtn} onPress={onStartChat}>
-                  <MessageSquare size={16} color={colors.text.secondary} />
+              <View style={styles.actionsRow}>
+                <Touchable style={styles.actionItem} onPress={handleExport}>
+                  <Share size={18} color={colors.text.secondary} />
                   <ThemedText type="labelSm" color={colors.text.secondary}>
-                    {chatSessionId ? "VIEW CHAT" : "START CHAT"}
+                    EXPORT
                   </ThemedText>
                 </Touchable>
-              )}
-              {editingNote ? (
-                <Touchable
-                  onPress={handleCancelEdit}
-                  style={styles.secondaryButton}
-                >
-                  <ThemedText type="labelSm" color={colors.text.secondary}>
-                    CANCEL
-                  </ThemedText>
-                </Touchable>
-              ) : (
-                <Touchable
-                  onPress={handleDelete}
-                  style={styles.secondaryButton}
-                >
-                  <ThemedText type="labelSm" color={colors.text.secondary}>
-                    DELETE HIGHLIGHT
-                  </ThemedText>
-                </Touchable>
-              )}
+                {onStartChat && (
+                  <Touchable style={styles.actionItem} onPress={onStartChat}>
+                    <MessageSquare size={18} color={colors.text.secondary} />
+                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                      {chatSessionId ? "CHAT" : "CHAT"}
+                    </ThemedText>
+                  </Touchable>
+                )}
+                {editingNote ? (
+                  <Touchable style={styles.actionItem} onPress={handleCancelEdit}>
+                    <X size={18} color={colors.text.secondary} />
+                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                      CANCEL
+                    </ThemedText>
+                  </Touchable>
+                ) : (
+                  <Touchable style={styles.actionItem} onPress={handleDelete}>
+                    <Trash2 size={18} color={colors.text.secondary} />
+                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                      DELETE
+                    </ThemedText>
+                  </Touchable>
+                )}
+              </View>
             </View>
           </View>
         </KeyboardAvoidingView>
       </View>
+
+      {/* Off-screen export card */}
+      {showExport && (
+        <View style={{ position: "absolute", left: -9999, top: -9999 }}>
+          <ExportImageCard
+            viewRef={exportViewRef}
+            quoteText={highlightText}
+            bookTitle={bookTitle}
+            authorName={authorName}
+            coverUri={bookCoverUri}
+            noteText={exportNoteText}
+          />
+        </View>
+      )}
+
+      {/* Note picker for export */}
+      <NotePickerModal
+        visible={showNotePicker}
+        notes={existingNotes.map((n) => n.text)}
+        onSelect={(text) => {
+          setShowNotePicker(false);
+          setExportNoteText(text);
+          setShowExport(true);
+        }}
+        onClose={() => setShowNotePicker(false)}
+      />
     </Modal>
   );
 }

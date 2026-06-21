@@ -10,6 +10,8 @@ export type TimelineItem = {
   id: string;
   bookId: string;
   bookTitle: string;
+  bookAuthor: string;
+  bookCoverUrl: string | null;
   highlightText: string;
   highlightLocator: string | null;
   chatSessionId: string | null;
@@ -106,6 +108,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         chatSessionId: highlights.chatSessionId,
         bookId: books.id,
         bookTitle: books.title,
+        bookAuthor: books.author,
+        bookCoverUrl: books.coverUrl,
         noteId: notes.id,
         noteText: notes.text,
       })
@@ -122,6 +126,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       {
         bookId: string;
         bookTitle: string;
+        bookAuthor: string;
+        bookCoverUrl: string | null;
         highlightText: string;
         highlightLocator: string | null;
         highlightColor: string;
@@ -138,6 +144,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         highlightData.set(row.highlightId, {
           bookId: row.bookId,
           bookTitle: row.bookTitle,
+          bookAuthor: row.bookAuthor,
+          bookCoverUrl: row.bookCoverUrl,
           highlightText: row.highlightText,
           highlightLocator: row.highlightLocator,
           highlightColor: row.highlightColor || "#f2ca50",
@@ -160,6 +168,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         id,
         bookId: h.bookId,
         bookTitle: h.bookTitle,
+        bookAuthor: h.bookAuthor,
+        bookCoverUrl: h.bookCoverUrl,
         highlightText: h.highlightText,
         highlightLocator: h.highlightLocator,
         chatSessionId: h.chatSessionId,
@@ -189,6 +199,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         id: t.id,
         bookId: "",
         bookTitle: thoughtLabel,
+        bookAuthor: "",
+        bookCoverUrl: null,
         highlightText: t.text,
         highlightLocator: null,
         chatSessionId: t.chatSessionId ?? null,

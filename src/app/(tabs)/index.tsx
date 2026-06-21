@@ -1,13 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { useRouter } from 'expo-router';
-import { Calendar, MessageSquare, Pencil, Trash2 } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import { Calendar, MessageSquare, Pencil, Share, Trash2 } from 'lucide-react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { CalendarPicker } from '@/components/timeline/calendar-picker';
+import { ExportImageCard } from '@/components/export/export-image-card';
+import { NotePickerModal } from '@/components/export/note-picker-modal';
+import { captureAndShare } from '@/utils/export-image';
 import { NewThoughtSheet } from '@/components/timeline/new-thought-sheet';
 import type { ThoughtEditData } from '@/components/timeline/new-thought-sheet';
 import { ThemedText } from '@/components/themed-text';
@@ -36,6 +39,13 @@ export default function TimelineScreen() {
   const [editingThought, setEditingThought] = useState<ThoughtEditData | null>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [longPressEntry, setLongPressEntry] = useState<TimelineItem | null>(null);
+
+  // Export state
+  const exportViewRef = useRef<View>(null);
+  const [exportEntry, setExportEntry] = useState<TimelineItem | null>(null);
+  const [exportNoteText, setExportNoteText] = useState<string | null>(null);
+  const [showNotePicker, setShowNotePicker] = useState(false);
+  const [showExportCard, setShowExportCard] = useState(false);
 
   // Reload timeline when tab is focused
   useFocusEffect(
@@ -110,6 +120,27 @@ export default function TimelineScreen() {
       await deleteHighlight(entry.id);
     }
   };
+
+  const handleExport = (entry: TimelineItem) => {
+    setLongPressEntry(null);
+    setExportEntry(entry);
+    if (entry.noteTexts.length > 1) {
+      setShowNotePicker(true);
+    } else {
+      setExportNoteText(entry.noteTexts.length === 1 ? entry.noteTexts[0] : null);
+      setShowExportCard(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!showExportCard) return;
+    const timer = setTimeout(async () => {
+      await captureAndShare(exportViewRef);
+      setShowExportCard(false);
+      setExportEntry(null);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [showExportCard]);
 
   const hasEntries = groups.length > 0 && groups[0].entries.length > 0;
 
@@ -258,7 +289,7 @@ export default function TimelineScreen() {
               </>
             )}
 
-            {/* View Chat — if linked */}
+            {/* Chat */}
             {longPressEntry?.chatSessionId ? (
               <>
                 <Touchable style={sheetStyles.sheetRow} onPress={() => handleViewChat(longPressEntry)}>
@@ -277,6 +308,17 @@ export default function TimelineScreen() {
               </>
             )}
 
+            {/* Export as Image */}
+            {longPressEntry && (
+              <>
+                <Touchable style={sheetStyles.sheetRow} onPress={() => handleExport(longPressEntry)}>
+                  <Share size={20} color={colors.text.primary} />
+                  <ThemedText type="bodyMd" color={colors.text.primary}>Export as Image</ThemedText>
+                </Touchable>
+                <View style={sheetStyles.sheetSeparator} />
+              </>
+            )}
+
             {/* Delete */}
             <Touchable
               style={sheetStyles.sheetRow}
@@ -288,6 +330,32 @@ export default function TimelineScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Off-screen export card */}
+      {showExportCard && exportEntry && (
+        <View style={{ position: 'absolute', left: -9999, top: -9999 }}>
+          <ExportImageCard
+            viewRef={exportViewRef}
+            quoteText={exportEntry.highlightText}
+            bookTitle={exportEntry.type === 'thought' ? 'A Thought' : exportEntry.bookTitle}
+            authorName={exportEntry.bookAuthor}
+            coverUri={exportEntry.bookCoverUrl}
+            noteText={exportNoteText}
+          />
+        </View>
+      )}
+
+      {/* Note picker for export */}
+      <NotePickerModal
+        visible={showNotePicker}
+        notes={exportEntry?.noteTexts ?? []}
+        onSelect={(text) => {
+          setShowNotePicker(false);
+          setExportNoteText(text);
+          setShowExportCard(true);
+        }}
+        onClose={() => { setShowNotePicker(false); setExportEntry(null); }}
+      />
     </ThemedView>
   );
 }

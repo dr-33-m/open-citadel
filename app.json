@@ -46,7 +46,10 @@
       "expo-file-system",
       "./plugins/withCoreDesugaring",
       "./plugins/withCleartextTraffic",
-      ["./plugins/withGradleVersion", "8.13"],
+      [
+        "./plugins/withGradleVersion",
+        "8.13"
+      ],
       "./plugins/withAbiFilters",
       [
         "expo-build-properties",
@@ -59,7 +62,8 @@
             "enableCoreLibraryDesugaring": true
           }
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

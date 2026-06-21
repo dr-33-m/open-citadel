@@ -795,6 +795,9 @@ export default function ReaderScreen() {
           chatSessionId={menuHighlight.chatSessionId}
           allTags={allTags}
           existingNotes={highlightNotes[menuHighlight.id] ?? []}
+          bookTitle={currentBook?.title ?? ""}
+          authorName={currentBook?.author ?? ""}
+          bookCoverUri={currentBook?.coverUrl ?? null}
           onAddNote={addNote}
           onUpdateNote={(noteId, text) =>
             updateNote(noteId, menuHighlight.id, text)
