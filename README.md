@@ -76,14 +76,16 @@ Most reading apps stop at reading. Open Citadel treats the reader as a starting 
 pnpm install
 ```
 
-### Development build
+### Start dev server
 
 ```sh
-# Android
-pnpm android
+npx expo start --tunnel --clear
+```
 
-# iOS
-pnpm ios
+### Local development build
+
+```sh
+eas build --platform android --local --profile development
 ```
 
 ### EAS build (cloud)
@@ -131,13 +133,14 @@ src/
 - [x] Thoughts — capture and tag freeform notes linked to books
 - [x] Collections and library organisation
 
-### v2 — AI Companion (in progress)
+### v2 — AI Companion & Sharing (in progress)
 - [x] On-device LLM via llama.rn — offline and private
 - [x] Samwell persona — system prompt gives him identity as your reading companion
 - [x] HuggingFace model search — browse, pick a GGUF, download, all in-app
 - [x] Highlight-to-chat — start a conversation from any reader selection with full context
 - [x] Book context — attach a book to a session so Samwell can reference it
-- [ ] **Tool calling** — let Samwell query your local database to pull in your highlights, thoughts, and notes, and read relevant passages from books in your library, so his answers are grounded in your actual reading
+- [x] Export as image — share highlights and thoughts as styled PNG cards with book cover, notes, and Open Citadel branding (dark & light theme)
+- [x] **Tool calling** — let Samwell query your local database to pull in your highlights, thoughts, and notes, and read relevant passages from books in your library, so his answers are grounded in your actual reading
 
 ### v3 — Podcasts
 - [ ] Add podcast feeds (RSS)
