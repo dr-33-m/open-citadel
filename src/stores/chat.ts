@@ -3,6 +3,12 @@ import { create } from 'zustand';
 
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions } from '@/db/schema';
+import {
+  SAMWELL_TOOLS,
+  executeToolCall,
+  formatSearchResultsForLLM,
+  type SearchResult,
+} from '@/services/chat-tools';
 import * as LlamaService from '@/services/llama-service';
 
 export interface ChatSession {
@@ -20,7 +26,7 @@ export interface ChatSession {
 export interface ChatMessage {
   id: string;
   sessionId: string;
-  role: 'system' | 'user' | 'assistant';
+  role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   createdAt: string;
 }
@@ -31,6 +37,8 @@ interface ChatStore {
   messages: ChatMessage[];
   isGenerating: boolean;
   isThinking: boolean;
+  isToolCalling: boolean;
+  toolCallStatus: string | null;
   streamingContent: string;
 
   loadSessions(): Promise<void>;
@@ -62,6 +70,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   messages: [],
   isGenerating: false,
   isThinking: false,
+  isToolCalling: false,
+  toolCallStatus: null,
   streamingContent: '',
 
   async loadSessions() {
@@ -213,40 +223,129 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     _abortController = new AbortController();
 
     // Build messages array for the LLM (system + full history + new user msg)
-    const historyForLlm = [...messages, userMsg].map((m) => ({
+    type LlmMessage = {
+      role: string;
+      content: string;
+      tool_calls?: LlamaService.ToolCall[];
+      tool_call_id?: string;
+      name?: string;
+    };
+    const historyForLlm: LlmMessage[] = [...messages, userMsg].map((m) => ({
       role: m.role,
       content: m.content,
     }));
 
-    let result: { content: string; reasoning: string } = { content: '', reasoning: '' };
+    const MAX_TOOL_ITERATIONS = 3;
+    let finalContent = '';
+
     try {
-      result = await LlamaService.chat(
-        historyForLlm,
-        ({ content: c, reasoningContent }) => {
-          set({
-            isThinking: reasoningContent.length > 0 && c.length === 0,
-            streamingContent: c,
+      for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+        set({ streamingContent: '' });
+
+        // Clear KV cache before each completion so the new message history is processed fresh
+        if (i > 0) await LlamaService.clearCache();
+
+        const result = await LlamaService.chat(
+          historyForLlm,
+          ({ content: c, reasoningContent }) => {
+            set({
+              isThinking: reasoningContent.length > 0 && c.length === 0,
+              isToolCalling: false,
+              toolCallStatus: null,
+              streamingContent: c,
+            });
+          },
+          _abortController!.signal,
+          { tools: SAMWELL_TOOLS },
+        );
+
+        // If the model made tool calls, execute them and loop
+        if (result.tool_calls?.length) {
+          const toolNames = result.tool_calls!.map((tc) => tc.function.name);
+          const statusMsg = toolNames.some((n) => n.startsWith('tag_'))
+            ? 'Organizing your tags…'
+            : toolNames.includes('search_thoughts')
+              ? 'Searching through your thoughts…'
+              : 'Searching through your highlights…';
+          set({ isToolCalling: true, isThinking: false, streamingContent: '', toolCallStatus: statusMsg });
+
+          // Store the assistant's tool-call message (hidden from UI)
+          const toolCallMsg: ChatMessage = {
+            id: uuid(),
+            sessionId: activeSession.id,
+            role: 'assistant',
+            content: '\0TOOL_CALL\0' + JSON.stringify(result.tool_calls),
+            createdAt: now(),
+          };
+          db.insert(chatMessages).values(toolCallMsg).run();
+          historyForLlm.push({
+            role: 'assistant',
+            content: result.content || '',
+            tool_calls: result.tool_calls,
           });
-        },
-        _abortController.signal,
-      );
-    } catch {
+
+          // Ensure every tool call has an id (some models omit it)
+          for (const tc of result.tool_calls) {
+            if (!tc.id) tc.id = `call_${uuid()}`;
+          }
+
+          // Execute each tool call and feed results back
+          for (const tc of result.tool_calls) {
+            let args: Record<string, unknown> = {};
+            try {
+              args = JSON.parse(tc.function.arguments);
+            } catch { /* empty */ }
+
+            const { result: toolResult } = await executeToolCall(tc.function.name, args);
+
+            // Format search results with reference markers for the LLM
+            let toolContent: string;
+            if ((tc.function.name === 'search_highlights' || tc.function.name === 'search_thoughts') && Array.isArray(toolResult)) {
+              toolContent = formatSearchResultsForLLM(toolResult as SearchResult[]);
+            } else {
+              toolContent = JSON.stringify(toolResult);
+            }
+
+            const toolMsg: ChatMessage = {
+              id: uuid(),
+              sessionId: activeSession.id,
+              role: 'tool',
+              content: toolContent,
+              createdAt: now(),
+            };
+            db.insert(chatMessages).values(toolMsg).run();
+            historyForLlm.push({
+              role: 'tool',
+              content: toolContent,
+              tool_call_id: tc.id!,
+              name: tc.function.name,
+            });
+          }
+
+          // Keep isToolCalling true — toolCallStatus stays as-is until the LLM starts streaming
+          continue;
+        }
+
+        // No tool calls — this is the final response
+        finalContent = result.content.trim();
+        break;
+      }
+    } catch (err) {
+      console.error('[Samwell] Generation error:', err);
       // Aborted or error — use whatever streamed so far
-      result = { content: get().streamingContent, reasoning: '' };
+      finalContent = get().streamingContent.trim();
     }
 
-    const saveContent = result.content.trim();
-    if (saveContent.length > 0) {
+    if (finalContent.length > 0) {
       const assistantMsg: ChatMessage = {
         id: uuid(),
         sessionId: activeSession.id,
         role: 'assistant',
-        content: saveContent,
+        content: finalContent,
         createdAt: now(),
       };
       db.insert(chatMessages).values(assistantMsg).run();
 
-      // Update session updatedAt
       db.update(chatSessions)
         .set({ updatedAt: now() })
         .where(eq(chatSessions.id, activeSession.id))
@@ -256,10 +355,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         messages: [...s.messages, assistantMsg],
         streamingContent: '',
         isThinking: false,
+        isToolCalling: false,
+        toolCallStatus: null,
         isGenerating: false,
       }));
     } else {
-      set({ streamingContent: '', isThinking: false, isGenerating: false });
+      set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, isGenerating: false });
     }
 
     _abortController = null;

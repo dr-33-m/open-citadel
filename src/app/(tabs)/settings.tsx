@@ -1,8 +1,9 @@
 import * as Speech from 'expo-speech';
-import { CheckCircle, Download, Search, Trash2, Volume2, X } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import { Download, MemoryStick, Power, Search, SlidersHorizontal, Trash2, Volume2, X } from 'lucide-react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -22,7 +23,7 @@ import { ScreenHeader } from '@/components/ui/screen-header';
 import { useColors } from '@/hooks/use-colors';
 import { fontFamily, spacing } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
-import { useLlamaStore, type LlamaModel } from '@/stores/llama';
+import { useLlamaStore } from '@/stores/llama';
 
 const TTS_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -55,10 +56,19 @@ export default function SettingsScreen() {
     deleteModel,
     releaseContext,
     addCustomModel,
+    inference,
+    setInference,
+    memoryEstimate,
+    checkMemory,
+    hasGpu,
   } = useLlamaStore();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [modelSheetVisible, setModelSheetVisible] = useState(false);
   const [modelSheetView, setModelSheetView] = useState<'list' | 'hf'>('list');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [tuneModalVisible, setTuneModalVisible] = useState(false);
+  const [memoryInfoVisible, setMemoryInfoVisible] = useState(false);
   const [samwellMode, setSamwellMode] = useState<'offline' | 'cloud'>('offline');
 
   // HuggingFace search state (lives inside the model picker sheet)
@@ -71,7 +81,35 @@ export default function SettingsScreen() {
 
   useEffect(() => { loadModels(); }, []);
 
+  const powerPulse = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    if (llamaLoading) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(powerPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.timing(powerPulse, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+        ]),
+      ).start();
+    } else {
+      powerPulse.stopAnimation();
+      powerPulse.setValue(1);
+    }
+  }, [llamaLoading]);
+
   const activeModel = models.find((m) => m.id === activeModelId);
+
+  // Run memory check when active model or context size changes
+  useEffect(() => {
+    if (activeModel?.isDownloaded && activeModel.id) {
+      checkMemory(activeModel.id);
+    }
+  }, [activeModel?.id, activeModel?.isDownloaded, inference.contextSize]);
+
+  const memoryStatus = memoryEstimate?.status ?? 'fits';
+
+  // Track if any download is active for this model
+  const activeModelDownloading = activeModel ? downloadProgress[activeModel.id] !== undefined : false;
+
 
   function formatBytes(bytes: number | null | undefined): string {
     if (!bytes) return '';
@@ -501,9 +539,9 @@ export default function SettingsScreen() {
             <>
               {/* Active model card */}
               <View style={styles.modelCard}>
-                <View style={styles.modelCardRow}>
+                <View style={[styles.modelCardRow, { gap: spacing[3], alignItems: 'flex-start' }]}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <ThemedText type="bodyMd">{activeModel?.name ?? 'No model selected'}</ThemedText>
+                    <ThemedText type="bodyMd" numberOfLines={2}>{activeModel?.name ?? 'No model selected'}</ThemedText>
                     <ThemedText type="labelSm" color={colors.text.secondary}>
                       {activeModel
                         ? activeModel.isDownloaded
@@ -511,11 +549,6 @@ export default function SettingsScreen() {
                           : `${formatBytes(activeModel.sizeBytes)} · Not downloaded`
                         : 'Tap to choose a model'}
                     </ThemedText>
-                    {isLoaded && (
-                      <ThemedText type="labelSm" color="#4caf50">
-                        Ready
-                      </ThemedText>
-                    )}
                     {loadError && (
                       <ThemedText type="labelSm" color="#e53935" numberOfLines={2}>
                         {loadError}
@@ -553,13 +586,30 @@ export default function SettingsScreen() {
                   </View>
                 )}
 
+                {/* Memory warning */}
+                {activeModel?.isDownloaded && memoryStatus !== 'fits' && (
+                  <Pressable
+                    style={[styles.aiActionBtn, { alignSelf: 'flex-start', backgroundColor: memoryStatus === 'wont_fit' ? '#e5393520' : '#f9731620' }]}
+                    onPress={() => setMemoryInfoVisible(true)}
+                  >
+                    <MemoryStick size={14} color={memoryStatus === 'wont_fit' ? '#e53935' : '#f97316'} />
+                    <ThemedText type="labelSm" color={memoryStatus === 'wont_fit' ? '#e53935' : '#f97316'}>
+                      {memoryStatus === 'wont_fit' ? 'TOO LARGE' : 'TIGHT'}
+                    </ThemedText>
+                  </Pressable>
+                )}
+
                 {/* Action buttons */}
-                {activeModel && downloadProgress[activeModel.id] === undefined && (
+                {activeModel && !activeModelDownloading && (
                   <View style={{ flexDirection: 'row', gap: spacing[2], flexWrap: 'wrap' }}>
                     {!activeModel.isDownloaded ? (
                       <Pressable
-                        style={styles.aiActionBtn}
-                        onPress={() => downloadModel(activeModel.id)}
+                        style={[styles.aiActionBtn, isDownloading && { opacity: 0.5 }]}
+                        disabled={isDownloading}
+                        onPress={async () => {
+                          setIsDownloading(true);
+                          try { await downloadModel(activeModel.id); } finally { setIsDownloading(false); }
+                        }}
                       >
                         <Download size={14} color={colors.primary.default} />
                         <ThemedText type="labelSm" color={colors.primary.default}>
@@ -568,31 +618,38 @@ export default function SettingsScreen() {
                       </Pressable>
                     ) : (
                       <>
-                        {isLoaded ? (
-                          <Pressable
-                            style={styles.aiActionBtn}
-                            onPress={releaseContext}
-                            disabled={llamaLoading}
-                          >
-                            <ThemedText type="labelSm" color={colors.text.secondary}>
-                              POWER DOWN
-                            </ThemedText>
-                          </Pressable>
-                        ) : (
-                          <Pressable
-                            style={styles.aiActionBtn}
-                            onPress={() => useLlamaStore.getState().initContext()}
-                            disabled={llamaLoading}
-                          >
-                            <CheckCircle size={14} color={colors.primary.default} />
-                            <ThemedText type="labelSm" color={colors.primary.default}>
-                              {llamaLoading ? 'WAKING UP…' : 'WAKE UP'}
-                            </ThemedText>
-                          </Pressable>
-                        )}
                         <Pressable
-                          style={styles.aiActionBtn}
-                          onPress={() => setConfirmDeleteId(activeModel.id)}
+                          style={[styles.aiActionBtn, (llamaLoading || isDeleting || (!isLoaded && memoryStatus === 'wont_fit')) && { opacity: 0.5 }]}
+                          onPress={isLoaded ? releaseContext : () => useLlamaStore.getState().initContext()}
+                          disabled={llamaLoading || isDeleting || (!isLoaded && memoryStatus === 'wont_fit')}
+                        >
+                          <Animated.View style={llamaLoading ? { opacity: powerPulse } : undefined}>
+                            <Power size={14} color={llamaLoading ? colors.primary.default : isLoaded ? '#4caf50' : colors.text.secondary} />
+                          </Animated.View>
+                          <ThemedText type="labelSm" color={isLoaded ? colors.text.primary : colors.text.secondary}>
+                            {isLoaded ? 'SLEEP' : 'WAKEN'}
+                          </ThemedText>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.aiActionBtn, (llamaLoading || isDeleting) && { opacity: 0.5 }]}
+                          disabled={llamaLoading || isDeleting}
+                          onPress={() => setTuneModalVisible(true)}
+                        >
+                          <SlidersHorizontal size={14} color={colors.text.primary} />
+                          <ThemedText type="labelSm" color={colors.text.primary}>
+                            TUNE
+                          </ThemedText>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.aiActionBtn, (llamaLoading || isDeleting) && { opacity: 0.5 }]}
+                          disabled={llamaLoading || isDeleting}
+                          onPress={async () => {
+                            if (isLoaded) {
+                              setIsDeleting(true);
+                              try { await releaseContext(); } finally { setIsDeleting(false); }
+                            }
+                            setConfirmDeleteId(activeModel.id);
+                          }}
                         >
                           <Trash2 size={14} color="#e53935" />
                           <ThemedText type="labelSm" color="#e53935">
@@ -877,31 +934,123 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Confirm delete modal */}
+      {/* Tune performance drawer */}
+      <Modal
+        visible={tuneModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTuneModalVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setTuneModalVisible(false)} />
+          <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
+            <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
+
+            <ThemedText type="bodySm" color={colors.text.secondary}>PERFORMANCE</ThemedText>
+
+            <View style={{ gap: spacing[1] }}>
+              <ThemedText type="bodySm" color={colors.text.primary}>Context Window</ThemedText>
+              <View style={styles.rateRow}>
+                {[2048, 4096, 8192].map((size) => {
+                  const active = inference.contextSize === size;
+                  return (
+                    <Pressable
+                      key={size}
+                      style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive]}
+                      onPress={() => setInference({ contextSize: size })}
+                    >
+                      <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
+                        {size >= 1024 ? `${size / 1024}K` : String(size)}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                Lower = faster & less RAM. Raise for longer conversations.
+              </ThemedText>
+            </View>
+
+            <View style={{ gap: spacing[1] }}>
+              <ThemedText type="bodySm" color={colors.text.primary}>CPU Threads</ThemedText>
+              <View style={styles.rateRow}>
+                {[2, 4, 6, 8].map((threads) => {
+                  const active = inference.cpuThreads === threads;
+                  return (
+                    <Pressable
+                      key={threads}
+                      style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive]}
+                      onPress={() => setInference({ cpuThreads: threads })}
+                    >
+                      <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
+                        {threads}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                Match your CPU's big cores. 4 is a safe default.
+              </ThemedText>
+            </View>
+
+            <View style={{ gap: spacing[1] }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+                <ThemedText type="bodySm" color={colors.text.primary}>GPU Offload</ThemedText>
+                {!hasGpu && (
+                  <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>No GPU detected</ThemedText>
+                )}
+              </View>
+              <View style={styles.rateRow}>
+                {([
+                  { value: 0, label: 'Off' },
+                  { value: 99, label: 'Full' },
+                ] as const).map(({ value, label }) => {
+                  const active = inference.gpuLayers === value;
+                  return (
+                    <Pressable
+                      key={value}
+                      style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive, !hasGpu && !active && { opacity: 0.4 }]}
+                      onPress={() => setInference({ gpuLayers: value })}
+                      disabled={!hasGpu}
+                    >
+                      <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
+                        {label}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                Offload layers to GPU if supported.
+              </ThemedText>
+            </View>
+
+            {isLoaded && (
+              <ThemedText type="bodySm" color={colors.primary.default}>
+                Power down and wake up Samwell to apply changes.
+              </ThemedText>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Confirm delete drawer */}
       <Modal
         visible={confirmDeleteId !== null}
-        animationType="fade"
         transparent
+        animationType="slide"
         onRequestClose={() => setConfirmDeleteId(null)}
       >
-        <Pressable
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
-          onPress={() => setConfirmDeleteId(null)}
-        >
-          <Pressable
-            style={{
-              backgroundColor: colors.surface.low,
-              padding: spacing[5],
-              width: '80%',
-              gap: spacing[4],
-            }}
-            onPress={() => {}}
-          >
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setConfirmDeleteId(null)} />
+          <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
+            <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
             <ThemedText type="headlineSm">Delete model file?</ThemedText>
             <ThemedText type="bodySm" color={colors.text.secondary}>
               The model will be removed from your device. You can re-download it later.
             </ThemedText>
-            <View style={{ flexDirection: 'row', gap: spacing[3], justifyContent: 'flex-end' }}>
+            <View style={{ flexDirection: 'row', gap: spacing[3] }}>
               <Pressable style={styles.aiActionBtn} onPress={() => setConfirmDeleteId(null)}>
                 <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
               </Pressable>
@@ -915,8 +1064,43 @@ export default function SettingsScreen() {
                 <ThemedText type="labelSm" color="#fff">DELETE</ThemedText>
               </Pressable>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
+      </Modal>
+      {/* Memory info drawer */}
+      <Modal
+        visible={memoryInfoVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMemoryInfoVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setMemoryInfoVisible(false)} />
+          <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[3] }}>
+            <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+              <MemoryStick size={18} color={memoryStatus === 'wont_fit' ? '#e53935' : '#f97316'} />
+              <ThemedText type="headlineSm">
+                {memoryStatus === 'wont_fit' ? 'Too Large' : 'Memory Tight'}
+              </ThemedText>
+            </View>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              {memoryStatus === 'wont_fit'
+                ? 'This model needs more RAM than your device has. Loading it will likely crash the app. Try a smaller or more quantized model.'
+                : 'This model may run slowly or fail to wake up. Free up RAM by closing other apps, or try a smaller model.'}
+            </ThemedText>
+            {memoryEstimate && (
+              <View style={{ gap: spacing[1] }}>
+                <ThemedText type="labelSm" color={colors.text.secondary}>
+                  Estimated: ~{(memoryEstimate.estimatedBytes / 1024 / 1024 / 1024).toFixed(1)} GB
+                </ThemedText>
+                <ThemedText type="labelSm" color={colors.text.secondary}>
+                  Available: ~{(memoryEstimate.availableBytes / 1024 / 1024 / 1024).toFixed(1)} GB
+                </ThemedText>
+              </View>
+            )}
+          </View>
+        </View>
       </Modal>
     </ThemedView>
   );

@@ -135,7 +135,7 @@ export const chatMessages = sqliteTable("chat_messages", {
   sessionId: text("session_id")
     .notNull()
     .references(() => chatSessions.id, { onDelete: "cascade" }),
-  role: text("role", { enum: ["system", "user", "assistant"] }).notNull(),
+  role: text("role", { enum: ["system", "user", "assistant", "tool"] }).notNull(),
   content: text("content").notNull(),
   createdAt: text("created_at").notNull(),
 });

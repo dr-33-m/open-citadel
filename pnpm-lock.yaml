@@ -99,8 +99,8 @@ importers:
         specifier: ^3.10.1
         version: 3.10.1
       llama.rn:
-        specifier: 0.12.0-rc.6
-        version: 0.12.0-rc.6(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+        specifier: 0.12.4
+        version: 0.12.4(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       lucide-react-native:
         specifier: ^0.577.0
         version: 0.577.0(react-native-svg@15.15.4(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
@@ -3004,8 +3004,8 @@ packages:
     resolution: {integrity: sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ==}
     engines: {node: '>= 12.0.0'}
 
-  llama.rn@0.12.0-rc.6:
-    resolution: {integrity: sha512-c7dVcyPJvFK7wtgf0rxz18w1mwRGLRU7JCfSyL6DpeDxsa/panWaQWHm5hwBJSlWrcUk9WlQncsg3qM76niXZw==}
+  llama.rn@0.12.4:
+    resolution: {integrity: sha512-53oQKv2rzYbsSfFMONcj+KnFfAJ9S5gO9l1FyRi35Zmh8PeLUa7Zzh0FUQ6/+LwZH5SYnCulMeA94GS+ls/y7w==}
     engines: {node: '>= 16.0.0'}
     hasBin: true
     peerDependencies:
@@ -3842,8 +3842,8 @@ packages:
     resolution: {integrity: sha512-cAGWPIyOHU6zlmg88jwm7VRyXnMN7iV68OGAbYDk/Mh/xC/pzVPlQtY6ngoIH/5/tciuhGfvESU8GrHrcxD56w==}
     engines: {node: '>=8'}
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/e175badc67ac33dcda6911dd5ebcf7a1570bee8c:
-    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/e175badc67ac33dcda6911dd5ebcf7a1570bee8c}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/b416fdb5cfa7ade7562fe108550e3b566857a7b1:
+    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/b416fdb5cfa7ade7562fe108550e3b566857a7b1}
     version: 1.0.0
 
   throat@5.0.0:
@@ -5839,7 +5839,7 @@ snapshots:
 
   '@readium/shared@2.1.5':
     dependencies:
-      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/e175badc67ac33dcda6911dd5ebcf7a1570bee8c
+      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/b416fdb5cfa7ade7562fe108550e3b566857a7b1
 
   '@shopify/flash-list@2.3.1(@babel/runtime@7.29.2)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
     dependencies:
@@ -7165,7 +7165,7 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.32.0
       lightningcss-win32-x64-msvc: 1.32.0
 
-  llama.rn@0.12.0-rc.6(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0):
+  llama.rn@0.12.4(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0):
     dependencies:
       react: 19.2.0
       react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
@@ -8216,7 +8216,7 @@ snapshots:
       glob: 7.2.3
       minimatch: 3.1.5
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/e175badc67ac33dcda6911dd5ebcf7a1570bee8c: {}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/b416fdb5cfa7ade7562fe108550e3b566857a7b1: {}
 
   throat@5.0.0: {}
 

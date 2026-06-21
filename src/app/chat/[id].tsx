@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Send, Sparkles, Square } from "lucide-react-native";
+import { ArrowLeft, Search, Send, Sparkles, Square } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,6 +33,8 @@ export default function ChatSessionScreen() {
     messages,
     isGenerating,
     isThinking,
+    isToolCalling,
+    toolCallStatus,
     streamingContent,
     openSession,
     sendMessage,
@@ -42,6 +44,7 @@ export default function ChatSessionScreen() {
     useLlamaStore();
 
   const [inputText, setInputText] = useState("");
+  const [isStopping, setIsStopping] = useState(false);
   const listRef = useRef<FlashListRef<ChatMessage>>(null);
 
   const activeModel = models.find((m) => m.id === activeModelId);
@@ -52,6 +55,11 @@ export default function ChatSessionScreen() {
     if (id) openSession(id);
   }, [id]);
 
+  // Reset stop debounce when generation ends
+  useEffect(() => {
+    if (!isGenerating) setIsStopping(false);
+  }, [isGenerating]);
+
   // Scroll to bottom whenever messages or streaming content changes
   useEffect(() => {
     if (messages.length > 0) {
@@ -59,18 +67,20 @@ export default function ChatSessionScreen() {
     }
   }, [messages.length, streamingContent]);
 
-  const sparkleAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(0.4)).current;
   useEffect(() => {
-    if (isThinking) {
+    if (isThinking || isToolCalling) {
       Animated.loop(
-        Animated.timing(sparkleAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+        ]),
       ).start();
     } else {
-      sparkleAnim.stopAnimation();
-      sparkleAnim.setValue(0);
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(0.4);
     }
-  }, [isThinking]);
-  const sparkleRotate = sparkleAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  }, [isThinking, isToolCalling]);
 
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
@@ -79,33 +89,73 @@ export default function ChatSessionScreen() {
     await sendMessage(text);
   }, [inputText, isGenerating, modelReady, sendMessage]);
 
-  // Visible messages (hide system prompt)
-  const visibleMessages = messages.filter((m) => m.role !== "system");
+  // Visible messages (hide system prompt, tool messages, and tool-call assistant messages)
+  const visibleMessages = messages.filter(
+    (m) => m.role !== "system" && m.role !== "tool" && !m.content.startsWith('\0TOOL_CALL\0')
+  );
+
+  const handleNavigateToHighlight = useCallback((bookId: string, locator: string) => {
+    router.push({
+      pathname: '/reader/[id]' as any,
+      params: { id: bookId, locator },
+    });
+  }, [router]);
+
+  const handleNavigateToTimeline = useCallback(() => {
+    router.push({ pathname: '/(tabs)' as any });
+  }, [router]);
 
   const renderItem = useCallback(
     ({ item }: { item: ChatMessage }) => (
-      <ChatBubble role={item.role as "user" | "assistant"} content={item.content} />
+      <ChatBubble
+        role={item.role as "user" | "assistant"}
+        content={item.content}
+        onNavigateToHighlight={handleNavigateToHighlight}
+        onNavigateToTimeline={handleNavigateToTimeline}
+      />
     ),
-    [],
+    [handleNavigateToHighlight, handleNavigateToTimeline],
   );
 
   const listFooter = React.useMemo(() => {
     if (!isGenerating) return null;
-    if (isThinking) return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2], paddingHorizontal: spacing[4], paddingVertical: spacing[2] }}>
-        <Animated.View style={{ transform: [{ rotate: sparkleRotate }] }}>
-          <Sparkles size={14} color={colors.primary.default} />
-        </Animated.View>
-        <ThemedText type="labelSm" color={colors.primary.default}>THINKING</ThemedText>
+    if (isToolCalling) return (
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-start', marginBottom: spacing[1], paddingHorizontal: spacing[4] }}>
+        <View style={{ paddingVertical: spacing[2], paddingHorizontal: spacing[3], backgroundColor: colors.surface.mid, flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+          <Animated.View style={{ opacity: pulseAnim }}>
+            <Search size={14} color={colors.primary.default} />
+          </Animated.View>
+          <ThemedText type="bodySm" color={colors.text.secondary}>
+            {toolCallStatus ?? 'Searching…'}
+          </ThemedText>
+        </View>
       </View>
     );
-    if (streamingContent) return <ChatBubble role="assistant" content={streamingContent} streaming />;
+    if (isThinking) return (
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-start', marginBottom: spacing[1], paddingHorizontal: spacing[4] }}>
+        <View style={{ paddingVertical: spacing[2], paddingHorizontal: spacing[3], backgroundColor: colors.surface.mid, flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+          <Animated.View style={{ opacity: pulseAnim }}>
+            <Sparkles size={14} color={colors.primary.default} />
+          </Animated.View>
+          <ThemedText type="bodySm" color={colors.text.secondary}>Thinking…</ThemedText>
+        </View>
+      </View>
+    );
+    if (streamingContent) return (
+      <ChatBubble
+        role="assistant"
+        content={streamingContent}
+        streaming
+        onNavigateToHighlight={handleNavigateToHighlight}
+        onNavigateToTimeline={handleNavigateToTimeline}
+      />
+    );
     return (
       <View style={{ paddingHorizontal: spacing[4], paddingVertical: spacing[2] }}>
         <ActivityIndicator color={colors.text.secondary} />
       </View>
     );
-  }, [isGenerating, isThinking, streamingContent, sparkleRotate, colors]);
+  }, [isGenerating, isThinking, isToolCalling, toolCallStatus, streamingContent, pulseAnim, colors, handleNavigateToHighlight]);
 
   const styles = StyleSheet.create({
     container: {
@@ -229,7 +279,11 @@ export default function ChatSessionScreen() {
           <ThemedText type="bodySm" color="#e53935">
             {loadError}
           </ThemedText>
-          <Pressable style={styles.loadBtn} onPress={initContext}>
+          <Pressable
+            style={[styles.loadBtn, isLoading && { opacity: 0.5 }]}
+            disabled={isLoading}
+            onPress={initContext}
+          >
             <ThemedText type="labelSm" color={colors.text.inverse}>
               RETRY
             </ThemedText>
@@ -244,7 +298,11 @@ export default function ChatSessionScreen() {
           <ThemedText type="bodySm" color={colors.text.secondary}>
             Samwell is offline. Wake him up to chat.
           </ThemedText>
-          <Pressable style={styles.loadBtn} onPress={initContext}>
+          <Pressable
+            style={[styles.loadBtn, isLoading && { opacity: 0.5 }]}
+            disabled={isLoading}
+            onPress={initContext}
+          >
             <ThemedText type="labelSm" color={colors.text.inverse}>
               WAKE UP
             </ThemedText>
@@ -338,7 +396,14 @@ export default function ChatSessionScreen() {
         />
 
         {isGenerating ? (
-          <Pressable style={styles.stopBtn} onPress={stopGeneration}>
+          <Pressable
+            style={[styles.stopBtn, isStopping && { opacity: 0.5 }]}
+            disabled={isStopping}
+            onPress={() => {
+              setIsStopping(true);
+              stopGeneration();
+            }}
+          >
             <Square
               size={16}
               color={colors.text.primary}

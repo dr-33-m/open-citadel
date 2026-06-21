@@ -183,23 +183,19 @@ export default function ChatTab() {
 
       <Modal
         visible={confirmDelete !== null}
-        animationType="fade"
         transparent
+        animationType="slide"
         onRequestClose={() => setConfirmDelete(null)}
       >
-        <Pressable
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
-          onPress={() => setConfirmDelete(null)}
-        >
-          <Pressable
-            style={{ backgroundColor: colors.surface.low, padding: spacing[5], width: '80%', gap: spacing[4] }}
-            onPress={() => {}}
-          >
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setConfirmDelete(null)} />
+          <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
+            <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
             <ThemedText type="headlineSm">Delete chat?</ThemedText>
             <ThemedText type="bodySm" color={colors.text.secondary} numberOfLines={2}>
               {confirmDelete?.title}
             </ThemedText>
-            <View style={{ flexDirection: 'row', gap: spacing[3], justifyContent: 'flex-end' }}>
+            <View style={{ flexDirection: 'row', gap: spacing[3] }}>
               <Pressable style={styles.actionBtn} onPress={() => setConfirmDelete(null)}>
                 <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
               </Pressable>
@@ -213,8 +209,8 @@ export default function ChatTab() {
                 <ThemedText type="labelSm" color="#fff">DELETE</ThemedText>
               </Pressable>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </View>
   );

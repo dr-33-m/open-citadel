@@ -1,3 +1,4 @@
+import * as Device from "expo-device";
 import { eq } from "drizzle-orm";
 import {
   createDownloadResumable,
@@ -12,8 +13,16 @@ import {
 import { create } from "zustand";
 
 import { db } from "@/db/client";
-import { llamaModels } from "@/db/schema";
+import { appSettings, llamaModels } from "@/db/schema";
+import { getBackendDevicesInfo } from "llama.rn";
 import * as LlamaService from "@/services/llama-service";
+import { checkModelMemory, type MemoryEstimate } from "@/utils/memory-estimator";
+
+export interface InferenceSettings {
+  contextSize: number;   // n_ctx: 2048 | 4096 | 8192
+  cpuThreads: number;    // n_threads: 2–8
+  gpuLayers: number;     // n_gpu_layers: 0 = CPU only, 99 = all on GPU
+}
 
 export interface LlamaModel {
   id: string;
@@ -27,6 +36,12 @@ export interface LlamaModel {
   downloadedAt: string | null;
 }
 
+const DEFAULT_INFERENCE: InferenceSettings = {
+  contextSize: 2048,
+  cpuThreads: 4,
+  gpuLayers: 99,
+};
+
 interface LlamaStore {
   models: LlamaModel[];
   activeModelId: string | null;
@@ -35,6 +50,10 @@ interface LlamaStore {
   loadError: string | null;
   downloadProgress: Record<string, number>; // modelId → 0–1
   downloadResumables: Record<string, DownloadResumable>;
+  inference: InferenceSettings;
+  deviceTotalMemory: number | null;
+  memoryEstimate: MemoryEstimate | null;
+  hasGpu: boolean;
 
   loadModels(): Promise<void>;
   setActiveModel(id: string): Promise<void>;
@@ -44,6 +63,8 @@ interface LlamaStore {
   deleteModel(id: string): Promise<void>;
   initContext(): Promise<void>;
   releaseContext(): Promise<void>;
+  setInference(settings: Partial<InferenceSettings>): Promise<void>;
+  checkMemory(modelId: string): Promise<void>;
 }
 
 const SEED_MODELS: Omit<
@@ -110,6 +131,10 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
   loadError: null,
   downloadProgress: {},
   downloadResumables: {},
+  inference: { ...DEFAULT_INFERENCE },
+  deviceTotalMemory: Device.totalMemory,
+  memoryEstimate: null,
+  hasGpu: false,
 
   async loadModels() {
     // Seed default models on first launch
@@ -146,7 +171,27 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
     }));
 
     const active = models.find((m) => m.isActive);
-    set({ models, activeModelId: active?.id ?? null });
+
+    // Load persisted inference settings
+    const settingsRows = db.select().from(appSettings).all();
+    const settingsMap = Object.fromEntries(settingsRows.map((r) => [r.key, r.value]));
+    const inference: InferenceSettings = {
+      contextSize: parseInt(settingsMap['inference.contextSize'] ?? String(DEFAULT_INFERENCE.contextSize), 10),
+      cpuThreads: parseInt(settingsMap['inference.cpuThreads'] ?? String(DEFAULT_INFERENCE.cpuThreads), 10),
+      gpuLayers: parseInt(settingsMap['inference.gpuLayers'] ?? String(DEFAULT_INFERENCE.gpuLayers), 10),
+    };
+
+    // Detect GPU support — check both type and backend name
+    const GPU_BACKENDS = ['opencl', 'vulkan', 'metal', 'cuda', 'gpu'];
+    let hasGpu = false;
+    try {
+      const devices = await getBackendDevicesInfo();
+      hasGpu = devices.some((d) =>
+        GPU_BACKENDS.some((g) => d.type.toLowerCase().includes(g) || d.backend.toLowerCase().includes(g)),
+      );
+    } catch {}
+
+    set({ models, activeModelId: active?.id ?? null, inference, hasGpu });
   },
 
   async addCustomModel(name, downloadUrl) {
@@ -350,7 +395,8 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
 
     set({ isLoading: true, loadError: null });
     try {
-      await LlamaService.loadModel(model.filePath);
+      const { inference } = get();
+      await LlamaService.loadModel(model.filePath, inference);
       set({ isLoaded: true, isLoading: false });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to load model";
@@ -371,5 +417,36 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
   async releaseContext() {
     await LlamaService.unloadModel();
     set({ isLoaded: false, loadError: null });
+  },
+
+  async setInference(partial) {
+    const merged = { ...get().inference, ...partial };
+    set({ inference: merged });
+
+    // Persist each setting
+    for (const [key, value] of Object.entries(partial)) {
+      db.insert(appSettings)
+        .values({ key: `inference.${key}`, value: String(value) })
+        .onConflictDoUpdate({ target: appSettings.key, set: { value: String(value) } })
+        .run();
+    }
+  },
+
+  async checkMemory(modelId) {
+    const model = get().models.find((m) => m.id === modelId);
+    if (!model?.filePath || !model.isDownloaded || !model.sizeBytes) {
+      set({ memoryEstimate: null });
+      return;
+    }
+    try {
+      const estimate = await checkModelMemory(
+        model.filePath,
+        model.sizeBytes,
+        get().inference.contextSize,
+      );
+      set({ memoryEstimate: estimate });
+    } catch {
+      set({ memoryEstimate: null });
+    }
   },
 }));
