@@ -1,8 +1,9 @@
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import React, { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
+import { Touchable } from "@/components/ui/touchable";
 import { fontFamily, spacing } from "@/constants/theme";
 import { useColors } from "@/hooks/use-colors";
 import type { TimelineItem } from "@/stores/timeline";
@@ -135,7 +136,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
       </View>
 
       {/* Quote card */}
-      <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={400}>
+      <Touchable onPress={onPress} onLongPress={onLongPress} delayLongPress={400}>
         <View style={styles.quoteCard}>
           <ThemedText
             type="bodyLg"
@@ -164,7 +165,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
             </View>
           )}
         </View>
-      </Pressable>
+      </Touchable>
 
       {/* Notes — single or carousel */}
       {hasNotes && (
@@ -180,7 +181,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
           <View style={styles.noteBody}>
             <View style={styles.noteRow}>
               {hasMultiple && (
-                <Pressable
+                <Touchable
                   onPress={prev}
                   disabled={noteIndex === 0}
                   hitSlop={8}
@@ -194,7 +195,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
                         : colors.text.secondary
                     }
                   />
-                </Pressable>
+                </Touchable>
               )}
 
               <ThemedText
@@ -206,7 +207,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
               </ThemedText>
 
               {hasMultiple && (
-                <Pressable
+                <Touchable
                   onPress={next}
                   disabled={noteIndex === noteTexts.length - 1}
                   hitSlop={8}
@@ -220,7 +221,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
                         : colors.text.secondary
                     }
                   />
-                </Pressable>
+                </Touchable>
               )}
             </View>
 

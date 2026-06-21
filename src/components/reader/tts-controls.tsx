@@ -1,6 +1,8 @@
 import { Pause, Play, SkipBack, SkipForward } from 'lucide-react-native';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 
 import { useColors } from '@/hooks/use-colors';
 import { spacing } from '@/constants/theme';
@@ -47,19 +49,19 @@ export function TTSControls({
 
   return (
     <View style={styles.row}>
-      <Pressable onPress={onSkipPrevious} style={styles.btn} hitSlop={8}>
+      <Touchable onPress={onSkipPrevious} style={styles.btn} hitSlop={8}>
         <SkipBack size={20} color={colors.text.primary} />
-      </Pressable>
-      <Pressable onPress={onPlayPause} style={styles.btnPrimary} hitSlop={8}>
+      </Touchable>
+      <Touchable onPress={onPlayPause} style={styles.btnPrimary} hitSlop={8}>
         {isPlaying ? (
           <Pause size={26} color={colors.primary.default} />
         ) : (
           <Play size={26} color={colors.primary.default} />
         )}
-      </Pressable>
-      <Pressable onPress={onSkipNext} style={styles.btn} hitSlop={8}>
+      </Touchable>
+      <Touchable onPress={onSkipNext} style={styles.btn} hitSlop={8}>
         <SkipForward size={20} color={colors.text.primary} />
-      </Pressable>
+      </Touchable>
     </View>
   );
 }

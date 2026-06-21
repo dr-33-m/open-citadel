@@ -1,6 +1,8 @@
 import { Plus, SquareLibrary } from "lucide-react-native";
 import React from "react";
-import { Pressable, ScrollView, StyleSheet } from "react-native";
+import { ScrollView, StyleSheet } from "react-native";
+
+import { Touchable } from "@/components/ui/touchable";
 
 import { ThemedText } from "@/components/themed-text";
 import { spacing } from "@/constants/theme";
@@ -59,7 +61,7 @@ export function CollectionGrid({
       contentContainerStyle={styles.content}
     >
       {collections.map((collection) => (
-        <Pressable
+        <Touchable
           key={collection.id}
           style={styles.cell}
           onPress={() => onPress(collection.id)}
@@ -71,16 +73,16 @@ export function CollectionGrid({
           <ThemedText type="labelSm" color={colors.primary.default}>
             {collection.count} {collection.count === 1 ? "BOOK" : "BOOKS"}
           </ThemedText>
-        </Pressable>
+        </Touchable>
       ))}
 
       {onCreateCollection && (
-        <Pressable style={styles.createCell} onPress={onCreateCollection}>
+        <Touchable style={styles.createCell} onPress={onCreateCollection}>
           <Plus size={22} color={colors.text.secondary} />
           <ThemedText type="labelSm" color={colors.text.secondary}>
             NEW
           </ThemedText>
-        </Pressable>
+        </Touchable>
       )}
     </ScrollView>
   );

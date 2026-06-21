@@ -1,7 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { useLlamaStore } from '@/stores/llama';
@@ -43,13 +44,13 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
   } else if (loadError) {
     dotColor = '#e53935';
   } else {
-    dotColor = '#f2ca50';
+    dotColor = colors.text.secondary;
   }
 
   const statusText = isLoading ? 'Waking up…' : 'Samwell';
 
   return (
-    <Pressable style={styles.container} onPress={onPress} disabled={isLoading || isLoaded}>
+    <Touchable style={styles.container} onPress={onPress} disabled={isLoading || isLoaded}>
       {showSpinner ? (
         <ActivityIndicator size="small" color={dotColor} style={{ width: 8, height: 8 }} />
       ) : (
@@ -58,6 +59,6 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
       <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 11 }}>
         {statusText}
       </ThemedText>
-    </Pressable>
+    </Touchable>
   );
 }

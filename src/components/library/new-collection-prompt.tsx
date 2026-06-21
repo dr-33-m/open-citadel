@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
-  Pressable,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
@@ -79,7 +80,7 @@ export function NewCollectionPrompt({
       onRequestClose={handleClose}
     >
       <View style={styles.container}>
-        <Pressable style={styles.overlay} onPress={handleClose} />
+        <Touchable style={styles.overlay} onPress={handleClose} />
         <KeyboardAvoidingView behavior="padding" style={styles.kavWrapper}>
           <View style={styles.sheet}>
             <View style={styles.handle} />
@@ -95,9 +96,9 @@ export function NewCollectionPrompt({
               onSubmitEditing={handleCreate}
             />
             <GoldButton label="CREATE" onPress={handleCreate} />
-            <Pressable onPress={handleClose} style={styles.cancel}>
+            <Touchable onPress={handleClose} style={styles.cancel}>
               <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-            </Pressable>
+            </Touchable>
           </View>
         </KeyboardAvoidingView>
       </View>

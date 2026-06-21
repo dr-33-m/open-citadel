@@ -2,11 +2,12 @@ import { Check } from 'lucide-react-native';
 import React from 'react';
 import {
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/use-colors';
@@ -75,7 +76,7 @@ export function CollectionPickerSheet({
       onRequestClose={onClose}
     >
       <View style={styles.container}>
-        <Pressable style={styles.overlay} onPress={onClose} />
+        <Touchable style={styles.overlay} onPress={onClose} />
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <ThemedText type="headlineSm" style={styles.title}>
@@ -91,7 +92,7 @@ export function CollectionPickerSheet({
               {collections.map((col) => {
                 const isAdded = bookCollectionIds.includes(col.id);
                 return (
-                  <Pressable
+                  <Touchable
                     key={col.id}
                     style={styles.row}
                     onPress={() => onToggle(col.id, isAdded)}
@@ -116,7 +117,7 @@ export function CollectionPickerSheet({
                     >
                       {isAdded && <Check size={14} color={colors.text.inverse} />}
                     </View>
-                  </Pressable>
+                  </Touchable>
                 );
               })}
             </ScrollView>

@@ -5,12 +5,13 @@ import React, { useCallback, useMemo, useState } from "react";
 import {
   Dimensions,
   Image,
-  Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
+
+import { Touchable } from "@/components/ui/touchable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AddBooksSheet } from "@/components/library/add-books-sheet";
@@ -124,31 +125,31 @@ export default function CollectionScreen() {
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.headerBtn}>
+        <Touchable onPress={() => router.back()} style={styles.headerBtn}>
           <ThemedText type="bodyMd" color={colors.primary.default}>
             ←
           </ThemedText>
-        </Pressable>
+        </Touchable>
         <ThemedText type="headlineSm" style={styles.headerTitle}>
           {collection?.name ?? "Collection"}
         </ThemedText>
         <ThemedText type="labelSm" color={colors.text.secondary}>
           {books.length}
         </ThemedText>
-        <Pressable
+        <Touchable
           onPress={() => setShowAddBooks(true)}
           style={styles.headerBtn}
           hitSlop={8}
         >
           <Plus size={18} color={colors.text.primary} />
-        </Pressable>
-        <Pressable
+        </Touchable>
+        <Touchable
           onPress={handleDeleteCollection}
           style={styles.headerBtn}
           hitSlop={8}
         >
           <Trash2 size={16} color={colors.text.secondary} />
-        </Pressable>
+        </Touchable>
       </View>
 
       {/* Search */}
@@ -163,9 +164,9 @@ export default function CollectionScreen() {
           autoCorrect={false}
         />
         {query.length > 0 && (
-          <Pressable onPress={() => setQuery("")}>
+          <Touchable onPress={() => setQuery("")}>
             <X size={16} color={colors.text.secondary} />
-          </Pressable>
+          </Touchable>
         )}
       </View>
 
@@ -189,7 +190,7 @@ export default function CollectionScreen() {
           <View style={styles.row}>
             {padded.map((book, i) =>
               book ? (
-                <Pressable
+                <Touchable
                   key={book.id}
                   style={styles.bookItem}
                   onPress={() => openReader(book.id)}
@@ -235,7 +236,7 @@ export default function CollectionScreen() {
                   >
                     {book.author}
                   </ThemedText>
-                </Pressable>
+                </Touchable>
               ) : (
                 <View key={`pad-${i}`} style={styles.bookItem} />
               ),

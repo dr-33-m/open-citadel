@@ -1,6 +1,8 @@
 import { Copy, Highlighter, MessageSquare } from "lucide-react-native";
 import React, { useEffect, useRef } from "react";
-import { Animated, Pressable, StyleSheet, View } from "react-native";
+import { Animated, StyleSheet, View } from "react-native";
+
+import { Touchable } from "@/components/ui/touchable";
 
 import { ThemedText } from "@/components/themed-text";
 import { spacing } from "@/constants/theme";
@@ -70,7 +72,7 @@ export function SelectionBar({
 
   return (
     <View style={styles.container}>
-      <Pressable style={styles.btn} onPress={onHighlight}>
+      <Touchable style={styles.btn} onPress={onHighlight}>
         <Highlighter size={14} color={colors.primary.default} />
         <ThemedText
           type="labelSm"
@@ -79,9 +81,9 @@ export function SelectionBar({
         >
           HIGHLIGHT
         </ThemedText>
-      </Pressable>
+      </Touchable>
       <View style={styles.divider} />
-      <Pressable style={styles.btn} onPress={onCopy}>
+      <Touchable style={styles.btn} onPress={onCopy}>
         <Copy size={14} color={colors.text.primary} />
         <ThemedText
           type="labelSm"
@@ -90,9 +92,9 @@ export function SelectionBar({
         >
           COPY
         </ThemedText>
-      </Pressable>
+      </Touchable>
       <View style={styles.divider} />
-      <Pressable style={styles.btn} onPress={onChat} disabled={chatLoading}>
+      <Touchable style={styles.btn} onPress={onChat} disabled={chatLoading}>
         <Animated.View style={{ opacity: pulseAnim }}>
           <MessageSquare
             size={14}
@@ -106,7 +108,7 @@ export function SelectionBar({
         >
           CHAT
         </ThemedText>
-      </Pressable>
+      </Touchable>
     </View>
   );
 }

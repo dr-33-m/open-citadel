@@ -4,10 +4,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
   Modal,
-  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
+import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookPickerSheet } from '@/components/chat/book-picker-sheet';
@@ -110,9 +110,9 @@ export default function ChatTab() {
           <ThemedText type="bodySm" color={colors.text.secondary} style={{ textAlign: 'center' }}>
             Set up Samwell in Settings to start discussing your books.
           </ThemedText>
-          <Pressable style={styles.settingsLink} onPress={() => router.push({ pathname: '/settings' })}>
+          <Touchable style={styles.settingsLink} onPress={() => router.push({ pathname: '/settings' })}>
             <ThemedText type="labelMd" color={colors.primary.default}>SET UP SAMWELL</ThemedText>
-          </Pressable>
+          </Touchable>
         </View>
       );
     }
@@ -129,7 +129,7 @@ export default function ChatTab() {
 
   const renderSession = useCallback(({ item }: { item: ChatSession }) => {
     return (
-      <Pressable
+      <Touchable
         style={styles.sessionItem}
         onPress={() => router.push({ pathname: '/chat/[id]', params: { id: item.id } })}
         onLongPress={() => setConfirmDelete(item)}
@@ -152,7 +152,7 @@ export default function ChatTab() {
             {item.lastMessage}
           </ThemedText>
         )}
-      </Pressable>
+      </Touchable>
     );
   }, [styles, colors, router]);
 
@@ -188,7 +188,7 @@ export default function ChatTab() {
         onRequestClose={() => setConfirmDelete(null)}
       >
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setConfirmDelete(null)} />
+          <Touchable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setConfirmDelete(null)} />
           <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
             <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
             <ThemedText type="headlineSm">Delete chat?</ThemedText>
@@ -196,10 +196,10 @@ export default function ChatTab() {
               {confirmDelete?.title}
             </ThemedText>
             <View style={{ flexDirection: 'row', gap: spacing[3] }}>
-              <Pressable style={styles.actionBtn} onPress={() => setConfirmDelete(null)}>
+              <Touchable style={styles.actionBtn} onPress={() => setConfirmDelete(null)}>
                 <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-              </Pressable>
-              <Pressable
+              </Touchable>
+              <Touchable
                 style={[styles.actionBtn, { backgroundColor: '#e53935' }]}
                 onPress={() => {
                   if (confirmDelete) deleteSession(confirmDelete.id);
@@ -207,7 +207,7 @@ export default function ChatTab() {
                 }}
               >
                 <ThemedText type="labelSm" color="#fff">DELETE</ThemedText>
-              </Pressable>
+              </Touchable>
             </View>
           </View>
         </View>

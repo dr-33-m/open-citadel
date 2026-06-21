@@ -4,12 +4,13 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
+
+import { Touchable } from "@/components/ui/touchable";
 
 import { ThemedText } from "@/components/themed-text";
 import { GoldButton } from "@/components/ui/gold-button";
@@ -289,7 +290,7 @@ export function HighlightMenu({
       onRequestClose={handleRequestClose}
     >
       <View style={styles.container}>
-        <Pressable style={styles.overlay} onPress={onClose} />
+        <Touchable style={styles.overlay} onPress={onClose} />
 
         <KeyboardAvoidingView behavior="padding" style={styles.kavWrapper}>
           <View style={styles.sheet}>
@@ -339,20 +340,20 @@ export function HighlightMenu({
                         </ThemedText>
                       )}
                     </View>
-                    <Pressable
+                    <Touchable
                       onPress={() => handleEditNote(note)}
                       style={styles.noteAction}
                       hitSlop={8}
                     >
                       <Pencil size={14} color={colors.text.secondary} />
-                    </Pressable>
-                    <Pressable
+                    </Touchable>
+                    <Touchable
                       onPress={() => onDeleteNote(note.id)}
                       style={styles.noteAction}
                       hitSlop={8}
                     >
                       <Trash2 size={14} color={colors.text.secondary} />
-                    </Pressable>
+                    </Touchable>
                   </View>
                 ))}
               </ScrollView>
@@ -372,7 +373,7 @@ export function HighlightMenu({
             {/* Color swatches */}
             <View style={styles.colorRow}>
               {COLORS.map((c) => (
-                <Pressable
+                <Touchable
                   key={c}
                   style={[
                     styles.swatch,
@@ -397,9 +398,9 @@ export function HighlightMenu({
                       >
                         {tag}
                       </ThemedText>
-                      <Pressable onPress={() => removeTag(tag)} hitSlop={6}>
+                      <Touchable onPress={() => removeTag(tag)} hitSlop={6}>
                         <X size={11} color={colors.text.secondary} />
-                      </Pressable>
+                      </Touchable>
                     </View>
                   ))}
                 </View>
@@ -420,7 +421,7 @@ export function HighlightMenu({
                   returnKeyType="done"
                   onSubmitEditing={commitTag}
                 />
-                <Pressable
+                <Touchable
                   style={[
                     styles.tagInputBtn,
                     !tagInput.trim() && styles.tagInputBtnDisabled,
@@ -436,7 +437,7 @@ export function HighlightMenu({
                         : colors.text.secondary
                     }
                   />
-                </Pressable>
+                </Touchable>
               </View>
 
               {allTags.length > 0 && (
@@ -452,7 +453,7 @@ export function HighlightMenu({
                       (t) => t.toLowerCase() === tag.toLowerCase(),
                     );
                     return (
-                      <Pressable
+                      <Touchable
                         key={tag}
                         style={[
                           styles.suggestionChip,
@@ -474,7 +475,7 @@ export function HighlightMenu({
                         >
                           {tag}
                         </ThemedText>
-                      </Pressable>
+                      </Touchable>
                     );
                   })}
                 </ScrollView>
@@ -487,31 +488,31 @@ export function HighlightMenu({
                 onPress={handleSave}
               />
               {onStartChat && (
-                <Pressable style={styles.chatBtn} onPress={onStartChat}>
+                <Touchable style={styles.chatBtn} onPress={onStartChat}>
                   <MessageSquare size={16} color={colors.text.secondary} />
                   <ThemedText type="labelSm" color={colors.text.secondary}>
                     {chatSessionId ? "VIEW CHAT" : "START CHAT"}
                   </ThemedText>
-                </Pressable>
+                </Touchable>
               )}
               {editingNote ? (
-                <Pressable
+                <Touchable
                   onPress={handleCancelEdit}
                   style={styles.secondaryButton}
                 >
                   <ThemedText type="labelSm" color={colors.text.secondary}>
                     CANCEL
                   </ThemedText>
-                </Pressable>
+                </Touchable>
               ) : (
-                <Pressable
+                <Touchable
                   onPress={handleDelete}
                   style={styles.secondaryButton}
                 >
                   <ThemedText type="labelSm" color={colors.text.secondary}>
                     DELETE HIGHLIGHT
                   </ThemedText>
-                </Pressable>
+                </Touchable>
               )}
             </View>
           </View>

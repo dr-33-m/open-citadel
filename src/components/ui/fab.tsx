@@ -1,7 +1,8 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
+import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
 import { spacing } from '@/constants/theme';
 
@@ -32,7 +33,7 @@ export function Fab({ onPress }: FabProps) {
   }), [colors]);
 
   return (
-    <Pressable onPress={onPress} style={styles.container}>
+    <Touchable onPress={onPress} style={styles.container}>
       <LinearGradient
         colors={[colors.primary.default, colors.primary.container]}
         start={{ x: 0, y: 0 }}
@@ -41,6 +42,6 @@ export function Fab({ onPress }: FabProps) {
       >
         <Text style={styles.icon}>+</Text>
       </LinearGradient>
-    </Pressable>
+    </Touchable>
   );
 }

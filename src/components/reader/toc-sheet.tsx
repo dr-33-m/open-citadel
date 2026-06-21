@@ -8,12 +8,13 @@ import {
 import React, { useState } from "react";
 import {
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
+
+import { Touchable } from "@/components/ui/touchable";
 import type { Link, Locator } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -102,7 +103,7 @@ function ChapterRow({
           />
         )}
 
-        <Pressable style={{ flex: 1 }} onPress={() => onPress(link)}>
+        <Touchable style={{ flex: 1 }} onPress={() => onPress(link)}>
           <ThemedText
             type={depth === 0 ? "bodyMd" : "bodySm"}
             color={isCurrent ? colors.primary.default : colors.text.primary}
@@ -110,10 +111,10 @@ function ChapterRow({
           >
             {link.title ?? link.href.split("/").pop()}
           </ThemedText>
-        </Pressable>
+        </Touchable>
 
         {hasChildren && (
-          <Pressable
+          <Touchable
             onPress={() => setExpanded((v) => !v)}
             hitSlop={12}
             style={{ paddingLeft: spacing[2] }}
@@ -123,7 +124,7 @@ function ChapterRow({
             ) : (
               <ChevronRight size={15} color={colors.text.secondary} />
             )}
-          </Pressable>
+          </Touchable>
         )}
       </View>
 
@@ -268,14 +269,14 @@ function HighlightsList({
           returnKeyType="search"
         />
         {search.length > 0 && (
-          <Pressable onPress={() => setSearch("")} hitSlop={8}>
+          <Touchable onPress={() => setSearch("")} hitSlop={8}>
             <X size={14} color={colors.text.secondary} />
-          </Pressable>
+          </Touchable>
         )}
       </View>
 
       <View style={styles.colorFilterRow}>
-        <Pressable
+        <Touchable
           style={[
             styles.colorFilterAll,
             !activeColor && styles.colorFilterAllActive,
@@ -288,9 +289,9 @@ function HighlightsList({
           >
             ALL
           </ThemedText>
-        </Pressable>
+        </Touchable>
         {FILTER_COLORS.map((c) => (
-          <Pressable
+          <Touchable
             key={c}
             style={[
               styles.colorFilterDot,
@@ -323,7 +324,7 @@ function HighlightsList({
             : null;
           const tags: string[] = h.tags ? JSON.parse(h.tags) : [];
           return (
-            <Pressable
+            <Touchable
               key={h.id}
               style={styles.highlightRow}
               onPress={() => locator && onHighlightPress(locator)}
@@ -358,7 +359,7 @@ function HighlightsList({
                   </View>
                 )}
               </View>
-            </Pressable>
+            </Touchable>
           );
         })
       )}
@@ -447,11 +448,11 @@ function BookmarksList({
         const isEditing = editingNoteId === bm.id;
         return (
           <View key={bm.id} style={styles.row}>
-            <Pressable onPress={() => locator && onBookmarkPress(locator)}>
+            <Touchable onPress={() => locator && onBookmarkPress(locator)}>
               <BookmarkIcon size={16} color={colors.primary.default} />
-            </Pressable>
+            </Touchable>
             <View style={styles.content}>
-              <Pressable onPress={() => locator && onBookmarkPress(locator)}>
+              <Touchable onPress={() => locator && onBookmarkPress(locator)}>
                 <ThemedText type="bodySm" color={colors.text.primary}>
                   {bm.chapter || `Page ${bm.page ?? "?"}`}
                 </ThemedText>
@@ -463,7 +464,7 @@ function BookmarksList({
                     minute: "2-digit",
                   })}
                 </ThemedText>
-              </Pressable>
+              </Touchable>
 
               {/* Note display / edit */}
               {isEditing ? (
@@ -478,15 +479,15 @@ function BookmarksList({
                     autoFocus
                   />
                   <View style={styles.noteActions}>
-                    <Pressable
+                    <Touchable
                       onPress={() => setEditingNoteId(null)}
                       hitSlop={8}
                     >
                       <ThemedText type="labelSm" color={colors.text.secondary}>
                         CANCEL
                       </ThemedText>
-                    </Pressable>
-                    <Pressable
+                    </Touchable>
+                    <Touchable
                       onPress={() => {
                         onUpdateBookmarkNote(bm.id, editingNoteText.trim());
                         setEditingNoteId(null);
@@ -496,11 +497,11 @@ function BookmarksList({
                       <ThemedText type="labelSm" color={colors.primary.default}>
                         SAVE
                       </ThemedText>
-                    </Pressable>
+                    </Touchable>
                   </View>
                 </>
               ) : (
-                <Pressable
+                <Touchable
                   onPress={() => {
                     setEditingNoteId(bm.id);
                     setEditingNoteText(bm.note ?? "");
@@ -514,7 +515,7 @@ function BookmarksList({
                       + add note
                     </ThemedText>
                   )}
-                </Pressable>
+                </Touchable>
               )}
             </View>
           </View>
@@ -610,7 +611,7 @@ export function TocSheet({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
+        <Touchable style={styles.backdrop} onPress={onClose} />
 
         <View
           style={[styles.sheet, { paddingBottom: insets.bottom + spacing[4] }]}
@@ -621,16 +622,16 @@ export function TocSheet({
               { paddingTop: insets.top + spacing[4] },
             ]}
           >
-            <Pressable onPress={onClose} style={styles.closeButton}>
+            <Touchable onPress={onClose} style={styles.closeButton}>
               <X size={20} color={colors.text.secondary} />
-            </Pressable>
+            </Touchable>
           </View>
 
           <View style={styles.tabBar}>
             {TABS.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
-                <Pressable
+                <Touchable
                   key={tab.id}
                   style={styles.tab}
                   onPress={() => setActiveTab(tab.id)}
@@ -644,7 +645,7 @@ export function TocSheet({
                     {tab.label}
                   </ThemedText>
                   {isActive && <View style={styles.tabUnderline} />}
-                </Pressable>
+                </Touchable>
               );
             })}
           </View>

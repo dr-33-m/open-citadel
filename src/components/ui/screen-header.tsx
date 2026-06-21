@@ -1,8 +1,9 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { fontFamily, spacing } from '@/constants/theme';
+import { Touchable } from '@/components/ui/touchable';
 
 type ScreenHeaderProps = {
   title: string;
@@ -49,9 +50,9 @@ export function ScreenHeader({
         {title}
       </ThemedText>
 
-      <Pressable onPress={onRightPress} style={styles.iconButton}>
+      <Touchable onPress={onRightPress} style={styles.iconButton}>
         {rightIcon}
-      </Pressable>
+      </Touchable>
     </View>
   );
 }

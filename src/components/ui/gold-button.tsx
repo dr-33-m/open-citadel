@@ -1,6 +1,8 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/use-colors';
@@ -23,7 +25,7 @@ export function GoldButton({ label, onPress }: GoldButtonProps) {
   }), [colors]);
 
   return (
-    <Pressable onPress={onPress}>
+    <Touchable onPress={onPress}>
       <LinearGradient
         colors={[colors.primary.default, colors.primary.container]}
         start={{ x: 0, y: 0 }}
@@ -34,6 +36,6 @@ export function GoldButton({ label, onPress }: GoldButtonProps) {
           {label}
         </ThemedText>
       </LinearGradient>
-    </Pressable>
+    </Touchable>
   );
 }

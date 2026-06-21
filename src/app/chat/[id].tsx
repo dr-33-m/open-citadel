@@ -6,11 +6,11 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
+import { Touchable } from "@/components/ui/touchable";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -261,14 +261,14 @@ export default function ChatSessionScreen() {
           <ThemedText type="bodySm" color={colors.text.secondary}>
             Samwell needs a model to run. Set one up in Settings.
           </ThemedText>
-          <Pressable
+          <Touchable
             style={styles.loadBtn}
             onPress={() => router.push({ pathname: "/settings" })}
           >
             <ThemedText type="labelSm" color={colors.text.inverse}>
               SET UP SAMWELL
             </ThemedText>
-          </Pressable>
+          </Touchable>
         </View>
       );
     }
@@ -279,7 +279,7 @@ export default function ChatSessionScreen() {
           <ThemedText type="bodySm" color="#e53935">
             {loadError}
           </ThemedText>
-          <Pressable
+          <Touchable
             style={[styles.loadBtn, isLoading && { opacity: 0.5 }]}
             disabled={isLoading}
             onPress={initContext}
@@ -287,7 +287,7 @@ export default function ChatSessionScreen() {
             <ThemedText type="labelSm" color={colors.text.inverse}>
               RETRY
             </ThemedText>
-          </Pressable>
+          </Touchable>
         </View>
       );
     }
@@ -298,7 +298,7 @@ export default function ChatSessionScreen() {
           <ThemedText type="bodySm" color={colors.text.secondary}>
             Samwell is offline. Wake him up to chat.
           </ThemedText>
-          <Pressable
+          <Touchable
             style={[styles.loadBtn, isLoading && { opacity: 0.5 }]}
             disabled={isLoading}
             onPress={initContext}
@@ -306,7 +306,7 @@ export default function ChatSessionScreen() {
             <ThemedText type="labelSm" color={colors.text.inverse}>
               WAKE UP
             </ThemedText>
-          </Pressable>
+          </Touchable>
         </View>
       );
     }
@@ -323,9 +323,9 @@ export default function ChatSessionScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+        <Touchable style={styles.backBtn} onPress={() => router.back()}>
           <ArrowLeft size={22} color={colors.text.primary} />
-        </Pressable>
+        </Touchable>
         <View style={styles.headerCenter}>
           <ThemedText type="bodyMd" numberOfLines={1}>
             {activeSession?.title ?? "…"}
@@ -333,7 +333,7 @@ export default function ChatSessionScreen() {
           <View style={styles.headerSubRow}>
             <ModelStatusBar onPress={initContext} />
             {activeSession?.bookTitle && (
-              <Pressable
+              <Touchable
                 style={styles.bookChip}
                 onPress={() => {
                   if (activeSession.bookId && activeSession.contextLocator) {
@@ -354,7 +354,7 @@ export default function ChatSessionScreen() {
                 >
                   {activeSession.bookTitle}
                 </ThemedText>
-              </Pressable>
+              </Touchable>
             )}
           </View>
         </View>
@@ -396,7 +396,7 @@ export default function ChatSessionScreen() {
         />
 
         {isGenerating ? (
-          <Pressable
+          <Touchable
             style={[styles.stopBtn, isStopping && { opacity: 0.5 }]}
             disabled={isStopping}
             onPress={() => {
@@ -409,9 +409,9 @@ export default function ChatSessionScreen() {
               color={colors.text.primary}
               fill={colors.text.primary}
             />
-          </Pressable>
+          </Touchable>
         ) : (
-          <Pressable
+          <Touchable
             style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
             onPress={handleSend}
             disabled={!canSend}
@@ -420,7 +420,7 @@ export default function ChatSessionScreen() {
               size={16}
               color={canSend ? colors.text.inverse : colors.text.secondary}
             />
-          </Pressable>
+          </Touchable>
         )}
       </View>
     </KeyboardAvoidingView>

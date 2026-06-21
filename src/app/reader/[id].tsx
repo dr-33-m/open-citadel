@@ -11,11 +11,12 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Pressable,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
+
+import { Touchable } from "@/components/ui/touchable";
 import type {
   DecorationActivatedEvent,
   DecorationGroup,
@@ -622,7 +623,7 @@ export default function ReaderScreen() {
       {/* Transparent tap zone — same height as the header.
           Tapping here toggles the header. ReadiumView is below this,
           so all reading interactions (swipe, selection) are untouched. */}
-      <Pressable
+      <Touchable
         style={[styles.headerTapZone, { height: headerZoneHeight }]}
         onPress={toggleHeader}
       />
@@ -818,12 +819,12 @@ export default function ReaderScreen() {
         <View
           style={[styles.returnBanner, { bottom: insets.bottom + spacing[4] }]}
         >
-          <Pressable style={styles.returnBtn} onPress={handleReturnToProgress}>
+          <Touchable style={styles.returnBtn} onPress={handleReturnToProgress}>
             <ThemedText type="labelSm" color={colors.primary.default}>
               ← RETURN TO PROGRESS
             </ThemedText>
-          </Pressable>
-          <Pressable
+          </Touchable>
+          <Touchable
             style={styles.returnDismiss}
             onPress={handleDismissReturn}
             hitSlop={8}
@@ -831,7 +832,7 @@ export default function ReaderScreen() {
             <ThemedText type="labelSm" color={colors.text.secondary}>
               ✕
             </ThemedText>
-          </Pressable>
+          </Touchable>
         </View>
       )}
 
@@ -843,22 +844,22 @@ export default function ReaderScreen() {
             { bottom: insets.bottom + spacing[4] + 60 },
           ]}
         >
-          <Pressable
+          <Touchable
             style={styles.returnBtn}
             onPress={handleTTSResumeFromPaused}
           >
             <ThemedText type="labelSm" color={colors.primary.default}>
               ← RESUME FROM PAUSED
             </ThemedText>
-          </Pressable>
-          <Pressable
+          </Touchable>
+          <Touchable
             style={styles.returnBtn}
             onPress={handleTTSContinueFromHere}
           >
             <ThemedText type="labelSm" color={colors.text.secondary}>
               READ FROM HERE
             </ThemedText>
-          </Pressable>
+          </Touchable>
         </View>
       )}
 
@@ -966,16 +967,16 @@ function BookmarkNotePrompt({
           gap: spacing[4],
         }}
       >
-        <Pressable onPress={onSkip} hitSlop={8}>
+        <Touchable onPress={onSkip} hitSlop={8}>
           <ThemedText type="labelSm" color={colors.text.secondary}>
             SKIP
           </ThemedText>
-        </Pressable>
-        <Pressable onPress={onSave} hitSlop={8}>
+        </Touchable>
+        <Touchable onPress={onSave} hitSlop={8}>
           <ThemedText type="labelSm" color={colors.primary.default}>
             SAVE
           </ThemedText>
-        </Pressable>
+        </Touchable>
       </View>
     </View>
   );

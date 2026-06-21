@@ -1,15 +1,18 @@
+import { like } from 'drizzle-orm';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
-  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
 import { spacing } from '@/constants/theme';
+import { db } from '@/db/client';
+import { highlights, thoughts } from '@/db/schema';
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -47,6 +50,26 @@ export function CalendarPicker({
     const [, m] = selectedDate.split('-').map(Number);
     return m - 1; // 0-indexed
   });
+
+  // Activity counts per day for the current view month: { 'YYYY-MM-DD': count }
+  const [activityCounts, setActivityCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const monthStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
+    const prefix = `${monthStr}%`;
+
+    Promise.all([
+      db.select({ createdAt: highlights.createdAt }).from(highlights).where(like(highlights.createdAt, prefix)),
+      db.select({ createdAt: thoughts.createdAt }).from(thoughts).where(like(thoughts.createdAt, prefix)),
+    ]).then(([hRows, tRows]) => {
+      const counts: Record<string, number> = {};
+      [...hRows, ...tRows].forEach(({ createdAt }) => {
+        const day = createdAt.split('T')[0];
+        counts[day] = (counts[day] ?? 0) + 1;
+      });
+      setActivityCounts(counts);
+    }).catch(() => {});
+  }, [viewYear, viewMonth]);
 
   const styles = React.useMemo(() => StyleSheet.create({
     container: { flex: 1, justifyContent: 'flex-end' },
@@ -92,7 +115,7 @@ export function CalendarPicker({
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: spacing[3],
+      paddingVertical: spacing[2],
     },
     daySelected: {
       borderRadius: 20,
@@ -100,6 +123,12 @@ export function CalendarPicker({
     dayToday: {
       borderWidth: 1,
       borderRadius: 20,
+    },
+    activityDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 2,
+      marginTop: 2,
     },
   }), [colors]);
 
@@ -148,18 +177,18 @@ export function CalendarPicker({
       onRequestClose={onClose}
     >
       <View style={styles.container}>
-        <Pressable style={styles.overlay} onPress={onClose} />
+        <Touchable style={styles.overlay} onPress={onClose} />
         <View style={styles.sheet}>
           <View style={styles.handle} />
 
           <View style={styles.header}>
-            <Pressable onPress={prevMonth} style={styles.navBtn}>
+            <Touchable onPress={prevMonth} style={styles.navBtn}>
               <ChevronLeft size={20} color={colors.text.primary} />
-            </Pressable>
+            </Touchable>
             <ThemedText type="bodyMd">{monthName}</ThemedText>
-            <Pressable onPress={nextMonth} style={styles.navBtn}>
+            <Touchable onPress={nextMonth} style={styles.navBtn}>
               <ChevronRight size={20} color={colors.text.primary} />
-            </Pressable>
+            </Touchable>
           </View>
 
           {/* Week header */}
@@ -184,9 +213,12 @@ export function CalendarPicker({
                 const isSelected = dateStr === selectedDate;
                 const isToday = dateStr === today;
                 const isFuture = dateStr > today;
+                const count = activityCounts[dateStr] ?? 0;
+                const dotOpacity = count === 0 ? 1 : Math.max(0.2, Math.min(count / 10, 1));
+                const dotColor = count === 0 ? '#e53935' : colors.primary.default;
 
                 return (
-                  <Pressable
+                  <Touchable
                     key={ci}
                     style={[
                       styles.dayCell,
@@ -219,7 +251,15 @@ export function CalendarPicker({
                     >
                       {day}
                     </ThemedText>
-                  </Pressable>
+                    {dateStr < today && (
+                      <View
+                        style={[
+                          styles.activityDot,
+                          { backgroundColor: dotColor, opacity: dotOpacity },
+                        ]}
+                      />
+                    )}
+                  </Touchable>
                 );
               })}
             </View>

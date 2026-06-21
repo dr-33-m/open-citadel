@@ -3,12 +3,13 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 import { Check, X } from 'lucide-react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -189,7 +190,7 @@ export function NewThoughtSheet({
       onRequestClose={handleClose}
     >
       <View style={styles.container}>
-        <Pressable style={styles.overlay} onPress={handleClose} />
+        <Touchable style={styles.overlay} onPress={handleClose} />
         <KeyboardAvoidingView behavior="padding" style={styles.kavWrapper}>
           <View style={styles.sheet}>
             <View style={styles.handle} />
@@ -211,7 +212,7 @@ export function NewThoughtSheet({
             {/* Color swatches */}
             <View style={styles.colorRow}>
               {COLORS.map((c) => (
-                <Pressable
+                <Touchable
                   key={c}
                   style={[
                     styles.swatch,
@@ -232,9 +233,9 @@ export function NewThoughtSheet({
                       <ThemedText type="labelSm" color={colors.text.primary} style={styles.chipText}>
                         {tag}
                       </ThemedText>
-                      <Pressable onPress={() => removeTag(tag)} hitSlop={6}>
+                      <Touchable onPress={() => removeTag(tag)} hitSlop={6}>
                         <X size={11} color={colors.text.secondary} />
-                      </Pressable>
+                      </Touchable>
                     </View>
                   ))}
                 </View>
@@ -255,13 +256,13 @@ export function NewThoughtSheet({
                   returnKeyType="done"
                   onSubmitEditing={commitTag}
                 />
-                <Pressable
+                <Touchable
                   style={[styles.tagInputBtn, !tagInput.trim() && styles.tagInputBtnDisabled]}
                   onPress={commitTag}
                   hitSlop={8}
                 >
                   <Check size={16} color={tagInput.trim() ? colors.primary.default : colors.text.secondary} />
-                </Pressable>
+                </Touchable>
               </View>
 
               {allTags.length > 0 && (
@@ -275,7 +276,7 @@ export function NewThoughtSheet({
                   {allTags.map((tag) => {
                     const isAdded = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
                     return (
-                      <Pressable
+                      <Touchable
                         key={tag}
                         style={[styles.suggestionChip, isAdded && styles.suggestionChipAdded]}
                         onPress={() => !isAdded && addTag(tag)}
@@ -288,7 +289,7 @@ export function NewThoughtSheet({
                         >
                           {tag}
                         </ThemedText>
-                      </Pressable>
+                      </Touchable>
                     );
                   })}
                 </ScrollView>
@@ -300,9 +301,9 @@ export function NewThoughtSheet({
                 label={isEditing ? 'SAVE CHANGES' : 'SAVE THOUGHT'}
                 onPress={handleSave}
               />
-              <Pressable onPress={handleClose} style={styles.cancel}>
+              <Touchable onPress={handleClose} style={styles.cancel}>
                 <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-              </Pressable>
+              </Touchable>
             </View>
           </View>
         </KeyboardAvoidingView>

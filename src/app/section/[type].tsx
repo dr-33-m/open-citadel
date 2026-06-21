@@ -12,12 +12,13 @@ import {
   Dimensions,
   FlatList,
   Image,
-  Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
+
+import { Touchable } from "@/components/ui/touchable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BookActionSheet } from "@/components/library/book-action-sheet";
@@ -122,24 +123,24 @@ export default function SectionScreen() {
       <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <Touchable onPress={() => router.back()} style={styles.backButton}>
             <ThemedText type="bodyMd" color={colors.primary.default}>
               ←
             </ThemedText>
-          </Pressable>
+          </Touchable>
           <ThemedText type="headlineSm" style={styles.headerTitle}>
             {title}
           </ThemedText>
           <ThemedText type="labelSm" color={colors.text.secondary}>
             {collections.length}
           </ThemedText>
-          <Pressable
+          <Touchable
             onPress={() => setShowNewCollection(true)}
             style={styles.backButton}
             hitSlop={8}
           >
             <Plus size={18} color={colors.text.primary} />
-          </Pressable>
+          </Touchable>
         </View>
 
         {/* Search */}
@@ -154,9 +155,9 @@ export default function SectionScreen() {
             autoCorrect={false}
           />
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery("")}>
+            <Touchable onPress={() => setQuery("")}>
               <X size={16} color={colors.text.secondary} />
-            </Pressable>
+            </Touchable>
           )}
         </View>
 
@@ -171,7 +172,7 @@ export default function SectionScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {filteredCollections.map((collection) => (
-            <Pressable
+            <Touchable
               key={collection.id}
               style={styles.collectionCell}
               onPress={() => router.push(`/collection/${collection.id}` as any)}
@@ -183,7 +184,7 @@ export default function SectionScreen() {
               <ThemedText type="labelSm" color={colors.primary.default}>
                 {collection.count} {collection.count === 1 ? "BOOK" : "BOOKS"}
               </ThemedText>
-            </Pressable>
+            </Touchable>
           ))}
         </ScrollView>
 
@@ -205,11 +206,11 @@ export default function SectionScreen() {
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
+        <Touchable onPress={() => router.back()} style={styles.backButton}>
           <ThemedText type="bodyMd" color={colors.primary.default}>
             ←
           </ThemedText>
-        </Pressable>
+        </Touchable>
         <ThemedText type="headlineSm" style={styles.headerTitle}>
           {title}
         </ThemedText>
@@ -217,7 +218,7 @@ export default function SectionScreen() {
           {sectionBooks.length}
         </ThemedText>
         {type === "all" && (
-          <Pressable onPress={syncBooks} style={styles.backButton} hitSlop={8}>
+          <Touchable onPress={syncBooks} style={styles.backButton} hitSlop={8}>
             <RefreshCw
               size={16}
               color={
@@ -226,12 +227,12 @@ export default function SectionScreen() {
                   : colors.text.secondary
               }
             />
-          </Pressable>
+          </Touchable>
         )}
         {type === "queue" && (
-          <Pressable onPress={clearQueue} style={styles.backButton} hitSlop={8}>
+          <Touchable onPress={clearQueue} style={styles.backButton} hitSlop={8}>
             <Trash2 size={16} color={colors.text.secondary} />
-          </Pressable>
+          </Touchable>
         )}
       </View>
 
@@ -247,9 +248,9 @@ export default function SectionScreen() {
           autoCorrect={false}
         />
         {query.length > 0 && (
-          <Pressable onPress={() => setQuery("")}>
+          <Touchable onPress={() => setQuery("")}>
             <X size={16} color={colors.text.secondary} />
-          </Pressable>
+          </Touchable>
         )}
       </View>
 
@@ -274,7 +275,7 @@ export default function SectionScreen() {
           </View>
         }
         renderItem={({ item: book }) => (
-          <Pressable
+          <Touchable
             style={styles.bookItem}
             onPress={() => openReader(book.id)}
             onLongPress={() => setActionBook(book)}
@@ -324,7 +325,7 @@ export default function SectionScreen() {
             >
               {book.author}
             </ThemedText>
-          </Pressable>
+          </Touchable>
         )}
       />
 

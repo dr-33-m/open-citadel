@@ -1,6 +1,8 @@
 import { CircleCheckBig, RefreshCw } from 'lucide-react-native';
 import React from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/use-colors';
@@ -79,7 +81,7 @@ export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedC
       contentContainerStyle={styles.scrollContent}
     >
       {books.map((book) => (
-        <Pressable
+        <Touchable
           key={book.id}
           onPress={() => onBookPress?.(book.id)}
           onLongPress={() => onBookLongPress?.(book)}
@@ -114,7 +116,7 @@ export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedC
           <ThemedText type="labelSm" color={colors.text.secondary} numberOfLines={1}>
             {book.author}
           </ThemedText>
-        </Pressable>
+        </Touchable>
       ))}
     </ScrollView>
   );

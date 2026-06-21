@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm';
 import { useRouter } from 'expo-router';
 import { Calendar, MessageSquare, Pencil, Trash2 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -219,7 +220,7 @@ export default function TimelineScreen() {
         onRequestClose={() => setLongPressEntry(null)}
       >
         <View style={styles.sheetContainer}>
-          <Pressable style={styles.sheetOverlay} onPress={() => setLongPressEntry(null)} />
+          <Touchable style={styles.sheetOverlay} onPress={() => setLongPressEntry(null)} />
           <View style={[sheetStyles.sheet, { paddingBottom: insets.bottom + spacing[4] }]}>
             <View style={sheetStyles.sheetHandle} />
 
@@ -237,7 +238,7 @@ export default function TimelineScreen() {
             {/* Edit — only for thoughts */}
             {longPressEntry?.type === 'thought' && (
               <>
-                <Pressable
+                <Touchable
                   style={sheetStyles.sheetRow}
                   onPress={() => {
                     setLongPressEntry(null);
@@ -252,7 +253,7 @@ export default function TimelineScreen() {
                 >
                   <Pencil size={20} color={colors.text.primary} />
                   <ThemedText type="bodyMd" color={colors.text.primary}>Edit</ThemedText>
-                </Pressable>
+                </Touchable>
                 <View style={sheetStyles.sheetSeparator} />
               </>
             )}
@@ -260,30 +261,30 @@ export default function TimelineScreen() {
             {/* View Chat — if linked */}
             {longPressEntry?.chatSessionId ? (
               <>
-                <Pressable style={sheetStyles.sheetRow} onPress={() => handleViewChat(longPressEntry)}>
+                <Touchable style={sheetStyles.sheetRow} onPress={() => handleViewChat(longPressEntry)}>
                   <MessageSquare size={20} color={colors.text.primary} />
                   <ThemedText type="bodyMd" color={colors.text.primary}>View Chat</ThemedText>
-                </Pressable>
+                </Touchable>
                 <View style={sheetStyles.sheetSeparator} />
               </>
             ) : (
               <>
-                <Pressable style={sheetStyles.sheetRow} onPress={() => longPressEntry && handleStartChat(longPressEntry)}>
+                <Touchable style={sheetStyles.sheetRow} onPress={() => longPressEntry && handleStartChat(longPressEntry)}>
                   <MessageSquare size={20} color={colors.text.primary} />
                   <ThemedText type="bodyMd" color={colors.text.primary}>Start Chat</ThemedText>
-                </Pressable>
+                </Touchable>
                 <View style={sheetStyles.sheetSeparator} />
               </>
             )}
 
             {/* Delete */}
-            <Pressable
+            <Touchable
               style={sheetStyles.sheetRow}
               onPress={() => longPressEntry && handleDeleteEntry(longPressEntry)}
             >
               <Trash2 size={20} color={colors.text.secondary} />
               <ThemedText type="bodyMd" color={colors.text.secondary}>Delete</ThemedText>
-            </Pressable>
+            </Touchable>
           </View>
         </View>
       </Modal>

@@ -7,7 +7,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
-  Pressable,
   ScrollView,
   SectionList,
   StyleSheet,
@@ -20,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ScreenHeader } from '@/components/ui/screen-header';
+import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
 import { fontFamily, spacing } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
@@ -461,7 +461,7 @@ export default function SettingsScreen() {
           <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
             APPEARANCE
           </ThemedText>
-          <Pressable
+          <Touchable
             style={styles.row}
             onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           >
@@ -472,7 +472,7 @@ export default function SettingsScreen() {
               trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
               thumbColor={colors.surface.low}
             />
-          </Pressable>
+          </Touchable>
         </View>
 
         <View style={styles.divider} />
@@ -502,7 +502,7 @@ export default function SettingsScreen() {
 
           {/* Mode cards */}
           <View style={styles.modeCards}>
-            <Pressable
+            <Touchable
               style={[styles.modeCard, samwellMode === 'offline' && styles.modeCardActive]}
               onPress={() => setSamwellMode('offline')}
             >
@@ -512,8 +512,8 @@ export default function SettingsScreen() {
               <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 11 }}>
                 Runs on your device. No internet.
               </ThemedText>
-            </Pressable>
-            <Pressable
+            </Touchable>
+            <Touchable
               style={[styles.modeCard, samwellMode === 'cloud' && styles.modeCardActive]}
               onPress={() => setSamwellMode('cloud')}
             >
@@ -528,7 +528,7 @@ export default function SettingsScreen() {
               <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 11 }}>
                 Fast inference. No device limits.
               </ThemedText>
-            </Pressable>
+            </Touchable>
           </View>
 
           {samwellMode === 'cloud' ? (
@@ -555,11 +555,11 @@ export default function SettingsScreen() {
                       </ThemedText>
                     )}
                   </View>
-                  <Pressable style={styles.aiActionBtn} onPress={() => setModelSheetVisible(true)}>
+                  <Touchable style={styles.aiActionBtn} onPress={() => setModelSheetVisible(true)}>
                     <ThemedText type="labelSm" color={colors.text.secondary}>
                       CHANGE
                     </ThemedText>
-                  </Pressable>
+                  </Touchable>
                 </View>
 
                 {/* Download progress */}
@@ -577,18 +577,18 @@ export default function SettingsScreen() {
                       <ThemedText type="labelSm" color={colors.text.secondary}>
                         {Math.round((downloadProgress[activeModel.id] ?? 0) * 100)}%
                       </ThemedText>
-                      <Pressable onPress={() => cancelDownload(activeModel.id)}>
+                      <Touchable onPress={() => cancelDownload(activeModel.id)}>
                         <ThemedText type="labelSm" color="#e53935">
                           CANCEL
                         </ThemedText>
-                      </Pressable>
+                      </Touchable>
                     </View>
                   </View>
                 )}
 
                 {/* Memory warning */}
                 {activeModel?.isDownloaded && memoryStatus !== 'fits' && (
-                  <Pressable
+                  <Touchable
                     style={[styles.aiActionBtn, { alignSelf: 'flex-start', backgroundColor: memoryStatus === 'wont_fit' ? '#e5393520' : '#f9731620' }]}
                     onPress={() => setMemoryInfoVisible(true)}
                   >
@@ -596,14 +596,14 @@ export default function SettingsScreen() {
                     <ThemedText type="labelSm" color={memoryStatus === 'wont_fit' ? '#e53935' : '#f97316'}>
                       {memoryStatus === 'wont_fit' ? 'TOO LARGE' : 'TIGHT'}
                     </ThemedText>
-                  </Pressable>
+                  </Touchable>
                 )}
 
                 {/* Action buttons */}
                 {activeModel && !activeModelDownloading && (
                   <View style={{ flexDirection: 'row', gap: spacing[2], flexWrap: 'wrap' }}>
                     {!activeModel.isDownloaded ? (
-                      <Pressable
+                      <Touchable
                         style={[styles.aiActionBtn, isDownloading && { opacity: 0.5 }]}
                         disabled={isDownloading}
                         onPress={async () => {
@@ -615,10 +615,10 @@ export default function SettingsScreen() {
                         <ThemedText type="labelSm" color={colors.primary.default}>
                           DOWNLOAD
                         </ThemedText>
-                      </Pressable>
+                      </Touchable>
                     ) : (
                       <>
-                        <Pressable
+                        <Touchable
                           style={[styles.aiActionBtn, (llamaLoading || isDeleting || (!isLoaded && memoryStatus === 'wont_fit')) && { opacity: 0.5 }]}
                           onPress={isLoaded ? releaseContext : () => useLlamaStore.getState().initContext()}
                           disabled={llamaLoading || isDeleting || (!isLoaded && memoryStatus === 'wont_fit')}
@@ -629,8 +629,8 @@ export default function SettingsScreen() {
                           <ThemedText type="labelSm" color={isLoaded ? colors.text.primary : colors.text.secondary}>
                             {isLoaded ? 'SLEEP' : 'WAKEN'}
                           </ThemedText>
-                        </Pressable>
-                        <Pressable
+                        </Touchable>
+                        <Touchable
                           style={[styles.aiActionBtn, (llamaLoading || isDeleting) && { opacity: 0.5 }]}
                           disabled={llamaLoading || isDeleting}
                           onPress={() => setTuneModalVisible(true)}
@@ -639,8 +639,8 @@ export default function SettingsScreen() {
                           <ThemedText type="labelSm" color={colors.text.primary}>
                             TUNE
                           </ThemedText>
-                        </Pressable>
-                        <Pressable
+                        </Touchable>
+                        <Touchable
                           style={[styles.aiActionBtn, (llamaLoading || isDeleting) && { opacity: 0.5 }]}
                           disabled={llamaLoading || isDeleting}
                           onPress={async () => {
@@ -655,7 +655,7 @@ export default function SettingsScreen() {
                           <ThemedText type="labelSm" color="#e53935">
                             DELETE
                           </ThemedText>
-                        </Pressable>
+                        </Touchable>
                       </>
                     )}
                   </View>
@@ -679,7 +679,7 @@ export default function SettingsScreen() {
             {TTS_RATES.map((r) => {
               const active = Math.abs(ttsRate - r) < 0.01;
               return (
-                <Pressable
+                <Touchable
                   key={r}
                   style={[styles.rateChip, active && styles.rateChipActive]}
                   onPress={() => setTtsRate(r)}
@@ -690,17 +690,17 @@ export default function SettingsScreen() {
                   >
                     {r === 1 ? '1×' : `${r}×`}
                   </ThemedText>
-                </Pressable>
+                </Touchable>
               );
             })}
           </View>
 
-          <Pressable style={styles.row} onPress={openVoiceModal}>
+          <Touchable style={styles.row} onPress={openVoiceModal}>
             <ThemedText type="bodyMd">Voice</ThemedText>
             <ThemedText type="bodySm" color={colors.text.secondary}>
               {currentVoiceName} ›
             </ThemedText>
-          </Pressable>
+          </Touchable>
         </View>
       </ScrollView>
 
@@ -713,9 +713,9 @@ export default function SettingsScreen() {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <ThemedText type="headlineMd">Select Voice</ThemedText>
-            <Pressable onPress={() => setVoiceModalVisible(false)} hitSlop={12}>
+            <Touchable onPress={() => setVoiceModalVisible(false)} hitSlop={12}>
               <ThemedText type="bodyMd" color={colors.primary.default}>Done</ThemedText>
-            </Pressable>
+            </Touchable>
           </View>
 
           {voicesLoading ? (
@@ -739,7 +739,7 @@ export default function SettingsScreen() {
                   : ttsVoice === null;
                 const isPreviewing = previewingVoice === item.identifier;
                 return (
-                  <Pressable
+                  <Touchable
                     style={styles.voiceItem}
                     onPress={() => {
                       setTtsVoice(item.identifier || null, item.language || null);
@@ -762,7 +762,7 @@ export default function SettingsScreen() {
                       </View>
                     ) : null}
                     {item.identifier ? (
-                      <Pressable
+                      <Touchable
                         onPress={(e) => { e.stopPropagation(); previewVoice(item); }}
                         hitSlop={8}
                       >
@@ -770,12 +770,12 @@ export default function SettingsScreen() {
                           size={18}
                           color={isPreviewing ? colors.primary.default : colors.text.secondary}
                         />
-                      </Pressable>
+                      </Touchable>
                     ) : null}
                     {isSelected && (
                       <ThemedText type="bodyMd" color={colors.primary.default}>✓</ThemedText>
                     )}
-                  </Pressable>
+                  </Touchable>
                 );
               }}
             />
@@ -791,12 +791,12 @@ export default function SettingsScreen() {
         onRequestClose={closeModelSheet}
       >
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Pressable
+          <Touchable
             style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' }}
             onPress={closeModelSheet}
           />
           <KeyboardAvoidingView behavior="padding" style={{ backgroundColor: colors.surface.low, maxHeight: '80%' }}>
-            <Pressable onPress={() => {}} style={{ paddingBottom: insets.bottom + spacing[4] }}>
+            <Touchable onPress={() => {}} style={{ paddingBottom: insets.bottom + spacing[4] }}>
               {/* Handle */}
               <View style={{ width: 40, height: 2, backgroundColor: colors.surface.highest, alignSelf: 'center', marginTop: spacing[2], marginBottom: spacing[3] }} />
 
@@ -804,22 +804,22 @@ export default function SettingsScreen() {
               <View style={[styles.modelCardRow, { paddingHorizontal: spacing[4], paddingBottom: spacing[3] }]}>
                 {modelSheetView === 'hf' ? (
                   hfRepo ? (
-                    <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2], flex: 1 }} onPress={() => { setHfRepo(null); setHfFiles([]); }}>
+                    <Touchable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2], flex: 1 }} onPress={() => { setHfRepo(null); setHfFiles([]); }}>
                       <ThemedText type="labelSm" color={colors.primary.default}>← BACK</ThemedText>
                       <ThemedText type="headlineSm" numberOfLines={1} style={{ flex: 1 }}>{hfRepo.split('/')[1] ?? hfRepo}</ThemedText>
-                    </Pressable>
+                    </Touchable>
                   ) : (
-                    <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }} onPress={() => { setModelSheetView('list'); resetHfState(); }}>
+                    <Touchable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }} onPress={() => { setModelSheetView('list'); resetHfState(); }}>
                       <ThemedText type="labelSm" color={colors.primary.default}>← BACK</ThemedText>
                       <ThemedText type="headlineSm">Find Models</ThemedText>
-                    </Pressable>
+                    </Touchable>
                   )
                 ) : (
                   <ThemedText type="headlineSm">Choose Model</ThemedText>
                 )}
-                <Pressable onPress={closeModelSheet}>
+                <Touchable onPress={closeModelSheet}>
                   <X size={20} color={colors.text.secondary} />
-                </Pressable>
+                </Touchable>
               </View>
 
               {modelSheetView === 'list' ? (
@@ -830,7 +830,7 @@ export default function SettingsScreen() {
                     keyExtractor={(m) => m.id}
                     style={{ maxHeight: 320 }}
                     renderItem={({ item: m }) => (
-                      <Pressable
+                      <Touchable
                         style={styles.modelSheetItem}
                         onPress={() => {
                           setActiveModel(m.id);
@@ -847,17 +847,17 @@ export default function SettingsScreen() {
                         {m.id === activeModelId && (
                           <ThemedText type="bodyMd" color={colors.primary.default}>✓</ThemedText>
                         )}
-                      </Pressable>
+                      </Touchable>
                     )}
                   />
                   {/* Find models entry point */}
-                  <Pressable
+                  <Touchable
                     style={[styles.modelSheetItem, { borderBottomWidth: 0, gap: spacing[2] }]}
                     onPress={() => setModelSheetView('hf')}
                   >
                     <Search size={14} color={colors.primary.default} />
                     <ThemedText type="labelSm" color={colors.primary.default}>FIND MODELS ON HUGGING FACE</ThemedText>
-                  </Pressable>
+                  </Touchable>
                 </>
               ) : hfRepo ? (
                 /* Phase 2: file list */
@@ -871,10 +871,10 @@ export default function SettingsScreen() {
                     keyExtractor={(f) => f.rfilename}
                     style={{ maxHeight: 320 }}
                     renderItem={({ item }) => (
-                      <Pressable style={styles.hfFileItem} onPress={() => pickFile(item)}>
+                      <Touchable style={styles.hfFileItem} onPress={() => pickFile(item)}>
                         <ThemedText type="bodyMd" style={{ flex: 1 }} numberOfLines={2}>{item.rfilename}</ThemedText>
                         <ThemedText type="labelSm" color={colors.text.secondary}>{formatBytes(item.size)}</ThemedText>
-                      </Pressable>
+                      </Touchable>
                     )}
                     ListEmptyComponent={
                       <View style={{ padding: spacing[4] }}>
@@ -898,10 +898,10 @@ export default function SettingsScreen() {
                       autoCorrect={false}
                       returnKeyType="search"
                     />
-                    <Pressable style={styles.aiActionBtn} onPress={searchHF}>
+                    <Touchable style={styles.aiActionBtn} onPress={searchHF}>
                       <Search size={14} color={colors.primary.default} />
                       <ThemedText type="labelSm" color={colors.primary.default}>SEARCH</ThemedText>
-                    </Pressable>
+                    </Touchable>
                   </View>
                   {hfSearching ? (
                     <View style={{ alignItems: 'center', padding: spacing[6] }}>
@@ -913,12 +913,12 @@ export default function SettingsScreen() {
                       keyExtractor={(r) => r.id}
                       style={{ maxHeight: 280 }}
                       renderItem={({ item }) => (
-                        <Pressable style={styles.hfResultItem} onPress={() => loadRepoFiles(item.id)}>
+                        <Touchable style={styles.hfResultItem} onPress={() => loadRepoFiles(item.id)}>
                           <ThemedText type="bodyMd" numberOfLines={1}>{item.id}</ThemedText>
                           <ThemedText type="labelSm" color={colors.text.secondary}>
                             {formatDownloads(item.downloads)} downloads
                           </ThemedText>
-                        </Pressable>
+                        </Touchable>
                       )}
                       ListEmptyComponent={
                         <View style={{ padding: spacing[4] }}>
@@ -929,7 +929,7 @@ export default function SettingsScreen() {
                   )}
                 </>
               )}
-            </Pressable>
+            </Touchable>
           </KeyboardAvoidingView>
         </View>
       </Modal>
@@ -942,7 +942,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setTuneModalVisible(false)}
       >
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setTuneModalVisible(false)} />
+          <Touchable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setTuneModalVisible(false)} />
           <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
             <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
 
@@ -954,7 +954,7 @@ export default function SettingsScreen() {
                 {[2048, 4096, 8192].map((size) => {
                   const active = inference.contextSize === size;
                   return (
-                    <Pressable
+                    <Touchable
                       key={size}
                       style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive]}
                       onPress={() => setInference({ contextSize: size })}
@@ -962,7 +962,7 @@ export default function SettingsScreen() {
                       <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
                         {size >= 1024 ? `${size / 1024}K` : String(size)}
                       </ThemedText>
-                    </Pressable>
+                    </Touchable>
                   );
                 })}
               </View>
@@ -977,7 +977,7 @@ export default function SettingsScreen() {
                 {[2, 4, 6, 8].map((threads) => {
                   const active = inference.cpuThreads === threads;
                   return (
-                    <Pressable
+                    <Touchable
                       key={threads}
                       style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive]}
                       onPress={() => setInference({ cpuThreads: threads })}
@@ -985,7 +985,7 @@ export default function SettingsScreen() {
                       <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
                         {threads}
                       </ThemedText>
-                    </Pressable>
+                    </Touchable>
                   );
                 })}
               </View>
@@ -1008,7 +1008,7 @@ export default function SettingsScreen() {
                 ] as const).map(({ value, label }) => {
                   const active = inference.gpuLayers === value;
                   return (
-                    <Pressable
+                    <Touchable
                       key={value}
                       style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive, !hasGpu && !active && { opacity: 0.4 }]}
                       onPress={() => setInference({ gpuLayers: value })}
@@ -1017,7 +1017,7 @@ export default function SettingsScreen() {
                       <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
                         {label}
                       </ThemedText>
-                    </Pressable>
+                    </Touchable>
                   );
                 })}
               </View>
@@ -1043,7 +1043,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setConfirmDeleteId(null)}
       >
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setConfirmDeleteId(null)} />
+          <Touchable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setConfirmDeleteId(null)} />
           <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
             <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
             <ThemedText type="headlineSm">Delete model file?</ThemedText>
@@ -1051,10 +1051,10 @@ export default function SettingsScreen() {
               The model will be removed from your device. You can re-download it later.
             </ThemedText>
             <View style={{ flexDirection: 'row', gap: spacing[3] }}>
-              <Pressable style={styles.aiActionBtn} onPress={() => setConfirmDeleteId(null)}>
+              <Touchable style={styles.aiActionBtn} onPress={() => setConfirmDeleteId(null)}>
                 <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-              </Pressable>
-              <Pressable
+              </Touchable>
+              <Touchable
                 style={[styles.aiActionBtn, { backgroundColor: '#e53935' }]}
                 onPress={() => {
                   if (confirmDeleteId) deleteModel(confirmDeleteId);
@@ -1062,7 +1062,7 @@ export default function SettingsScreen() {
                 }}
               >
                 <ThemedText type="labelSm" color="#fff">DELETE</ThemedText>
-              </Pressable>
+              </Touchable>
             </View>
           </View>
         </View>
@@ -1075,7 +1075,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setMemoryInfoVisible(false)}
       >
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setMemoryInfoVisible(false)} />
+          <Touchable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setMemoryInfoVisible(false)} />
           <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[3] }}>
             <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>

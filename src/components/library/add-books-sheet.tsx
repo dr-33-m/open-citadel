@@ -4,11 +4,12 @@ import {
   Dimensions,
   Image,
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   View,
 } from "react-native";
+
+import { Touchable } from "@/components/ui/touchable";
 
 import { ThemedText } from "@/components/themed-text";
 import { GoldButton } from "@/components/ui/gold-button";
@@ -141,7 +142,7 @@ export function AddBooksSheet({
       onRequestClose={onClose}
     >
       <View style={styles.container}>
-        <Pressable style={styles.overlay} onPress={onClose} />
+        <Touchable style={styles.overlay} onPress={onClose} />
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.header}>
@@ -158,7 +159,7 @@ export function AddBooksSheet({
             {allBooks.map((book) => {
               const isSelected = selectedIds.has(book.id);
               return (
-                <Pressable
+                <Touchable
                   key={book.id}
                   style={styles.row}
                   onPress={() => toggle(book.id)}
@@ -211,7 +212,7 @@ export function AddBooksSheet({
                       <Check size={14} color={colors.text.inverse} />
                     )}
                   </View>
-                </Pressable>
+                </Touchable>
               );
             })}
           </ScrollView>
@@ -225,11 +226,11 @@ export function AddBooksSheet({
               }
               onPress={handleConfirm}
             />
-            <Pressable onPress={onClose} style={styles.cancel}>
+            <Touchable onPress={onClose} style={styles.cancel}>
               <ThemedText type="labelSm" color={colors.text.secondary}>
                 CANCEL
               </ThemedText>
-            </Pressable>
+            </Touchable>
           </View>
         </View>
       </View>

@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import {
   FlatList,
   Modal,
-  Pressable,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -97,16 +98,16 @@ export function BookPickerSheet({ visible, onSelect, onSkip, onClose }: BookPick
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
+      <Touchable style={styles.overlay} onPress={onClose}>
+        <Touchable style={styles.sheet} onPress={() => {}}>
           <View style={styles.handle} />
           <View style={styles.header}>
             <ThemedText type="headlineSm">Pick a book</ThemedText>
-            <Pressable onPress={onClose}>
+            <Touchable onPress={onClose}>
               <ThemedText type="labelMd" color={colors.text.secondary}>
                 CANCEL
               </ThemedText>
-            </Pressable>
+            </Touchable>
           </View>
 
           <TextInput
@@ -128,25 +129,25 @@ export function BookPickerSheet({ visible, onSelect, onSkip, onClose }: BookPick
               data={filtered}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
-                <Pressable style={styles.item} onPress={() => onSelect(item.id, item.title)}>
+                <Touchable style={styles.item} onPress={() => onSelect(item.id, item.title)}>
                   <ThemedText type="bodyMd">{item.title}</ThemedText>
                   <ThemedText type="bodySm" color={colors.text.secondary}>
                     {item.author}
                   </ThemedText>
-                </Pressable>
+                </Touchable>
               )}
             />
           )}
 
           {onSkip && (
-            <Pressable style={styles.skipBtn} onPress={onSkip}>
+            <Touchable style={styles.skipBtn} onPress={onSkip}>
               <ThemedText type="labelMd" color={colors.text.secondary}>
                 START WITHOUT A BOOK
               </ThemedText>
-            </Pressable>
+            </Touchable>
           )}
-        </Pressable>
-      </Pressable>
+        </Touchable>
+      </Touchable>
     </Modal>
   );
 }

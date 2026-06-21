@@ -1,6 +1,8 @@
 import { BookOpen, Lightbulb } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 import { eq } from 'drizzle-orm';
 
 import { ThemedText } from '@/components/themed-text';
@@ -95,7 +97,7 @@ export const HighlightCard = React.memo(function HighlightCard({
     (type === 'thought' && onNavigateToTimeline);
 
   return (
-    <Pressable
+    <Touchable
       style={[
         styles.card,
         {
@@ -152,7 +154,7 @@ export const HighlightCard = React.memo(function HighlightCard({
           ))}
         </View>
       )}
-    </Pressable>
+    </Touchable>
   );
 });
 

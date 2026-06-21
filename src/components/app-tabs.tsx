@@ -6,7 +6,9 @@ import {
   type TabTriggerSlotProps,
 } from 'expo-router/ui';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -57,7 +59,7 @@ function TabButton({
   }), [colors]);
 
   return (
-    <Pressable {...props} style={styles.tabButton}>
+    <Touchable {...props} style={styles.tabButton}>
       <ThemedText
         type="labelSm"
         color={isFocused ? colors.primary.default : colors.text.secondary}
@@ -65,7 +67,7 @@ function TabButton({
         {children}
       </ThemedText>
       {isFocused && <View style={styles.activeIndicator} />}
-    </Pressable>
+    </Touchable>
   );
 }
 

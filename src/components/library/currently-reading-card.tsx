@@ -1,5 +1,7 @@
 import React, { useCallback, useState } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -76,7 +78,7 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
   );
 
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress}>
+    <Touchable onPress={onPress} onLongPress={onLongPress}>
       <View style={styles.card}>
         {book.coverUrl ? (
           <Image source={{ uri: book.coverUrl }} style={styles.cover} />
@@ -120,6 +122,6 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
           </View>
         </View>
       </View>
-    </Pressable>
+    </Touchable>
   );
 }

@@ -1,6 +1,8 @@
 import { AudioLines, Bookmark, BookmarkCheck, List } from 'lucide-react-native';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -60,12 +62,12 @@ export function ReaderHeader({
   }), [colors]);
 
   return (
-    <Pressable style={[styles.container, { paddingTop: insets.top + spacing[2] }]} onPress={onToggle}>
-      <Pressable onPress={onBack} style={styles.iconButton}>
+    <Touchable style={[styles.container, { paddingTop: insets.top + spacing[2] }]} onPress={onToggle}>
+      <Touchable onPress={onBack} style={styles.iconButton}>
         <ThemedText type="bodyMd" color={colors.primary.default}>
           ←
         </ThemedText>
-      </Pressable>
+      </Touchable>
 
       <ThemedText
         type="bodySm"
@@ -77,28 +79,28 @@ export function ReaderHeader({
       </ThemedText>
 
       <View style={styles.right}>
-        <Pressable onPress={onBookmarkToggle} style={styles.iconButton}>
+        <Touchable onPress={onBookmarkToggle} style={styles.iconButton}>
           {isBookmarked ? (
             <BookmarkCheck size={20} color={colors.primary.default} />
           ) : (
             <Bookmark size={20} color={colors.text.primary} />
           )}
-        </Pressable>
-        <Pressable onPress={onContents} style={styles.iconButton}>
+        </Touchable>
+        <Touchable onPress={onContents} style={styles.iconButton}>
           <List size={20} color={colors.text.primary} />
-        </Pressable>
-        <Pressable onPress={onTTSToggle} style={styles.iconButton}>
+        </Touchable>
+        <Touchable onPress={onTTSToggle} style={styles.iconButton}>
           <AudioLines
             size={20}
             color={isTTSActive ? colors.primary.default : colors.text.primary}
           />
-        </Pressable>
+        </Touchable>
         {progress !== undefined && (
           <ThemedText type="labelSm" color={colors.text.secondary}>
             {Math.round(progress * 100)}%
           </ThemedText>
         )}
       </View>
-    </Pressable>
+    </Touchable>
   );
 }

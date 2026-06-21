@@ -1,5 +1,7 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/use-colors';
@@ -65,16 +67,16 @@ export function SectionHeader({
           </ThemedText>
         )}
         {rightIcon && (
-          <Pressable onPress={rightIcon.onPress} style={styles.iconButton}>
+          <Touchable onPress={rightIcon.onPress} style={styles.iconButton}>
             {rightIcon.icon}
-          </Pressable>
+          </Touchable>
         )}
         {rightAction && (
-          <Pressable onPress={rightAction.onPress}>
+          <Touchable onPress={rightAction.onPress}>
             <ThemedText type="labelSm" color={colors.primary.default}>
               {rightAction.text}
             </ThemedText>
-          </Pressable>
+          </Touchable>
         )}
       </View>
     </View>

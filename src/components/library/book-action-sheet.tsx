@@ -1,6 +1,8 @@
 import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, RotateCcw, Star, StarOff } from 'lucide-react-native';
 import React from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, StyleSheet, View } from 'react-native';
+
+import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/use-colors';
@@ -111,7 +113,7 @@ export function BookActionSheet({
       onRequestClose={onClose}
     >
       <View style={styles.container}>
-        <Pressable style={styles.overlay} onPress={onClose} />
+        <Touchable style={styles.overlay} onPress={onClose} />
 
         <View style={styles.sheet}>
           <View style={styles.handle} />
@@ -126,17 +128,17 @@ export function BookActionSheet({
           </ThemedText>
 
           {/* Open */}
-          <Pressable style={styles.row} onPress={handleOpen}>
+          <Touchable style={styles.row} onPress={handleOpen}>
             <BookOpen size={20} color={colors.text.primary} />
             <ThemedText type="bodyMd" color={colors.text.primary}>
               Open
             </ThemedText>
-          </Pressable>
+          </Touchable>
 
           <View style={styles.separator} />
 
           {/* Favorite toggle */}
-          <Pressable style={styles.row} onPress={handleToggleFavorite}>
+          <Touchable style={styles.row} onPress={handleToggleFavorite}>
             {isFav ? (
               <StarOff size={20} color={colors.text.primary} />
             ) : (
@@ -145,18 +147,18 @@ export function BookActionSheet({
             <ThemedText type="bodyMd" color={colors.text.primary}>
               {isFav ? 'Remove from Favorites' : 'Add to Favorites'}
             </ThemedText>
-          </Pressable>
+          </Touchable>
 
           {/* Add to Collection */}
           {onAddToCollection && (
             <>
               <View style={styles.separator} />
-              <Pressable style={styles.row} onPress={() => { onAddToCollection(book.id); onClose(); }}>
+              <Touchable style={styles.row} onPress={() => { onAddToCollection(book.id); onClose(); }}>
                 <FolderPlus size={20} color={colors.text.primary} />
                 <ThemedText type="bodyMd" color={colors.text.primary}>
                   Add to Collection
                 </ThemedText>
-              </Pressable>
+              </Touchable>
             </>
           )}
 
@@ -164,12 +166,12 @@ export function BookActionSheet({
           {!isQueued && !isArchived && (
             <>
               <View style={styles.separator} />
-              <Pressable style={styles.row} onPress={handleQueue}>
+              <Touchable style={styles.row} onPress={handleQueue}>
                 <Clock size={20} color={colors.text.primary} />
                 <ThemedText type="bodyMd" color={colors.text.primary}>
                   Add to Queue
                 </ThemedText>
-              </Pressable>
+              </Touchable>
             </>
           )}
 
@@ -177,12 +179,12 @@ export function BookActionSheet({
           {isQueued && (
             <>
               <View style={styles.separator} />
-              <Pressable style={styles.row} onPress={handleRemoveFromQueue}>
+              <Touchable style={styles.row} onPress={handleRemoveFromQueue}>
                 <MinusCircle size={20} color={colors.text.primary} />
                 <ThemedText type="bodyMd" color={colors.text.primary}>
                   Remove from Queue
                 </ThemedText>
-              </Pressable>
+              </Touchable>
             </>
           )}
 
@@ -190,12 +192,12 @@ export function BookActionSheet({
           {!isArchived && (
             <>
               <View style={styles.separator} />
-              <Pressable style={styles.row} onPress={handleFinish}>
+              <Touchable style={styles.row} onPress={handleFinish}>
                 <CheckCircle size={20} color={colors.primary.default} />
                 <ThemedText type="bodyMd" color={colors.primary.default}>
                   Mark as Finished
                 </ThemedText>
-              </Pressable>
+              </Touchable>
             </>
           )}
 
@@ -203,12 +205,12 @@ export function BookActionSheet({
           {isArchived && (
             <>
               <View style={styles.separator} />
-              <Pressable style={styles.row} onPress={handleUnfinish}>
+              <Touchable style={styles.row} onPress={handleUnfinish}>
                 <RotateCcw size={20} color={colors.text.secondary} />
                 <ThemedText type="bodyMd" color={colors.text.secondary}>
                   Mark as Unfinished
                 </ThemedText>
-              </Pressable>
+              </Touchable>
             </>
           )}
         </View>
