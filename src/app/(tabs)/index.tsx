@@ -9,7 +9,6 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { CalendarPicker } from '@/components/timeline/calendar-picker';
 import { ExportImageCard } from '@/components/export/export-image-card';
-import { NotePickerModal } from '@/components/export/note-picker-modal';
 import { captureAndShare } from '@/utils/export-image';
 import { NewThoughtSheet } from '@/components/timeline/new-thought-sheet';
 import type { ThoughtEditData } from '@/components/timeline/new-thought-sheet';
@@ -43,8 +42,6 @@ export default function TimelineScreen() {
   // Export state
   const exportViewRef = useRef<View>(null);
   const [exportEntry, setExportEntry] = useState<TimelineItem | null>(null);
-  const [exportNoteText, setExportNoteText] = useState<string | null>(null);
-  const [showNotePicker, setShowNotePicker] = useState(false);
   const [showExportCard, setShowExportCard] = useState(false);
 
   // Reload timeline when tab is focused
@@ -124,23 +121,14 @@ export default function TimelineScreen() {
   const handleExport = (entry: TimelineItem) => {
     setLongPressEntry(null);
     setExportEntry(entry);
-    if (entry.noteTexts.length > 1) {
-      setShowNotePicker(true);
-    } else {
-      setExportNoteText(entry.noteTexts.length === 1 ? entry.noteTexts[0] : null);
-      setShowExportCard(true);
-    }
+    setShowExportCard(true);
   };
 
-  useEffect(() => {
-    if (!showExportCard) return;
-    const timer = setTimeout(async () => {
-      await captureAndShare(exportViewRef);
-      setShowExportCard(false);
-      setExportEntry(null);
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [showExportCard]);
+  const handleExportReady = React.useCallback(async () => {
+    await captureAndShare(exportViewRef);
+    setShowExportCard(false);
+    setExportEntry(null);
+  }, []);
 
   const hasEntries = groups.length > 0 && groups[0].entries.length > 0;
 
@@ -340,22 +328,11 @@ export default function TimelineScreen() {
             bookTitle={exportEntry.type === 'thought' ? 'A Thought' : exportEntry.bookTitle}
             authorName={exportEntry.bookAuthor}
             coverUri={exportEntry.bookCoverUrl}
-            noteText={exportNoteText}
+            category={exportEntry.bookCategory}
+            onReady={handleExportReady}
           />
         </View>
       )}
-
-      {/* Note picker for export */}
-      <NotePickerModal
-        visible={showNotePicker}
-        notes={exportEntry?.noteTexts ?? []}
-        onSelect={(text) => {
-          setShowNotePicker(false);
-          setExportNoteText(text);
-          setShowExportCard(true);
-        }}
-        onClose={() => { setShowNotePicker(false); setExportEntry(null); }}
-      />
     </ThemedView>
   );
 }

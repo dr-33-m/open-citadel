@@ -1,5 +1,5 @@
 import { Check, MessageSquare, Pencil, Share, StickyNote, Trash2, X } from "lucide-react-native";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -11,7 +11,6 @@ import {
 } from "react-native";
 
 import { ExportImageCard } from "@/components/export/export-image-card";
-import { NotePickerModal } from "@/components/export/note-picker-modal";
 import { captureAndShare } from "@/utils/export-image";
 
 import { Touchable } from "@/components/ui/touchable";
@@ -48,6 +47,7 @@ type HighlightMenuProps = {
   bookTitle: string;
   authorName: string;
   bookCoverUri: string | null;
+  bookCategory: string | null;
   onAddNote: (highlightId: string, text: string) => void;
   onUpdateNote: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
@@ -72,6 +72,7 @@ export function HighlightMenu({
   bookTitle,
   authorName,
   bookCoverUri,
+  bookCategory,
   onAddNote,
   onUpdateNote,
   onDeleteNote,
@@ -200,8 +201,6 @@ export function HighlightMenu({
   // Export state
   const exportViewRef = useRef<View>(null);
   const [showExport, setShowExport] = useState(false);
-  const [exportNoteText, setExportNoteText] = useState<string | null>(null);
-  const [showNotePicker, setShowNotePicker] = useState(false);
 
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", () =>
@@ -301,22 +300,13 @@ export function HighlightMenu({
   };
 
   const handleExport = () => {
-    if (existingNotes.length > 1) {
-      setShowNotePicker(true);
-    } else {
-      setExportNoteText(existingNotes.length === 1 ? existingNotes[0].text : null);
-      setShowExport(true);
-    }
+    setShowExport(true);
   };
 
-  useEffect(() => {
-    if (!showExport) return;
-    const timer = setTimeout(async () => {
-      await captureAndShare(exportViewRef);
-      setShowExport(false);
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [showExport]);
+  const handleExportReady = useCallback(async () => {
+    await captureAndShare(exportViewRef);
+    setShowExport(false);
+  }, []);
 
   return (
     <Modal
@@ -568,22 +558,11 @@ export function HighlightMenu({
             bookTitle={bookTitle}
             authorName={authorName}
             coverUri={bookCoverUri}
-            noteText={exportNoteText}
+            category={bookCategory}
+            onReady={handleExportReady}
           />
         </View>
       )}
-
-      {/* Note picker for export */}
-      <NotePickerModal
-        visible={showNotePicker}
-        notes={existingNotes.map((n) => n.text)}
-        onSelect={(text) => {
-          setShowNotePicker(false);
-          setExportNoteText(text);
-          setShowExport(true);
-        }}
-        onClose={() => setShowNotePicker(false)}
-      />
     </Modal>
   );
 }

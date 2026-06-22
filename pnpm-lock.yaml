@@ -26,6 +26,9 @@ importers:
       '@react-navigation/native':
         specifier: ^7.1.33
         version: 7.1.34(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+      '@rntp/player':
+        specifier: ^5.6.0
+        version: 5.6.0(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       '@shopify/flash-list':
         specifier: ^2.3.1
         version: 2.3.1(@babel/runtime@7.29.2)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
@@ -1768,6 +1771,16 @@ packages:
   '@readium/shared@2.1.5':
     resolution: {integrity: sha512-CCMkaIsqvIbGNDbFQvDomwP+qNqq/EbuHRJKfpXSncVKvZB00d+JT9tsEn4ZTXgRHl4Zmo6bR5q09WY1vrXHRQ==}
     engines: {node: '>=18'}
+
+  '@rntp/player@5.6.0':
+    resolution: {integrity: sha512-ZlYGp0EDWNO5Gqg7eMDqJg0Izfo7WHmxvmJAnVd+0WZg181ZmU/WYF4vryCdEI/CrdvzZy/DFZuha5uxQDbVHA==}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
+      shaka-player: '>=4.12.0'
+    peerDependenciesMeta:
+      shaka-player:
+        optional: true
 
   '@shopify/flash-list@2.3.1':
     resolution: {integrity: sha512-7oktg2NQR7KAODjFoDaWe8/OBzyYbdTE3zQTrUBMxjIbxHTHN7UXRX1hX3DHk8KvtkgQdRfZOV8Gjj2l4fGrXw==}
@@ -5932,6 +5945,11 @@ snapshots:
   '@readium/shared@2.1.5':
     dependencies:
       '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/b416fdb5cfa7ade7562fe108550e3b566857a7b1
+
+  '@rntp/player@5.6.0(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
+    dependencies:
+      react: 19.2.0
+      react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
 
   '@shopify/flash-list@2.3.1(@babel/runtime@7.29.2)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
     dependencies:

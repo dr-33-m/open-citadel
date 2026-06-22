@@ -12,6 +12,7 @@ export type TimelineItem = {
   bookTitle: string;
   bookAuthor: string;
   bookCoverUrl: string | null;
+  bookCategory: string | null;
   highlightText: string;
   highlightLocator: string | null;
   chatSessionId: string | null;
@@ -110,6 +111,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookTitle: books.title,
         bookAuthor: books.author,
         bookCoverUrl: books.coverUrl,
+        bookCategory: books.category,
         noteId: notes.id,
         noteText: notes.text,
       })
@@ -128,6 +130,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookTitle: string;
         bookAuthor: string;
         bookCoverUrl: string | null;
+        bookCategory: string | null;
         highlightText: string;
         highlightLocator: string | null;
         highlightColor: string;
@@ -146,6 +149,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
           bookTitle: row.bookTitle,
           bookAuthor: row.bookAuthor,
           bookCoverUrl: row.bookCoverUrl,
+          bookCategory: row.bookCategory ?? null,
           highlightText: row.highlightText,
           highlightLocator: row.highlightLocator,
           highlightColor: row.highlightColor || "#f2ca50",
@@ -170,6 +174,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookTitle: h.bookTitle,
         bookAuthor: h.bookAuthor,
         bookCoverUrl: h.bookCoverUrl,
+        bookCategory: h.bookCategory,
         highlightText: h.highlightText,
         highlightLocator: h.highlightLocator,
         chatSessionId: h.chatSessionId,
@@ -201,6 +206,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookTitle: thoughtLabel,
         bookAuthor: "",
         bookCoverUrl: null,
+        bookCategory: null,
         highlightText: t.text,
         highlightLocator: null,
         chatSessionId: t.chatSessionId ?? null,

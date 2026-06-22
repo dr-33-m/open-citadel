@@ -21,8 +21,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { runMigrations } from '@/db/migrations';
 import { useColors } from '@/hooks/use-colors';
 import { useSettingsStore } from '@/stores/settings';
+import { registerTTSBackgroundHandler, setupTTSMediaSession } from '@/services/tts-media-session';
 
 SplashScreen.preventAutoHideAsync();
+
+// Register Android background event handler at module level (before app renders)
+registerTTSBackgroundHandler();
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -45,7 +49,10 @@ export default function RootLayout() {
   useEffect(() => {
     runMigrations()
       .then(() => loadSettings())
-      .then(() => setDbReady(true));
+      .then(() => {
+        setupTTSMediaSession();
+        setDbReady(true);
+      });
   }, []);
 
   const navTheme = useMemo(

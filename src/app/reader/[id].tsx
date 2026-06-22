@@ -43,6 +43,10 @@ import { useChatStore } from "@/stores/chat";
 import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
 import { extractChapterTextToLocator } from "@/services/book-context";
+import {
+  startMediaSession,
+  stopMediaSession,
+} from "@/services/tts-media-session";
 
 // Height of the header content below the status bar
 const HEADER_CONTENT_HEIGHT = 10;
@@ -392,6 +396,7 @@ export default function ReaderScreen() {
       setTtsState(null);
       ttsPausedLocatorRef.current = null;
       ttsLastUtteranceRef.current = null;
+      stopMediaSession();
     } else {
       setTtsState(state);
       if (state.isPaused) {
@@ -431,14 +436,20 @@ export default function ReaderScreen() {
         rate: ttsRate,
       });
       setTtsState({ isPlaying: true, isPaused: false, rate: ttsRate });
+      startMediaSession(
+        currentBook?.title ?? "Reading",
+        currentBook?.author ?? "",
+        currentBook?.coverUrl ?? null,
+      );
     } else {
       readerRef.current?.ttsStop();
       setTtsState(null);
       setTtsMismatch(false);
       ttsPausedLocatorRef.current = null;
       ttsLastUtteranceRef.current = null;
+      stopMediaSession();
     }
-  }, [isTTSActive, ttsVoice, ttsVoiceLanguage, ttsRate]);
+  }, [isTTSActive, ttsVoice, ttsVoiceLanguage, ttsRate, currentBook]);
 
   const handleTTSPlayPause = useCallback(() => {
     if (ttsState?.isPlaying) {
@@ -505,6 +516,7 @@ export default function ReaderScreen() {
       }, 200);
     }
   }, [ttsRate]); // intentionally only ttsRate — isTTSActive read inline
+
 
   // Match bookmark by href + position + progression for accurate per-page icon.
   // Using all three fields avoids the off-by-one that occurs at page boundaries
@@ -688,7 +700,10 @@ export default function ReaderScreen() {
           isTTSActive={isTTSActive}
           onBookmarkToggle={handleBookmarkToggle}
           onBack={() => {
-            if (isTTSActive) readerRef.current?.ttsStop();
+            if (isTTSActive) {
+              readerRef.current?.ttsStop();
+              stopMediaSession();
+            }
             setLeaving(true);
           }}
           onContents={() => {
@@ -798,6 +813,7 @@ export default function ReaderScreen() {
           bookTitle={currentBook?.title ?? ""}
           authorName={currentBook?.author ?? ""}
           bookCoverUri={currentBook?.coverUrl ?? null}
+          bookCategory={currentBook?.category ?? null}
           onAddNote={addNote}
           onUpdateNote={(noteId, text) =>
             updateNote(noteId, menuHighlight.id, text)

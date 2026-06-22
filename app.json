@@ -63,7 +63,8 @@
           }
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "./plugins/withBackgroundAudio"
     ],
     "experiments": {
       "typedRoutes": true,
