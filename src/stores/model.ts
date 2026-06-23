@@ -13,37 +13,42 @@ import {
 import { create } from "zustand";
 
 import { db } from "@/db/client";
-import { appSettings, llamaModels } from "@/db/schema";
-import { getBackendDevicesInfo } from "llama.rn";
-import * as LlamaService from "@/services/llama-service";
+import { appSettings, localModels } from "@/db/schema";
+import type { Backend } from "@dr33m/react-native-litert-lm";
+import * as Inference from "@/services/inference";
 import { checkModelMemory, type MemoryEstimate } from "@/utils/memory-estimator";
 
 export interface InferenceSettings {
-  contextSize: number;   // n_ctx: 2048 | 4096 | 8192
-  cpuThreads: number;    // n_threads: 2–8
-  gpuLayers: number;     // n_gpu_layers: 0 = CPU only, 99 = all on GPU
+  contextSize: number;
+  backend: Backend;
+  enableSpeculativeDecoding: boolean;
+  enableThinking: boolean;
+  enableToolCalling: boolean;
 }
 
-export interface LlamaModel {
+export interface LocalModel {
   id: string;
   name: string;
   filename: string;
   filePath: string | null;
   downloadUrl: string;
   sizeBytes: number | null;
+  minDeviceMemoryGb: number | null;
   isDownloaded: boolean;
   isActive: boolean;
   downloadedAt: string | null;
 }
 
 const DEFAULT_INFERENCE: InferenceSettings = {
-  contextSize: 2048,
-  cpuThreads: 4,
-  gpuLayers: 99,
+  contextSize: 4096,
+  backend: 'cpu',
+  enableSpeculativeDecoding: false,
+  enableThinking: false,
+  enableToolCalling: true,
 };
 
-interface LlamaStore {
-  models: LlamaModel[];
+interface ModelStore {
+  models: LocalModel[];
   activeModelId: string | null;
   isLoaded: boolean;
   isLoading: boolean;
@@ -53,7 +58,7 @@ interface LlamaStore {
   inference: InferenceSettings;
   deviceTotalMemory: number | null;
   memoryEstimate: MemoryEstimate | null;
-  hasGpu: boolean;
+  activeBackend: Backend | null; // actual backend after model loads (detects GPU→CPU fallback)
 
   loadModels(): Promise<void>;
   setActiveModel(id: string): Promise<void>;
@@ -68,43 +73,49 @@ interface LlamaStore {
 }
 
 const SEED_MODELS: Omit<
-  LlamaModel,
+  LocalModel,
   "isDownloaded" | "isActive" | "filePath" | "downloadedAt"
 >[] = [
   {
-    id: "llama-3.2-1b-q4",
-    name: "Llama 3.2 1B Instruct",
-    filename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-    downloadUrl:
-      "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-    sizeBytes: 770 * 1024 * 1024,
-  },
-  {
-    id: "qwen2.5-1.5b-q4",
-    name: "Qwen 2.5 1.5B Instruct",
-    filename: "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
-    downloadUrl:
-      "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-    sizeBytes: 1010 * 1024 * 1024,
-  },
-  {
-    id: 'DeepSeek-R1-Distill-Qwen-1.5B-Q2_K_L',
-    name:"DeepSeek-R1 Distill Qwen-1.5B",
-    filename: "DeepSeek-R1-Distill-Qwen-1.5B-Q2_K_L.gguf",
-    downloadUrl: "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q2_K_L.gguf",
-    sizeBytes: 808 * 1024 * 1024,
-  },
-  {
-    id: "gemma-4-E2B-it-UD-IQ2_M",
+    id: "gemma-4-e2b-it",
     name: "Gemma 4 E2B",
-    filename: "gemma-4-E2B-it-UD-IQ2_M.gguf",
-    downloadUrl: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-UD-IQ2_M.gguf",
-    sizeBytes: 2345 * 1024 * 1024,
-  }
+    filename: "gemma-4-E2B-it.litertlm",
+    downloadUrl:
+      "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
+    sizeBytes: 2588 * 1024 * 1024,
+    minDeviceMemoryGb: 8,
+  },
+  {
+    id: "gemma3-1b-it",
+    name: "Gemma 3 1B",
+    filename: "Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
+    downloadUrl:
+      "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
+    sizeBytes: 584 * 1024 * 1024,
+    minDeviceMemoryGb: 6,
+  },
+  {
+    id: "qwen2.5-1.5b-instruct",
+    name: "Qwen 2.5 1.5B",
+    filename: "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+    downloadUrl:
+      "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+    sizeBytes: 1598 * 1024 * 1024,
+    minDeviceMemoryGb: 6,
+  },
+  {
+    id: "deepseek-r1-distill-qwen-1.5b",
+    name: "DeepSeek-R1 Distill Qwen 1.5B",
+    filename: "DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
+    downloadUrl:
+      "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
+    sizeBytes: 1833 * 1024 * 1024,
+    minDeviceMemoryGb: 6,
+  },
 ];
 
 function modelsDir(): string {
-  return (documentDirectory ?? "") + "llama-models/";
+  return (documentDirectory ?? "") + "litert-models/";
 }
 
 function modelFilePath(filename: string): string {
@@ -123,7 +134,7 @@ async function ensureModelsDir() {
   if (!info.exists) await makeDirectoryAsync(dir, { intermediates: true });
 }
 
-export const useLlamaStore = create<LlamaStore>((set, get) => ({
+export const useModelStore = create<ModelStore>((set, get) => ({
   models: [],
   activeModelId: null,
   isLoaded: false,
@@ -134,14 +145,37 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
   inference: { ...DEFAULT_INFERENCE },
   deviceTotalMemory: Device.totalMemory,
   memoryEstimate: null,
-  hasGpu: false,
+  activeBackend: null,
 
   async loadModels() {
-    // Seed default models on first launch
-    const existing = db.select().from(llamaModels).all();
+    // Clean up old GGUF models from llama.rn era (upgrade path)
+    const OLD_GGUF_IDS = [
+      'llama-3.2-1b-q4',
+      'qwen2.5-1.5b-q4',
+      'DeepSeek-R1-Distill-Qwen-1.5B-Q2_K_L',
+      'gemma-4-E2B-it-UD-IQ2_M',
+    ];
+    for (const oldId of OLD_GGUF_IDS) {
+      const rows = db.select().from(localModels).where(eq(localModels.id, oldId)).all();
+      for (const row of rows) {
+        if (row.filePath) {
+          try { await deleteAsync(row.filePath, { idempotent: true }); } catch { /* file may not exist */ }
+        }
+      }
+      db.delete(localModels).where(eq(localModels.id, oldId)).run();
+    }
+    // Remove the old llama-models directory entirely
+    try { await deleteAsync((documentDirectory ?? '') + 'llama-models/', { idempotent: true }); } catch { /* ok */ }
+
+    // Remove obsolete inference settings from llama.rn
+    db.delete(appSettings).where(eq(appSettings.key, 'inference.cpuThreads')).run();
+    db.delete(appSettings).where(eq(appSettings.key, 'inference.gpuLayers')).run();
+
+    // Seed default models if table is empty (first launch or after cleanup)
+    const existing = db.select().from(localModels).all();
     if (existing.length === 0) {
       for (const m of SEED_MODELS) {
-        db.insert(llamaModels)
+        db.insert(localModels)
           .values({
             id: m.id,
             name: m.name,
@@ -157,18 +191,23 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
       }
     }
 
-    const rows = db.select().from(llamaModels).all();
-    const models: LlamaModel[] = rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      filename: r.filename,
-      filePath: r.filePath ?? null,
-      downloadUrl: r.downloadUrl,
-      sizeBytes: r.sizeBytes ?? null,
-      isDownloaded: r.isDownloaded === 1,
-      isActive: r.isActive === 1,
-      downloadedAt: r.downloadedAt ?? null,
-    }));
+    const rows = db.select().from(localModels).all();
+    const models: LocalModel[] = rows.map((r) => {
+      // Look up minDeviceMemoryGb from seed data if available
+      const seed = SEED_MODELS.find((s) => s.id === r.id);
+      return {
+        id: r.id,
+        name: r.name,
+        filename: r.filename,
+        filePath: r.filePath ?? null,
+        downloadUrl: r.downloadUrl,
+        sizeBytes: r.sizeBytes ?? null,
+        minDeviceMemoryGb: seed?.minDeviceMemoryGb ?? null,
+        isDownloaded: r.isDownloaded === 1,
+        isActive: r.isActive === 1,
+        downloadedAt: r.downloadedAt ?? null,
+      };
+    });
 
     const active = models.find((m) => m.isActive);
 
@@ -177,27 +216,19 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
     const settingsMap = Object.fromEntries(settingsRows.map((r) => [r.key, r.value]));
     const inference: InferenceSettings = {
       contextSize: parseInt(settingsMap['inference.contextSize'] ?? String(DEFAULT_INFERENCE.contextSize), 10),
-      cpuThreads: parseInt(settingsMap['inference.cpuThreads'] ?? String(DEFAULT_INFERENCE.cpuThreads), 10),
-      gpuLayers: parseInt(settingsMap['inference.gpuLayers'] ?? String(DEFAULT_INFERENCE.gpuLayers), 10),
+      backend: (settingsMap['inference.backend'] as Backend) ?? DEFAULT_INFERENCE.backend,
+      enableSpeculativeDecoding: settingsMap['inference.enableSpeculativeDecoding'] === 'true',
+      enableThinking: settingsMap['inference.enableThinking'] === 'true',
+      enableToolCalling: settingsMap['inference.enableToolCalling'] !== 'false', // default true
     };
 
-    // Detect GPU support — check both type and backend name
-    const GPU_BACKENDS = ['opencl', 'vulkan', 'metal', 'cuda', 'gpu'];
-    let hasGpu = false;
-    try {
-      const devices = await getBackendDevicesInfo();
-      hasGpu = devices.some((d) =>
-        GPU_BACKENDS.some((g) => d.type.toLowerCase().includes(g) || d.backend.toLowerCase().includes(g)),
-      );
-    } catch {}
-
-    set({ models, activeModelId: active?.id ?? null, inference, hasGpu });
+    set({ models, activeModelId: active?.id ?? null, inference });
   },
 
   async addCustomModel(name, downloadUrl) {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
     const filename =
-      downloadUrl.split("/").pop()?.split("?")[0] ?? "model.gguf";
+      downloadUrl.split("/").pop()?.split("?")[0] ?? "model.litertlm";
 
     // Best-effort: fetch Content-Length so we can show size before download
     let sizeBytes: number | null = null;
@@ -207,7 +238,7 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
       if (cl) sizeBytes = parseInt(cl, 10);
     } catch {}
 
-    db.insert(llamaModels)
+    db.insert(localModels)
       .values({
         id,
         name,
@@ -224,18 +255,18 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
   },
 
   async setActiveModel(id) {
-    db.update(llamaModels).set({ isActive: 0 }).run();
-    db.update(llamaModels)
+    db.update(localModels).set({ isActive: 0 }).run();
+    db.update(localModels)
       .set({ isActive: 1 })
-      .where(eq(llamaModels.id, id))
+      .where(eq(localModels.id, id))
       .run();
     set((s) => ({
       activeModelId: id,
       models: s.models.map((m) => ({ ...m, isActive: m.id === id })),
     }));
 
-    if (LlamaService.isModelLoaded()) {
-      await LlamaService.unloadModel();
+    if (Inference.isModelLoaded()) {
+      await Inference.unloadModel();
       set({ isLoaded: false });
     }
   },
@@ -293,14 +324,14 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
       }
 
       const now = new Date().toISOString();
-      db.update(llamaModels)
+      db.update(localModels)
         .set({
           isDownloaded: 1,
           filePath: destPath,
           downloadedAt: now,
           sizeBytes: resolvedSize,
         })
-        .where(eq(llamaModels.id, id))
+        .where(eq(localModels.id, id))
         .run();
 
       set((s) => ({
@@ -372,12 +403,12 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
       } catch {}
     }
 
-    if (LlamaService.isModelLoaded() && get().activeModelId === id) {
-      await LlamaService.unloadModel();
+    if (Inference.isModelLoaded() && get().activeModelId === id) {
+      await Inference.unloadModel();
       set({ isLoaded: false });
     }
 
-    db.delete(llamaModels).where(eq(llamaModels.id, id)).run();
+    db.delete(localModels).where(eq(localModels.id, id)).run();
 
     set((s) => ({
       models: s.models.filter((m) => m.id !== id),
@@ -393,11 +424,20 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
       return;
     }
 
-    set({ isLoading: true, loadError: null });
+    set({ isLoading: true, loadError: null, activeBackend: null });
     try {
       const { inference } = get();
-      await LlamaService.loadModel(model.filePath, inference);
-      set({ isLoaded: true, isLoading: false });
+      await Inference.loadModel(model.filePath, inference);
+      const activeBackend = Inference.getActiveBackend() ?? inference.backend;
+
+      // Warmup inference — pre-allocate KV cache so the user's first real
+      // message is fast. Gallery app uses a similar post-init delay.
+      try {
+        await Inference.chat('hi', () => {});
+        Inference.resetConversation();
+      } catch { /* non-critical */ }
+
+      set({ isLoaded: true, isLoading: false, activeBackend });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to load model";
       const isOom =
@@ -415,8 +455,8 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
   },
 
   async releaseContext() {
-    await LlamaService.unloadModel();
-    set({ isLoaded: false, loadError: null });
+    await Inference.unloadModel();
+    set({ isLoaded: false, loadError: null, activeBackend: null });
   },
 
   async setInference(partial) {
@@ -434,16 +474,12 @@ export const useLlamaStore = create<LlamaStore>((set, get) => ({
 
   async checkMemory(modelId) {
     const model = get().models.find((m) => m.id === modelId);
-    if (!model?.filePath || !model.isDownloaded || !model.sizeBytes) {
+    if (!model) {
       set({ memoryEstimate: null });
       return;
     }
     try {
-      const estimate = await checkModelMemory(
-        model.filePath,
-        model.sizeBytes,
-        get().inference.contextSize,
-      );
+      const estimate = checkModelMemory(model.minDeviceMemoryGb);
       set({ memoryEstimate: estimate });
     } catch {
       set({ memoryEstimate: null });

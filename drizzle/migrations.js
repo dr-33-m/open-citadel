@@ -8,6 +8,7 @@ import m0004 from "./0004_nervous_liz_osborn.js";
 import m0005 from "./0005_bookmark_note.js";
 import m0006 from "./0006_pdf_format.js";
 import m0007 from "./0007_sync_pipeline.js";
+import m0008 from "./0008_litert_migration.js";
 import journal from "./meta/_journal.json";
 
 export default {
@@ -21,5 +22,6 @@ export default {
     m0005,
     m0006,
     m0007,
+    m0008,
   },
 };

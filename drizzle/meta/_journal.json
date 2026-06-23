@@ -57,6 +57,13 @@
       "when": 1743292800000,
       "tag": "0007_sync_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1750694400000,
+      "tag": "0008_litert_migration",
+      "breakpoints": true
     }
   ]
 }

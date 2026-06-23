@@ -5,7 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
-import { useLlamaStore } from '@/stores/llama';
+import { useModelStore } from '@/stores/model';
 
 interface ModelStatusBarProps {
   onPress?: () => void;
@@ -13,7 +13,7 @@ interface ModelStatusBarProps {
 
 export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
   const colors = useColors();
-  const { models, activeModelId, isLoaded, isLoading, loadError } = useLlamaStore();
+  const { models, activeModelId, isLoaded, isLoading, loadError } = useModelStore();
 
   const activeModel = models.find((m) => m.id === activeModelId);
 

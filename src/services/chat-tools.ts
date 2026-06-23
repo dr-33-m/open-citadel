@@ -1,9 +1,10 @@
 import { desc, eq, like, or } from 'drizzle-orm';
+import type { ToolDefinition } from '@dr33m/react-native-litert-lm';
 
 import { db } from '@/db/client';
 import { books, highlights, notes, thoughts } from '@/db/schema';
 
-// ── Tool definitions (llama.rn native tool-calling format) ──────────────────
+// ── Tool definitions ────────────────────────────────────────────────────────
 
 export const SAMWELL_TOOLS = [
   {
@@ -99,6 +100,14 @@ export const SAMWELL_TOOLS = [
     },
   },
 ];
+
+// ── Tool definitions in litert-lm format ────────────────────────────────────
+
+export const SAMWELL_TOOLS_LITERT: ToolDefinition[] = SAMWELL_TOOLS.map((t) => ({
+  name: t.function.name,
+  description: t.function.description,
+  parametersJson: JSON.stringify(t.function.parameters),
+}));
 
 // ── Tool result types ───────────────────────────────────────────────────────
 

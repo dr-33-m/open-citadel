@@ -13,7 +13,8 @@
         "dark": "./assets/icons/ios-dark.png",
         "tinted": "./assets/icons/ios-tinted.png"
       },
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dr33m.opencitadel"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +22,12 @@
         "backgroundColor": "#131313"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.dr33m.opencitadel"
+      "package": "com.dr33m.opencitadel",
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET"
+      ]
     },
     "web": {
       "output": "static",
@@ -51,14 +57,14 @@
         "8.13"
       ],
       "./plugins/withAbiFilters",
+      "@dr33m/react-native-litert-lm",
       [
         "expo-build-properties",
         {
           "android": {
             "compileSdkVersion": 36,
             "targetSdkVersion": 35,
-            "minSdkVersion": 24,
-            "kotlinVersion": "2.0.21",
+            "minSdkVersion": 26,
             "enableCoreLibraryDesugaring": true
           }
         }

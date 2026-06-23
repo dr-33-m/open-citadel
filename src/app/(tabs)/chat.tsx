@@ -16,7 +16,7 @@ import { ScreenHeader } from '@/components/ui/screen-header';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { useChatStore, type ChatSession } from '@/stores/chat';
-import { useLlamaStore } from '@/stores/llama';
+import { useModelStore } from '@/stores/model';
 
 function timeAgo(isoDate: string): string {
   const diff = Date.now() - new Date(isoDate).getTime();
@@ -34,7 +34,7 @@ export default function ChatTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { sessions, loadSessions, createSession, deleteSession } = useChatStore();
-  const { models, activeModelId } = useLlamaStore();
+  const { models, activeModelId } = useModelStore();
   const [bookPickerVisible, setBookPickerVisible] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<ChatSession | null>(null);
 

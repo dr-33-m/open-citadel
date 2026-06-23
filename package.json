@@ -11,6 +11,7 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@dr33m/react-native-litert-lm": "^0.5.2",
     "@dr33m/react-native-readium": "next",
     "@expo-google-fonts/manrope": "^0.4.2",
     "@expo-google-fonts/newsreader": "^0.4.1",
@@ -43,7 +44,6 @@
     "expo-system-ui": "~55.0.10",
     "expo-web-browser": "~55.0.10",
     "jszip": "^3.10.1",
-    "llama.rn": "0.12.4",
     "lucide-react-native": "^0.577.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
@@ -70,7 +70,10 @@
   "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "llama.rn"
-    ]
+      "@dr33m/react-native-litert-lm"
+    ],
+    "patchedDependencies": {
+      "react-native-gesture-handler@2.30.0": "patches/react-native-gesture-handler@2.30.0.patch"
+    }
   }
 }

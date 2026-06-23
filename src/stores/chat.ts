@@ -4,12 +4,12 @@ import { create } from 'zustand';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions } from '@/db/schema';
 import {
-  SAMWELL_TOOLS,
   executeToolCall,
   formatSearchResultsForLLM,
   type SearchResult,
 } from '@/services/chat-tools';
-import * as LlamaService from '@/services/llama-service';
+import * as Inference from '@/services/inference';
+import { useModelStore } from '@/stores/model';
 
 export interface ChatSession {
   id: string;
@@ -40,6 +40,8 @@ interface ChatStore {
   isToolCalling: boolean;
   toolCallStatus: string | null;
   streamingContent: string;
+  thinkingContent: string;
+  contextPrimed: boolean;
 
   loadSessions(): Promise<void>;
   createSession(opts: {
@@ -53,8 +55,6 @@ interface ChatStore {
   stopGeneration(): void;
   deleteSession(id: string): Promise<void>;
 }
-
-let _abortController: AbortController | null = null;
 
 function uuid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -73,6 +73,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isToolCalling: false,
   toolCallStatus: null,
   streamingContent: '',
+  thinkingContent: '',
+  contextPrimed: false,
 
   async loadSessions() {
     const rows = db
@@ -200,14 +202,36 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       createdAt: r.createdAt,
     }));
 
-    set({ activeSession: session, messages, streamingContent: '' });
-    await LlamaService.clearCache();
+    set({ activeSession: session, messages, streamingContent: '', thinkingContent: '', contextPrimed: false });
+
+    // Reset stateful conversation in the engine
+    Inference.resetConversation();
+
+    // Prime the engine with session-specific context (book passage etc.)
+    // Send the system message as a user turn so the engine incorporates it
+    // into its conversation state. The response is silently discarded.
+    const systemMsg = messages.find((m) => m.role === 'system');
+    if (systemMsg && Inference.isModelLoaded()) {
+      try {
+        console.log('[Chat] Priming engine with system context:', systemMsg.content.slice(0, 100) + '...');
+        await Inference.chat(
+          systemMsg.content + '\n\nAcknowledge this context with "OK".',
+          () => {},
+        );
+        set({ contextPrimed: true });
+        console.log('[Chat] Context priming complete');
+      } catch (err) {
+        console.warn('[Chat] Context priming failed:', err);
+      }
+    }
   },
 
   async sendMessage(content) {
-    const { activeSession, messages } = get();
+    const { activeSession } = get();
     if (!activeSession) return;
-    if (!LlamaService.isModelLoaded()) return;
+    if (!Inference.isModelLoaded()) return;
+
+    const { enableToolCalling, enableThinking } = useModelStore.getState().inference;
 
     const userMsg: ChatMessage = {
       id: uuid(),
@@ -218,117 +242,124 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     };
 
     db.insert(chatMessages).values(userMsg).run();
-    set((s) => ({ messages: [...s.messages, userMsg], streamingContent: '', isGenerating: true }));
-
-    _abortController = new AbortController();
-
-    // Build messages array for the LLM (system + full history + new user msg)
-    type LlmMessage = {
-      role: string;
-      content: string;
-      tool_calls?: LlamaService.ToolCall[];
-      tool_call_id?: string;
-      name?: string;
-    };
-    const historyForLlm: LlmMessage[] = [...messages, userMsg].map((m) => ({
-      role: m.role,
-      content: m.content,
+    set((s) => ({
+      messages: [...s.messages, userMsg],
+      streamingContent: '',
+      thinkingContent: '',
+      isGenerating: true,
+      isThinking: false, // Start with "Processing…"; SDK empty callback triggers "Thinking…"
     }));
+
+    // Lazy context priming — if the model wasn't loaded when the session
+    // was opened, prime the engine with book context before the first message
+    if (!get().contextPrimed) {
+      const systemMsg = get().messages.find((m) => m.role === 'system');
+      if (systemMsg) {
+        try {
+          console.log('[Chat] Lazy-priming engine with system context');
+          await Inference.chat(
+            systemMsg.content + '\n\nAcknowledge this context with "OK".',
+            () => {},
+          );
+          set({ contextPrimed: true });
+        } catch (err) {
+          console.warn('[Chat] Lazy context priming failed:', err);
+        }
+      } else {
+        set({ contextPrimed: true });
+      }
+    }
 
     const MAX_TOOL_ITERATIONS = 3;
     let finalContent = '';
 
     try {
-      for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-        set({ streamingContent: '' });
+      // When tools are enabled, suppress first-pass display — the model may emit
+      // "I can't find..." text before triggering tool calls (example app pattern).
+      // When tools are off, stream normally.
+      let result = await Inference.chat(
+        content,
+        enableToolCalling
+          ? () => {} // suppress first-pass tokens; "Processing" indicator shows instead
+          : ({ content: c }) => {
+              if (c) {
+                set({ isThinking: false, streamingContent: c });
+              } else if (enableThinking) {
+                // Empty callback = model transitioned from prefill to thinking
+                set({ isThinking: true });
+              }
+            },
+      );
 
-        // Clear KV cache before each completion so the new message history is processed fresh
-        if (i > 0) await LlamaService.clearCache();
+      // If tools were suppressed but model answered without calling tools,
+      // show the response text now
+      if (enableToolCalling && !result.toolCalls?.length) {
+        set({ isThinking: false, streamingContent: result.text });
+      }
 
-        const result = await LlamaService.chat(
-          historyForLlm,
-          ({ content: c, reasoningContent }) => {
-            set({
-              isThinking: reasoningContent.length > 0 && c.length === 0,
-              isToolCalling: false,
-              toolCallStatus: null,
-              streamingContent: c,
-            });
-          },
-          _abortController!.signal,
-          { tools: SAMWELL_TOOLS },
-        );
+      for (let i = 0; i < MAX_TOOL_ITERATIONS && result.toolCalls?.length; i++) {
+        const toolNames = result.toolCalls.map((tc) => tc.name);
+        const statusMsg = toolNames.some((n) => n.startsWith('tag_'))
+          ? 'Organizing your tags…'
+          : toolNames.includes('search_thoughts')
+            ? 'Searching through your thoughts…'
+            : 'Searching through your highlights…';
+        set({ isToolCalling: true, isThinking: false, streamingContent: '', toolCallStatus: statusMsg });
 
-        // If the model made tool calls, execute them and loop
-        if (result.tool_calls?.length) {
-          const toolNames = result.tool_calls!.map((tc) => tc.function.name);
-          const statusMsg = toolNames.some((n) => n.startsWith('tag_'))
-            ? 'Organizing your tags…'
-            : toolNames.includes('search_thoughts')
-              ? 'Searching through your thoughts…'
-              : 'Searching through your highlights…';
-          set({ isToolCalling: true, isThinking: false, streamingContent: '', toolCallStatus: statusMsg });
+        // Store the assistant's tool-call message (hidden from UI)
+        const toolCallMsg: ChatMessage = {
+          id: uuid(),
+          sessionId: activeSession.id,
+          role: 'assistant',
+          content: '\0TOOL_CALL\0' + JSON.stringify(result.toolCalls),
+          createdAt: now(),
+        };
+        db.insert(chatMessages).values(toolCallMsg).run();
 
-          // Store the assistant's tool-call message (hidden from UI)
-          const toolCallMsg: ChatMessage = {
+        // Execute each tool call and collect responses for the engine
+        const toolResponses: Inference.ToolResponse[] = [];
+        for (const tc of result.toolCalls) {
+          let args: Record<string, unknown> = {};
+          try {
+            args = JSON.parse(tc.argumentsJson);
+          } catch { /* empty */ }
+
+          const { result: toolResult } = await executeToolCall(tc.name, args);
+
+          // Format search results with reference markers for the LLM
+          let toolContent: string;
+          if ((tc.name === 'search_highlights' || tc.name === 'search_thoughts') && Array.isArray(toolResult)) {
+            toolContent = formatSearchResultsForLLM(toolResult as SearchResult[]);
+          } else {
+            toolContent = JSON.stringify(toolResult);
+          }
+
+          const toolMsg: ChatMessage = {
             id: uuid(),
             sessionId: activeSession.id,
-            role: 'assistant',
-            content: '\0TOOL_CALL\0' + JSON.stringify(result.tool_calls),
+            role: 'tool',
+            content: toolContent,
             createdAt: now(),
           };
-          db.insert(chatMessages).values(toolCallMsg).run();
-          historyForLlm.push({
-            role: 'assistant',
-            content: result.content || '',
-            tool_calls: result.tool_calls,
-          });
+          db.insert(chatMessages).values(toolMsg).run();
 
-          // Ensure every tool call has an id (some models omit it)
-          for (const tc of result.tool_calls) {
-            if (!tc.id) tc.id = `call_${uuid()}`;
-          }
-
-          // Execute each tool call and feed results back
-          for (const tc of result.tool_calls) {
-            let args: Record<string, unknown> = {};
-            try {
-              args = JSON.parse(tc.function.arguments);
-            } catch { /* empty */ }
-
-            const { result: toolResult } = await executeToolCall(tc.function.name, args);
-
-            // Format search results with reference markers for the LLM
-            let toolContent: string;
-            if ((tc.function.name === 'search_highlights' || tc.function.name === 'search_thoughts') && Array.isArray(toolResult)) {
-              toolContent = formatSearchResultsForLLM(toolResult as SearchResult[]);
-            } else {
-              toolContent = JSON.stringify(toolResult);
-            }
-
-            const toolMsg: ChatMessage = {
-              id: uuid(),
-              sessionId: activeSession.id,
-              role: 'tool',
-              content: toolContent,
-              createdAt: now(),
-            };
-            db.insert(chatMessages).values(toolMsg).run();
-            historyForLlm.push({
-              role: 'tool',
-              content: toolContent,
-              tool_call_id: tc.id!,
-              name: tc.function.name,
-            });
-          }
-
-          // Keep isToolCalling true — toolCallStatus stays as-is until the LLM starts streaming
-          continue;
+          toolResponses.push({ name: tc.name, responseJson: toolContent });
         }
 
-        // No tool calls — this is the final response
-        finalContent = result.content.trim();
-        break;
+        // Send all tool responses back — engine continues the conversation
+        set({ streamingContent: '' });
+        result = await Inference.sendToolResponses(
+          toolResponses,
+          ({ content: c }) => {
+            set({ isToolCalling: false, toolCallStatus: null, streamingContent: c });
+          },
+        );
+      }
+
+      finalContent = result.text.trim();
+      // Capture thinking text from the final result (available after generation completes)
+      if (result.thinkingText) {
+        set({ thinkingContent: result.thinkingText });
       }
     } catch (err) {
       console.error('[Samwell] Generation error:', err);
@@ -363,13 +394,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, isGenerating: false });
     }
 
-    _abortController = null;
     await get().loadSessions();
   },
 
   stopGeneration() {
-    _abortController?.abort();
-    _abortController = null;
+    Inference.stopGeneration();
   },
 
   async deleteSession(id) {

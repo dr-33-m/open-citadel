@@ -108,7 +108,7 @@ export const appSettings = sqliteTable("app_settings", {
 
 // ── Chat / Local AI tables ────────────────────────────────────────────────────
 
-export const llamaModels = sqliteTable("llama_models", {
+export const localModels = sqliteTable("llama_models", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   filename: text("filename").notNull(),

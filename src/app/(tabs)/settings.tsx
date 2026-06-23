@@ -23,7 +23,7 @@ import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
 import { fontFamily, spacing } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
-import { useLlamaStore } from '@/stores/llama';
+import { useModelStore } from '@/stores/model';
 
 const TTS_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -46,7 +46,7 @@ export default function SettingsScreen() {
     models,
     activeModelId,
     isLoaded,
-    isLoading: llamaLoading,
+    isLoading: modelLoading,
     loadError,
     downloadProgress,
     loadModels,
@@ -60,8 +60,8 @@ export default function SettingsScreen() {
     setInference,
     memoryEstimate,
     checkMemory,
-    hasGpu,
-  } = useLlamaStore();
+    activeBackend,
+  } = useModelStore();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [modelSheetVisible, setModelSheetVisible] = useState(false);
@@ -83,7 +83,7 @@ export default function SettingsScreen() {
 
   const powerPulse = useRef(new Animated.Value(0.4)).current;
   useEffect(() => {
-    if (llamaLoading) {
+    if (modelLoading) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(powerPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
@@ -94,7 +94,7 @@ export default function SettingsScreen() {
       powerPulse.stopAnimation();
       powerPulse.setValue(1);
     }
-  }, [llamaLoading]);
+  }, [modelLoading]);
 
   const activeModel = models.find((m) => m.id === activeModelId);
 
@@ -129,7 +129,7 @@ export default function SettingsScreen() {
     setHfResults([]);
     try {
       const res = await fetch(
-        `https://huggingface.co/api/models?search=${encodeURIComponent(hfQuery.trim())}&filter=gguf&limit=20&sort=downloads`,
+        `https://huggingface.co/api/models?search=${encodeURIComponent(hfQuery.trim())}&limit=20&sort=downloads`,
       );
       const data: HFRepo[] = await res.json();
       setHfResults(data);
@@ -145,10 +145,10 @@ export default function SettingsScreen() {
     try {
       const res = await fetch(`https://huggingface.co/api/models/${repoId}`);
       const data = await res.json();
-      const gguf: HFFile[] = (data.siblings ?? []).filter(
-        (f: { rfilename: string }) => f.rfilename.endsWith('.gguf'),
+      const litert: HFFile[] = (data.siblings ?? []).filter(
+        (f: { rfilename: string }) => f.rfilename.endsWith('.litertlm'),
       );
-      setHfFiles(gguf);
+      setHfFiles(litert);
     } catch { /* ignore */ } finally {
       setHfLoadingFiles(false);
     }
@@ -157,7 +157,7 @@ export default function SettingsScreen() {
   async function pickFile(file: HFFile) {
     if (!hfRepo) return;
     const url = `https://huggingface.co/${hfRepo}/resolve/main/${file.rfilename}`;
-    const name = file.rfilename.replace(/\.gguf$/i, '').replace(/-/g, ' ');
+    const name = file.rfilename.replace(/\.litertlm$/i, '').replace(/-/g, ' ');
     await addCustomModel(name, url);
     resetHfState();
     setModelSheetView('list');
@@ -619,20 +619,20 @@ export default function SettingsScreen() {
                     ) : (
                       <>
                         <Touchable
-                          style={[styles.aiActionBtn, (llamaLoading || isDeleting || (!isLoaded && memoryStatus === 'wont_fit')) && { opacity: 0.5 }]}
-                          onPress={isLoaded ? releaseContext : () => useLlamaStore.getState().initContext()}
-                          disabled={llamaLoading || isDeleting || (!isLoaded && memoryStatus === 'wont_fit')}
+                          style={[styles.aiActionBtn, (modelLoading || isDeleting) && { opacity: 0.5 }]}
+                          onPress={isLoaded ? releaseContext : () => useModelStore.getState().initContext()}
+                          disabled={modelLoading || isDeleting}
                         >
-                          <Animated.View style={llamaLoading ? { opacity: powerPulse } : undefined}>
-                            <Power size={14} color={llamaLoading ? colors.primary.default : isLoaded ? '#4caf50' : colors.text.secondary} />
+                          <Animated.View style={modelLoading ? { opacity: powerPulse } : undefined}>
+                            <Power size={14} color={modelLoading ? colors.primary.default : isLoaded ? '#4caf50' : colors.text.secondary} />
                           </Animated.View>
                           <ThemedText type="labelSm" color={isLoaded ? colors.text.primary : colors.text.secondary}>
                             {isLoaded ? 'SLEEP' : 'WAKEN'}
                           </ThemedText>
                         </Touchable>
                         <Touchable
-                          style={[styles.aiActionBtn, (llamaLoading || isDeleting) && { opacity: 0.5 }]}
-                          disabled={llamaLoading || isDeleting}
+                          style={[styles.aiActionBtn, (modelLoading || isDeleting) && { opacity: 0.5 }]}
+                          disabled={modelLoading || isDeleting}
                           onPress={() => setTuneModalVisible(true)}
                         >
                           <SlidersHorizontal size={14} color={colors.text.primary} />
@@ -641,8 +641,8 @@ export default function SettingsScreen() {
                           </ThemedText>
                         </Touchable>
                         <Touchable
-                          style={[styles.aiActionBtn, (llamaLoading || isDeleting) && { opacity: 0.5 }]}
-                          disabled={llamaLoading || isDeleting}
+                          style={[styles.aiActionBtn, (modelLoading || isDeleting) && { opacity: 0.5 }]}
+                          disabled={modelLoading || isDeleting}
                           onPress={async () => {
                             if (isLoaded) {
                               setIsDeleting(true);
@@ -842,6 +842,7 @@ export default function SettingsScreen() {
                           <ThemedText type="labelSm" color={colors.text.secondary}>
                             {formatBytes(m.sizeBytes)}
                             {m.isDownloaded ? ' · Downloaded' : ''}
+                            {m.id === 'gemma-4-e2b-it' ? ' · Recommended' : ''}
                           </ThemedText>
                         </View>
                         {m.id === activeModelId && (
@@ -878,7 +879,7 @@ export default function SettingsScreen() {
                     )}
                     ListEmptyComponent={
                       <View style={{ padding: spacing[4] }}>
-                        <ThemedText type="bodySm" color={colors.text.secondary}>No GGUF files found in this repo.</ThemedText>
+                        <ThemedText type="bodySm" color={colors.text.secondary}>No LiteRT-LM files found in this repo.</ThemedText>
                       </View>
                     }
                   />
@@ -922,7 +923,7 @@ export default function SettingsScreen() {
                       )}
                       ListEmptyComponent={
                         <View style={{ padding: spacing[4] }}>
-                          <ThemedText type="bodySm" color={colors.text.secondary}>Search for GGUF models to get started.</ThemedText>
+                          <ThemedText type="bodySm" color={colors.text.secondary}>Search for LiteRT-LM models to get started.</ThemedText>
                         </View>
                       }
                     />
@@ -949,9 +950,37 @@ export default function SettingsScreen() {
             <ThemedText type="bodySm" color={colors.text.secondary}>PERFORMANCE</ThemedText>
 
             <View style={{ gap: spacing[1] }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+                <ThemedText type="bodySm" color={colors.text.primary}>Backend</ThemedText>
+                {activeBackend && (
+                  <ThemedText type="bodySm" color="#4caf50" style={{ fontSize: 11 }}>Running on {activeBackend.toUpperCase()}</ThemedText>
+                )}
+              </View>
+              <View style={styles.rateRow}>
+                {(['cpu', 'gpu', 'npu'] as const).map((backend) => {
+                  const active = inference.backend === backend;
+                  return (
+                    <Touchable
+                      key={backend}
+                      style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive]}
+                      onPress={() => setInference({ backend })}
+                    >
+                      <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
+                        {backend.toUpperCase()}
+                      </ThemedText>
+                    </Touchable>
+                  );
+                })}
+              </View>
+              <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                GPU is fastest. NPU requires supported hardware. Falls back to CPU if unavailable.
+              </ThemedText>
+            </View>
+
+            <View style={{ gap: spacing[1] }}>
               <ThemedText type="bodySm" color={colors.text.primary}>Context Window</ThemedText>
               <View style={styles.rateRow}>
-                {[2048, 4096, 8192].map((size) => {
+                {[2048, 4096].map((size) => {
                   const active = inference.contextSize === size;
                   return (
                     <Touchable
@@ -960,7 +989,7 @@ export default function SettingsScreen() {
                       onPress={() => setInference({ contextSize: size })}
                     >
                       <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
-                        {size >= 1024 ? `${size / 1024}K` : String(size)}
+                        {`${size / 1024}K`}
                       </ThemedText>
                     </Touchable>
                   );
@@ -971,60 +1000,85 @@ export default function SettingsScreen() {
               </ThemedText>
             </View>
 
-            <View style={{ gap: spacing[1] }}>
-              <ThemedText type="bodySm" color={colors.text.primary}>CPU Threads</ThemedText>
-              <View style={styles.rateRow}>
-                {[2, 4, 6, 8].map((threads) => {
-                  const active = inference.cpuThreads === threads;
-                  return (
-                    <Touchable
-                      key={threads}
-                      style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive]}
-                      onPress={() => setInference({ cpuThreads: threads })}
-                    >
-                      <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
-                        {threads}
-                      </ThemedText>
-                    </Touchable>
-                  );
-                })}
+            <Touchable
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              onPress={() => setInference({ enableSpeculativeDecoding: !inference.enableSpeculativeDecoding })}
+            >
+              <View style={{ flex: 1, gap: 2 }}>
+                <ThemedText type="bodySm" color={colors.text.primary}>Multi-Token Prediction</ThemedText>
+                <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                  Faster generation on supported models.
+                </ThemedText>
               </View>
-              <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                Match your CPU's big cores. 4 is a safe default.
-              </ThemedText>
-            </View>
+              <Switch
+                value={inference.enableSpeculativeDecoding}
+                onValueChange={(val) => setInference({ enableSpeculativeDecoding: val })}
+                trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
+                thumbColor={colors.surface.low}
+              />
+            </Touchable>
 
-            <View style={{ gap: spacing[1] }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
-                <ThemedText type="bodySm" color={colors.text.primary}>GPU Offload</ThemedText>
-                {!hasGpu && (
-                  <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>No GPU detected</ThemedText>
-                )}
+            <ThemedText type="bodySm" color={colors.text.secondary}>CAPABILITIES</ThemedText>
+
+            <Touchable
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              onPress={() => {
+                if (!inference.enableToolCalling) {
+                  setInference({ enableToolCalling: true, enableThinking: false });
+                } else {
+                  setInference({ enableToolCalling: false });
+                }
+              }}
+            >
+              <View style={{ flex: 1, gap: 2 }}>
+                <ThemedText type="bodySm" color={colors.text.primary}>Tool Calling</ThemedText>
+                <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                  Search highlights, tag items, and more.
+                </ThemedText>
               </View>
-              <View style={styles.rateRow}>
-                {([
-                  { value: 0, label: 'Off' },
-                  { value: 99, label: 'Full' },
-                ] as const).map(({ value, label }) => {
-                  const active = inference.gpuLayers === value;
-                  return (
-                    <Touchable
-                      key={value}
-                      style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive, !hasGpu && !active && { opacity: 0.4 }]}
-                      onPress={() => setInference({ gpuLayers: value })}
-                      disabled={!hasGpu}
-                    >
-                      <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
-                        {label}
-                      </ThemedText>
-                    </Touchable>
-                  );
-                })}
+              <Switch
+                value={inference.enableToolCalling}
+                onValueChange={(val) => {
+                  if (val) {
+                    setInference({ enableToolCalling: true, enableThinking: false });
+                  } else {
+                    setInference({ enableToolCalling: false });
+                  }
+                }}
+                trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
+                thumbColor={colors.surface.low}
+              />
+            </Touchable>
+
+            <Touchable
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              onPress={() => {
+                if (!inference.enableThinking) {
+                  setInference({ enableThinking: true, enableToolCalling: false });
+                } else {
+                  setInference({ enableThinking: false });
+                }
+              }}
+            >
+              <View style={{ flex: 1, gap: 2 }}>
+                <ThemedText type="bodySm" color={colors.text.primary}>Thinking Mode</ThemedText>
+                <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                  Show reasoning before answering. Disables tools.
+                </ThemedText>
               </View>
-              <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                Offload layers to GPU if supported.
-              </ThemedText>
-            </View>
+              <Switch
+                value={inference.enableThinking}
+                onValueChange={(val) => {
+                  if (val) {
+                    setInference({ enableThinking: true, enableToolCalling: false });
+                  } else {
+                    setInference({ enableThinking: false });
+                  }
+                }}
+                trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
+                thumbColor={colors.surface.low}
+              />
+            </Touchable>
 
             {isLoaded && (
               <ThemedText type="bodySm" color={colors.primary.default}>
@@ -1091,11 +1145,13 @@ export default function SettingsScreen() {
             </ThemedText>
             {memoryEstimate && (
               <View style={{ gap: spacing[1] }}>
+                {memoryEstimate.minDeviceMemoryGb != null && (
+                  <ThemedText type="labelSm" color={colors.text.secondary}>
+                    Minimum RAM: {memoryEstimate.minDeviceMemoryGb} GB
+                  </ThemedText>
+                )}
                 <ThemedText type="labelSm" color={colors.text.secondary}>
-                  Estimated: ~{(memoryEstimate.estimatedBytes / 1024 / 1024 / 1024).toFixed(1)} GB
-                </ThemedText>
-                <ThemedText type="labelSm" color={colors.text.secondary}>
-                  Available: ~{(memoryEstimate.availableBytes / 1024 / 1024 / 1024).toFixed(1)} GB
+                  Device RAM: {memoryEstimate.totalGb.toFixed(1)} GB
                 </ThemedText>
               </View>
             )}
