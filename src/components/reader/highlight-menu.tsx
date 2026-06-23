@@ -299,13 +299,17 @@ export function HighlightMenu({
     onClose();
   };
 
+  const [isExporting, setIsExporting] = useState(false);
+
   const handleExport = () => {
     setShowExport(true);
+    setIsExporting(true);
   };
 
   const handleExportReady = useCallback(async () => {
     await captureAndShare(exportViewRef);
     setShowExport(false);
+    setIsExporting(false);
   }, []);
 
   return (
@@ -514,10 +518,10 @@ export function HighlightMenu({
                 onPress={handleSave}
               />
               <View style={styles.actionsRow}>
-                <Touchable style={styles.actionItem} onPress={handleExport}>
+                <Touchable style={styles.actionItem} onPress={handleExport} disabled={isExporting}>
                   <Share size={18} color={colors.text.secondary} />
                   <ThemedText type="labelSm" color={colors.text.secondary}>
-                    EXPORT
+                    {isExporting ? 'EXPORTING…' : 'EXPORT'}
                   </ThemedText>
                 </Touchable>
                 {onStartChat && (

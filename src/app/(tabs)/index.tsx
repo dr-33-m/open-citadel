@@ -118,16 +118,20 @@ export default function TimelineScreen() {
     }
   };
 
+  const [isExporting, setIsExporting] = useState(false);
+
   const handleExport = (entry: TimelineItem) => {
-    setLongPressEntry(null);
     setExportEntry(entry);
     setShowExportCard(true);
+    setIsExporting(true);
   };
 
   const handleExportReady = React.useCallback(async () => {
     await captureAndShare(exportViewRef);
     setShowExportCard(false);
     setExportEntry(null);
+    setIsExporting(false);
+    setLongPressEntry(null);
   }, []);
 
   const hasEntries = groups.length > 0 && groups[0].entries.length > 0;
@@ -299,9 +303,11 @@ export default function TimelineScreen() {
             {/* Export as Image */}
             {longPressEntry && (
               <>
-                <Touchable style={sheetStyles.sheetRow} onPress={() => handleExport(longPressEntry)}>
-                  <Share size={20} color={colors.text.primary} />
-                  <ThemedText type="bodyMd" color={colors.text.primary}>Export as Image</ThemedText>
+                <Touchable style={sheetStyles.sheetRow} onPress={() => handleExport(longPressEntry)} disabled={isExporting}>
+                  <Share size={20} color={isExporting ? colors.text.secondary : colors.text.primary} />
+                  <ThemedText type="bodyMd" color={isExporting ? colors.text.secondary : colors.text.primary}>
+                    {isExporting ? 'Exporting…' : 'Export as Image'}
+                  </ThemedText>
                 </Touchable>
                 <View style={sheetStyles.sheetSeparator} />
               </>

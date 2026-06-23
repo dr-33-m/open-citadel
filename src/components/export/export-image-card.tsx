@@ -187,6 +187,7 @@ export function ExportImageCard({
           <Image
             source={{ uri: coverUri }}
             style={styles.coverImage}
+            fadeDuration={0}
             onLoad={() => { coverLoaded.current = true; checkReady(); }}
           />
         )}
@@ -212,6 +213,7 @@ export function ExportImageCard({
             <Image
               source={LOGO}
               style={styles.brandLogo}
+              fadeDuration={0}
               onLoad={() => { logoLoaded.current = true; checkReady(); }}
             />
             <Text style={styles.brandText}>OPEN CITADEL</Text>
