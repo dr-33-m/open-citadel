@@ -23,6 +23,7 @@ import {
 
 import { db } from "@/db/client";
 import { books, syncItems, syncJobs } from "@/db/schema";
+import { deleteBookData } from "./book-delete";
 import { extractEpubMetadata } from "./book-sync";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -286,6 +287,14 @@ async function phaseScanning(
     existingBooks.filter((b) => b.sourceUri).map((b) => [b.sourceUri!, b]),
   );
 
+  // Remove stale books whose source files are no longer in the directory
+  const currentUriSet = new Set(bookUris);
+  for (const [uri, book] of existingByUri) {
+    if (!currentUriSet.has(uri)) {
+      await deleteBookData(book.id);
+    }
+  }
+
   // Load existing sync_items for this job (in case of resume)
   const existingItems = await db
     .select()
@@ -521,7 +530,16 @@ async function phasePreparing(jobId: string): Promise<void> {
             metaFingerprint: item.fingerprint,
             metaError: null,
           };
-          if (meta.title) updates.title = meta.title;
+          // Only overwrite title if the user hasn't manually edited it
+          if (meta.title) {
+            const bookRows = await db
+              .select()
+              .from(books)
+              .where(eq(books.id, bookId));
+            if (!bookRows[0]?.titleLocked) {
+              updates.title = meta.title;
+            }
+          }
           if (meta.author) updates.author = meta.author;
           if (meta.coverPath) updates.coverUrl = meta.coverPath;
           await db.update(books).set(updates).where(eq(books.id, bookId));

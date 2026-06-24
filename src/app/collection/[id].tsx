@@ -16,6 +16,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AddBooksSheet } from "@/components/library/add-books-sheet";
 import { BookActionSheet } from "@/components/library/book-action-sheet";
+import { DeleteBookSheet } from "@/components/library/delete-book-sheet";
+import { EditTitleSheet } from "@/components/library/edit-title-sheet";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { fontFamily, spacing } from "@/constants/theme";
@@ -47,12 +49,14 @@ export default function CollectionScreen() {
     removeBookFromCollection,
     getCollectionBooks,
   } = useCollectionsStore();
-  const { updateBookStatus, toggleFavorite } = useBooksStore();
+  const { updateBookStatus, toggleFavorite, deleteBook, updateBookTitle } = useBooksStore();
   const allBooks = useAllBooks();
 
   const [books, setBooks] = useState<Book[]>([]);
   const [query, setQuery] = useState("");
   const [actionBook, setActionBook] = useState<Book | null>(null);
+  const [deleteConfirmBook, setDeleteConfirmBook] = useState<Book | null>(null);
+  const [editTitleBook, setEditTitleBook] = useState<Book | null>(null);
   const [showAddBooks, setShowAddBooks] = useState(false);
 
   const collection = collections.find((c) => c.id === id);
@@ -252,6 +256,14 @@ export default function CollectionScreen() {
         onOpen={openReader}
         onToggleFavorite={toggleFavorite}
         onSetStatus={updateBookStatus}
+        onDelete={(bookId) => {
+          const book = allBooks.find((b) => b.id === bookId) ?? null;
+          setDeleteConfirmBook(book);
+        }}
+        onEditTitle={(bookId) => {
+          const book = allBooks.find((b) => b.id === bookId) ?? null;
+          setEditTitleBook(book);
+        }}
       />
 
       <AddBooksSheet
@@ -260,6 +272,27 @@ export default function CollectionScreen() {
         existingBookIds={books.map((b) => b.id)}
         onConfirm={handleAddBooksConfirm}
         onClose={() => setShowAddBooks(false)}
+      />
+
+      <DeleteBookSheet
+        visible={deleteConfirmBook !== null}
+        book={deleteConfirmBook}
+        onClose={() => setDeleteConfirmBook(null)}
+        onConfirm={async (bookId) => {
+          await deleteBook(bookId);
+          setDeleteConfirmBook(null);
+          await loadCollectionBooks();
+        }}
+      />
+
+      <EditTitleSheet
+        visible={editTitleBook !== null}
+        book={editTitleBook}
+        onClose={() => setEditTitleBook(null)}
+        onSave={async (bookId, title) => {
+          await updateBookTitle(bookId, title);
+          setEditTitleBook(null);
+        }}
       />
     </ThemedView>
   );

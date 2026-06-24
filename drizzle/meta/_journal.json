@@ -64,6 +64,13 @@
       "when": 1750694400000,
       "tag": "0008_litert_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1750780800000,
+      "tag": "0009_title_locked",
+      "breakpoints": true
     }
   ]
 }

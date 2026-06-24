@@ -24,6 +24,8 @@ export const books = sqliteTable("books", {
     .default("ready"),
   metaFingerprint: text("meta_fingerprint"),
   metaError: text("meta_error"),
+  /** When 1, sync will not overwrite the user-edited title */
+  titleLocked: integer("title_locked").notNull().default(0),
 });
 
 export const readingProgress = sqliteTable("reading_progress", {

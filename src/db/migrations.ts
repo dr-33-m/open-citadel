@@ -25,6 +25,11 @@ async function ensureSyncPipelineSchema(): Promise<void> {
   if (!booksCols.has("meta_error")) {
     db.run(sql`ALTER TABLE \`books\` ADD \`meta_error\` text`);
   }
+  if (!booksCols.has("title_locked")) {
+    db.run(
+      sql`ALTER TABLE \`books\` ADD \`title_locked\` integer NOT NULL DEFAULT 0`,
+    );
+  }
 
   // ── Create sync_jobs if missing ───────────────────────────────────────────
   db.run(sql`CREATE TABLE IF NOT EXISTS \`sync_jobs\` (

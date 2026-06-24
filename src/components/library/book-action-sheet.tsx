@@ -1,4 +1,4 @@
-import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, RotateCcw, Star, StarOff } from 'lucide-react-native';
+import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, Pencil, RotateCcw, Star, StarOff, Trash2 } from 'lucide-react-native';
 import React from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
 
@@ -20,6 +20,8 @@ type BookActionSheetProps = {
   onToggleFavorite: (bookId: string) => void;
   onSetStatus: (bookId: string, status: BookStatus | null) => void;
   onAddToCollection?: (bookId: string) => void;
+  onDelete?: (bookId: string) => void;
+  onEditTitle?: (bookId: string) => void;
 };
 
 export function BookActionSheet({
@@ -30,6 +32,8 @@ export function BookActionSheet({
   onToggleFavorite,
   onSetStatus,
   onAddToCollection,
+  onDelete,
+  onEditTitle,
 }: BookActionSheetProps) {
   const colors = useColors();
   const styles = React.useMemo(() => StyleSheet.create({
@@ -102,6 +106,16 @@ export function BookActionSheet({
 
   const handleUnfinish = () => {
     onSetStatus(book.id, null);
+    onClose();
+  };
+
+  const handleEditTitle = () => {
+    onEditTitle?.(book.id);
+    onClose();
+  };
+
+  const handleDelete = () => {
+    onDelete?.(book.id);
     onClose();
   };
 
@@ -209,6 +223,32 @@ export function BookActionSheet({
                 <RotateCcw size={20} color={colors.text.secondary} />
                 <ThemedText type="bodyMd" color={colors.text.secondary}>
                   Mark as Unfinished
+                </ThemedText>
+              </Touchable>
+            </>
+          )}
+
+          {/* Edit Title */}
+          {onEditTitle && (
+            <>
+              <View style={styles.separator} />
+              <Touchable style={styles.row} onPress={handleEditTitle}>
+                <Pencil size={20} color={colors.text.primary} />
+                <ThemedText type="bodyMd" color={colors.text.primary}>
+                  Edit Title
+                </ThemedText>
+              </Touchable>
+            </>
+          )}
+
+          {/* Delete */}
+          {onDelete && (
+            <>
+              <View style={styles.separator} />
+              <Touchable style={styles.row} onPress={handleDelete}>
+                <Trash2 size={20} color="#e05252" />
+                <ThemedText type="bodyMd" color="#e05252">
+                  Delete Book
                 </ThemedText>
               </Touchable>
             </>

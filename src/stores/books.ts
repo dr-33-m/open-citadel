@@ -4,6 +4,7 @@ import { useShallow } from "zustand/shallow";
 
 import { db } from "@/db/client";
 import { appSettings, books } from "@/db/schema";
+import { deleteBookWithFile } from "@/services/book-delete";
 import {
   getActiveSyncJob,
   resumeRunningSyncIfAny,
@@ -102,6 +103,8 @@ interface BooksState {
       totalPages?: number;
     },
   ) => Promise<void>;
+  deleteBook: (bookId: string) => Promise<void>;
+  updateBookTitle: (bookId: string, title: string) => Promise<void>;
 }
 
 /** How often to do a full loadBooks() during the preparing phase */
@@ -252,6 +255,19 @@ export const useBooksStore = create<BooksState>((set, get) => ({
 
   updateBookMetadata: async (bookId, metadata) => {
     await db.update(books).set(metadata).where(eq(books.id, bookId));
+    await get().loadBooks();
+  },
+
+  deleteBook: async (bookId) => {
+    await deleteBookWithFile(bookId);
+    await get().loadBooks();
+  },
+
+  updateBookTitle: async (bookId, title) => {
+    await db
+      .update(books)
+      .set({ title, titleLocked: 1 })
+      .where(eq(books.id, bookId));
     await get().loadBooks();
   },
 }));
