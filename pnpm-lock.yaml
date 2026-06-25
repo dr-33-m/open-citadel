@@ -14,11 +14,11 @@ importers:
   .:
     dependencies:
       '@dr33m/react-native-litert-lm':
-        specifier: ^0.5.2
-        version: 0.5.2(expo@55.0.8)(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+        specifier: ^0.5.4
+        version: 0.5.4(expo@55.0.8)(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       '@dr33m/react-native-readium':
         specifier: next
-        version: 5.0.0-rc.30(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+        version: 5.0.0-rc.30(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       '@expo-google-fonts/manrope':
         specifier: ^0.4.2
         version: 0.4.2
@@ -134,8 +134,8 @@ importers:
         specifier: ^8.0.1
         version: 8.0.1(react-native-svg@15.15.4(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       react-native-nitro-modules:
-        specifier: ^0.35.2
-        version: 0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+        specifier: ^0.35.9
+        version: 0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       react-native-reanimated:
         specifier: 4.2.1
         version: 4.2.1(react-native-worklets@0.7.2(@babel/core@7.29.0)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
@@ -746,8 +746,8 @@ packages:
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
 
-  '@dr33m/react-native-litert-lm@0.5.2':
-    resolution: {integrity: sha512-LeLrIEGC3uddzCD1CRue+PH8GKSijkS2iPW0+t6q/1a9DWGlj5vwR3jFF466Hnpk5rAw38zib3sDdm7bj1bVcw==}
+  '@dr33m/react-native-litert-lm@0.5.4':
+    resolution: {integrity: sha512-lmxAitFGjswvTsQG/nzLsGb/LRaYdV7VsO+N+cqQdIqBDe0W19AQ9k0pIQNlsFxIy8nXrVbz9Is6AWbp2XCU3w==}
     engines: {node: '>=22'}
     peerDependencies:
       expo: '>=55.0.0'
@@ -3605,8 +3605,8 @@ packages:
       react-native: '>=0.76.0'
       react-native-svg: '>=12.3.0'
 
-  react-native-nitro-modules@0.35.2:
-    resolution: {integrity: sha512-97cZcCh3ZAuWAfutel2Q3qLfc45XXh7F9Ei5tEjahP0kV3q8hQelwLIulKXmjN+f0JI5Zf/wCsfwwdVWYU2tKA==}
+  react-native-nitro-modules@0.35.10:
+    resolution: {integrity: sha512-KsySOAIkbSTjNiX2GvXiNT9P5DMeZd99yvtE/+Lw7RXV7Ztxh9Z+YyAbYkBqadhN5J/KXXuPjhRYgyLOIZgsbQ==}
     peerDependencies:
       react: '*'
       react-native: '*'
@@ -4936,15 +4936,15 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@dr33m/react-native-litert-lm@0.5.2(expo@55.0.8)(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
+  '@dr33m/react-native-litert-lm@0.5.4(expo@55.0.8)(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
     dependencies:
-      react-native-nitro-modules: 0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+      react-native-nitro-modules: 0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
     optionalDependencies:
       expo: 55.0.8(@babel/core@7.29.0)(@expo/dom-webview@55.0.3)(@expo/metro-runtime@55.0.6)(expo-router@55.0.7)(react-dom@19.2.0(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
       react: 19.2.0
       react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
 
-  '@dr33m/react-native-readium@5.0.0-rc.30(react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
+  '@dr33m/react-native-readium@5.0.0-rc.30(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
     dependencies:
       '@readium/css': 2.0.0
       '@readium/navigator': 2.3.1
@@ -4952,7 +4952,7 @@ snapshots:
       '@readium/shared': 2.1.5
       react: 19.2.0
       react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
-      react-native-nitro-modules: 0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+      react-native-nitro-modules: 0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       use-deep-compare: 1.3.0(react@19.2.0)
 
   '@drizzle-team/brocli@0.10.2': {}
@@ -8080,7 +8080,7 @@ snapshots:
       react-native-svg: 15.15.4(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       svg-parser: 2.0.4
 
-  react-native-nitro-modules@0.35.2(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0):
+  react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0):
     dependencies:
       react: 19.2.0
       react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)

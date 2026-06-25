@@ -232,10 +232,12 @@ export default function ReaderScreen() {
 
         if (currentBook.author === "Unknown") {
           const metadata = event.metadata;
-          updates.title =
-            metadata.title && metadata.title !== "Untitled"
-              ? metadata.title
-              : currentBook.title;
+          if (!currentBook.titleLocked) {
+            updates.title =
+              metadata.title && metadata.title !== "Untitled"
+                ? metadata.title
+                : currentBook.title;
+          }
           updates.author =
             metadata.author?.map((c) => c.name).join(", ") || "Unknown";
         }

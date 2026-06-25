@@ -14,7 +14,7 @@ import { create } from "zustand";
 
 import { db } from "@/db/client";
 import { appSettings, localModels } from "@/db/schema";
-import type { Backend } from "@dr33m/react-native-litert-lm";
+import { createLLM, type Backend } from "@dr33m/react-native-litert-lm";
 import * as Inference from "@/services/inference";
 import { checkModelMemory, type MemoryEstimate } from "@/utils/memory-estimator";
 
@@ -37,6 +37,9 @@ export interface LocalModel {
   isDownloaded: boolean;
   isActive: boolean;
   downloadedAt: string | null;
+  supportsSpeculativeDecoding: boolean;
+  supportsThinking: boolean;
+  supportsToolCalling: boolean;
 }
 
 const DEFAULT_INFERENCE: InferenceSettings = {
@@ -59,6 +62,7 @@ interface ModelStore {
   deviceTotalMemory: number | null;
   memoryEstimate: MemoryEstimate | null;
   activeBackend: Backend | null; // actual backend after model loads (detects GPU→CPU fallback)
+  unavailableBackends: Set<Backend>; // backends that fell back — disable in UI
 
   loadModels(): Promise<void>;
   setActiveModel(id: string): Promise<void>;
@@ -84,6 +88,9 @@ const SEED_MODELS: Omit<
       "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
     sizeBytes: 2588 * 1024 * 1024,
     minDeviceMemoryGb: 8,
+    supportsSpeculativeDecoding: true,
+    supportsThinking: true,
+    supportsToolCalling: true,
   },
   {
     id: "gemma3-1b-it",
@@ -93,6 +100,9 @@ const SEED_MODELS: Omit<
       "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
     sizeBytes: 584 * 1024 * 1024,
     minDeviceMemoryGb: 6,
+    supportsSpeculativeDecoding: false,
+    supportsThinking: false,
+    supportsToolCalling: false,
   },
   {
     id: "qwen2.5-1.5b-instruct",
@@ -102,6 +112,9 @@ const SEED_MODELS: Omit<
       "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
     sizeBytes: 1598 * 1024 * 1024,
     minDeviceMemoryGb: 6,
+    supportsSpeculativeDecoding: false,
+    supportsThinking: false,
+    supportsToolCalling: false,
   },
   {
     id: "deepseek-r1-distill-qwen-1.5b",
@@ -111,6 +124,9 @@ const SEED_MODELS: Omit<
       "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
     sizeBytes: 1833 * 1024 * 1024,
     minDeviceMemoryGb: 6,
+    supportsSpeculativeDecoding: false,
+    supportsThinking: false,
+    supportsToolCalling: false,
   },
 ];
 
@@ -146,6 +162,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   deviceTotalMemory: Device.totalMemory,
   memoryEstimate: null,
   activeBackend: null,
+  unavailableBackends: new Set<Backend>(),
 
   async loadModels() {
     // Clean up old GGUF models from llama.rn era (upgrade path)
@@ -206,6 +223,9 @@ export const useModelStore = create<ModelStore>((set, get) => ({
         isDownloaded: r.isDownloaded === 1,
         isActive: r.isActive === 1,
         downloadedAt: r.downloadedAt ?? null,
+        supportsSpeculativeDecoding: r.supportsSpeculativeDecoding === 1,
+        supportsThinking: r.supportsThinking === 1,
+        supportsToolCalling: r.supportsToolCalling === 1,
       };
     });
 
@@ -222,7 +242,31 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       enableToolCalling: settingsMap['inference.enableToolCalling'] !== 'false', // default true
     };
 
-    set({ models, activeModelId: active?.id ?? null, inference });
+    // Load persisted unavailable backends (hardware doesn't change between sessions)
+    const unavailableRaw = settingsMap['device.unavailableBackends'];
+    const unavailableBackends = new Set<Backend>(
+      unavailableRaw ? (unavailableRaw.split(',').filter(Boolean) as Backend[]) : []
+    );
+
+    // Crash barrier: if the app crashed while attempting a backend (SIGSEGV from
+    // GPU/NPU Engine()), the flag is still set. Mark that backend as unavailable.
+    const crashedBackend = settingsMap['device.attemptingBackend'] as Backend | undefined;
+    if (crashedBackend && crashedBackend !== 'cpu') {
+      unavailableBackends.add(crashedBackend);
+      db.insert(appSettings)
+        .values({ key: 'device.unavailableBackends', value: [...unavailableBackends].join(',') })
+        .onConflictDoUpdate({ target: appSettings.key, set: { value: [...unavailableBackends].join(',') } })
+        .run();
+      // Clear the flag and reset backend to cpu
+      db.delete(appSettings).where(eq(appSettings.key, 'device.attemptingBackend')).run();
+      db.insert(appSettings)
+        .values({ key: 'inference.backend', value: 'cpu' })
+        .onConflictDoUpdate({ target: appSettings.key, set: { value: 'cpu' } })
+        .run();
+      inference.backend = 'cpu';
+    }
+
+    set({ models, activeModelId: active?.id ?? null, inference, unavailableBackends });
   },
 
   async addCustomModel(name, downloadUrl) {
@@ -323,6 +367,19 @@ export const useModelStore = create<ModelStore>((set, get) => ({
         } catch {}
       }
 
+      // Probe model capabilities from the downloaded file
+      let supportsSpec = false;
+      try {
+        const probe = createLLM();
+        const caps = probe.checkModelCapabilities(destPath);
+        supportsSpec = caps.supportsSpeculativeDecoding;
+      } catch { /* non-critical — default to false */ }
+
+      // Heuristic: thinking and tool calling support based on model name
+      const nameLower = model.name.toLowerCase() + ' ' + model.filename.toLowerCase();
+      const supportsThinking = nameLower.includes('gemma-4') || nameLower.includes('gemma4');
+      const supportsToolCalling = supportsThinking || nameLower.includes('3n') || nameLower.includes('gemma3');
+
       const now = new Date().toISOString();
       db.update(localModels)
         .set({
@@ -330,6 +387,9 @@ export const useModelStore = create<ModelStore>((set, get) => ({
           filePath: destPath,
           downloadedAt: now,
           sizeBytes: resolvedSize,
+          supportsSpeculativeDecoding: supportsSpec ? 1 : 0,
+          supportsThinking: supportsThinking ? 1 : 0,
+          supportsToolCalling: supportsToolCalling ? 1 : 0,
         })
         .where(eq(localModels.id, id))
         .run();
@@ -343,6 +403,9 @@ export const useModelStore = create<ModelStore>((set, get) => ({
                 filePath: destPath,
                 downloadedAt: now,
                 sizeBytes: resolvedSize,
+                supportsSpeculativeDecoding: supportsSpec,
+                supportsThinking,
+                supportsToolCalling,
               }
             : m,
         ),
@@ -427,8 +490,45 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     set({ isLoading: true, loadError: null, activeBackend: null });
     try {
       const { inference } = get();
-      await Inference.loadModel(model.filePath, inference);
+      // Clamp inference settings to what the model actually supports
+      const effectiveInference: Inference.ModelSettings = {
+        ...inference,
+        enableSpeculativeDecoding: inference.enableSpeculativeDecoding && model.supportsSpeculativeDecoding,
+        enableThinking: inference.enableThinking && model.supportsThinking,
+        enableToolCalling: inference.enableToolCalling && model.supportsToolCalling,
+      };
+
+      // Crash barrier: set flag BEFORE attempting non-CPU backend.
+      // If Engine() causes SIGSEGV, next startup detects the flag and
+      // permanently disables this backend.
+      if (inference.backend !== 'cpu') {
+        db.insert(appSettings)
+          .values({ key: 'device.attemptingBackend', value: inference.backend })
+          .onConflictDoUpdate({ target: appSettings.key, set: { value: inference.backend } })
+          .run();
+      }
+
+      await Inference.loadModel(model.filePath, effectiveInference);
+
+      // Engine loaded successfully — clear the crash barrier flag
+      db.delete(appSettings).where(eq(appSettings.key, 'device.attemptingBackend')).run();
+
       const activeBackend = Inference.getActiveBackend() ?? inference.backend;
+
+      // If the engine fell back to a different backend, mark the requested one
+      // as unavailable permanently (hardware won't change) and switch the
+      // setting to what's actually running.
+      const { unavailableBackends } = get();
+      if (activeBackend !== inference.backend) {
+        const updated = new Set(unavailableBackends);
+        updated.add(inference.backend);
+        // Persist to DB so it survives app restarts
+        db.insert(appSettings)
+          .values({ key: 'device.unavailableBackends', value: [...updated].join(',') })
+          .onConflictDoUpdate({ target: appSettings.key, set: { value: [...updated].join(',') } })
+          .run();
+        set({ unavailableBackends: updated, inference: { ...inference, backend: activeBackend } });
+      }
 
       // Warmup inference — pre-allocate KV cache so the user's first real
       // message is fast. Gallery app uses a similar post-init delay.

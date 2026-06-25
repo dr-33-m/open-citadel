@@ -120,6 +120,12 @@ export const localModels = sqliteTable("llama_models", {
   isDownloaded: integer("is_downloaded").notNull().default(0),
   isActive: integer("is_active").notNull().default(0),
   downloadedAt: text("downloaded_at"),
+  /** 1 if model binary supports multi-token prediction, 0 otherwise */
+  supportsSpeculativeDecoding: integer("supports_speculative_decoding").notNull().default(0),
+  /** 1 if model supports thinking/reasoning mode */
+  supportsThinking: integer("supports_thinking").notNull().default(0),
+  /** 1 if model supports tool/function calling */
+  supportsToolCalling: integer("supports_tool_calling").notNull().default(0),
 });
 
 export const chatSessions = sqliteTable("chat_sessions", {

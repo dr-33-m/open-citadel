@@ -1,5 +1,5 @@
 import * as Speech from 'expo-speech';
-import { Download, MemoryStick, Power, Search, SlidersHorizontal, Trash2, Volume2, X } from 'lucide-react-native';
+import { Download, Info, MemoryStick, Power, Search, SlidersHorizontal, Trash2, Volume2, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -61,6 +61,7 @@ export default function SettingsScreen() {
     memoryEstimate,
     checkMemory,
     activeBackend,
+    unavailableBackends,
   } = useModelStore();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -602,7 +603,7 @@ export default function SettingsScreen() {
                 {/* Action buttons */}
                 {activeModel && !activeModelDownloading && (
                   <View style={{ flexDirection: 'row', gap: spacing[2], flexWrap: 'wrap' }}>
-                    {!activeModel.isDownloaded ? (
+                    {!activeModel.isDownloaded && (
                       <Touchable
                         style={[styles.aiActionBtn, isDownloading && { opacity: 0.5 }]}
                         disabled={isDownloading}
@@ -616,7 +617,8 @@ export default function SettingsScreen() {
                           DOWNLOAD
                         </ThemedText>
                       </Touchable>
-                    ) : (
+                    )}
+                    {activeModel.isDownloaded && (
                       <>
                         <Touchable
                           style={[styles.aiActionBtn, (modelLoading || isDeleting) && { opacity: 0.5 }]}
@@ -640,24 +642,24 @@ export default function SettingsScreen() {
                             TUNE
                           </ThemedText>
                         </Touchable>
-                        <Touchable
-                          style={[styles.aiActionBtn, (modelLoading || isDeleting) && { opacity: 0.5 }]}
-                          disabled={modelLoading || isDeleting}
-                          onPress={async () => {
-                            if (isLoaded) {
-                              setIsDeleting(true);
-                              try { await releaseContext(); } finally { setIsDeleting(false); }
-                            }
-                            setConfirmDeleteId(activeModel.id);
-                          }}
-                        >
-                          <Trash2 size={14} color="#e53935" />
-                          <ThemedText type="labelSm" color="#e53935">
-                            DELETE
-                          </ThemedText>
-                        </Touchable>
                       </>
                     )}
+                    <Touchable
+                      style={[styles.aiActionBtn, (modelLoading || isDeleting) && { opacity: 0.5 }]}
+                      disabled={modelLoading || isDeleting}
+                      onPress={async () => {
+                        if (isLoaded) {
+                          setIsDeleting(true);
+                          try { await releaseContext(); } finally { setIsDeleting(false); }
+                        }
+                        setConfirmDeleteId(activeModel.id);
+                      }}
+                    >
+                      <Trash2 size={14} color="#e53935" />
+                      <ThemedText type="labelSm" color="#e53935">
+                        DELETE
+                      </ThemedText>
+                    </Touchable>
                   </View>
                 )}
               </View>
@@ -959,11 +961,12 @@ export default function SettingsScreen() {
               <View style={styles.rateRow}>
                 {(['cpu', 'gpu', 'npu'] as const).map((backend) => {
                   const active = inference.backend === backend;
+                  const disabled = unavailableBackends.has(backend);
                   return (
                     <Touchable
                       key={backend}
-                      style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive]}
-                      onPress={() => setInference({ backend })}
+                      style={[styles.rateChip, { backgroundColor: colors.surface.mid }, active && styles.rateChipActive, disabled && { opacity: 0.35 }]}
+                      onPress={() => { if (!disabled) setInference({ backend }); }}
                     >
                       <ThemedText type="labelSm" color={active ? colors.surface.base : colors.text.primary}>
                         {backend.toUpperCase()}
@@ -973,7 +976,9 @@ export default function SettingsScreen() {
                 })}
               </View>
               <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                GPU is fastest. NPU requires supported hardware. Falls back to CPU if unavailable.
+                {unavailableBackends.size > 0
+                  ? `${[...unavailableBackends].map(b => b.toUpperCase()).join(' & ')} not supported on this device.`
+                  : 'GPU is fastest. NPU requires supported hardware. Falls back to CPU if unavailable.'}
               </ThemedText>
             </View>
 
@@ -1000,90 +1005,101 @@ export default function SettingsScreen() {
               </ThemedText>
             </View>
 
-            <Touchable
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-              onPress={() => setInference({ enableSpeculativeDecoding: !inference.enableSpeculativeDecoding })}
-            >
-              <View style={{ flex: 1, gap: 2 }}>
-                <ThemedText type="bodySm" color={colors.text.primary}>Multi-Token Prediction</ThemedText>
-                <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                  Faster generation on supported models.
-                </ThemedText>
-              </View>
-              <Switch
-                value={inference.enableSpeculativeDecoding}
-                onValueChange={(val) => setInference({ enableSpeculativeDecoding: val })}
-                trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
-                thumbColor={colors.surface.low}
-              />
-            </Touchable>
+            {activeModel?.supportsSpeculativeDecoding && (
+              <Touchable
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                onPress={() => setInference({ enableSpeculativeDecoding: !inference.enableSpeculativeDecoding })}
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <ThemedText type="bodySm" color={colors.text.primary}>Multi-Token Prediction</ThemedText>
+                  <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                    Faster generation on supported models.
+                  </ThemedText>
+                </View>
+                <Switch
+                  value={inference.enableSpeculativeDecoding}
+                  onValueChange={(val) => setInference({ enableSpeculativeDecoding: val })}
+                  trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
+                  thumbColor={colors.surface.low}
+                />
+              </Touchable>
+            )}
 
-            <ThemedText type="bodySm" color={colors.text.secondary}>CAPABILITIES</ThemedText>
+            {(activeModel?.supportsToolCalling || activeModel?.supportsThinking) && (
+              <ThemedText type="bodySm" color={colors.text.secondary}>CAPABILITIES</ThemedText>
+            )}
 
-            <Touchable
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-              onPress={() => {
-                if (!inference.enableToolCalling) {
-                  setInference({ enableToolCalling: true, enableThinking: false });
-                } else {
-                  setInference({ enableToolCalling: false });
-                }
-              }}
-            >
-              <View style={{ flex: 1, gap: 2 }}>
-                <ThemedText type="bodySm" color={colors.text.primary}>Tool Calling</ThemedText>
-                <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                  Search highlights, tag items, and more.
-                </ThemedText>
-              </View>
-              <Switch
-                value={inference.enableToolCalling}
-                onValueChange={(val) => {
-                  if (val) {
+            {activeModel?.supportsToolCalling && (
+              <Touchable
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                onPress={() => {
+                  if (!inference.enableToolCalling) {
                     setInference({ enableToolCalling: true, enableThinking: false });
                   } else {
                     setInference({ enableToolCalling: false });
                   }
                 }}
-                trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
-                thumbColor={colors.surface.low}
-              />
-            </Touchable>
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <ThemedText type="bodySm" color={colors.text.primary}>Tool Calling</ThemedText>
+                  <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                    Search highlights, tag items, and more.
+                  </ThemedText>
+                </View>
+                <Switch
+                  value={inference.enableToolCalling}
+                  onValueChange={(val) => {
+                    if (val) {
+                      setInference({ enableToolCalling: true, enableThinking: false });
+                    } else {
+                      setInference({ enableToolCalling: false });
+                    }
+                  }}
+                  trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
+                  thumbColor={colors.surface.low}
+                />
+              </Touchable>
+            )}
 
-            <Touchable
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-              onPress={() => {
-                if (!inference.enableThinking) {
-                  setInference({ enableThinking: true, enableToolCalling: false });
-                } else {
-                  setInference({ enableThinking: false });
-                }
-              }}
-            >
-              <View style={{ flex: 1, gap: 2 }}>
-                <ThemedText type="bodySm" color={colors.text.primary}>Thinking Mode</ThemedText>
-                <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                  Show reasoning before answering. Disables tools.
-                </ThemedText>
-              </View>
-              <Switch
-                value={inference.enableThinking}
-                onValueChange={(val) => {
-                  if (val) {
+            {activeModel?.supportsThinking && (
+              <Touchable
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                onPress={() => {
+                  if (!inference.enableThinking) {
                     setInference({ enableThinking: true, enableToolCalling: false });
                   } else {
                     setInference({ enableThinking: false });
                   }
                 }}
-                trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
-                thumbColor={colors.surface.low}
-              />
-            </Touchable>
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <ThemedText type="bodySm" color={colors.text.primary}>Thinking Mode</ThemedText>
+                  <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                    Show reasoning before answering. Disables tools.
+                  </ThemedText>
+                </View>
+                <Switch
+                  value={inference.enableThinking}
+                  onValueChange={(val) => {
+                    if (val) {
+                      setInference({ enableThinking: true, enableToolCalling: false });
+                    } else {
+                      setInference({ enableThinking: false });
+                    }
+                  }}
+                  trackColor={{ false: colors.surface.highest, true: colors.primary.default }}
+                  thumbColor={colors.surface.low}
+                />
+              </Touchable>
+            )}
 
             {isLoaded && (
-              <ThemedText type="bodySm" color={colors.primary.default}>
-                Power down and wake up Samwell to apply changes.
-              </ThemedText>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Info size={12} color={colors.primary.default} />
+                <ThemedText type="bodySm" color={colors.primary.default} style={{ fontSize: 11 }}>
+                  Power down and wake up Samwell to apply changes.
+                </ThemedText>
+              </View>
             )}
           </View>
         </View>
@@ -1100,9 +1116,13 @@ export default function SettingsScreen() {
           <Touchable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setConfirmDeleteId(null)} />
           <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
             <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
-            <ThemedText type="headlineSm">Delete model file?</ThemedText>
+            <ThemedText type="headlineSm">
+              {models.find((m) => m.id === confirmDeleteId)?.isDownloaded ? 'Delete model file?' : 'Remove model?'}
+            </ThemedText>
             <ThemedText type="bodySm" color={colors.text.secondary}>
-              The model will be removed from your device. You can re-download it later.
+              {models.find((m) => m.id === confirmDeleteId)?.isDownloaded
+                ? 'The model will be removed from your device. You can re-download it later.'
+                : 'The model will be removed from your list. You can add it again later.'}
             </ThemedText>
             <View style={{ flexDirection: 'row', gap: spacing[3] }}>
               <Touchable style={styles.aiActionBtn} onPress={() => setConfirmDeleteId(null)}>

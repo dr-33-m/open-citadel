@@ -109,6 +109,28 @@ async function ensureChatSchema(): Promise<void> {
   db.run(sql`CREATE INDEX IF NOT EXISTS \`chat_messages_session_idx\`
     ON \`chat_messages\` (\`session_id\`, \`created_at\`)`);
 
+  // Add capability columns to llama_models if missing
+  const modelsInfo: { name: string }[] = db.all(
+    sql`PRAGMA table_info(llama_models)`,
+  ) as { name: string }[];
+  const modelsCols = new Set(modelsInfo.map((r) => r.name));
+
+  if (!modelsCols.has("supports_speculative_decoding")) {
+    db.run(
+      sql`ALTER TABLE \`llama_models\` ADD \`supports_speculative_decoding\` integer NOT NULL DEFAULT 0`,
+    );
+  }
+  if (!modelsCols.has("supports_thinking")) {
+    db.run(
+      sql`ALTER TABLE \`llama_models\` ADD \`supports_thinking\` integer NOT NULL DEFAULT 0`,
+    );
+  }
+  if (!modelsCols.has("supports_tool_calling")) {
+    db.run(
+      sql`ALTER TABLE \`llama_models\` ADD \`supports_tool_calling\` integer NOT NULL DEFAULT 0`,
+    );
+  }
+
   // Add chat_session_id to highlights if missing
   const highlightsInfo: { name: string }[] = db.all(
     sql`PRAGMA table_info(highlights)`,
