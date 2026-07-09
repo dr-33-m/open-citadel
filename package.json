@@ -11,7 +11,7 @@
     "lint": "expo lint"
   },
   "dependencies": {
-    "@dr33m/react-native-litert-lm": "^0.5.4",
+    "@dr33m/react-native-litert-lm": "^0.5.5",
     "@dr33m/react-native-readium": "next",
     "@expo-google-fonts/manrope": "^0.4.2",
     "@expo-google-fonts/newsreader": "^0.4.1",

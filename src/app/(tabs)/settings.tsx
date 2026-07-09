@@ -24,6 +24,7 @@ import { useColors } from '@/hooks/use-colors';
 import { fontFamily, spacing } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
 import { useModelStore } from '@/stores/model';
+import { isNativeAvailable } from '@/services/inference';
 
 const TTS_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -79,6 +80,8 @@ export default function SettingsScreen() {
   const [hfRepo, setHfRepo] = useState<string | null>(null);
   const [hfFiles, setHfFiles] = useState<HFFile[]>([]);
   const [hfLoadingFiles, setHfLoadingFiles] = useState(false);
+
+  const nativeAvailable = React.useMemo(() => isNativeAvailable(), []);
 
   useEffect(() => { loadModels(); }, []);
 
@@ -535,6 +538,10 @@ export default function SettingsScreen() {
           {samwellMode === 'cloud' ? (
             <ThemedText type="bodySm" color={colors.text.secondary}>
               Cloud support is on the way. For now, wake Samwell up with an offline model below.
+            </ThemedText>
+          ) : !nativeAvailable ? (
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              On-device AI isn't supported on this device. Cloud support is on the way — check back soon.
             </ThemedText>
           ) : (
             <>

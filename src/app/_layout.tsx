@@ -17,6 +17,8 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
+import type { ErrorBoundaryProps } from 'expo-router';
 
 import { runMigrations } from '@/db/migrations';
 import { useColors } from '@/hooks/use-colors';
@@ -27,6 +29,19 @@ SplashScreen.preventAutoHideAsync();
 
 // Register Android background event handler at module level (before app renders)
 registerTTSBackgroundHandler();
+
+// Catches throws from route module evaluation / rendering that would otherwise
+// crash the app with an unhandled JS exception on startup.
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}>
+      <Text style={{ fontSize: 16, textAlign: 'center' }}>{error.message}</Text>
+      <Pressable onPress={retry} style={{ paddingVertical: 8, paddingHorizontal: 16 }}>
+        <Text style={{ fontSize: 14, fontWeight: '600' }}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -51,6 +66,10 @@ export default function RootLayout() {
       .then(() => loadSettings())
       .then(() => {
         setupTTSMediaSession();
+        setDbReady(true);
+      })
+      .catch((err) => {
+        console.error('Startup failed:', err);
         setDbReady(true);
       });
   }, []);

@@ -14,8 +14,8 @@ importers:
   .:
     dependencies:
       '@dr33m/react-native-litert-lm':
-        specifier: ^0.5.4
-        version: 0.5.4(expo@55.0.8)(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+        specifier: ^0.5.5
+        version: 0.5.5(expo@55.0.8)(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       '@dr33m/react-native-readium':
         specifier: next
         version: 5.0.0-rc.30(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
@@ -746,8 +746,8 @@ packages:
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
 
-  '@dr33m/react-native-litert-lm@0.5.4':
-    resolution: {integrity: sha512-lmxAitFGjswvTsQG/nzLsGb/LRaYdV7VsO+N+cqQdIqBDe0W19AQ9k0pIQNlsFxIy8nXrVbz9Is6AWbp2XCU3w==}
+  '@dr33m/react-native-litert-lm@0.5.5':
+    resolution: {integrity: sha512-X+xSuOBgTPVJ8s03wlAiieG4Vsu/VBXmy4GiEacGcUBDpZxw8wI783JSRJE8ySSFZlFDgHhaKSj8cKic1WwACQ==}
     engines: {node: '>=22'}
     peerDependencies:
       expo: '>=55.0.0'
@@ -3963,8 +3963,8 @@ packages:
   text-segmentation@1.0.3:
     resolution: {integrity: sha512-iOiPUo/BGnZ6+54OsWxZidGCsdU8YbE4PSpdPinp7DeMtUJNJBoJ/ouUSTJjHkh1KntHaltHl/gDs2FC4i5+Nw==}
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/b416fdb5cfa7ade7562fe108550e3b566857a7b1:
-    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/b416fdb5cfa7ade7562fe108550e3b566857a7b1}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/f49f9ca149318f378d7bf996517adc446c0fd027:
+    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/f49f9ca149318f378d7bf996517adc446c0fd027}
     version: 1.0.0
 
   throat@5.0.0:
@@ -4936,7 +4936,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@dr33m/react-native-litert-lm@0.5.4(expo@55.0.8)(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
+  '@dr33m/react-native-litert-lm@0.5.5(expo@55.0.8)(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
     dependencies:
       react-native-nitro-modules: 0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
     optionalDependencies:
@@ -6058,7 +6058,7 @@ snapshots:
 
   '@readium/shared@2.1.5':
     dependencies:
-      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/b416fdb5cfa7ade7562fe108550e3b566857a7b1
+      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/f49f9ca149318f378d7bf996517adc446c0fd027
 
   '@rntp/player@5.6.0(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
     dependencies:
@@ -8472,7 +8472,7 @@ snapshots:
     dependencies:
       utrie: 1.0.2
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/b416fdb5cfa7ade7562fe108550e3b566857a7b1: {}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/f49f9ca149318f378d7bf996517adc446c0fd027: {}
 
   throat@5.0.0: {}
 

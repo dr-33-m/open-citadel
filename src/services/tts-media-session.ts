@@ -7,7 +7,11 @@ let isSetup = false;
  * Required by RNTP but we don't need to handle any events.
  */
 export function registerTTSBackgroundHandler(): void {
-  TrackPlayer.registerBackgroundEventHandler(() => async () => {});
+  try {
+    TrackPlayer.registerBackgroundEventHandler(() => async () => {});
+  } catch {
+    // Native module may fail to load on some devices — TTS notification is non-critical.
+  }
 }
 
 /**

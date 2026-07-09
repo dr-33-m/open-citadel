@@ -1,4 +1,4 @@
-import { createLLM, type Backend, type ExecuteResult, type ToolResponse } from '@dr33m/react-native-litert-lm';
+import { createLLM, isNativeAvailable, type Backend, type ExecuteResult, type ToolResponse } from '@dr33m/react-native-litert-lm';
 import { SAMWELL_TOOLS_LITERT } from './chat-tools';
 
 type LiteRTLM = ReturnType<typeof createLLM>;
@@ -6,6 +6,8 @@ type LiteRTLM = ReturnType<typeof createLLM>;
 let _llm: LiteRTLM | null = null;
 
 export type { ExecuteResult, ToolResponse, Backend };
+
+export { isNativeAvailable };
 
 export interface ModelSettings {
   contextSize: number;
