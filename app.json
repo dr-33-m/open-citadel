@@ -14,7 +14,10 @@
         "tinted": "./assets/icons/ios-tinted.png"
       },
       "supportsTablet": true,
-      "bundleIdentifier": "com.dr33m.opencitadel"
+      "bundleIdentifier": "com.dr33m.opencitadel",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -57,6 +60,7 @@
         "8.13"
       ],
       "./plugins/withAbiFilters",
+      "./plugins/withReadiumPodfile",
       "@dr33m/react-native-litert-lm",
       [
         "expo-build-properties",
@@ -66,6 +70,9 @@
             "targetSdkVersion": 35,
             "minSdkVersion": 26,
             "enableCoreLibraryDesugaring": true
+          },
+          "ios": {
+            "deploymentTarget": "16.0"
           }
         }
       ],
