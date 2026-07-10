@@ -22,6 +22,7 @@ import { spacing } from "@/constants/theme";
 import { useColors } from "@/hooks/use-colors";
 import { useChatStore, type ChatMessage } from "@/stores/chat";
 import { useModelStore } from "@/stores/model";
+import { useSettingsStore } from "@/stores/settings";
 
 export default function ChatSessionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -44,14 +45,15 @@ export default function ChatSessionScreen() {
   } = useChatStore();
   const { isLoaded, isLoading, loadError, activeModelId, models, initContext } =
     useModelStore();
+  const { samwellMode, cloudBaseUrl } = useSettingsStore();
 
   const [inputText, setInputText] = useState("");
   const [isStopping, setIsStopping] = useState(false);
   const listRef = useRef<FlashListRef<ChatMessage>>(null);
 
   const activeModel = models.find((m) => m.id === activeModelId);
-  const modelReady = isLoaded;
-  const modelDownloaded = activeModel?.isDownloaded ?? false;
+  const modelReady = samwellMode === 'cloud' ? cloudBaseUrl.length > 0 : isLoaded;
+  const modelDownloaded = samwellMode === 'cloud' ? true : (activeModel?.isDownloaded ?? false);
 
   useEffect(() => {
     if (id) openSession(id);
@@ -274,6 +276,18 @@ export default function ChatSessionScreen() {
   });
 
   function renderBanner() {
+    if (samwellMode === 'cloud' && !cloudBaseUrl) {
+      return (
+        <View style={styles.banner}>
+          <ThemedText type="bodySm" color={colors.text.secondary}>
+            Samwell Cloud is not configured for this build yet.
+          </ThemedText>
+        </View>
+      );
+    }
+
+    if (samwellMode === 'cloud') return null;
+
     if (!modelDownloaded) {
       return (
         <View style={styles.banner}>
@@ -402,6 +416,8 @@ export default function ChatSessionScreen() {
           placeholder={
             !modelDownloaded
               ? "Set up Samwell in Settings…"
+              : samwellMode === 'cloud' && !cloudBaseUrl
+                ? "Cloud unavailable in this build…"
               : !modelReady
                 ? "Wake up Samwell…"
                 : "Message Samwell…"

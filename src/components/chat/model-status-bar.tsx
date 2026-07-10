@@ -6,6 +6,7 @@ import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { useModelStore } from '@/stores/model';
+import { useSettingsStore } from '@/stores/settings';
 
 interface ModelStatusBarProps {
   onPress?: () => void;
@@ -14,6 +15,7 @@ interface ModelStatusBarProps {
 export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
   const colors = useColors();
   const { models, activeModelId, isLoaded, isLoading, loadError } = useModelStore();
+  const { samwellMode, cloudBaseUrl } = useSettingsStore();
 
   const activeModel = models.find((m) => m.id === activeModelId);
 
@@ -34,7 +36,9 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
   let dotColor: string = colors.text.secondary;
   let showSpinner = false;
 
-  if (!activeModel || !activeModel.isDownloaded) {
+  if (samwellMode === 'cloud') {
+    dotColor = cloudBaseUrl ? '#4caf50' : colors.text.secondary;
+  } else if (!activeModel || !activeModel.isDownloaded) {
     dotColor = colors.text.secondary;
   } else if (isLoading) {
     dotColor = '#f2ca50';
@@ -47,10 +51,10 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
     dotColor = colors.text.secondary;
   }
 
-  const statusText = isLoading ? 'Waking up…' : 'Samwell';
+  const statusText = samwellMode === 'cloud' ? 'Samwell Cloud' : isLoading ? 'Waking up…' : 'Samwell';
 
   return (
-    <Touchable style={styles.container} onPress={onPress} disabled={isLoading || isLoaded}>
+    <Touchable style={styles.container} onPress={onPress} disabled={samwellMode === 'cloud' || isLoading || isLoaded}>
       {showSpinner ? (
         <ActivityIndicator size="small" color={dotColor} style={{ width: 8, height: 8 }} />
       ) : (

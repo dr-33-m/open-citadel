@@ -25,6 +25,7 @@ import { fontFamily, spacing } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
 import { useModelStore } from '@/stores/model';
 import { isNativeAvailable } from '@/services/inference';
+import { CLOUD_MODEL_CATALOG } from 'samwell-shared';
 
 const TTS_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -35,7 +36,24 @@ type HFFile = { rfilename: string; size?: number };
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { username, theme, ttsVoice, ttsRate, setUsername, setTheme, setTtsVoice, setTtsRate } =
+  const {
+    username,
+    theme,
+    samwellMode,
+    cloudBaseUrl,
+    cloudModelId,
+    cloudUsage,
+    cloudUsageError,
+    ttsVoice,
+    ttsRate,
+    setUsername,
+    setTheme,
+    setSamwellMode,
+    setCloudModelId,
+    loadCloudUsage,
+    setTtsVoice,
+    setTtsRate,
+  } =
     useSettingsStore();
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(username);
@@ -71,7 +89,6 @@ export default function SettingsScreen() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [tuneModalVisible, setTuneModalVisible] = useState(false);
   const [memoryInfoVisible, setMemoryInfoVisible] = useState(false);
-  const [samwellMode, setSamwellMode] = useState<'offline' | 'cloud'>('offline');
 
   // HuggingFace search state (lives inside the model picker sheet)
   const [hfQuery, setHfQuery] = useState('');
@@ -84,6 +101,11 @@ export default function SettingsScreen() {
   const nativeAvailable = React.useMemo(() => isNativeAvailable(), []);
 
   useEffect(() => { loadModels(); }, []);
+  useEffect(() => {
+    if (samwellMode === 'cloud' && cloudBaseUrl) {
+      loadCloudUsage();
+    }
+  }, [samwellMode, cloudBaseUrl, cloudModelId]);
 
   const powerPulse = useRef(new Animated.Value(0.4)).current;
   useEffect(() => {
@@ -374,6 +396,21 @@ export default function SettingsScreen() {
       paddingHorizontal: spacing[4],
       paddingBottom: spacing[3],
     },
+    cloudCard: {
+      backgroundColor: colors.surface.low,
+      padding: spacing[4],
+      gap: spacing[3],
+    },
+    cloudModelChip: {
+      padding: spacing[3],
+      borderWidth: 1,
+      borderColor: colors.surface.highest,
+      backgroundColor: colors.surface.mid,
+      gap: 2,
+    },
+    cloudModelChipActive: {
+      borderColor: colors.primary.default,
+    },
   }), [colors, insets.top]);
 
   const handleNameBlur = () => {
@@ -521,9 +558,9 @@ export default function SettingsScreen() {
               style={[styles.modeCard, samwellMode === 'cloud' && styles.modeCardActive]}
               onPress={() => setSamwellMode('cloud')}
             >
-              <View style={styles.comingSoonBadge}>
+              <View style={[styles.comingSoonBadge, { backgroundColor: colors.primary.container }]}>
                 <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 9 }}>
-                  COMING SOON
+                  TESTING
                 </ThemedText>
               </View>
               <ThemedText type="labelSm" color={samwellMode === 'cloud' ? colors.primary.default : colors.text.primary}>
@@ -536,9 +573,69 @@ export default function SettingsScreen() {
           </View>
 
           {samwellMode === 'cloud' ? (
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              Cloud support is on the way. For now, wake Samwell up with an offline model below.
-            </ThemedText>
+            <View style={styles.cloudCard}>
+              <View style={{ gap: spacing[1] }}>
+                <ThemedText type="bodyMd">Samwell Cloud server</ThemedText>
+                <ThemedText type="bodySm" color={colors.text.secondary}>
+                  Managed by Open Citadel. Requests stream to our Hono server; OpenRouter keys stay off-device.
+                </ThemedText>
+                {!cloudBaseUrl && (
+                  <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
+                    Cloud is not configured for this build yet.
+                  </ThemedText>
+                )}
+              </View>
+
+              <View style={{ gap: spacing[2] }}>
+                <ThemedText type="labelSm" color={colors.text.secondary}>MODEL</ThemedText>
+                {CLOUD_MODEL_CATALOG.map((model) => {
+                  const active = model.id === cloudModelId;
+                  return (
+                    <Touchable
+                      key={model.id}
+                      style={[styles.cloudModelChip, active && styles.cloudModelChipActive]}
+                      onPress={() => setCloudModelId(model.id)}
+                    >
+                      <ThemedText type="labelSm" color={active ? colors.primary.default : colors.text.primary}>
+                        {model.label}
+                      </ThemedText>
+                      <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                        {model.provider} · {model.capabilities.join(', ')}
+                      </ThemedText>
+                    </Touchable>
+                  );
+                })}
+              </View>
+
+              <View style={{ gap: spacing[1] }}>
+                <View style={styles.modelCardRow}>
+                  <ThemedText type="labelSm" color={colors.text.secondary}>USAGE</ThemedText>
+                  <Touchable onPress={loadCloudUsage}>
+                    <ThemedText type="labelSm" color={colors.primary.default}>REFRESH</ThemedText>
+                  </Touchable>
+                </View>
+                {cloudUsage ? (
+                  <>
+                    <ThemedText type="bodySm" color={colors.text.secondary}>
+                      5h: {cloudUsage.fiveHour.used}/{cloudUsage.fiveHour.cap} messages · Weekly: {cloudUsage.weekly.used}/{cloudUsage.weekly.cap}
+                    </ThemedText>
+                    {cloudUsage.fiveHour.resetsAt && cloudUsage.fiveHour.remaining === 0 && (
+                      <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
+                        5h window resets {new Date(cloudUsage.fiveHour.resetsAt).toLocaleTimeString()}
+                      </ThemedText>
+                    )}
+                  </>
+                ) : (
+                  <ThemedText type="bodySm" color={colors.text.secondary}>
+                    {cloudUsageError ?? 'Usage appears after the first successful server check.'}
+                  </ThemedText>
+                )}
+              </View>
+
+              <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                Tool parity is preserved: cloud models ask this device to search highlights, search thoughts, and request approval before tagging.
+              </ThemedText>
+            </View>
           ) : !nativeAvailable ? (
             <ThemedText type="bodySm" color={colors.text.secondary}>
               On-device AI isn't supported on this device. Cloud support is on the way — check back soon.

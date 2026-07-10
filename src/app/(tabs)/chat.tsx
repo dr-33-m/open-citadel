@@ -17,6 +17,7 @@ import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { useChatStore, type ChatSession } from '@/stores/chat';
 import { useModelStore } from '@/stores/model';
+import { useSettingsStore } from '@/stores/settings';
 
 function timeAgo(isoDate: string): string {
   const diff = Date.now() - new Date(isoDate).getTime();
@@ -35,11 +36,12 @@ export default function ChatTab() {
   const router = useRouter();
   const { sessions, loadSessions, createSession, deleteSession } = useChatStore();
   const { models, activeModelId } = useModelStore();
+  const { samwellMode, cloudBaseUrl } = useSettingsStore();
   const [bookPickerVisible, setBookPickerVisible] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<ChatSession | null>(null);
 
   const activeModel = models.find((m) => m.id === activeModelId);
-  const hasModel = activeModel?.isDownloaded ?? false;
+  const hasModel = samwellMode === 'cloud' ? cloudBaseUrl.length > 0 : (activeModel?.isDownloaded ?? false);
 
   useEffect(() => {
     loadSessions();
@@ -103,16 +105,21 @@ export default function ChatTab() {
 
   function renderEmpty() {
     if (!hasModel) {
+      const cloudUnavailable = samwellMode === 'cloud' && !cloudBaseUrl;
       return (
         <View style={styles.emptyContainer}>
           <Bot size={48} color={colors.text.secondary} style={styles.emptyIcon} />
           <ThemedText type="headlineSm" color={colors.text.secondary}>Meet Samwell</ThemedText>
           <ThemedText type="bodySm" color={colors.text.secondary} style={{ textAlign: 'center' }}>
-            Set up Samwell in Settings to start discussing your books.
+            {cloudUnavailable
+              ? 'Samwell Cloud is not configured for this build yet.'
+              : 'Set up Samwell in Settings to start discussing your books.'}
           </ThemedText>
-          <Touchable style={styles.settingsLink} onPress={() => router.push({ pathname: '/settings' })}>
-            <ThemedText type="labelMd" color={colors.primary.default}>SET UP SAMWELL</ThemedText>
-          </Touchable>
+          {!cloudUnavailable && (
+            <Touchable style={styles.settingsLink} onPress={() => router.push({ pathname: '/settings' })}>
+              <ThemedText type="labelMd" color={colors.primary.default}>SET UP SAMWELL</ThemedText>
+            </Touchable>
+          )}
         </View>
       );
     }

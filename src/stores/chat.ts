@@ -8,8 +8,10 @@ import {
   formatSearchResultsForLLM,
   type SearchResult,
 } from '@/services/chat-tools';
+import { sendCloudChatTurn } from '@/services/cloud-chat';
 import * as Inference from '@/services/inference';
 import { useModelStore } from '@/stores/model';
+import { useSettingsStore } from '@/stores/settings';
 
 export interface ChatSession {
   id: string;
@@ -211,7 +213,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Send the system message as a user turn so the engine incorporates it
     // into its conversation state. The response is silently discarded.
     const systemMsg = messages.find((m) => m.role === 'system');
-    if (systemMsg && Inference.isModelLoaded()) {
+    const cloudMode = useSettingsStore.getState().samwellMode === 'cloud';
+    if (systemMsg && !cloudMode && Inference.isModelLoaded()) {
       try {
         console.log('[Chat] Priming engine with system context:', systemMsg.content.slice(0, 100) + '...');
         await Inference.chat(
@@ -229,9 +232,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   async sendMessage(content) {
     const { activeSession } = get();
     if (!activeSession) return;
-    if (!Inference.isModelLoaded()) return;
 
+    const {
+      samwellMode,
+      cloudBaseUrl,
+      cloudModelId,
+      getCloudDeviceId,
+      loadCloudUsage,
+    } = useSettingsStore.getState();
     const { enableToolCalling, enableThinking } = useModelStore.getState().inference;
+    if (samwellMode === 'offline' && !Inference.isModelLoaded()) return;
+    if (samwellMode === 'cloud' && !cloudBaseUrl) return;
 
     const userMsg: ChatMessage = {
       id: uuid(),
@@ -249,6 +260,74 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       isGenerating: true,
       isThinking: false, // Start with "Processing…"; SDK empty callback triggers "Thinking…"
     }));
+
+    if (samwellMode === 'cloud') {
+      let finalContent = '';
+      try {
+        const history = get().messages.filter((m) => m.id !== userMsg.id);
+        const deviceId = await getCloudDeviceId();
+        finalContent = await sendCloudChatTurn({
+          baseUrl: cloudBaseUrl,
+          deviceId,
+          modelId: cloudModelId,
+          sessionId: activeSession.id,
+          history,
+          content,
+          onStreamingContent: (streamed) => {
+            set({
+              isThinking: false,
+              isToolCalling: false,
+              toolCallStatus: null,
+              streamingContent: streamed,
+            });
+          },
+          onToolStatus: (status) => {
+            set({
+              isToolCalling: status !== null,
+              toolCallStatus: status,
+              isThinking: false,
+            });
+          },
+        });
+        await loadCloudUsage();
+      } catch (err) {
+        console.error('[Samwell Cloud] Generation error:', err);
+        const message = err instanceof Error ? err.message : 'Cloud request failed';
+        finalContent = message.includes('429')
+          ? 'Cloud Samwell has reached the current usage limit. Try again after the reset window.'
+          : `Cloud Samwell could not respond: ${message}`;
+      }
+
+      if (finalContent.length > 0) {
+        const assistantMsg: ChatMessage = {
+          id: uuid(),
+          sessionId: activeSession.id,
+          role: 'assistant',
+          content: finalContent,
+          createdAt: now(),
+        };
+        db.insert(chatMessages).values(assistantMsg).run();
+
+        db.update(chatSessions)
+          .set({ updatedAt: now() })
+          .where(eq(chatSessions.id, activeSession.id))
+          .run();
+
+        set((s) => ({
+          messages: [...s.messages, assistantMsg],
+          streamingContent: '',
+          isThinking: false,
+          isToolCalling: false,
+          toolCallStatus: null,
+          isGenerating: false,
+        }));
+      } else {
+        set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, isGenerating: false });
+      }
+
+      await get().loadSessions();
+      return;
+    }
 
     // Lazy context priming — if the model wasn't loaded when the session
     // was opened, prime the engine with book context before the first message
