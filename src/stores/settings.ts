@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { create } from 'zustand';
-import { DEFAULT_CLOUD_MODEL_ID, type CloudUsageState } from 'samwell-shared';
+import { CLOUD_MODEL_CATALOG, DEFAULT_CLOUD_MODEL_ID, type CloudModelOption, type CloudUsageState } from 'samwell-shared';
 
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { db } from '@/db/client';
@@ -18,6 +18,8 @@ type SettingsState = {
   cloudDeviceId: string | null;
   cloudUsage: CloudUsageState | null;
   cloudUsageError: string | null;
+  cloudModels: CloudModelOption[];
+  cloudModelsError: string | null;
   ttsVoice: string | null;
   ttsVoiceLanguage: string | null;
   ttsRate: number;
@@ -29,6 +31,7 @@ type SettingsState = {
   setCloudModelId: (modelId: string) => Promise<void>;
   getCloudDeviceId: () => Promise<string>;
   loadCloudUsage: () => Promise<void>;
+  loadCloudModels: () => Promise<void>;
   setTtsVoice: (voice: string | null, language?: string | null) => Promise<void>;
   setTtsRate: (rate: number) => Promise<void>;
 };
@@ -58,6 +61,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   cloudDeviceId: null,
   cloudUsage: null,
   cloudUsageError: null,
+  cloudModels: CLOUD_MODEL_CATALOG,
+  cloudModelsError: null,
   ttsVoice: null,
   ttsVoiceLanguage: null,
   ttsRate: 1.0,
@@ -140,6 +145,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch (err) {
       set({
         cloudUsageError: err instanceof Error ? err.message : 'Could not load cloud usage.',
+      });
+    }
+  },
+
+  loadCloudModels: async () => {
+    const { cloudBaseUrl } = get();
+    if (!cloudBaseUrl) return;
+
+    try {
+      const res = await fetch(`${cloudBaseUrl}/models`);
+      if (!res.ok) throw new Error(`Models request failed (${res.status})`);
+      const data = (await res.json()) as { models: CloudModelOption[]; defaultModelId: string };
+      if (Array.isArray(data.models) && data.models.length > 0) {
+        set({ cloudModels: data.models, cloudModelsError: null });
+      }
+    } catch (err) {
+      set({
+        cloudModelsError: err instanceof Error ? err.message : 'Could not load cloud models.',
       });
     }
   },

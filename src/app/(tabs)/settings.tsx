@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ProgressBar } from '@/components/ui/progress-bar';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
@@ -25,7 +26,6 @@ import { fontFamily, spacing } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
 import { useModelStore } from '@/stores/model';
 import { isNativeAvailable } from '@/services/inference';
-import { CLOUD_MODEL_CATALOG } from 'samwell-shared';
 
 const TTS_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -44,6 +44,7 @@ export default function SettingsScreen() {
     cloudModelId,
     cloudUsage,
     cloudUsageError,
+    cloudModels,
     ttsVoice,
     ttsRate,
     setUsername,
@@ -51,6 +52,7 @@ export default function SettingsScreen() {
     setSamwellMode,
     setCloudModelId,
     loadCloudUsage,
+    loadCloudModels,
     setTtsVoice,
     setTtsRate,
   } =
@@ -86,6 +88,7 @@ export default function SettingsScreen() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [modelSheetVisible, setModelSheetVisible] = useState(false);
   const [modelSheetView, setModelSheetView] = useState<'list' | 'hf'>('list');
+  const [cloudModelSheetVisible, setCloudModelSheetVisible] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [tuneModalVisible, setTuneModalVisible] = useState(false);
   const [memoryInfoVisible, setMemoryInfoVisible] = useState(false);
@@ -104,6 +107,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (samwellMode === 'cloud' && cloudBaseUrl) {
       loadCloudUsage();
+      loadCloudModels();
     }
   }, [samwellMode, cloudBaseUrl, cloudModelId]);
 
@@ -350,13 +354,6 @@ export default function SettingsScreen() {
     modeCardActive: {
       borderColor: colors.primary.default,
     },
-    comingSoonBadge: {
-      alignSelf: 'flex-start',
-      paddingHorizontal: spacing[2],
-      paddingVertical: 2,
-      backgroundColor: colors.surface.highest,
-      marginBottom: spacing[1],
-    },
     // HF search
     hfSearchRow: {
       flexDirection: 'row',
@@ -400,16 +397,6 @@ export default function SettingsScreen() {
       backgroundColor: colors.surface.low,
       padding: spacing[4],
       gap: spacing[3],
-    },
-    cloudModelChip: {
-      padding: spacing[3],
-      borderWidth: 1,
-      borderColor: colors.surface.highest,
-      backgroundColor: colors.surface.mid,
-      gap: 2,
-    },
-    cloudModelChipActive: {
-      borderColor: colors.primary.default,
     },
   }), [colors, insets.top]);
 
@@ -558,11 +545,6 @@ export default function SettingsScreen() {
               style={[styles.modeCard, samwellMode === 'cloud' && styles.modeCardActive]}
               onPress={() => setSamwellMode('cloud')}
             >
-              <View style={[styles.comingSoonBadge, { backgroundColor: colors.primary.container }]}>
-                <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 9 }}>
-                  TESTING
-                </ThemedText>
-              </View>
               <ThemedText type="labelSm" color={samwellMode === 'cloud' ? colors.primary.default : colors.text.primary}>
                 Cloud
               </ThemedText>
@@ -575,9 +557,9 @@ export default function SettingsScreen() {
           {samwellMode === 'cloud' ? (
             <View style={styles.cloudCard}>
               <View style={{ gap: spacing[1] }}>
-                <ThemedText type="bodyMd">Samwell Cloud server</ThemedText>
+                <ThemedText type="bodyMd">Grand Maester Samwell</ThemedText>
                 <ThemedText type="bodySm" color={colors.text.secondary}>
-                  Managed by Open Citadel. Requests stream to our Hono server; OpenRouter keys stay off-device.
+                  Samwell is now a Grand Maester. He is faster, more intelligent, and powered by the leading models to date.
                 </ThemedText>
                 {!cloudBaseUrl && (
                   <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
@@ -586,28 +568,23 @@ export default function SettingsScreen() {
                 )}
               </View>
 
-              <View style={{ gap: spacing[2] }}>
-                <ThemedText type="labelSm" color={colors.text.secondary}>MODEL</ThemedText>
-                {CLOUD_MODEL_CATALOG.map((model) => {
-                  const active = model.id === cloudModelId;
-                  return (
-                    <Touchable
-                      key={model.id}
-                      style={[styles.cloudModelChip, active && styles.cloudModelChipActive]}
-                      onPress={() => setCloudModelId(model.id)}
-                    >
-                      <ThemedText type="labelSm" color={active ? colors.primary.default : colors.text.primary}>
-                        {model.label}
-                      </ThemedText>
-                      <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                        {model.provider} · {model.capabilities.join(', ')}
-                      </ThemedText>
-                    </Touchable>
-                  );
-                })}
+              <View style={styles.modelCard}>
+                <View style={[styles.modelCardRow, { gap: spacing[3], alignItems: 'flex-start' }]}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <ThemedText type="labelSm" color={colors.text.secondary}>MODEL</ThemedText>
+                    <ThemedText type="bodyMd" numberOfLines={2}>
+                      {cloudModels.find((m) => m.id === cloudModelId)?.label ?? 'Choose a model'}
+                    </ThemedText>
+                  </View>
+                  <Touchable style={styles.aiActionBtn} onPress={() => setCloudModelSheetVisible(true)}>
+                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                      CHANGE
+                    </ThemedText>
+                  </Touchable>
+                </View>
               </View>
 
-              <View style={{ gap: spacing[1] }}>
+              <View style={{ gap: spacing[3] }}>
                 <View style={styles.modelCardRow}>
                   <ThemedText type="labelSm" color={colors.text.secondary}>USAGE</ThemedText>
                   <Touchable onPress={loadCloudUsage}>
@@ -616,9 +593,24 @@ export default function SettingsScreen() {
                 </View>
                 {cloudUsage ? (
                   <>
-                    <ThemedText type="bodySm" color={colors.text.secondary}>
-                      5h: {cloudUsage.fiveHour.used}/{cloudUsage.fiveHour.cap} messages · Weekly: {cloudUsage.weekly.used}/{cloudUsage.weekly.cap}
-                    </ThemedText>
+                    <View style={{ gap: spacing[1] }}>
+                      <View style={styles.modelCardRow}>
+                        <ThemedText type="labelSm" color={colors.text.secondary}>5 HOURS</ThemedText>
+                        <ThemedText type="labelSm" color={colors.primary.default}>
+                          {cloudUsage.fiveHour.used}/{cloudUsage.fiveHour.cap}
+                        </ThemedText>
+                      </View>
+                      <ProgressBar progress={cloudUsage.fiveHour.cap > 0 ? cloudUsage.fiveHour.used / cloudUsage.fiveHour.cap : 0} />
+                    </View>
+                    <View style={{ gap: spacing[1] }}>
+                      <View style={styles.modelCardRow}>
+                        <ThemedText type="labelSm" color={colors.text.secondary}>WEEKLY</ThemedText>
+                        <ThemedText type="labelSm" color={colors.primary.default}>
+                          {cloudUsage.weekly.used}/{cloudUsage.weekly.cap}
+                        </ThemedText>
+                      </View>
+                      <ProgressBar progress={cloudUsage.weekly.cap > 0 ? cloudUsage.weekly.used / cloudUsage.weekly.cap : 0} />
+                    </View>
                     {cloudUsage.fiveHour.resetsAt && cloudUsage.fiveHour.remaining === 0 && (
                       <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
                         5h window resets {new Date(cloudUsage.fiveHour.resetsAt).toLocaleTimeString()}
@@ -631,10 +623,6 @@ export default function SettingsScreen() {
                   </ThemedText>
                 )}
               </View>
-
-              <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                Tool parity is preserved: cloud models ask this device to search highlights, search thoughts, and request approval before tagging.
-              </ThemedText>
             </View>
           ) : !nativeAvailable ? (
             <ThemedText type="bodySm" color={colors.text.secondary}>
@@ -1038,6 +1026,56 @@ export default function SettingsScreen() {
               )}
             </Touchable>
           </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Cloud model picker */}
+      <Modal
+        visible={cloudModelSheetVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCloudModelSheetVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Touchable
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' }}
+            onPress={() => setCloudModelSheetVisible(false)}
+          />
+          <View style={{ backgroundColor: colors.surface.low, maxHeight: '80%', paddingBottom: insets.bottom + spacing[4] }}>
+            <View style={{ width: 40, height: 2, backgroundColor: colors.surface.highest, alignSelf: 'center', marginTop: spacing[2], marginBottom: spacing[3] }} />
+
+            <View style={[styles.modelCardRow, { paddingHorizontal: spacing[4], paddingBottom: spacing[3] }]}>
+              <ThemedText type="headlineSm">Choose Model</ThemedText>
+              <Touchable onPress={() => setCloudModelSheetVisible(false)}>
+                <X size={20} color={colors.text.secondary} />
+              </Touchable>
+            </View>
+
+            <FlatList
+              data={cloudModels}
+              keyExtractor={(m) => m.id}
+              style={{ maxHeight: 400 }}
+              renderItem={({ item: m }) => (
+                <Touchable
+                  style={styles.modelSheetItem}
+                  onPress={() => {
+                    setCloudModelId(m.id);
+                    setCloudModelSheetVisible(false);
+                  }}
+                >
+                  <View style={styles.modelSheetInfo}>
+                    <ThemedText type="bodyMd">{m.label}</ThemedText>
+                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                      {m.provider} · {m.capabilities.join(', ')}
+                    </ThemedText>
+                  </View>
+                  {m.id === cloudModelId && (
+                    <ThemedText type="bodyMd" color={colors.primary.default}>✓</ThemedText>
+                  )}
+                </Touchable>
+              )}
+            />
+          </View>
         </View>
       </Modal>
 

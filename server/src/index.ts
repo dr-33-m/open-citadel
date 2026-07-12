@@ -8,20 +8,22 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import {
-  CLOUD_MODEL_CATALOG,
   DEFAULT_CLOUD_MODEL_ID,
   SAMWELL_CLIENT_TOOL_DEFINITIONS,
   SAMWELL_SYSTEM_PROMPT,
-  getFallbackModelIds,
-  isCloudModelId,
+  type CloudModelCapability,
+  type CloudModelOption,
 } from 'samwell-shared';
+import { z } from 'zod';
 
 import {
   checkUsageLimit,
   createUsageEvent,
   getUsageState,
   initDb,
+  listCloudModels,
   updateUsageEvent,
+  upsertCloudModel,
 } from './db.js';
 
 type RunAgentInput = {
@@ -40,6 +42,26 @@ function requireOpenRouterKey(): void {
   }
 }
 
+function requireAdminKey(c: Context): void {
+  if (!process.env.ADMIN_API_KEY) {
+    throw new HTTPException(500, {
+      message: 'ADMIN_API_KEY is not configured on the server.',
+    });
+  }
+  const provided = c.req.header('x-admin-key');
+  if (!provided || provided !== process.env.ADMIN_API_KEY) {
+    throw new HTTPException(401, { message: 'Invalid or missing x-admin-key header.' });
+  }
+}
+
+const AdminModelSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  provider: z.string().min(1),
+  description: z.string().min(1),
+  capabilities: z.array(z.enum(['text', 'vision', 'audio', 'tools'])).min(1),
+});
+
 function readDeviceId(c: Context): string {
   const headerDeviceId = c.req.header('x-samwell-device-id')?.trim();
   if (headerDeviceId) return headerDeviceId;
@@ -49,13 +71,13 @@ function readDeviceId(c: Context): string {
   });
 }
 
-function readModelId(body: RunAgentInput): string {
+function readModelId(body: RunAgentInput, knownModelIds: string[]): string {
   const raw =
     body.forwardedProps?.modelId ??
     body.data?.modelId ??
     DEFAULT_CLOUD_MODEL_ID;
   const modelId = typeof raw === 'string' ? raw : DEFAULT_CLOUD_MODEL_ID;
-  return isCloudModelId(modelId) ? modelId : DEFAULT_CLOUD_MODEL_ID;
+  return knownModelIds.includes(modelId) ? modelId : (knownModelIds[0] ?? DEFAULT_CLOUD_MODEL_ID);
 }
 
 function isCountableUserTurn(messages: Array<unknown>): boolean {
@@ -155,21 +177,45 @@ app.use(
   }),
 );
 
-app.get('/health', (c) =>
-  c.json({
+app.get('/health', async (c) => {
+  const models = await listCloudModels();
+  return c.json({
     ok: true,
     service: 'samwell-cloud',
     chatReady: Boolean(process.env.OPENROUTER_API_KEY),
-    models: CLOUD_MODEL_CATALOG.map((model) => model.id),
-  }),
-);
+    models: models.map((model) => model.id),
+  });
+});
 
-app.get('/models', (c) =>
-  c.json({
-    models: CLOUD_MODEL_CATALOG,
-    defaultModelId: DEFAULT_CLOUD_MODEL_ID,
-  }),
-);
+app.get('/models', async (c) => {
+  const models = await listCloudModels();
+  return c.json({
+    models,
+    defaultModelId: models[0]?.id ?? DEFAULT_CLOUD_MODEL_ID,
+  });
+});
+
+app.post('/admin/models', async (c) => {
+  requireAdminKey(c);
+
+  const body = await c.req.json();
+  const parsed = AdminModelSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new HTTPException(400, { message: parsed.error.message });
+  }
+
+  const model: CloudModelOption = {
+    ...parsed.data,
+    capabilities: parsed.data.capabilities as CloudModelCapability[],
+  };
+  await upsertCloudModel(model);
+
+  const models = await listCloudModels();
+  return c.json({
+    models,
+    defaultModelId: models[0]?.id ?? DEFAULT_CLOUD_MODEL_ID,
+  });
+});
 
 app.get('/usage', async (c) => {
   const deviceId = readDeviceId(c);
@@ -200,7 +246,9 @@ app.post('/chat/http', async (c) => {
     }
   }
 
-  const modelId = readModelId(body);
+  const knownModels = await listCloudModels();
+  const knownModelIds = knownModels.map((model) => model.id);
+  const modelId = readModelId(body, knownModelIds);
   const usageEventId =
     body.runId ?? `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -222,7 +270,7 @@ app.post('/chat/http', async (c) => {
     threadId: body.threadId,
     runId: body.runId ?? usageEventId,
     modelOptions: {
-      models: getFallbackModelIds(modelId) as any,
+      models: knownModelIds.filter((id) => id !== modelId) as any,
       temperature: 0.7,
       maxCompletionTokens: 1200,
       toolChoice: 'auto',

@@ -1,6 +1,6 @@
 import { createClient } from '@libsql/client';
 
-import { CLOUD_LIMITS, type CloudUsageState } from 'samwell-shared';
+import { CLOUD_LIMITS, CLOUD_MODEL_CATALOG, type CloudModelCapability, type CloudModelOption, type CloudUsageState } from 'samwell-shared';
 
 const dbUrl = process.env.DATABASE_URL ?? 'file:./samwell-cloud.sqlite';
 
@@ -40,6 +40,16 @@ export async function initDb(): Promise<void> {
       )`,
       `CREATE INDEX IF NOT EXISTS usage_events_device_time_idx
         ON usage_events (device_id, created_at_ms)`,
+      `CREATE TABLE IF NOT EXISTS cloud_models (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        description TEXT NOT NULL,
+        capabilities TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+      )`,
     ],
     'write',
   );
@@ -52,6 +62,74 @@ export async function initDb(): Promise<void> {
         ADD counts_toward_limit INTEGER NOT NULL DEFAULT 1`,
     );
   }
+
+  const modelCount = await db.execute('SELECT COUNT(*) as count FROM cloud_models');
+  if (Number(modelCount.rows[0]?.count ?? 0) === 0) {
+    const now = Date.now();
+    await db.batch(
+      CLOUD_MODEL_CATALOG.map((model, index) => ({
+        sql: `INSERT INTO cloud_models (
+            id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          model.id,
+          model.label,
+          model.provider,
+          model.description,
+          JSON.stringify(model.capabilities),
+          index,
+          now,
+          now,
+        ],
+      })),
+      'write',
+    );
+  }
+}
+
+function rowToCloudModel(row: Record<string, unknown>): CloudModelOption {
+  return {
+    id: String(row.id),
+    label: String(row.label),
+    provider: String(row.provider),
+    description: String(row.description),
+    capabilities: JSON.parse(String(row.capabilities)) as CloudModelCapability[],
+  };
+}
+
+export async function listCloudModels(): Promise<CloudModelOption[]> {
+  const result = await db.execute('SELECT * FROM cloud_models ORDER BY sort_order ASC');
+  return result.rows.map((row) => rowToCloudModel(row as unknown as Record<string, unknown>));
+}
+
+export async function upsertCloudModel(model: CloudModelOption): Promise<void> {
+  const now = Date.now();
+  const maxOrder = await db.execute('SELECT MAX(sort_order) as maxOrder FROM cloud_models');
+  const nextOrder = Number(maxOrder.rows[0]?.maxOrder ?? -1) + 1;
+
+  await db.execute({
+    sql: `INSERT INTO cloud_models (
+        id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        label = excluded.label,
+        provider = excluded.provider,
+        description = excluded.description,
+        capabilities = excluded.capabilities,
+        updated_at_ms = excluded.updated_at_ms`,
+    args: [
+      model.id,
+      model.label,
+      model.provider,
+      model.description,
+      JSON.stringify(model.capabilities),
+      nextOrder,
+      now,
+      now,
+    ],
+  });
 }
 
 function resetTime(events: Array<{ created_at_ms: number }>, windowMs: number): string | null {
