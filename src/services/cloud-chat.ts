@@ -272,15 +272,47 @@ export async function sendCloudChatTurn({
       throw new Error(`${detail} (POST ${baseUrl}/chat/http)`);
     }
 
-    while (approvals.length > 0) {
-      const approval = approvals.shift();
-      if (!approval) continue;
-      const approved = await askForApproval(approval);
-      await client.addToolApprovalResponse({ id: approval.id, approved });
+    // The server emits client-tool (`tool-input-available`) and approval
+    // (`approval-requested`) events AFTER `RUN_FINISHED`. The ChatClient
+    // resolves `sendMessage` on `RUN_FINISHED` and processes those follow-on
+    // events asynchronously through its subscription loop, which then triggers
+    // client-side tool execution and the continuation request. Disposing the
+    // client here would tear the subscription down before any of that happens,
+    // so the tool never runs and the turn stalls. Keep the client alive until
+    // the conversation has fully settled: drain approval requests as they
+    // arrive and wait for a final assistant text answer with nothing loading.
+    const settleDeadline = Date.now() + 120_000;
+    while (Date.now() < settleDeadline) {
+      while (approvals.length > 0) {
+        const approval = approvals.shift();
+        if (!approval) continue;
+        const approved = await askForApproval(approval);
+        await client.addToolApprovalResponse({ id: approval.id, approved });
+      }
+
+      if (!client.getIsLoading() && !hasUnresolvedToolCalls(client.getMessages())) {
+        const text = latestAssistantText(client.getMessages()).trim();
+        if (text) return text;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
     }
 
+    console.warn('[Samwell Cloud] Turn did not settle before timeout; returning partial content.');
     return latestAssistantText(client.getMessages()).trim();
   } finally {
     client.dispose();
   }
+}
+
+function hasUnresolvedToolCalls(messages: UIMessage[]): boolean {
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue;
+    for (const part of message.parts) {
+      if (part.type === 'tool-call' && (part as { output?: unknown }).output === undefined) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
