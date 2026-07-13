@@ -1,9 +1,12 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
+import { Plus } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Dimensions,
+  Platform,
   ScrollView,
   StyleSheet,
   View,
@@ -54,6 +57,8 @@ export default function LibraryScreen() {
     loadBooks,
     loadDirectoryUri,
     setDirectoryUri,
+    initLibrary,
+    importBooks,
     syncBooks,
     hydrateSyncState,
     updateBookStatus,
@@ -101,11 +106,28 @@ export default function LibraryScreen() {
   }, [currentlyReading.length]);
 
   useEffect(() => {
-    loadDirectoryUri().then(() => {
-      loadBooks();
-      hydrateSyncState();
-    });
+    const boot = async () => {
+      // iOS: ensure the owned library folder exists and is the scan root.
+      if (Platform.OS === "ios") await initLibrary();
+      await loadDirectoryUri();
+      await loadBooks();
+      await hydrateSyncState();
+      // iOS: cold-start scan so anything dropped in via the Files app is imported.
+      if (Platform.OS === "ios") await syncBooks();
+    };
+    boot();
   }, []);
+
+  // iOS: re-scan the owned folder when the app returns to the foreground so
+  // EPUBs dropped in via the Files app get imported. Idempotent — unchanged
+  // files are skipped, and syncBooks() no-ops while a sync is already running.
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") syncBooks();
+    });
+    return () => sub.remove();
+  }, [syncBooks]);
 
   // Reload books when tab is focused so status changes made in the reader
   // (e.g. a book moving to "currently reading") are reflected immediately.
@@ -123,24 +145,44 @@ export default function LibraryScreen() {
     }
   };
 
+  // iOS: pick EPUBs via the document picker and copy them into the owned folder.
+  const handleGetStarted = async () => {
+    await importBooks();
+  };
+
   const openReader = (bookId: string) => {
     const book = allBooks.find((b) => b.id === bookId);
     if (!book?.filePath) return; // still being copied in Phase 2
     router.push(`/reader/${bookId}` as any);
   };
 
-  if (!booksDirectoryUri && !isLoading) {
+  const isIOS = Platform.OS === "ios";
+  // iOS always has an owned folder set, so gate on whether any books exist.
+  // Android gates on whether a folder has been picked (unchanged behavior).
+  const showEmptyState = isIOS
+    ? allBooks.length === 0 && sync.status !== "running" && !isLoading
+    : !booksDirectoryUri && !isLoading;
+
+  if (showEmptyState) {
     return (
       <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
         <ScreenHeader title="Open Citadel" />
-        <DirectoryPrompt onSelectDirectory={handleSelectDirectory} />
+        <DirectoryPrompt
+          onPress={isIOS ? handleGetStarted : handleSelectDirectory}
+        />
       </ThemedView>
     );
   }
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Open Citadel" />
+      <ScreenHeader
+        title="Open Citadel"
+        rightIcon={
+          isIOS ? <Plus size={22} color={colors.text.primary} /> : undefined
+        }
+        onRightPress={isIOS ? handleGetStarted : undefined}
+      />
 
       {sync.status === "running" && (
         <View style={styles.syncIndicator}>

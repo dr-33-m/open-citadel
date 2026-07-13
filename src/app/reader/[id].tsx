@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Platform,
   StyleSheet,
   TextInput,
   View,
@@ -23,6 +24,8 @@ import type {
   Locator,
   PublicationReadyEvent,
   ReadiumViewRef,
+  SelectionAction,
+  SelectionActionEvent,
   SelectionEvent,
   TTSState,
   TTSUtteranceEvent,
@@ -287,35 +290,61 @@ export default function ReaderScreen() {
 
   const [chatLoading, setChatLoading] = useState(false);
 
-  const handleChatFromSelection = useCallback(async () => {
-    if (!selectionEvent || !currentBook || chatLoading) return;
-    const { text, locator } = selectionEvent;
+  const startChatFromSelection = useCallback(
+    async (text: string, locator: Locator) => {
+      if (!currentBook || chatLoading) return;
 
-    setChatLoading(true);
-    let contextText = text;
-    if (currentBook.filePath) {
-      try {
-        contextText = await extractChapterTextToLocator(currentBook.filePath, locator);
-      } catch {
-        // fallback to selected text only
+      setChatLoading(true);
+      let contextText = text;
+      if (currentBook.filePath) {
+        try {
+          contextText = await extractChapterTextToLocator(currentBook.filePath, locator);
+        } catch {
+          // fallback to selected text only
+        }
       }
-    }
 
-    // Create a highlight and a chat session, then link them
-    const highlightId = await addHighlight(text, locator);
-    const sessionId = await createChatSession({
-      bookId: currentBook.id,
-      title: text.slice(0, 60),
-      contextText,
-      contextLocator: JSON.stringify(locator),
-    });
-    // Link the highlight to the chat session
-    await updateHighlight(highlightId, { chatSessionId: sessionId });
+      // Create a highlight and a chat session, then link them
+      const highlightId = await addHighlight(text, locator);
+      const sessionId = await createChatSession({
+        bookId: currentBook.id,
+        title: text.slice(0, 60),
+        contextText,
+        contextLocator: JSON.stringify(locator),
+      });
+      // Link the highlight to the chat session
+      await updateHighlight(highlightId, { chatSessionId: sessionId });
 
-    setChatLoading(false);
-    setSelectionEvent(null);
-    router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
-  }, [selectionEvent, currentBook, chatLoading, addHighlight, updateHighlight, createChatSession, router]);
+      setChatLoading(false);
+      setSelectionEvent(null);
+      router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
+    },
+    [currentBook, chatLoading, addHighlight, updateHighlight, createChatSession, router],
+  );
+
+  // Android: the custom SelectionBar drives this from onSelectionChange state.
+  const handleChatFromSelection = useCallback(() => {
+    if (!selectionEvent) return;
+    startChatFromSelection(selectionEvent.text, selectionEvent.locator);
+  }, [selectionEvent, startChatFromSelection]);
+
+  // iOS: Readium never fires onSelectionChange, so selection surfaces through the
+  // native selection menu (the idiomatic iOS pattern). The menu items below route
+  // here and act in one tap. Android instead uses the custom top SelectionBar.
+  const handleSelectionAction = useCallback(
+    (event: SelectionActionEvent) => {
+      const { actionId, selectedText, locator } = event;
+      if (!selectedText || !locator) return;
+      if (actionId === "highlight") {
+        addHighlight(selectedText, locator);
+      } else if (actionId === "copy") {
+        Clipboard.setStringAsync(selectedText);
+      } else if (actionId === "chat") {
+        startChatFromSelection(selectedText, locator);
+      }
+    },
+    [addHighlight, startChatFromSelection],
+  );
 
   const handleChatFromHighlight = useCallback(async (
     highlightId: string,
@@ -606,6 +635,23 @@ export default function ReaderScreen() {
     },
   ], [highlights, colors]);
 
+  // iOS: onSelectionChange never fires, so selection is handled via the native
+  // menu. These become the menu items (Readium replaces the default iOS actions
+  // when custom ones are supplied) and act in one tap via handleSelectionAction.
+  // Android uses the custom SelectionBar via onSelectionChange and needs none.
+  // Must be present before the book loads on iOS.
+  const selectionActions: SelectionAction[] = useMemo(
+    () =>
+      Platform.OS === "ios"
+        ? [
+            { id: "highlight", label: "Highlight" },
+            { id: "copy", label: "Copy" },
+            { id: "chat", label: "Chat" },
+          ]
+        : [],
+    [],
+  );
+
   const initialLocation = useMemo(() => {
     if (locatorParam) {
       try {
@@ -663,11 +709,12 @@ export default function ReaderScreen() {
             lineHeight: 1.6,
           }}
           decorations={decorations}
-          selectionActions={[]}
+          selectionActions={selectionActions}
           suppressNativeSelectionMenu={true}
           onLocationChange={handleLocationChange}
           onPublicationReady={handlePublicationReady}
           onSelectionChange={handleSelectionChange}
+          onSelectionAction={handleSelectionAction}
           onDecorationActivated={handleDecorationActivated}
           onTTSStateChange={handleTTSStateChange}
           onTTSUtterance={handleTTSUtterance}

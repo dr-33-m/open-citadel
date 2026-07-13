@@ -1,6 +1,6 @@
 import { LibraryBig } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
@@ -8,10 +8,25 @@ import { useColors } from '@/hooks/use-colors';
 import { spacing } from '@/constants/theme';
 
 type DirectoryPromptProps = {
-  onSelectDirectory: () => void;
+  onPress: () => void;
 };
 
-export function DirectoryPrompt({ onSelectDirectory }: DirectoryPromptProps) {
+// iOS brings books into an app-owned folder via the picker; Android references
+// EPUBs in place from a folder the user selects.
+const COPY =
+  Platform.OS === 'ios'
+    ? {
+        description:
+          'Add your EPUB books and Open Citadel organizes them for you.',
+        button: 'GET STARTED',
+      }
+    : {
+        description:
+          'Select the folder on your device where your ebooks are stored. The app will sync all .epub files from that folder.',
+        button: 'SELECT FOLDER',
+      };
+
+export function DirectoryPrompt({ onPress }: DirectoryPromptProps) {
   const colors = useColors();
   const styles = React.useMemo(() => StyleSheet.create({
     container: {
@@ -52,12 +67,11 @@ export function DirectoryPrompt({ onSelectDirectory }: DirectoryPromptProps) {
         color={colors.text.secondary}
         style={styles.description}
       >
-        Select the folder on your device where your ebooks are stored. The app
-        will sync all .epub files from that folder.
+        {COPY.description}
       </ThemedText>
 
       <View style={styles.buttonContainer}>
-        <GoldButton label="SELECT FOLDER" onPress={onSelectDirectory} />
+        <GoldButton label={COPY.button} onPress={onPress} />
       </View>
     </View>
   );
