@@ -72,6 +72,8 @@
     "@types/jszip": "^3.4.1",
     "@types/react": "~19.2.2",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~55.0.1",
     "typescript": "~5.9.2"
   },
   "private": true,
@@ -81,7 +83,8 @@
       "@dr33m/react-native-litert-lm"
     ],
     "patchedDependencies": {
-      "react-native-gesture-handler@2.30.0": "patches/react-native-gesture-handler@2.30.0.patch"
+      "react-native-gesture-handler@2.30.0": "patches/react-native-gesture-handler@2.30.0.patch",
+      "@dr33m/react-native-readium@5.0.0-rc.31": "patches/@dr33m__react-native-readium@5.0.0-rc.31.patch"
     }
   }
 }

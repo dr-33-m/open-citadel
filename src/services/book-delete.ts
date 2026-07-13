@@ -68,10 +68,16 @@ export async function deleteBookWithFile(bookId: string): Promise<void> {
 
   await deleteBookData(bookId);
 
-  // Delete the actual EPUB file via SAF
+  // Delete the actual EPUB file. Scheme-aware:
+  //   content:// → Android SAF (references the file in place)
+  //   file://    → iOS owned copy in app storage
   if (book?.filePath) {
     try {
-      await StorageAccessFramework.deleteAsync(book.filePath);
+      if (book.filePath.startsWith("content://")) {
+        await StorageAccessFramework.deleteAsync(book.filePath);
+      } else {
+        await deleteAsync(book.filePath, { idempotent: true });
+      }
     } catch {
       // File may already be gone — ignore
     }

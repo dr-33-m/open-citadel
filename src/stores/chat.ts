@@ -58,6 +58,16 @@ interface ChatStore {
   deleteSession(id: string): Promise<void>;
 }
 
+// Base identity for sessions started without a book. The engine-level system
+// prompt (inference.ts) doesn't reliably steer the small on-device model on its
+// own, so we persist + prime this as a conversation turn — the same mechanism
+// that makes book-context sessions work.
+const BASE_SYSTEM_PROMPT =
+  'Your name is Samwell. You are a curious, widely-read AI reading companion. ' +
+  'Help the user think through ideas, discuss books and concepts, and connect ' +
+  'what they read to their goals. Be precise, direct, and concise — match your ' +
+  'response length to the question and never pad.';
+
 function uuid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -181,6 +191,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           })
           .run();
       }
+    } else {
+      // No book context — seed the assistant's identity so the model knows who
+      // it is. Persisted + primed as a conversation turn (see openSession),
+      // since the engine-level system prompt alone doesn't reliably steer it.
+      db.insert(chatMessages)
+        .values({
+          id: uuid(),
+          sessionId: id,
+          role: 'system',
+          content: BASE_SYSTEM_PROMPT,
+          createdAt: ts,
+        })
+        .run();
     }
 
     await get().loadSessions();

@@ -16,13 +16,17 @@ import {
 } from '@expo-google-fonts/manrope';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import * as Linking from 'expo-linking';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 import type { ErrorBoundaryProps } from 'expo-router';
 
 import { runMigrations } from '@/db/migrations';
 import { useColors } from '@/hooks/use-colors';
 import { useSettingsStore } from '@/stores/settings';
+import { useBooksStore } from '@/stores/books';
+import { importIncomingFile } from '@/services/book-import';
+import { reanchorLocalPaths } from '@/services/path-reanchor';
 import { registerTTSBackgroundHandler, setupTTSMediaSession } from '@/services/tts-media-session';
 
 SplashScreen.preventAutoHideAsync();
@@ -63,6 +67,8 @@ export default function RootLayout() {
 
   useEffect(() => {
     runMigrations()
+      // Repair stale iOS container paths before anything reads books/covers.
+      .then(() => reanchorLocalPaths())
       .then(() => loadSettings())
       .then(() => {
         setupTTSMediaSession();
@@ -94,6 +100,26 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, dbReady]);
+
+  // iOS: import EPUBs opened into the app ("Open in Open Citadel", share sheet,
+  // AirDrop). iOS hands us a file:// URL; copy it into the owned folder and sync.
+  // Gated on dbReady so syncBooks() has a migrated database.
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !dbReady) return;
+
+    const handleUrl = async (url: string | null) => {
+      if (!url || !url.startsWith('file://')) return;
+      const dest = await importIncomingFile(url);
+      if (!dest) return;
+      const store = useBooksStore.getState();
+      await store.initLibrary();
+      await store.syncBooks();
+    };
+
+    Linking.getInitialURL().then(handleUrl);
+    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => sub.remove();
+  }, [dbReady]);
 
   if (!fontsLoaded || !dbReady) return null;
 

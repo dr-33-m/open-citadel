@@ -1,10 +1,16 @@
 import { eq } from "drizzle-orm";
+import { Platform } from "react-native";
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 
 import { db } from "@/db/client";
 import { appSettings, books } from "@/db/schema";
 import { deleteBookWithFile } from "@/services/book-delete";
+import {
+  OWNED_DIR,
+  ensureOwnedDir,
+  pickAndImportEpubs,
+} from "@/services/book-import";
 import {
   getActiveSyncJob,
   resumeRunningSyncIfAny,
@@ -84,6 +90,10 @@ interface BooksState {
   loadBooks: () => Promise<void>;
   loadDirectoryUri: () => Promise<void>;
   setDirectoryUri: (uri: string) => Promise<void>;
+  /** iOS-only: ensure the owned library folder exists and is the scan root */
+  initLibrary: () => Promise<void>;
+  /** iOS-only: pick EPUBs, copy into the owned folder, then sync. Returns count. */
+  importBooks: () => Promise<number>;
   /** Hydrate sync state from DB on app launch (restores progress banner) */
   hydrateSyncState: () => Promise<void>;
   /** Start a new sync or attach to an existing running one */
@@ -143,6 +153,30 @@ export const useBooksStore = create<BooksState>((set, get) => ({
       });
     set({ booksDirectoryUri: uri });
     await get().syncBooks();
+  },
+
+  initLibrary: async () => {
+    // iOS-only: Android references EPUBs in place via SAF and never uses an
+    // owned folder. On iOS we ensure the folder exists and make it the scan root.
+    if (Platform.OS !== "ios") return;
+    await ensureOwnedDir();
+    await db
+      .insert(appSettings)
+      .values({ key: "booksDirectoryUri", value: OWNED_DIR })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: OWNED_DIR },
+      });
+    set({ booksDirectoryUri: OWNED_DIR });
+  },
+
+  importBooks: async () => {
+    const count = await pickAndImportEpubs();
+    if (count > 0) {
+      await get().initLibrary();
+      await get().syncBooks();
+    }
+    return count;
   },
 
   /**

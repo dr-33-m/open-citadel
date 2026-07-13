@@ -16,7 +16,18 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.dr33m.opencitadel",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true,
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "EPUB Book",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "org.idpf.epub-container"
+            ]
+          }
+        ]
       }
     },
     "android": {

@@ -19,6 +19,7 @@ import {
   StorageAccessFramework,
   getInfoAsync,
   readAsStringAsync,
+  readDirectoryAsync,
 } from "expo-file-system/legacy";
 
 import { db } from "@/db/client";
@@ -93,6 +94,25 @@ function buildFingerprint(
   mtime?: number | null,
 ): string {
   return `${uri}|${size ?? 0}|${mtime ?? 0}`;
+}
+
+/**
+ * List EPUB URIs under a scan root, branching on scheme:
+ *   content:// → Android SAF (returns full content:// URIs) — unchanged behavior
+ *   file://    → iOS owned folder (readDirectoryAsync returns names, prefixed)
+ */
+async function listEpubUris(directoryUri: string): Promise<string[]> {
+  if (directoryUri.startsWith("content://")) {
+    const allUris =
+      await StorageAccessFramework.readDirectoryAsync(directoryUri);
+    return allUris.filter((uri) =>
+      decodeURIComponent(uri).toLowerCase().endsWith(".epub"),
+    );
+  }
+  const names = await readDirectoryAsync(directoryUri);
+  return names
+    .filter((n) => n.toLowerCase().endsWith(".epub"))
+    .map((n) => `${directoryUri}${n}`);
 }
 
 async function getFileFingerprint(uri: string): Promise<string> {
@@ -273,11 +293,8 @@ async function phaseScanning(
   if (!job) return;
   emitProgress(job, true);
 
-  // Read directory
-  const allUris = await StorageAccessFramework.readDirectoryAsync(directoryUri);
-  const bookUris = allUris.filter((uri) =>
-    decodeURIComponent(uri).toLowerCase().endsWith(".epub"),
-  );
+  // Read directory (scheme-aware: SAF content:// on Android, local file:// on iOS)
+  const bookUris = await listEpubUris(directoryUri);
 
   await updateJob(jobId, { scanTotal: bookUris.length });
 

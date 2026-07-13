@@ -1,12 +1,16 @@
+import { Platform } from "react-native";
 import TrackPlayer from "@rntp/player";
 
 let isSetup = false;
 
 /**
  * Register the Android background event handler.
- * Required by RNTP but we don't need to handle any events.
+ * Required by RNTP but we don't need to handle any events. This API is
+ * Android-only — on iOS it warns and is a no-op (iOS uses addEventListener,
+ * and background audio is already enabled via UIBackgroundModes: ["audio"]).
  */
 export function registerTTSBackgroundHandler(): void {
+  if (Platform.OS !== "android") return;
   try {
     TrackPlayer.registerBackgroundEventHandler(() => async () => {});
   } catch {
@@ -18,8 +22,13 @@ export function registerTTSBackgroundHandler(): void {
  * Initialize the RNTP player once at app startup.
  * No capabilities — the notification is a passive "now playing" indicator
  * with no interactive controls.
+ *
+ * Android-only: the RNTP media session (setMediaItem with an empty url) crashes
+ * on iOS because there is no registered playback service / valid audio asset.
+ * iOS TTS audio is produced by Readium natively and is unaffected.
  */
 export function setupTTSMediaSession(): void {
+  if (Platform.OS !== "android") return;
   if (isSetup) return;
 
   try {
@@ -49,6 +58,7 @@ export function startMediaSession(
   artist: string,
   coverUri: string | null,
 ): void {
+  if (Platform.OS !== "android") return;
   TrackPlayer.setMediaItem({
     mediaId: "tts-session",
     url: "",
@@ -62,6 +72,7 @@ export function startMediaSession(
  * Stop the media session and clear the notification.
  */
 export function stopMediaSession(): void {
+  if (Platform.OS !== "android") return;
   if (!isSetup) return;
   TrackPlayer.clear();
 }

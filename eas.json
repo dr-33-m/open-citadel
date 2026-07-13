@@ -11,6 +11,9 @@
       "env": {
         "APP_VARIANT": "development"
       },
+      "ios": {
+        "simulator": true
+      },
       "android": {
         "buildType": "apk"
       }

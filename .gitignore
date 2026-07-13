@@ -53,3 +53,4 @@ app-example
 # tarballs and builds
 *.tgz
 build-*.apk
+.claude
