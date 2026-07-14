@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@dr33m/react-native-litert-lm": "^0.5.5",
-    "@dr33m/react-native-readium": "5.0.0-rc.31",
+    "@dr33m/react-native-readium": "5.0.0-rc.32",
     "@expo-google-fonts/manrope": "^0.4.2",
     "@expo-google-fonts/newsreader": "^0.4.1",
     "@react-navigation/bottom-tabs": "^7.15.5",
@@ -76,8 +76,7 @@
       "@dr33m/react-native-litert-lm"
     ],
     "patchedDependencies": {
-      "react-native-gesture-handler@2.30.0": "patches/react-native-gesture-handler@2.30.0.patch",
-      "@dr33m/react-native-readium@5.0.0-rc.31": "patches/@dr33m__react-native-readium@5.0.0-rc.31.patch"
+      "react-native-gesture-handler@2.30.0": "patches/react-native-gesture-handler@2.30.0.patch"
     }
   }
 }
