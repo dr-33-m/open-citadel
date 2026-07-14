@@ -521,10 +521,10 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={{ gap: spacing[1] }}>
             <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
-              SAMWELL
+              {samwellMode === 'cloud' ? 'GRAND MAESTER SAMWELL' : 'SAMWELL'}
             </ThemedText>
             <ThemedText type="bodySm" color={colors.text.secondary}>
-              Your AI reading companion
+              {samwellMode === 'cloud' ? 'Puts your knowledge to work.' : 'Your reading companion'}
             </ThemedText>
           </View>
 
@@ -556,19 +556,13 @@ export default function SettingsScreen() {
 
           {samwellMode === 'cloud' ? (
             <View style={styles.cloudCard}>
-              <View style={{ gap: spacing[1] }}>
-                <ThemedText type="bodyMd">Grand Maester Samwell</ThemedText>
-                <ThemedText type="bodySm" color={colors.text.secondary}>
-                  Samwell is now a Grand Maester. He is faster, more intelligent, and powered by the leading models to date.
+              {!cloudBaseUrl && (
+                <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
+                  Cloud is not configured for this build yet.
                 </ThemedText>
-                {!cloudBaseUrl && (
-                  <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
-                    Cloud is not configured for this build yet.
-                  </ThemedText>
-                )}
-              </View>
+              )}
 
-              <View style={styles.modelCard}>
+              <View style={{ gap: spacing[2] }}>
                 <View style={[styles.modelCardRow, { gap: spacing[3], alignItems: 'flex-start' }]}>
                   <View style={{ flex: 1, gap: 2 }}>
                     <ThemedText type="labelSm" color={colors.text.secondary}>MODEL</ThemedText>
@@ -594,22 +588,18 @@ export default function SettingsScreen() {
                 {cloudUsage ? (
                   <>
                     <View style={{ gap: spacing[1] }}>
-                      <View style={styles.modelCardRow}>
-                        <ThemedText type="labelSm" color={colors.text.secondary}>5 HOURS</ThemedText>
-                        <ThemedText type="labelSm" color={colors.primary.default}>
-                          {cloudUsage.fiveHour.used}/{cloudUsage.fiveHour.cap}
-                        </ThemedText>
-                      </View>
+                      <ThemedText type="labelSm" color={colors.text.secondary}>5 HOURS</ThemedText>
                       <ProgressBar progress={cloudUsage.fiveHour.cap > 0 ? cloudUsage.fiveHour.used / cloudUsage.fiveHour.cap : 0} />
+                      <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                        {cloudUsage.fiveHour.cap > 0 ? Math.round((cloudUsage.fiveHour.used / cloudUsage.fiveHour.cap) * 100) : 0}% used
+                      </ThemedText>
                     </View>
                     <View style={{ gap: spacing[1] }}>
-                      <View style={styles.modelCardRow}>
-                        <ThemedText type="labelSm" color={colors.text.secondary}>WEEKLY</ThemedText>
-                        <ThemedText type="labelSm" color={colors.primary.default}>
-                          {cloudUsage.weekly.used}/{cloudUsage.weekly.cap}
-                        </ThemedText>
-                      </View>
+                      <ThemedText type="labelSm" color={colors.text.secondary}>WEEKLY</ThemedText>
                       <ProgressBar progress={cloudUsage.weekly.cap > 0 ? cloudUsage.weekly.used / cloudUsage.weekly.cap : 0} />
+                      <ThemedText type="bodySm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+                        {cloudUsage.weekly.cap > 0 ? Math.round((cloudUsage.weekly.used / cloudUsage.weekly.cap) * 100) : 0}% used
+                      </ThemedText>
                     </View>
                     {cloudUsage.fiveHour.resetsAt && cloudUsage.fiveHour.remaining === 0 && (
                       <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
@@ -634,6 +624,7 @@ export default function SettingsScreen() {
               <View style={styles.modelCard}>
                 <View style={[styles.modelCardRow, { gap: spacing[3], alignItems: 'flex-start' }]}>
                   <View style={{ flex: 1, gap: 2 }}>
+                    <ThemedText type="labelSm" color={colors.text.secondary}>MODEL</ThemedText>
                     <ThemedText type="bodyMd" numberOfLines={2}>{activeModel?.name ?? 'No model selected'}</ThemedText>
                     <ThemedText type="labelSm" color={colors.text.secondary}>
                       {activeModel
