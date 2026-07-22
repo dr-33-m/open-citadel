@@ -246,6 +246,12 @@ app.post('/chat/http', async (c) => {
     }
   }
 
+  const rawMessages = body.messages as Array<{ role?: string; content?: unknown }>;
+  const sessionSystemPrompts = rawMessages
+    .filter((m) => m?.role === 'system' && typeof m.content === 'string' && m.content.trim())
+    .map((m) => m.content as string);
+  const conversationMessages = rawMessages.filter((m) => m?.role !== 'system');
+
   const knownModels = await listCloudModels();
   const knownModelIds = knownModels.map((model) => model.id);
   const modelId = readModelId(body, knownModelIds);
@@ -264,8 +270,8 @@ app.post('/chat/http', async (c) => {
       httpReferer: process.env.OPENROUTER_HTTP_REFERER,
       appTitle: process.env.OPENROUTER_APP_TITLE ?? 'Open Citadel',
     }),
-    messages: body.messages as any,
-    systemPrompts: [SAMWELL_SYSTEM_PROMPT],
+    messages: conversationMessages as any,
+    systemPrompts: [SAMWELL_SYSTEM_PROMPT, ...sessionSystemPrompts],
     tools: SAMWELL_CLIENT_TOOL_DEFINITIONS,
     threadId: body.threadId,
     runId: body.runId ?? usageEventId,
