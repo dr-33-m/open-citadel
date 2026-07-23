@@ -16,6 +16,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { eq } from 'drizzle-orm';
+
+import { TimePickerSheet } from '@/components/compass/time-picker-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ProgressBar } from '@/components/ui/progress-bar';
@@ -23,6 +26,9 @@ import { ScreenHeader } from '@/components/ui/screen-header';
 import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
 import { fontFamily, spacing } from '@/constants/theme';
+import { db } from '@/db/client';
+import { compassGoals } from '@/db/schema';
+import { syncCompassReminders } from '@/services/compass-notifications';
 import { useSettingsStore } from '@/stores/settings';
 import { useModelStore } from '@/stores/model';
 import { isNativeAvailable } from '@/services/inference';
@@ -47,6 +53,8 @@ export default function SettingsScreen() {
     cloudModels,
     ttsVoice,
     ttsRate,
+    compassMorningTime,
+    compassNightTime,
     setUsername,
     setTheme,
     setSamwellMode,
@@ -55,8 +63,10 @@ export default function SettingsScreen() {
     loadCloudModels,
     setTtsVoice,
     setTtsRate,
+    setCompassTimes,
   } =
     useSettingsStore();
+  const [timePickerFor, setTimePickerFor] = useState<'morning' | 'night' | null>(null);
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(username);
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
@@ -403,6 +413,16 @@ export default function SettingsScreen() {
   const handleNameBlur = () => {
     const trimmed = editingName.trim();
     if (trimmed !== username) setUsername(trimmed);
+  };
+
+  const handleCompassTime = async (kind: 'morning' | 'night', next: string) => {
+    const morningTime = kind === 'morning' ? next : compassMorningTime;
+    const nightTime = kind === 'night' ? next : compassNightTime;
+    await setCompassTimes(morningTime, nightTime);
+    const hasActiveGoal = Boolean(
+      db.select().from(compassGoals).where(eq(compassGoals.status, 'active')).get(),
+    );
+    await syncCompassReminders({ morningTime, nightTime, hasActiveGoal });
   };
 
   const openVoiceModal = useCallback(async () => {
@@ -753,6 +773,32 @@ export default function SettingsScreen() {
 
         <View style={styles.divider} />
 
+        {/* COMPASS */}
+        <View style={styles.section}>
+          <View style={{ gap: spacing[1] }}>
+            <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
+              COMPASS
+            </ThemedText>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              Daily check-in times. The pit wall calls you.
+            </ThemedText>
+          </View>
+          <Touchable style={styles.row} onPress={() => setTimePickerFor('morning')}>
+            <ThemedText type="bodyMd">Morning check-in</ThemedText>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              {compassMorningTime} ›
+            </ThemedText>
+          </Touchable>
+          <Touchable style={styles.row} onPress={() => setTimePickerFor('night')}>
+            <ThemedText type="bodyMd">Night check-in</ThemedText>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              {compassNightTime} ›
+            </ThemedText>
+          </Touchable>
+        </View>
+
+        <View style={styles.divider} />
+
         {/* TTS */}
         <View style={styles.section}>
           <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
@@ -788,6 +834,17 @@ export default function SettingsScreen() {
           </Touchable>
         </View>
       </ScrollView>
+
+      {/* Compass check-in time picker */}
+      <TimePickerSheet
+        visible={timePickerFor !== null}
+        label={timePickerFor === 'night' ? 'NIGHT CHECK-IN' : 'MORNING CHECK-IN'}
+        value={timePickerFor === 'night' ? compassNightTime : compassMorningTime}
+        onSelect={(next) => {
+          if (timePickerFor) handleCompassTime(timePickerFor, next);
+        }}
+        onClose={() => setTimePickerFor(null)}
+      />
 
       {/* Voice picker modal */}
       <Modal

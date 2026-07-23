@@ -10,6 +10,9 @@ import m0006 from "./0006_pdf_format.js";
 import m0007 from "./0007_sync_pipeline.js";
 import m0008 from "./0008_litert_migration.js";
 import m0009 from "./0009_title_locked.js";
+import m0010 from "./0010_compass.js";
+import m0011 from "./0011_highlight_context.js";
+import m0012 from "./0012_journey_notes.js";
 import journal from "./meta/_journal.json";
 
 export default {
@@ -25,5 +28,8 @@ export default {
     m0007,
     m0008,
     m0009,
+    m0010,
+    m0011,
+    m0012,
   },
 };

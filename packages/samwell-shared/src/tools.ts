@@ -54,12 +54,59 @@ export const DeleteResultSchema = z.object({
   error: z.string().optional(),
 });
 
+export const ReadingSnippetSchema = z.object({
+  book: z.string(),
+  author: z.string(),
+  snippet: z.string(),
+});
+
+export const SearchReadingInputSchema = z.object({
+  query: z.string(),
+});
+
+export const SearchReadingOutputSchema = z.object({
+  results: z.array(ReadingSnippetSchema),
+  formatted: z.string(),
+});
+
+export const BookCandidateSchema = z.object({
+  title: z.string(),
+  author: z.string(),
+  category: z.string().nullable(),
+  status: z.string().nullable(),
+  percentage: z.number().nullable(),
+  completedAt: z.string().nullable(),
+});
+
+export const SuggestNextBookInputSchema = z.object({});
+
+export const SuggestNextBookOutputSchema = z.object({
+  candidates: z.array(BookCandidateSchema),
+  formatted: z.string(),
+});
+
 export const searchHighlightsTool = toolDefinition({
   name: 'search_highlights',
   description:
     "Search the user's book highlights and notes. Can search by keyword in highlight/note text, by book title, or by tag. Call with no arguments to get the most recent highlights.",
   inputSchema: SearchHighlightsInputSchema,
   outputSchema: SearchToolOutputSchema,
+});
+
+export const searchReadingTool = toolDefinition({
+  name: 'search_reading',
+  description:
+    "Search the FULL TEXT of the books the user is currently reading or has finished, for passages relevant to a topic or question. Only ever returns text the user has ALREADY read — never content ahead of their current reading position. Use this mid-conversation to ground your points in what the user's own authors actually say, citing the book.",
+  inputSchema: SearchReadingInputSchema,
+  outputSchema: SearchReadingOutputSchema,
+});
+
+export const suggestNextBookTool = toolDefinition({
+  name: 'suggest_next_book',
+  description:
+    "List the user's library — books queued to read, currently reading, and finished — so you can recommend what they should read next given where they are in their journey. Only recommend titles that appear in this list (the user's own library); never invent books they don't own.",
+  inputSchema: SuggestNextBookInputSchema,
+  outputSchema: SuggestNextBookOutputSchema,
 });
 
 export const searchThoughtsTool = toolDefinition({
@@ -109,6 +156,8 @@ export const deleteThoughtTool = toolDefinition({
 export const SAMWELL_TOOL_DEFINITIONS = [
   searchHighlightsTool,
   searchThoughtsTool,
+  searchReadingTool,
+  suggestNextBookTool,
   tagHighlightTool,
   tagThoughtTool,
   deleteHighlightTool,

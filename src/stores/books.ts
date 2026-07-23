@@ -6,6 +6,7 @@ import { useShallow } from "zustand/shallow";
 import { db } from "@/db/client";
 import { appSettings, books } from "@/db/schema";
 import { deleteBookWithFile } from "@/services/book-delete";
+import { saveBookFinishedNote } from "@/services/journey";
 import {
   OWNED_DIR,
   ensureOwnedDir,
@@ -260,11 +261,21 @@ export const useBooksStore = create<BooksState>((set, get) => ({
   },
 
   updateBookStatus: async (bookId: string, status: BookStatus | null) => {
+    const wasArchived =
+      get().books.find((b) => b.id === bookId)?.status === "archived";
     const updates: Record<string, unknown> = { status };
     if (status === "archived") {
       updates.completedAt = new Date().toISOString();
     }
     await db.update(books).set(updates).where(eq(books.id, bookId));
+    // Record a journey note the first time a book is finished.
+    if (status === "archived" && !wasArchived) {
+      try {
+        saveBookFinishedNote(bookId);
+      } catch {
+        // Journey notes are best-effort; never block a status change.
+      }
+    }
     await get().loadBooks();
   },
 

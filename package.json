@@ -9,6 +9,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "test": "vitest run",
     "server:dev": "pnpm --filter samwell-cloud-server dev",
     "server:start": "pnpm --filter samwell-cloud-server start",
     "server:build": "pnpm --filter samwell-cloud-server build"
@@ -40,6 +41,7 @@
     "expo-linear-gradient": "^55.0.9",
     "expo-linking": "~55.0.8",
     "expo-media-library": "~55.0.17",
+    "expo-notifications": "~55.0.25",
     "expo-router": "~55.0.7",
     "expo-sharing": "~55.0.20",
     "expo-speech": "~55.0.9",
@@ -74,7 +76,8 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~55.0.1",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "vitest": "^4.1.10"
   },
   "private": true,
   "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be",

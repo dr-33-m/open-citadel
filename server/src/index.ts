@@ -16,6 +16,8 @@ import {
 } from 'samwell-shared';
 import { z } from 'zod';
 
+import { compassRoutes } from './compass.js';
+import { tagsRoutes } from './tags.js';
 import {
   checkUsageLimit,
   createUsageEvent,
@@ -25,6 +27,7 @@ import {
   updateUsageEvent,
   upsertCloudModel,
 } from './db.js';
+import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
 
 type RunAgentInput = {
   threadId?: string;
@@ -33,14 +36,6 @@ type RunAgentInput = {
   forwardedProps?: Record<string, unknown>;
   data?: Record<string, unknown>;
 };
-
-function requireOpenRouterKey(): void {
-  if (!process.env.OPENROUTER_API_KEY) {
-    throw new HTTPException(500, {
-      message: 'OPENROUTER_API_KEY is not configured on the server.',
-    });
-  }
-}
 
 function requireAdminKey(c: Context): void {
   if (!process.env.ADMIN_API_KEY) {
@@ -61,15 +56,6 @@ const AdminModelSchema = z.object({
   description: z.string().min(1),
   capabilities: z.array(z.enum(['text', 'vision', 'audio', 'tools'])).min(1),
 });
-
-function readDeviceId(c: Context): string {
-  const headerDeviceId = c.req.header('x-samwell-device-id')?.trim();
-  if (headerDeviceId) return headerDeviceId;
-
-  throw new HTTPException(401, {
-    message: 'Missing x-samwell-device-id header.',
-  });
-}
 
 function readModelId(body: RunAgentInput, knownModelIds: string[]): string {
   const raw =
@@ -221,6 +207,9 @@ app.get('/usage', async (c) => {
   const deviceId = readDeviceId(c);
   return c.json(await getUsageState(deviceId));
 });
+
+app.route('/compass', compassRoutes);
+app.route('/tags', tagsRoutes);
 
 app.post('/chat/http', async (c) => {
   requireOpenRouterKey();

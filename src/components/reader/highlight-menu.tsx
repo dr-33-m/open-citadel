@@ -1,6 +1,7 @@
-import { Check, MessageSquare, Pencil, Share, StickyNote, Trash2, X } from "lucide-react-native";
+import { Check, MessageSquare, Pencil, Share, Sparkles, StickyNote, Trash2, X } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -57,6 +58,7 @@ type HighlightMenuProps = {
     updates: { color?: string; tags?: string },
   ) => void;
   onStartChat?: () => void;
+  onSuggestTags?: () => Promise<string[]>;
   onClose: () => void;
 };
 
@@ -79,6 +81,7 @@ export function HighlightMenu({
   onDelete,
   onUpdateHighlight,
   onStartChat,
+  onSuggestTags,
   onClose,
 }: HighlightMenuProps) {
   const colors = useColors();
@@ -186,6 +189,19 @@ export function HighlightMenu({
           borderRadius: 99,
         },
         suggestionChipAdded: { opacity: 0.5 },
+        aiSuggestRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: spacing[2],
+        },
+        aiSuggestBtn: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing[1],
+          paddingVertical: spacing[1],
+        },
+        aiSuggestionChip: { borderColor: colors.primary.default },
       }),
     [colors],
   );
@@ -196,6 +212,9 @@ export function HighlightMenu({
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(currentTags);
   const [selectedColor, setSelectedColor] = useState(currentColor);
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
 
   // Export state
@@ -222,6 +241,9 @@ export function HighlightMenu({
     setTagInput("");
     setTags(currentTags);
     setSelectedColor(currentColor);
+    setAiSuggestions([]);
+    setSuggesting(false);
+    setSuggestError(null);
   }, [highlightId]);
 
   // Sync incoming props when re-opened
@@ -268,6 +290,19 @@ export function HighlightMenu({
     const newTags = tags.filter((t) => t !== tag);
     setTags(newTags);
     onUpdateHighlight(highlightId, { tags: JSON.stringify(newTags) });
+  };
+
+  const handleSuggestTags = async () => {
+    if (!onSuggestTags || suggesting) return;
+    setSuggesting(true);
+    setSuggestError(null);
+    try {
+      setAiSuggestions(await onSuggestTags());
+    } catch (err) {
+      setSuggestError(err instanceof Error ? err.message : "Could not suggest tags.");
+    } finally {
+      setSuggesting(false);
+    }
   };
 
   const handleSave = () => {
@@ -469,6 +504,58 @@ export function HighlightMenu({
                   />
                 </Touchable>
               </View>
+
+              {onSuggestTags && (
+                <View style={styles.aiSuggestRow}>
+                  <Touchable
+                    style={styles.aiSuggestBtn}
+                    onPress={handleSuggestTags}
+                    disabled={suggesting}
+                    hitSlop={6}
+                  >
+                    {suggesting ? (
+                      <ActivityIndicator size={14} color={colors.primary.default} />
+                    ) : (
+                      <Sparkles size={14} color={colors.primary.default} />
+                    )}
+                    <ThemedText type="labelSm" color={colors.primary.default}>
+                      {suggesting ? "SUGGESTING…" : "SUGGEST TAGS"}
+                    </ThemedText>
+                  </Touchable>
+                  {aiSuggestions.map((tag) => {
+                    const isAdded = tags.some(
+                      (t) => t.toLowerCase() === tag.toLowerCase(),
+                    );
+                    return (
+                      <Touchable
+                        key={tag}
+                        style={[
+                          styles.suggestionChip,
+                          styles.aiSuggestionChip,
+                          isAdded && styles.suggestionChipAdded,
+                        ]}
+                        onPress={() => !isAdded && addTag(tag)}
+                      >
+                        {isAdded && (
+                          <Check size={11} color={colors.text.secondary} />
+                        )}
+                        <ThemedText
+                          type="labelSm"
+                          color={isAdded ? colors.text.secondary : colors.text.primary}
+                          style={styles.chipText}
+                        >
+                          {tag}
+                        </ThemedText>
+                      </Touchable>
+                    );
+                  })}
+                </View>
+              )}
+              {suggestError && (
+                <ThemedText type="labelSm" color={colors.text.secondary}>
+                  {suggestError}
+                </ThemedText>
+              )}
 
               {allTags.length > 0 && (
                 <ScrollView

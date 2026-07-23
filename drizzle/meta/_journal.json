@@ -71,6 +71,27 @@
       "when": 1750780800000,
       "tag": "0009_title_locked",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1784798684436,
+      "tag": "0010_compass",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1784801425822,
+      "tag": "0011_highlight_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1784816284570,
+      "tag": "0012_journey_notes",
+      "breakpoints": true
     }
   ]
 }

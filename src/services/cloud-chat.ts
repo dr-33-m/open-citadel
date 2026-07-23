@@ -4,14 +4,20 @@ import {
   deleteHighlightTool,
   deleteThoughtTool,
   searchHighlightsTool,
+  searchReadingTool,
   searchThoughtsTool,
+  suggestNextBookTool,
   tagHighlightTool,
   tagThoughtTool,
 } from 'samwell-shared';
 
 import {
   executeToolCall,
+  formatBookCandidatesForLLM,
+  formatReadingForLLM,
   formatSearchResultsForLLM,
+  type BookCandidate,
+  type ReadingSnippet,
   type SearchResult,
 } from '@/services/chat-tools';
 import { useApprovalStore } from '@/stores/approval';
@@ -84,6 +90,8 @@ function statusForTool(toolName: string): string {
   if (toolName.startsWith('delete_')) return 'Waiting for delete approval…';
   if (toolName.startsWith('tag_')) return 'Waiting for tag approval…';
   if (toolName === 'search_thoughts') return 'Searching through your thoughts…';
+  if (toolName === 'search_reading') return 'Checking your books…';
+  if (toolName === 'suggest_next_book') return 'Looking over your library…';
   return 'Searching through your highlights…';
 }
 
@@ -103,6 +111,22 @@ function createSamwellClientTools() {
       return {
         results,
         formatted: formatSearchResultsForLLM(results),
+      };
+    }),
+    searchReadingTool.client(async (input) => {
+      const { result } = await executeToolCall('search_reading', input);
+      const results = Array.isArray(result) ? (result as ReadingSnippet[]) : [];
+      return {
+        results,
+        formatted: formatReadingForLLM(results),
+      };
+    }),
+    suggestNextBookTool.client(async (input) => {
+      const { result } = await executeToolCall('suggest_next_book', input);
+      const candidates = Array.isArray(result) ? (result as BookCandidate[]) : [];
+      return {
+        candidates,
+        formatted: formatBookCandidatesForLLM(candidates),
       };
     }),
     tagHighlightTool.client(async (input) => {
@@ -190,7 +214,7 @@ function readToolName(chunk: StreamChunk): string | null {
 // itself cannot use the endpoint (wrong baked-in URL or blocked plain HTTP).
 let preflightPassed = false;
 
-async function preflightCloudServer(baseUrl: string): Promise<void> {
+export async function preflightCloudServer(baseUrl: string): Promise<void> {
   if (preflightPassed) return;
 
   const controller = new AbortController();

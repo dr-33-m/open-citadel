@@ -1,4 +1,5 @@
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import type { CompassAlignment, CompassCategory } from "samwell-shared";
 
 export const books = sqliteTable("books", {
   id: text("id").primaryKey(),
@@ -51,6 +52,8 @@ export const highlights = sqliteTable("highlights", {
   color: text("color").default("#f2ca50"),
   tags: text("tags"),
   chatSessionId: text("chat_session_id"),
+  /** JSON {before, after}: chapter text around the highlight, captured at creation */
+  context: text("context"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -192,4 +195,92 @@ export const syncItems = sqliteTable("sync_items", {
   error: text("error"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+});
+
+// ── Compass (AI execution telemetry) tables ──────────────────────────────────
+
+export const compassGoals = sqliteTable("compass_goals", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status")
+    .$type<"active" | "completed" | "archived">()
+    .notNull()
+    .default("active"),
+  createdAt: text("created_at").notNull(),
+  completedAt: text("completed_at"),
+});
+
+export const compassMilestones = sqliteTable("compass_milestones", {
+  id: text("id").primaryKey(),
+  goalId: text("goal_id")
+    .notNull()
+    .references(() => compassGoals.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  effortUnitDefinition: text("effort_unit_definition").notNull(),
+  status: text("status").$type<"active" | "completed">().notNull().default("active"),
+  estimatedEffortUnits: real("estimated_effort_units").notNull(),
+  completedEffortUnits: real("completed_effort_units").notNull().default(0),
+  startDate: text("start_date").notNull(),
+  /** The original commitment. Never rewritten — the gap to the projection is the product. */
+  targetDate: text("target_date").notNull(),
+  currentProjectedDate: text("current_projected_date"),
+  actualCompletedDate: text("actual_completed_date"),
+  originalEstimateDays: integer("original_estimate_days").notNull(),
+  finalVarianceDays: integer("final_variance_days"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+});
+
+export const compassCheckins = sqliteTable(
+  "compass_checkins",
+  {
+    id: text("id").primaryKey(),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => compassGoals.id, { onDelete: "cascade" }),
+    milestoneId: text("milestone_id")
+      .notNull()
+      .references(() => compassMilestones.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(),
+    kind: text("kind").$type<"morning" | "night">().notNull(),
+    rawText: text("raw_text").notNull(),
+    missionSummary: text("mission_summary"),
+    focusScore: integer("focus_score"),
+    /** Units applied to the milestone by this (night) check-in; reversed on same-day overwrite. */
+    effortUnitsCompleted: real("effort_units_completed"),
+    pitWallMessage: text("pit_wall_message").notNull(),
+    analysisJson: text("analysis_json").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [uniqueIndex("compass_checkins_day_kind_idx").on(t.goalId, t.localDate, t.kind)],
+);
+
+export const compassActions = sqliteTable("compass_actions", {
+  id: text("id").primaryKey(),
+  checkinId: text("checkin_id")
+    .notNull()
+    .references(() => compassCheckins.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  category: text("category").$type<CompassCategory>().notNull(),
+  alignment: text("alignment").$type<CompassAlignment>().notNull(),
+  minutes: integer("minutes"),
+  effortUnits: real("effort_units"),
+  planned: integer("planned").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+});
+
+// ── Journey memory (on-device; the arc of the user's reading + execution) ─────
+
+export const journeyNotes = sqliteTable("journey_notes", {
+  id: text("id").primaryKey(),
+  /** 'reflection' = distilled from a night check-in; 'book_finished' = deterministic on finishing */
+  kind: text("kind").$type<"reflection" | "book_finished">().notNull(),
+  text: text("text").notNull(),
+  /** JSON string[] for keyword retrieval */
+  tags: text("tags"),
+  /** originating checkinId / bookId, for provenance */
+  sourceRef: text("source_ref"),
+  createdAt: text("created_at").notNull(),
 });

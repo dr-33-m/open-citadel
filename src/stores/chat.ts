@@ -2,7 +2,9 @@ import { desc, eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
 import { db } from '@/db/client';
-import { books, chatMessages, chatSessions } from '@/db/schema';
+import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
+import { extractChapterTextToLocator } from '@/services/book-context';
+import { buildJourneySnapshot } from '@/services/journey';
 import {
   APPROVAL_REQUIRED_TOOLS,
   executeToolCall,
@@ -69,6 +71,20 @@ const BASE_SYSTEM_PROMPT =
   'Help the user think through ideas, discuss books and concepts, and connect ' +
   'what they read to their goals. Be precise, direct, and concise — match your ' +
   'response length to the question and never pad.';
+
+// The user's journey (finished books, recurring themes, goal history) synthesized
+// on-device. Only this compact slice travels with a cloud request the user is
+// already making; the full history never leaves the device.
+function journeyBlock(): string {
+  try {
+    const snapshot = buildJourneySnapshot();
+    return snapshot
+      ? `\n\nThe user's journey so far (use it to give continuity and to ground what you suggest; never assume beyond it):\n${snapshot}`
+      : '';
+  } catch {
+    return '';
+  }
+}
 
 function uuid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -140,6 +156,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const id = uuid();
     const ts = now();
 
+    // Spoiler boundary: Samwell may only discuss what the user has read.
+    const progress = bookId
+      ? db
+          .select({
+            percentage: readingProgress.percentage,
+            currentPage: readingProgress.currentPage,
+            locator: readingProgress.locator,
+          })
+          .from(readingProgress)
+          .where(eq(readingProgress.bookId, bookId))
+          .get()
+      : undefined;
+    const readPct = progress ? Math.round(progress.percentage * 100) : null;
+    const boundaryLine =
+      readPct !== null
+        ? `The user has read ${readPct}% of this book${
+            progress?.currentPage ? ` (up to page ${progress.currentPage})` : ''
+          }. Hard rule: never reveal, discuss, or hint at plot events, characters, or ideas that appear beyond that point — not from the book text and not from your own knowledge of the book. If asked about later content, say you will discuss it once they have read that far.`
+        : null;
+
     db.insert(chatSessions)
       .values({
         id,
@@ -164,7 +200,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const systemContent =
         `${bookLine}The user is reading the following passage:\n\n${contextText}\n\n` +
-        'Answer questions about it, provide analysis, and discuss themes. Be concise and insightful.';
+        'Answer questions about it, provide analysis, and discuss themes. Be concise and insightful.' +
+        (boundaryLine ? `\n\n${boundaryLine}` : '');
 
       db.insert(chatMessages)
         .values({
@@ -177,18 +214,40 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         .run();
     } else if (bookId) {
       const bookRow = db
-        .select({ title: books.title, author: books.author })
+        .select({ title: books.title, author: books.author, filePath: books.filePath })
         .from(books)
         .where(eq(books.id, bookId))
         .get();
 
       if (bookRow) {
+        // Ground book-level chats in the text the user has actually read,
+        // sliced up to their current position — not the model's own memory
+        // of the book.
+        let readExcerpt = '';
+        if (progress?.locator && bookRow.filePath) {
+          try {
+            const readText = await extractChapterTextToLocator(
+              bookRow.filePath,
+              JSON.parse(progress.locator),
+            );
+            if (readText.trim().length > 0) {
+              readExcerpt = `\n\nFor grounding, this is the text the user most recently read, ending at their current position:\n"…${readText.trim()}"`;
+            }
+          } catch {
+            // Fall back to metadata-only context.
+          }
+        }
+
         db.insert(chatMessages)
           .values({
             id: uuid(),
             sessionId: id,
             role: 'system',
-            content: `You are a reading assistant for "${bookRow.title}" by ${bookRow.author}. Help the user understand, analyse, and discuss the book. Be concise and insightful.`,
+            content:
+              `You are a reading assistant for "${bookRow.title}" by ${bookRow.author}. Help the user understand, analyse, and discuss the book. Be concise and insightful.` +
+              readExcerpt +
+              (boundaryLine ? `\n\n${boundaryLine}` : '') +
+              journeyBlock(),
             createdAt: ts,
           })
           .run();
@@ -202,7 +261,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           id: uuid(),
           sessionId: id,
           role: 'system',
-          content: BASE_SYSTEM_PROMPT,
+          content: BASE_SYSTEM_PROMPT + journeyBlock(),
           createdAt: ts,
         })
         .run();

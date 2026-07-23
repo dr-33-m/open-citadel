@@ -86,10 +86,31 @@ export default function TimelineScreen() {
 
   const handleStartChat = async (entry: TimelineItem) => {
     setLongPressEntry(null);
+    // Highlights carry the chapter text captured around them at creation, so
+    // the chat sees the progression the passage was lifted from.
+    let contextText = entry.highlightText;
+    if (entry.type === 'highlight') {
+      const row = db
+        .select({ context: highlights.context })
+        .from(highlights)
+        .where(eq(highlights.id, entry.id))
+        .get();
+      if (row?.context) {
+        try {
+          const { before, after } = JSON.parse(row.context) as {
+            before?: string;
+            after?: string;
+          };
+          contextText = `${before ? `…${before}\n\n` : ''}[Highlighted:] ${entry.highlightText}${after ? `\n\n${after}…` : ''}`;
+        } catch {
+          // Bare highlight text is still a valid context.
+        }
+      }
+    }
     const sessionId = await createChatSession({
       bookId: entry.bookId || undefined,
       title: entry.highlightText.slice(0, 60),
-      contextText: entry.highlightText,
+      contextText,
       contextLocator: entry.highlightLocator ?? undefined,
     });
     // Link the chat back to the entry so it shows View Chat next time

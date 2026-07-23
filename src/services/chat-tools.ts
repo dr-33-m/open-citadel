@@ -1,8 +1,9 @@
-import { desc, eq, like, or } from 'drizzle-orm';
+import { and, desc, eq, like, or } from 'drizzle-orm';
 import type { ToolDefinition } from '@dr33m/react-native-litert-lm';
 
 import { db } from '@/db/client';
-import { books, highlights, notes, thoughts } from '@/db/schema';
+import { books, highlights, notes, readingProgress, thoughts } from '@/db/schema';
+import { extractReadText } from '@/services/book-context';
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
@@ -50,6 +51,36 @@ export const SAMWELL_TOOLS = [
             description: 'Tag to filter by (exact match)',
           },
         },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'search_reading',
+      description:
+        "Search the full text of the books the user is currently reading or has finished, for passages relevant to a topic. Only returns text the user has already read (never ahead of their position). Use to ground points in what the user's authors actually say.",
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Topic or question to find relevant passages for',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'suggest_next_book',
+      description:
+        "List the user's library (queued, currently reading, finished) so you can recommend what to read next based on their journey. Only recommend books from this list.",
+      parameters: {
+        type: 'object',
+        properties: {},
       },
     },
   },
@@ -191,6 +222,16 @@ export async function executeToolCall(
           (args.tag as string) ?? '',
         ),
         status: 'Searching through thoughts…',
+      };
+    case 'search_reading':
+      return {
+        result: await searchReading((args.query as string) ?? ''),
+        status: 'Checking your books…',
+      };
+    case 'suggest_next_book':
+      return {
+        result: await suggestNextBook(),
+        status: 'Looking over your library…',
       };
     case 'tag_highlight':
       return {
@@ -491,6 +532,148 @@ async function deleteEntry(
 
   console.log(`[Samwell] deleteEntry: success, id=${id}`);
   return { success: true };
+}
+
+// ── search_reading implementation (spoiler-bounded full-text) ──────────────
+
+export interface ReadingSnippet {
+  book: string;
+  author: string;
+  snippet: string;
+}
+
+const READING_MAX_SNIPPETS = 8;
+const READING_MAX_TOTAL_CHARS = 40_000;
+const READING_MAX_FINISHED_BOOKS = 5;
+const READING_SNIPPET_WINDOW = 220;
+
+async function searchReading(query: string): Promise<ReadingSnippet[]> {
+  const words = query
+    .toLowerCase()
+    .split(/[^a-z0-9']+/)
+    .filter((w) => w.length >= 3);
+  if (words.length === 0) return [];
+
+  const reading = db.select().from(books).where(eq(books.status, 'reading')).all();
+  const finished = db
+    .select()
+    .from(books)
+    .where(eq(books.status, 'archived'))
+    .orderBy(desc(books.completedAt))
+    .limit(READING_MAX_FINISHED_BOOKS)
+    .all();
+
+  const snippets: ReadingSnippet[] = [];
+  let totalChars = 0;
+
+  for (const book of [...reading, ...finished]) {
+    if (snippets.length >= READING_MAX_SNIPPETS || totalChars >= READING_MAX_TOTAL_CHARS) break;
+    if (!book.filePath) continue;
+
+    try {
+      // Spoiler boundary: reading books are bounded to their saved locator;
+      // a reading book with no progress row is skipped (nothing safely read).
+      // Finished (archived) books are fully read → whole text.
+      let locator: unknown = null;
+      if (book.status === 'reading') {
+        const prog = db
+          .select({ locator: readingProgress.locator })
+          .from(readingProgress)
+          .where(eq(readingProgress.bookId, book.id))
+          .get();
+        if (!prog?.locator) continue;
+        locator = JSON.parse(prog.locator);
+      }
+
+      const text = await extractReadText(book.filePath, locator as never);
+      const lower = text.toLowerCase();
+      for (const word of words) {
+        const idx = lower.indexOf(word);
+        if (idx < 0) continue;
+        const start = Math.max(0, idx - READING_SNIPPET_WINDOW);
+        const end = Math.min(text.length, idx + READING_SNIPPET_WINDOW);
+        const snippet =
+          (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : '');
+        snippets.push({ book: book.title, author: book.author, snippet });
+        totalChars += snippet.length;
+        break; // one snippet per book per query
+      }
+    } catch {
+      // Skip unreadable/unparseable books.
+    }
+  }
+
+  return snippets;
+}
+
+export function formatReadingForLLM(snippets: ReadingSnippet[]): string {
+  if (snippets.length === 0) {
+    return 'No relevant passages found in the parts of your books you have read so far.';
+  }
+  return snippets
+    .map((s, i) => `${i + 1}. From "${s.book}" by ${s.author}:\n   "${s.snippet}"`)
+    .join('\n\n');
+}
+
+// ── suggest_next_book implementation ───────────────────────────────────────
+
+export interface BookCandidate {
+  title: string;
+  author: string;
+  category: string | null;
+  status: string | null;
+  percentage: number | null;
+  completedAt: string | null;
+}
+
+async function suggestNextBook(): Promise<BookCandidate[]> {
+  const rows = db
+    .select({
+      title: books.title,
+      author: books.author,
+      category: books.category,
+      status: books.status,
+      completedAt: books.completedAt,
+      percentage: readingProgress.percentage,
+    })
+    .from(books)
+    .leftJoin(readingProgress, eq(readingProgress.bookId, books.id))
+    .orderBy(desc(books.addedAt))
+    .limit(60)
+    .all();
+
+  return rows.map((r) => ({
+    title: r.title,
+    author: r.author,
+    category: r.category ?? null,
+    status: r.status ?? null,
+    percentage: r.percentage ?? null,
+    completedAt: r.completedAt ?? null,
+  }));
+}
+
+export function formatBookCandidatesForLLM(candidates: BookCandidate[]): string {
+  const line = (b: BookCandidate) =>
+    `- "${b.title}" by ${b.author}` +
+    (b.category ? ` (${b.category})` : '') +
+    (b.status === 'reading' && b.percentage != null
+      ? ` — ${Math.round(b.percentage * 100)}% read`
+      : '');
+
+  const group = (label: string, list: BookCandidate[]) =>
+    list.length > 0 ? `${label}:\n${list.map(line).join('\n')}` : '';
+
+  const toRead = candidates.filter((c) => c.status === 'queued' || c.status == null);
+  const reading = candidates.filter((c) => c.status === 'reading');
+  const done = candidates.filter((c) => c.status === 'archived');
+
+  const sections = [
+    group('To read (queued / unstarted)', toRead),
+    group('Currently reading', reading),
+    group('Finished', done),
+  ].filter(Boolean);
+
+  return sections.length > 0 ? sections.join('\n\n') : 'The library is empty.';
 }
 
 // ── Format tool results for the LLM ────────────────────────────────────────

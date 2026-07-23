@@ -46,6 +46,7 @@ import { useChatStore } from "@/stores/chat";
 import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
 import { extractChapterTextToLocator } from "@/services/book-context";
+import { suggestTags } from "@/services/tag-suggest";
 import {
   startMediaSession,
   stopMediaSession,
@@ -878,6 +879,34 @@ export default function ReaderScreen() {
               menuHighlight.chatSessionId,
             )
           }
+          onSuggestTags={async () => {
+            const row = useReaderStore
+              .getState()
+              .highlights.find((h) => h.id === menuHighlight.id);
+            let surrounding: string | undefined;
+            if (row?.context) {
+              try {
+                const { before, after } = JSON.parse(row.context) as {
+                  before?: string;
+                  after?: string;
+                };
+                surrounding = [before, after].filter(Boolean).join(" … ") || undefined;
+              } catch {
+                // Suggest from the highlight text alone.
+              }
+            }
+            const noteText = (highlightNotes[menuHighlight.id] ?? [])
+              .map((n) => n.text)
+              .join("\n");
+            return suggestTags({
+              text: menuHighlight.text,
+              note: noteText || undefined,
+              surrounding,
+              bookTitle: currentBook?.title,
+              author: currentBook?.author,
+              existingTags: allTags,
+            });
+          }}
           onClose={() => setMenuHighlight(null)}
         />
       )}

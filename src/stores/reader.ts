@@ -11,6 +11,7 @@ import {
   readingProgress,
   thoughts,
 } from "@/db/schema";
+import { extractSurroundingText } from "@/services/book-context";
 import { useBooksStore } from "@/stores/books";
 
 type Book = typeof books.$inferSelect;
@@ -279,6 +280,22 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       chatSessionId: chatSessionId ?? null,
       createdAt: now,
     });
+
+    // Capture the surrounding chapter text in the background so the highlight
+    // keeps the progression it was lifted from (chats, tags, Compass context).
+    if (currentBook.filePath) {
+      const filePath = currentBook.filePath;
+      void extractSurroundingText(filePath, locator)
+        .then((surrounding) =>
+          db
+            .update(highlights)
+            .set({ context: JSON.stringify(surrounding) })
+            .where(eq(highlights.id, id)),
+        )
+        .catch(() => {
+          // Best-effort: a highlight without context is still a highlight.
+        });
+    }
 
     const bookHighlights = await db
       .select()

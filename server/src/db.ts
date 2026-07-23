@@ -62,6 +62,12 @@ export async function initDb(): Promise<void> {
         ADD counts_toward_limit INTEGER NOT NULL DEFAULT 1`,
     );
   }
+  if (!columns.has('kind')) {
+    await db.execute(
+      `ALTER TABLE usage_events
+        ADD kind TEXT NOT NULL DEFAULT 'chat'`,
+    );
+  }
 
   const modelCount = await db.execute('SELECT COUNT(*) as count FROM cloud_models');
   if (Number(modelCount.rows[0]?.count ?? 0) === 0) {
@@ -190,6 +196,7 @@ export async function createUsageEvent(args: {
   deviceId: string;
   modelId: string;
   countsTowardLimit: boolean;
+  kind?: string;
 }): Promise<void> {
   await db.execute({
     sql: `INSERT INTO usage_events (
@@ -198,14 +205,16 @@ export async function createUsageEvent(args: {
         model_id,
         status,
         counts_toward_limit,
+        kind,
         created_at_ms
       )
-      VALUES (?, ?, ?, 'started', ?, ?)`,
+      VALUES (?, ?, ?, 'started', ?, ?, ?)`,
     args: [
       args.id,
       args.deviceId,
       args.modelId,
       args.countsTowardLimit ? 1 : 0,
+      args.kind ?? 'chat',
       Date.now(),
     ],
   });
