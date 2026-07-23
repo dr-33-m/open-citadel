@@ -21,6 +21,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 import type { ErrorBoundaryProps } from 'expo-router';
 
+import { ApprovalDialog } from '@/components/approval-dialog';
 import { runMigrations } from '@/db/migrations';
 import { useColors } from '@/hooks/use-colors';
 import { useSettingsStore } from '@/stores/settings';
@@ -150,6 +151,7 @@ export default function RootLayout() {
           }}
         />
       </Stack>
+      <ApprovalDialog />
     </ThemeProvider>
   );
 }

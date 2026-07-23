@@ -1,7 +1,8 @@
-import { Alert } from 'react-native';
 import { ChatClient, clientTools, xhrHttpStream, type UIMessage } from '@tanstack/ai-client';
 import type { StreamChunk } from '@tanstack/ai/client';
 import {
+  deleteHighlightTool,
+  deleteThoughtTool,
   searchHighlightsTool,
   searchThoughtsTool,
   tagHighlightTool,
@@ -13,6 +14,7 @@ import {
   formatSearchResultsForLLM,
   type SearchResult,
 } from '@/services/chat-tools';
+import { useApprovalStore } from '@/stores/approval';
 
 type StoredChatMessage = {
   id: string;
@@ -79,37 +81,10 @@ function latestAssistantText(messages: UIMessage[]): string {
 }
 
 function statusForTool(toolName: string): string {
+  if (toolName.startsWith('delete_')) return 'Waiting for delete approval…';
   if (toolName.startsWith('tag_')) return 'Waiting for tag approval…';
   if (toolName === 'search_thoughts') return 'Searching through your thoughts…';
   return 'Searching through your highlights…';
-}
-
-function askForApproval(request: ApprovalRequest): Promise<boolean> {
-  const tags =
-    typeof request.input === 'object' &&
-    request.input !== null &&
-    Array.isArray((request.input as { tags?: unknown }).tags)
-      ? (request.input as { tags: string[] }).tags.join(', ')
-      : 'these tags';
-
-  const target =
-    typeof request.input === 'object' &&
-    request.input !== null &&
-    typeof (request.input as { id?: unknown }).id === 'string'
-      ? (request.input as { id: string }).id
-      : 'this item';
-
-  return new Promise((resolve) => {
-    Alert.alert(
-      'Approve Samwell?',
-      `Samwell wants to add ${tags} to ${target}.`,
-      [
-        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'Approve', onPress: () => resolve(true) },
-      ],
-      { cancelable: true, onDismiss: () => resolve(false) },
-    );
-  });
 }
 
 function createSamwellClientTools() {
@@ -150,6 +125,26 @@ function createSamwellClientTools() {
         type: 'thought' as const,
         tags: tagResult.tags ?? [],
         ...(tagResult.success ? {} : { error: 'Thought not found.' }),
+      };
+    }),
+    deleteHighlightTool.client(async (input) => {
+      const { result } = await executeToolCall('delete_highlight', input);
+      const deleteResult = result as { success?: boolean };
+      return {
+        ok: deleteResult.success === true,
+        id: input.id,
+        type: 'highlight' as const,
+        ...(deleteResult.success ? {} : { error: 'Highlight not found.' }),
+      };
+    }),
+    deleteThoughtTool.client(async (input) => {
+      const { result } = await executeToolCall('delete_thought', input);
+      const deleteResult = result as { success?: boolean };
+      return {
+        ok: deleteResult.success === true,
+        id: input.id,
+        type: 'thought' as const,
+        ...(deleteResult.success ? {} : { error: 'Thought not found.' }),
       };
     }),
   );
@@ -286,7 +281,9 @@ export async function sendCloudChatTurn({
       while (approvals.length > 0) {
         const approval = approvals.shift();
         if (!approval) continue;
-        const approved = await askForApproval(approval);
+        const approved = await useApprovalStore
+          .getState()
+          .requestApproval({ toolName: approval.toolName, input: approval.input });
         await client.addToolApprovalResponse({ id: approval.id, approved });
       }
 

@@ -99,7 +99,52 @@ export const SAMWELL_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'delete_highlight',
+      description:
+        'Permanently delete a highlight (and its note). Only call this when the user explicitly asks to delete or remove a highlight. This cannot be undone.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The highlight ID (from search results)',
+          },
+        },
+        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'delete_thought',
+      description:
+        'Permanently delete a standalone thought. Only call this when the user explicitly asks to delete or remove a thought. This cannot be undone.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'The thought ID (from search results)',
+          },
+        },
+        required: ['id'],
+      },
+    },
+  },
 ];
+
+// ── Tools that must be user-approved before executing ──────────────────────
+
+export const APPROVAL_REQUIRED_TOOLS = new Set([
+  'tag_highlight',
+  'tag_thought',
+  'delete_highlight',
+  'delete_thought',
+]);
 
 // ── Tool definitions in litert-lm format ────────────────────────────────────
 
@@ -156,6 +201,16 @@ export async function executeToolCall(
       return {
         result: await addTags(args.id as string, 'thought', args.tags as string[]),
         status: 'Organizing tags…',
+      };
+    case 'delete_highlight':
+      return {
+        result: await deleteEntry(args.id as string, 'highlight'),
+        status: 'Deleting highlight…',
+      };
+    case 'delete_thought':
+      return {
+        result: await deleteEntry(args.id as string, 'thought'),
+        status: 'Deleting thought…',
       };
     default:
       return { result: { error: `Unknown tool: ${name}` }, status: 'Unknown tool' };
@@ -412,6 +467,30 @@ async function addTags(
 
   console.log(`[Samwell] addTags: success, merged tags=${tagsJson}`);
   return { success: true, tags: merged };
+}
+
+// ── delete implementation (shared for highlights and thoughts) ─────────────
+
+async function deleteEntry(
+  id: string,
+  type: 'highlight' | 'thought',
+): Promise<{ success: boolean }> {
+  console.log(`[Samwell] deleteEntry: id=${id}, type=${type}`);
+  const table = type === 'highlight' ? highlights : thoughts;
+  const row = db.select({ id: table.id }).from(table).where(eq(table.id, id)).get();
+
+  if (!row) {
+    console.log(`[Samwell] deleteEntry: no row found for id=${id}`);
+    return { success: false };
+  }
+
+  if (type === 'highlight') {
+    db.delete(notes).where(eq(notes.highlightId, id)).run();
+  }
+  db.delete(table).where(eq(table.id, id)).run();
+
+  console.log(`[Samwell] deleteEntry: success, id=${id}`);
+  return { success: true };
 }
 
 // ── Format tool results for the LLM ────────────────────────────────────────

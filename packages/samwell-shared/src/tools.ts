@@ -43,6 +43,17 @@ export const TagResultSchema = z.object({
   error: z.string().optional(),
 });
 
+export const DeleteInputSchema = z.object({
+  id: z.string(),
+});
+
+export const DeleteResultSchema = z.object({
+  ok: z.boolean(),
+  id: z.string().optional(),
+  type: z.enum(['highlight', 'thought']).optional(),
+  error: z.string().optional(),
+});
+
 export const searchHighlightsTool = toolDefinition({
   name: 'search_highlights',
   description:
@@ -77,11 +88,31 @@ export const tagThoughtTool = toolDefinition({
   needsApproval: true,
 });
 
+export const deleteHighlightTool = toolDefinition({
+  name: 'delete_highlight',
+  description:
+    'Permanently delete a highlight (and its note) from the user\'s library. Only call this when the user explicitly asks to delete or remove a highlight. This cannot be undone. Requires user approval.',
+  inputSchema: DeleteInputSchema,
+  outputSchema: DeleteResultSchema,
+  needsApproval: true,
+});
+
+export const deleteThoughtTool = toolDefinition({
+  name: 'delete_thought',
+  description:
+    'Permanently delete a standalone thought from the user\'s library. Only call this when the user explicitly asks to delete or remove a thought. This cannot be undone. Requires user approval.',
+  inputSchema: DeleteInputSchema,
+  outputSchema: DeleteResultSchema,
+  needsApproval: true,
+});
+
 export const SAMWELL_TOOL_DEFINITIONS = [
   searchHighlightsTool,
   searchThoughtsTool,
   tagHighlightTool,
   tagThoughtTool,
+  deleteHighlightTool,
+  deleteThoughtTool,
 ] as const;
 
 export const SAMWELL_CLIENT_TOOL_DEFINITIONS = SAMWELL_TOOL_DEFINITIONS.map((tool) =>

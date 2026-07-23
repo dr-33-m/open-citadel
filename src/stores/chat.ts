@@ -4,12 +4,14 @@ import { create } from 'zustand';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions } from '@/db/schema';
 import {
+  APPROVAL_REQUIRED_TOOLS,
   executeToolCall,
   formatSearchResultsForLLM,
   type SearchResult,
 } from '@/services/chat-tools';
 import { sendCloudChatTurn } from '@/services/cloud-chat';
 import * as Inference from '@/services/inference';
+import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -401,11 +403,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       for (let i = 0; i < MAX_TOOL_ITERATIONS && result.toolCalls?.length; i++) {
         const toolNames = result.toolCalls.map((tc) => tc.name);
-        const statusMsg = toolNames.some((n) => n.startsWith('tag_'))
-          ? 'Organizing your tags…'
-          : toolNames.includes('search_thoughts')
-            ? 'Searching through your thoughts…'
-            : 'Searching through your highlights…';
+        const statusMsg = toolNames.some((n) => n.startsWith('delete_'))
+          ? 'Waiting for delete approval…'
+          : toolNames.some((n) => n.startsWith('tag_'))
+            ? 'Organizing your tags…'
+            : toolNames.includes('search_thoughts')
+              ? 'Searching through your thoughts…'
+              : 'Searching through your highlights…';
         set({ isToolCalling: true, isThinking: false, streamingContent: '', toolCallStatus: statusMsg });
 
         // Store the assistant's tool-call message (hidden from UI)
@@ -426,14 +430,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             args = JSON.parse(tc.argumentsJson);
           } catch { /* empty */ }
 
-          const { result: toolResult } = await executeToolCall(tc.name, args);
-
-          // Format search results with reference markers for the LLM
           let toolContent: string;
-          if ((tc.name === 'search_highlights' || tc.name === 'search_thoughts') && Array.isArray(toolResult)) {
-            toolContent = formatSearchResultsForLLM(toolResult as SearchResult[]);
+          if (APPROVAL_REQUIRED_TOOLS.has(tc.name)) {
+            const approved = await useApprovalStore
+              .getState()
+              .requestApproval({ toolName: tc.name, input: args });
+
+            if (!approved) {
+              toolContent = JSON.stringify({ approved: false, message: 'User denied this action' });
+            } else {
+              const { result: toolResult } = await executeToolCall(tc.name, args);
+              toolContent = JSON.stringify(toolResult);
+            }
           } else {
-            toolContent = JSON.stringify(toolResult);
+            const { result: toolResult } = await executeToolCall(tc.name, args);
+            // Format search results with reference markers for the LLM
+            toolContent = (tc.name === 'search_highlights' || tc.name === 'search_thoughts') && Array.isArray(toolResult)
+              ? formatSearchResultsForLLM(toolResult as SearchResult[])
+              : JSON.stringify(toolResult);
           }
 
           const toolMsg: ChatMessage = {
