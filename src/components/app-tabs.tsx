@@ -5,6 +5,14 @@ import {
   TabSlot,
   type TabTriggerSlotProps,
 } from 'expo-router/ui';
+import {
+  Clock,
+  Compass,
+  Library,
+  MessageSquare,
+  Settings,
+  type LucideIcon,
+} from 'lucide-react-native';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -22,19 +30,19 @@ export default function AppTabs() {
       <TabList asChild>
         <CustomTabBar>
           <TabTrigger name="index" href="/" asChild>
-            <TabButton>TIMELINE</TabButton>
+            <TabButton icon={Clock}>TIMELINE</TabButton>
           </TabTrigger>
           <TabTrigger name="library" href="/library" asChild>
-            <TabButton>LIBRARY</TabButton>
+            <TabButton icon={Library}>LIBRARY</TabButton>
           </TabTrigger>
           <TabTrigger name="chat" href="/chat" asChild>
-            <TabButton>CHAT</TabButton>
+            <TabButton icon={MessageSquare}>CHAT</TabButton>
           </TabTrigger>
           <TabTrigger name="compass" href="/compass" asChild>
-            <TabButton>COMPASS</TabButton>
+            <TabButton icon={Compass}>COMPASS</TabButton>
           </TabTrigger>
           <TabTrigger name="settings" href="/settings" asChild>
-            <TabButton>SETTINGS</TabButton>
+            <TabButton icon={Settings}>SETTINGS</TabButton>
           </TabTrigger>
         </CustomTabBar>
       </TabList>
@@ -45,31 +53,34 @@ export default function AppTabs() {
 function TabButton({
   children,
   isFocused,
+  icon: Icon,
   ...props
-}: TabTriggerSlotProps) {
+}: TabTriggerSlotProps & { icon?: LucideIcon }) {
   const colors = useColors();
-  const styles = React.useMemo(() => StyleSheet.create({
-    tabButton: {
-      alignItems: 'center',
-      gap: spacing[2],
-      paddingVertical: spacing[2],
-    },
-    activeIndicator: {
-      width: 24,
-      height: 2,
-      backgroundColor: colors.primary.default,
-    },
-  }), [colors]);
+  const color = isFocused ? colors.primary.default : colors.text.secondary;
+  const styles = React.useMemo(
+    () =>
+      StyleSheet.create({
+        tabButton: {
+          flex: 1,
+          alignItems: 'center',
+          gap: spacing[1],
+          paddingVertical: spacing[1],
+        },
+        label: {
+          fontSize: 10,
+          letterSpacing: 0.5,
+        },
+      }),
+    [],
+  );
 
   return (
     <Touchable {...props} style={styles.tabButton}>
-      <ThemedText
-        type="labelSm"
-        color={isFocused ? colors.primary.default : colors.text.secondary}
-      >
+      {Icon && <Icon size={20} color={color} strokeWidth={isFocused ? 2.4 : 1.8} />}
+      <ThemedText type="labelSm" color={color} numberOfLines={1} style={styles.label}>
         {children}
       </ThemedText>
-      {isFocused && <View style={styles.activeIndicator} />}
     </Touchable>
   );
 }
@@ -77,23 +88,26 @@ function TabButton({
 function CustomTabBar(props: { children: React.ReactNode }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const styles = React.useMemo(() => StyleSheet.create({
-    tabBar: {
-      flexDirection: 'row',
-      backgroundColor: colors.surface.low,
-      justifyContent: 'center',
-      gap: spacing[6],
-      paddingTop: spacing[4],
-    },
-  }), [colors]);
+  const styles = React.useMemo(
+    () =>
+      StyleSheet.create({
+        tabBar: {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          backgroundColor: colors.surface.low,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.outline.variant,
+          paddingTop: spacing[3],
+          paddingHorizontal: spacing[2],
+        },
+      }),
+    [colors],
+  );
 
   return (
     <View
       {...props}
-      style={[
-        styles.tabBar,
-        { paddingBottom: Math.max(insets.bottom, spacing[3]) },
-      ]}
+      style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, spacing[2]) }]}
     >
       {props.children}
     </View>

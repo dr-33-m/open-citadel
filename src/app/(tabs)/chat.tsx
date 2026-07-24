@@ -112,7 +112,7 @@ export default function ChatTab() {
           <ThemedText type="headlineSm" color={colors.text.secondary}>Meet Samwell</ThemedText>
           <ThemedText type="bodySm" color={colors.text.secondary} style={{ textAlign: 'center' }}>
             {cloudUnavailable
-              ? 'Samwell Cloud is not configured for this build yet.'
+              ? 'Grand Maester Samwell is not set up in this build yet.'
               : 'Set up Samwell in Settings to start discussing your books.'}
           </ThemedText>
           {!cloudUnavailable && (

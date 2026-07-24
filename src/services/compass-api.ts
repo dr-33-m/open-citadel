@@ -1,14 +1,14 @@
 import type { z } from 'zod';
 import {
-  CompassMorningAnalysisSchema,
-  CompassNightAnalysisSchema,
-  CompassSetupProposalSchema,
-  type CompassMorningAnalysis,
-  type CompassMorningRequest,
-  type CompassNightAnalysis,
-  type CompassNightRequest,
-  type CompassSetupProposal,
-  type CompassSetupRequest,
+  CompassMorningTurnSchema,
+  CompassNightTurnSchema,
+  CompassSetupTurnSchema,
+  type CompassMorningTurn,
+  type CompassMorningTurnRequest,
+  type CompassNightTurn,
+  type CompassNightTurnRequest,
+  type CompassSetupTurn,
+  type CompassSetupTurnRequest,
 } from 'samwell-shared';
 
 import { preflightCloudServer } from './cloud-chat';
@@ -44,7 +44,7 @@ async function postCompass<T>(args: {
   } catch (err) {
     throw new CompassApiError(
       'network',
-      err instanceof Error ? err.message : 'Cannot reach Samwell Cloud.',
+      err instanceof Error ? err.message : 'Cannot reach Grand Maester Samwell.',
     );
   }
 
@@ -66,7 +66,7 @@ async function postCompass<T>(args: {
       'network',
       err instanceof Error && err.name === 'AbortError'
         ? 'The analysis timed out. Check your connection and try again.'
-        : 'Cannot reach Samwell Cloud. Check your connection and try again.',
+        : 'Cannot reach Grand Maester Samwell. Check your connection and try again.',
     );
   } finally {
     clearTimeout(timer);
@@ -98,20 +98,20 @@ async function postCompass<T>(args: {
   return parsed.data;
 }
 
-export function requestSetupProposal(
-  args: CompassCallArgs & { body: CompassSetupRequest },
-): Promise<CompassSetupProposal> {
-  return postCompass({ ...args, path: '/compass/setup', body: args.body, schema: CompassSetupProposalSchema });
+export function requestSetupTurn(
+  args: CompassCallArgs & { body: CompassSetupTurnRequest },
+): Promise<CompassSetupTurn> {
+  return postCompass({ ...args, path: '/compass/setup', body: args.body, schema: CompassSetupTurnSchema });
 }
 
-export function requestMorningAnalysis(
-  args: CompassCallArgs & { body: CompassMorningRequest },
-): Promise<CompassMorningAnalysis> {
-  return postCompass({ ...args, path: '/compass/morning', body: args.body, schema: CompassMorningAnalysisSchema });
+export function requestMorningTurn(
+  args: CompassCallArgs & { body: CompassMorningTurnRequest },
+): Promise<CompassMorningTurn> {
+  return postCompass({ ...args, path: '/compass/morning', body: args.body, schema: CompassMorningTurnSchema });
 }
 
-export function requestNightAnalysis(
-  args: CompassCallArgs & { body: CompassNightRequest },
-): Promise<CompassNightAnalysis> {
-  return postCompass({ ...args, path: '/compass/night', body: args.body, schema: CompassNightAnalysisSchema });
+export function requestNightTurn(
+  args: CompassCallArgs & { body: CompassNightTurnRequest },
+): Promise<CompassNightTurn> {
+  return postCompass({ ...args, path: '/compass/night', body: args.body, schema: CompassNightTurnSchema });
 }

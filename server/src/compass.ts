@@ -7,12 +7,13 @@ import {
   COMPASS_MORNING_INSTRUCTIONS,
   COMPASS_NIGHT_INSTRUCTIONS,
   COMPASS_SETUP_INSTRUCTIONS,
-  CompassMorningAnalysisSchema,
-  CompassMorningRequestSchema,
-  CompassNightAnalysisSchema,
-  CompassNightRequestSchema,
-  CompassSetupProposalSchema,
-  CompassSetupRequestSchema,
+  COMPASS_TURN_PROTOCOL,
+  CompassMorningTurnRequestSchema,
+  CompassMorningTurnSchema,
+  CompassNightTurnRequestSchema,
+  CompassNightTurnSchema,
+  CompassSetupTurnRequestSchema,
+  CompassSetupTurnSchema,
   DEFAULT_CLOUD_MODEL_ID,
 } from 'samwell-shared';
 import { z } from 'zod';
@@ -40,7 +41,7 @@ function resolveModelId(requested: string | undefined, knownModelIds: string[]):
 export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
   modelId: string;
   systemPrompts: string[];
-  userContent: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   schema: TSchema;
   usageEventId: string;
   maxCompletionTokens?: number;
@@ -53,7 +54,7 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
         httpReferer: process.env.OPENROUTER_HTTP_REFERER,
         appTitle: process.env.OPENROUTER_APP_TITLE ?? 'Open Citadel',
       }),
-      messages: [{ role: 'user', content: args.userContent }],
+      messages: args.messages,
       systemPrompts: args.systemPrompts,
       outputSchema: args.schema,
       middleware: [
@@ -147,13 +148,22 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
       kind: args.kind,
     });
 
-    const { modelId: _requestedModel, ...payload } = parsed.data;
+    const { modelId: _requestedModel, messages, ...context } = parsed.data as {
+      modelId?: string;
+      messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+    } & Record<string, unknown>;
     const result = await runStructuredAnalysis({
       modelId,
-      systemPrompts: [COMPASS_ENGINEER_PROMPT, args.instructions],
-      userContent: JSON.stringify(payload),
+      systemPrompts: [
+        COMPASS_ENGINEER_PROMPT,
+        COMPASS_TURN_PROTOCOL,
+        args.instructions,
+        `Current context (JSON):\n${JSON.stringify(context)}`,
+      ],
+      messages,
       schema: args.outputSchema,
       usageEventId,
+      maxCompletionTokens: 1500,
     });
 
     return c.json(result);
@@ -163,23 +173,23 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
 registerAnalysisRoute({
   path: '/setup',
   kind: 'compass_setup',
-  requestSchema: CompassSetupRequestSchema,
-  outputSchema: CompassSetupProposalSchema,
+  requestSchema: CompassSetupTurnRequestSchema,
+  outputSchema: CompassSetupTurnSchema,
   instructions: COMPASS_SETUP_INSTRUCTIONS,
 });
 
 registerAnalysisRoute({
   path: '/morning',
   kind: 'compass_morning',
-  requestSchema: CompassMorningRequestSchema,
-  outputSchema: CompassMorningAnalysisSchema,
+  requestSchema: CompassMorningTurnRequestSchema,
+  outputSchema: CompassMorningTurnSchema,
   instructions: COMPASS_MORNING_INSTRUCTIONS,
 });
 
 registerAnalysisRoute({
   path: '/night',
   kind: 'compass_night',
-  requestSchema: CompassNightRequestSchema,
-  outputSchema: CompassNightAnalysisSchema,
+  requestSchema: CompassNightTurnRequestSchema,
+  outputSchema: CompassNightTurnSchema,
   instructions: COMPASS_NIGHT_INSTRUCTIONS,
 });

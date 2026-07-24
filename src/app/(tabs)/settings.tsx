@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { eq } from 'drizzle-orm';
 
 import { TimePickerSheet } from '@/components/compass/time-picker-sheet';
+import { EngineInfoSheet, type EngineMode } from '@/components/settings/engine-info-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ProgressBar } from '@/components/ui/progress-bar';
@@ -67,6 +68,7 @@ export default function SettingsScreen() {
   } =
     useSettingsStore();
   const [timePickerFor, setTimePickerFor] = useState<'morning' | 'night' | null>(null);
+  const [infoSheet, setInfoSheet] = useState<EngineMode | null>(null);
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(username);
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
@@ -364,6 +366,11 @@ export default function SettingsScreen() {
     modeCardActive: {
       borderColor: colors.primary.default,
     },
+    modeInfo: {
+      position: 'absolute',
+      top: spacing[2],
+      right: spacing[2],
+    },
     // HF search
     hfSearchRow: {
       flexDirection: 'row',
@@ -531,7 +538,7 @@ export default function SettingsScreen() {
             BOOKS
           </ThemedText>
           <ThemedText type="bodySm" color={colors.text.secondary} style={styles.formatNote}>
-            Open Citadel is EPUB-only. EPUB is the best format for knowledge capture — it supports themes, custom fonts, and text-to-speech.
+            Open Citadel is EPUB-only. EPUB is the best format for knowledge capture. It supports themes, custom fonts, and text-to-speech.
           </ThemedText>
         </View>
 
@@ -554,23 +561,29 @@ export default function SettingsScreen() {
               style={[styles.modeCard, samwellMode === 'offline' && styles.modeCardActive]}
               onPress={() => setSamwellMode('offline')}
             >
-              <ThemedText type="labelSm" color={samwellMode === 'offline' ? colors.primary.default : colors.text.primary}>
-                Offline & Private
+              <ThemedText type="bodyMd" color={samwellMode === 'offline' ? colors.primary.default : colors.text.primary}>
+                Offline
               </ThemedText>
-              <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                Runs on your device. No internet.
+              <ThemedText type="bodySm" color={colors.text.secondary}>
+                Samwell on your device.
               </ThemedText>
+              <Touchable style={styles.modeInfo} onPress={() => setInfoSheet('offline')} hitSlop={10}>
+                <Info size={15} color={colors.text.secondary} />
+              </Touchable>
             </Touchable>
             <Touchable
               style={[styles.modeCard, samwellMode === 'cloud' && styles.modeCardActive]}
               onPress={() => setSamwellMode('cloud')}
             >
-              <ThemedText type="labelSm" color={samwellMode === 'cloud' ? colors.primary.default : colors.text.primary}>
+              <ThemedText type="bodyMd" color={samwellMode === 'cloud' ? colors.primary.default : colors.text.primary}>
                 Cloud
               </ThemedText>
-              <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 11 }}>
-                Fast inference. No device limits.
+              <ThemedText type="bodySm" color={colors.text.secondary}>
+                Grand Maester Samwell in the cloud.
               </ThemedText>
+              <Touchable style={styles.modeInfo} onPress={() => setInfoSheet('cloud')} hitSlop={10}>
+                <Info size={15} color={colors.text.secondary} />
+              </Touchable>
             </Touchable>
           </View>
 
@@ -578,7 +591,7 @@ export default function SettingsScreen() {
             <View style={styles.cloudCard}>
               {!cloudBaseUrl && (
                 <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
-                  Cloud is not configured for this build yet.
+                  Grand Maester Samwell is not set up in this build yet.
                 </ThemedText>
               )}
 
@@ -636,7 +649,7 @@ export default function SettingsScreen() {
             </View>
           ) : !nativeAvailable ? (
             <ThemedText type="bodySm" color={colors.text.secondary}>
-              On-device AI isn't supported on this device. Cloud support is on the way — check back soon.
+              On-device AI is not supported on this device. Grand Maester Samwell is on the way. Check back soon.
             </ThemedText>
           ) : (
             <>
@@ -780,7 +793,7 @@ export default function SettingsScreen() {
               COMPASS
             </ThemedText>
             <ThemedText type="bodySm" color={colors.text.secondary}>
-              Daily check-in times. The pit wall calls you.
+              Your morning and night check-in times with Grand Maester Samwell.
             </ThemedText>
           </View>
           <Touchable style={styles.row} onPress={() => setTimePickerFor('morning')}>
@@ -845,6 +858,9 @@ export default function SettingsScreen() {
         }}
         onClose={() => setTimePickerFor(null)}
       />
+
+      {/* Engine detail sheets */}
+      <EngineInfoSheet mode={infoSheet} onClose={() => setInfoSheet(null)} />
 
       {/* Voice picker modal */}
       <Modal
@@ -925,7 +941,7 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Model picker + HuggingFace search — unified sheet */}
+      {/* Model picker + HuggingFace search, unified sheet */}
       <Modal
         visible={modelSheetVisible}
         animationType="slide"

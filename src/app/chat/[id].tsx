@@ -280,7 +280,7 @@ export default function ChatSessionScreen() {
       return (
         <View style={styles.banner}>
           <ThemedText type="bodySm" color={colors.text.secondary}>
-            Samwell Cloud is not configured for this build yet.
+            Grand Maester Samwell is not set up in this build yet.
           </ThemedText>
         </View>
       );

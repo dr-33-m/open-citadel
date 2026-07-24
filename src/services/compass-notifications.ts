@@ -56,7 +56,7 @@ export async function syncCompassReminders(args: {
       identifier: MORNING_ID,
       content: {
         title: 'Compass',
-        body: "Pit wall is up. What's the plan today?",
+        body: "What's the plan for today?",
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -71,7 +71,7 @@ export async function syncCompassReminders(args: {
       identifier: NIGHT_ID,
       content: {
         title: 'Compass',
-        body: 'How did today actually run?',
+        body: 'How did today go? Time to check in.',
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,

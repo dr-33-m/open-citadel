@@ -13,7 +13,7 @@ import {
 import { extractKeywords } from '@/services/compass-reading-rank';
 
 /**
- * Journey memory — the arc of the user's reading and execution, synthesized
+ * Journey memory, the arc of the user's reading and execution, synthesized
  * on-device from data that already lives here (finished books, highlight tags,
  * Compass history) plus a small store of distilled reflections. Recall returns
  * a compact text block; for cloud requests only that slice travels, exactly
@@ -115,7 +115,7 @@ export function buildJourneySnapshot(): string {
       .orderBy(desc(compassMilestones.sortOrder))
       .get();
     lines.push(
-      `Active goal: ${goal.title}` + (milestone ? ` — current milestone: ${milestone.title}` : ''),
+      `Active goal: ${goal.title}` + (milestone ? `, current milestone: ${milestone.title}` : ''),
     );
 
     const recentNight = db
@@ -131,9 +131,9 @@ export function buildJourneySnapshot(): string {
         `Recent focus scores (newest first): ${scores.join(', ')}` +
           (scores.length >= 2
             ? scores[0] > scores[scores.length - 1]
-              ? ' — trending up'
+              ? ', trending up'
               : scores[0] < scores[scores.length - 1]
-                ? ' — trending down'
+                ? ', trending down'
                 : ''
             : ''),
       );
@@ -231,7 +231,7 @@ export function saveJourneyReflection(text: string, sourceRef: string, tags: str
 }
 
 /**
- * Deterministic note written when a book is finished — its identity plus the
+ * Deterministic note written when a book is finished, its identity plus the
  * top tags the user attached while reading it. No LLM call.
  */
 export function saveBookFinishedNote(bookId: string): void {

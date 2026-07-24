@@ -1,206 +1,118 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
-import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { CompassMorningAnalysis, CompassNightAnalysis } from 'samwell-shared';
+import React, { useRef, useState } from 'react';
+import { TextInput } from 'react-native';
+import type { CompassChatMessage, CompassMorningAnalysis, CompassNightAnalysis } from 'samwell-shared';
 
-import { PitWallCard } from '@/components/compass/pit-wall-card';
-import { ThemedText } from '@/components/themed-text';
-import { GoldButton } from '@/components/ui/gold-button';
-import { Touchable } from '@/components/ui/touchable';
-import { spacing, typography } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
-import { computeFocusScore } from '@/services/compass-math';
+import { CompassChat } from '@/components/compass/compass-chat';
+import { MorningDraftCard, NightDraftCard } from '@/components/compass/draft-cards';
 import { useCompassStore } from '@/stores/compass';
 
-type CheckinResult =
-  | { kind: 'morning'; analysis: CompassMorningAnalysis }
-  | { kind: 'night'; analysis: CompassNightAnalysis };
+const OPENERS = {
+  morning:
+    "Tell me the plan for today. Say it however it comes; we will shape it together before you log it.",
+  night:
+    "How did today actually run? Tell it straight, including anything that pulled you off course.",
+} as const;
+
+function buildTranscript(messages: CompassChatMessage[]): string {
+  return messages
+    .map((m) => `${m.role === 'user' ? 'Me' : 'Samwell'}: ${m.content}`)
+    .join('\n\n');
+}
 
 export default function CompassCheckinScreen() {
-  const colors = useColors();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ kind?: string }>();
   const kind: 'morning' | 'night' = params.kind === 'night' ? 'night' : 'morning';
 
-  const { todayMorning, todayNight, submitting, error, submitMorning, submitNight, clearError } =
+  const { submitting, error, sendMorningTurn, sendNightTurn, finalizeMorning, finalizeNight } =
     useCompassStore();
+  const inputRef = useRef<TextInput | null>(null);
 
-  const [text, setText] = useState('');
-  const [result, setResult] = useState<CheckinResult | null>(null);
+  const [messages, setMessages] = useState<CompassChatMessage[]>([]);
+  const [morningDraft, setMorningDraft] = useState<CompassMorningAnalysis | null>(null);
+  const [nightDraft, setNightDraft] = useState<CompassNightAnalysis | null>(null);
+  const [finalizing, setFinalizing] = useState(false);
 
-  const replacing = kind === 'morning' ? todayMorning != null : todayNight != null;
-  const busy = submitting === kind;
-
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        container: { flex: 1, backgroundColor: colors.surface.base, paddingTop: insets.top },
-        header: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: spacing[4],
-          paddingVertical: spacing[3],
-        },
-        backButton: {
-          width: 32,
-          height: 32,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        headerTitle: { flex: 1, textAlign: 'center', marginRight: 32 },
-        content: {
-          paddingHorizontal: spacing[6],
-          paddingBottom: insets.bottom + spacing[8],
-          gap: spacing[5],
-        },
-        input: {
-          ...typography.bodyMd,
-          color: colors.text.primary,
-          backgroundColor: colors.surface.low,
-          borderWidth: 1,
-          borderColor: colors.outline.variant,
-          padding: spacing[4],
-          minHeight: 160,
-          textAlignVertical: 'top',
-        },
-        waiting: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing[3],
-          justifyContent: 'center',
-          paddingVertical: spacing[4],
-        },
-        scoreBlock: { alignItems: 'center', gap: spacing[1], paddingVertical: spacing[3] },
-        errorText: { color: '#e53935' },
-      }),
-    [colors, insets],
-  );
-
-  function handleSubmit() {
-    const trimmed = text.trim();
-    if (trimmed.length === 0 || busy) return;
-    clearError();
+  async function runTurn(msgs: CompassChatMessage[]) {
     if (kind === 'morning') {
-      submitMorning(trimmed).then((analysis) => {
-        if (analysis) setResult({ kind: 'morning', analysis });
-      });
+      const turn = await sendMorningTurn(msgs);
+      if (turn) {
+        setMessages([...msgs, { role: 'assistant', content: turn.reply }]);
+        setMorningDraft(turn.draft);
+      }
     } else {
-      submitNight(trimmed).then((analysis) => {
-        if (analysis) setResult({ kind: 'night', analysis });
-      });
+      const turn = await sendNightTurn(msgs);
+      if (turn) {
+        setMessages([...msgs, { role: 'assistant', content: turn.reply }]);
+        setNightDraft(turn.draft);
+      }
     }
   }
 
-  function renderInput() {
-    return (
-      <>
-        <ThemedText type="bodySm" color={colors.text.secondary}>
-          {kind === 'morning'
-            ? 'What are you planning to do today? Plain words — the pit wall does the sorting.'
-            : 'What actually happened today? Report it straight — drift included.'}
-        </ThemedText>
-        {replacing && (
-          <ThemedText type="labelSm" color={colors.text.secondary}>
-            THIS REPLACES TODAY&apos;S {kind === 'morning' ? 'PLAN' : 'REPORT'}
-          </ThemedText>
-        )}
-        <TextInput
-          style={styles.input}
-          multiline
-          placeholder={
-            kind === 'morning' ? 'Today I want to…' : 'Today I actually…'
-          }
-          placeholderTextColor={colors.text.secondary}
-          value={text}
-          onChangeText={setText}
-          editable={!busy}
-        />
-        {error != null && (
-          <ThemedText type="bodySm" style={styles.errorText}>
-            {error}
-          </ThemedText>
-        )}
-        {busy ? (
-          <View style={styles.waiting}>
-            <ActivityIndicator color={colors.primary.default} />
-            <ThemedText type="labelMd" color={colors.text.secondary}>
-              PIT WALL ANALYZING…
-            </ThemedText>
-          </View>
-        ) : (
-          <GoldButton
-            label={kind === 'morning' ? 'ANALYZE TODAY' : 'ANALYZE EXECUTION'}
-            onPress={handleSubmit}
-          />
-        )}
-      </>
-    );
+  async function handleSend(text: string) {
+    const next: CompassChatMessage[] = [...messages, { role: 'user', content: text }];
+    setMessages(next);
+    setMorningDraft(null);
+    setNightDraft(null);
+    await runTurn(next);
   }
 
-  function renderResult(r: CheckinResult) {
-    const focusScore = computeFocusScore(r.analysis.actions);
-    return (
-      <>
-        <View style={styles.scoreBlock}>
-          <ThemedText type="labelSm" color={colors.text.secondary}>
-            FOCUS SCORE
-          </ThemedText>
-          <ThemedText type="displayLg" color={colors.primary.default}>
-            {focusScore}%
-          </ThemedText>
-          {r.kind === 'night' && (
-            <ThemedText type="labelSm" color={colors.text.secondary}>
-              +{r.analysis.effortUnitsCompleted} UNITS LOGGED
-            </ThemedText>
-          )}
-        </View>
-
-        {r.kind === 'morning' && (
-          <View style={{ gap: spacing[2] }}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
-              TODAY&apos;S MISSION
-            </ThemedText>
-            <ThemedText type="bodyMd">{r.analysis.missionSummary}</ThemedText>
-          </View>
-        )}
-
-        <PitWallCard message={r.analysis.pitWallMessage} />
-
-        <GoldButton label="DONE" onPress={() => router.back()} />
-      </>
-    );
+  function handleRetry() {
+    if (messages.length === 0) return;
+    setMorningDraft(null);
+    setNightDraft(null);
+    void runTurn(messages);
   }
+
+  async function handleApprove() {
+    const transcript = buildTranscript(messages);
+    setFinalizing(true);
+    let ok = false;
+    if (kind === 'morning' && morningDraft) {
+      ok = await finalizeMorning({ analysis: morningDraft, transcript });
+    } else if (kind === 'night' && nightDraft) {
+      ok = await finalizeNight({ analysis: nightDraft, transcript });
+    }
+    setFinalizing(false);
+    if (ok) router.back();
+  }
+
+  function handleRefine() {
+    inputRef.current?.focus();
+  }
+
+  const draftCard =
+    kind === 'morning' && morningDraft ? (
+      <MorningDraftCard
+        analysis={morningDraft}
+        onApprove={handleApprove}
+        onRefine={handleRefine}
+        disabled={finalizing}
+      />
+    ) : kind === 'night' && nightDraft ? (
+      <NightDraftCard
+        analysis={nightDraft}
+        onApprove={handleApprove}
+        onRefine={handleRefine}
+        disabled={finalizing}
+      />
+    ) : null;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Touchable onPress={() => router.back()} style={styles.backButton}>
-          <ChevronLeft size={24} color={colors.text.primary} />
-        </Touchable>
-        <ThemedText type="headlineSm" style={styles.headerTitle}>
-          {kind === 'morning' ? 'Morning Check-in' : 'Night Check-in'}
-        </ThemedText>
-      </View>
-
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {result ? renderResult(result) : renderInput()}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+    <CompassChat
+      title={kind === 'morning' ? 'Morning Check-in' : 'Night Check-in'}
+      opener={OPENERS[kind]}
+      messages={messages}
+      submitting={submitting === kind}
+      finalizing={finalizing}
+      draftCard={draftCard}
+      placeholder={kind === 'morning' ? 'Today I want to…' : 'Today I actually…'}
+      error={error}
+      onSend={handleSend}
+      onRetry={handleRetry}
+      onBack={() => router.back()}
+      inputRef={inputRef}
+    />
   );
 }

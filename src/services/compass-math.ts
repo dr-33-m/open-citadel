@@ -115,6 +115,26 @@ export function compassDayFor(now: Date, morningTime: string, nightTime: string)
   return nowMinutes < boundary ? addDaysYmd(today, -1) : today;
 }
 
+/**
+ * Which check-in is available right now. Before the night time (and after the
+ * day boundary) the driver plans the day ahead, so morning is open; from the
+ * night time until the boundary they review, so night is open. This is what
+ * stops a "morning" plan being logged at 23:53 — by then it is the night window.
+ */
+export function activeCheckin(
+  now: Date,
+  morningTime: string,
+  nightTime: string,
+): 'morning' | 'night' {
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const morning = parseHhMm(morningTime);
+  const night = parseHhMm(nightTime);
+  const gap = (morning - night + 1440) % 1440; // forward from night to morning
+  const nightWindow = Math.floor(gap / 2); // night runs from night time to the boundary
+  const fromNight = (nowMinutes - night + 1440) % 1440;
+  return fromNight < nightWindow ? 'night' : 'morning';
+}
+
 // ── Progress & projection ────────────────────────────────────────────────────
 
 export function computeProgress(completedUnits: number, estimatedUnits: number): number {

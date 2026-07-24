@@ -21,6 +21,10 @@ type CalendarPickerProps = {
   selectedDate: string; // YYYY-MM-DD
   onSelectDate: (date: string) => void;
   onClose: () => void;
+  /** Earliest selectable day (YYYY-MM-DD). Enables future selection (e.g. a target date). */
+  minDate?: string;
+  /** Latest selectable day (YYYY-MM-DD). */
+  maxDate?: string;
 };
 
 function toDateString(year: number, month: number, day: number): string {
@@ -32,29 +36,44 @@ function todayString(): string {
   return toDateString(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+function parseMonth(ymd: string | undefined): { year: number; month: number } | null {
+  if (!ymd) return null;
+  const [y, m] = ymd.split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return null;
+  return { year: y, month: m - 1 };
+}
+
 export function CalendarPicker({
   visible,
   selectedDate,
   onSelectDate,
   onClose,
+  minDate,
+  maxDate,
 }: CalendarPickerProps) {
   const colors = useColors();
   const today = todayString();
 
-  // Parse selectedDate to initialize the view month
-  const [viewYear, setViewYear] = useState(() => {
-    const [y] = selectedDate.split('-').map(Number);
-    return y;
-  });
-  const [viewMonth, setViewMonth] = useState(() => {
-    const [, m] = selectedDate.split('-').map(Number);
-    return m - 1; // 0-indexed
-  });
+  // "Legacy" (timeline) mode = no bounds passed: activity dots on, no future.
+  const legacyMode = !minDate && !maxDate;
+
+  // Open on the selected month, else the min-date month, else the current month
+  // (guards against an empty/invalid selectedDate, which used to render "Invalid Date").
+  const initialMonth =
+    parseMonth(selectedDate) ??
+    parseMonth(minDate) ??
+    (() => {
+      const d = new Date();
+      return { year: d.getFullYear(), month: d.getMonth() };
+    })();
+  const [viewYear, setViewYear] = useState(initialMonth.year);
+  const [viewMonth, setViewMonth] = useState(initialMonth.month);
 
   // Activity counts per day for the current view month: { 'YYYY-MM-DD': count }
   const [activityCounts, setActivityCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
+    if (!legacyMode) return; // activity dots only in timeline mode
     const monthStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
     const prefix = `${monthStr}%`;
 
@@ -212,7 +231,11 @@ export function CalendarPicker({
                 const dateStr = toDateString(viewYear, viewMonth, day);
                 const isSelected = dateStr === selectedDate;
                 const isToday = dateStr === today;
-                const isFuture = dateStr > today;
+                // Disabled if outside the bounds; in legacy (timeline) mode, no future.
+                const isDisabled =
+                  (minDate ? dateStr < minDate : false) ||
+                  (maxDate ? dateStr > maxDate : false) ||
+                  (legacyMode ? dateStr > today : false);
                 const count = activityCounts[dateStr] ?? 0;
                 const dotOpacity = count === 0 ? 1 : Math.max(0.2, Math.min(count / 10, 1));
                 const dotColor = count === 0 ? '#e53935' : colors.primary.default;
@@ -232,26 +255,26 @@ export function CalendarPicker({
                       ],
                     ]}
                     onPress={() => {
-                      if (!isFuture) {
+                      if (!isDisabled) {
                         onSelectDate(dateStr);
                         onClose();
                       }
                     }}
-                    disabled={isFuture}
+                    disabled={isDisabled}
                   >
                     <ThemedText
                       type="bodySm"
                       color={
                         isSelected
                           ? colors.text.inverse
-                          : isFuture
+                          : isDisabled
                             ? colors.surface.highest
                             : colors.text.primary
                       }
                     >
                       {day}
                     </ThemedText>
-                    {dateStr < today && (
+                    {legacyMode && dateStr < today && (
                       <View
                         style={[
                           styles.activityDot,

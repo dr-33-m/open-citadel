@@ -51,7 +51,7 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
     dotColor = colors.text.secondary;
   }
 
-  const statusText = samwellMode === 'cloud' ? 'Samwell Cloud' : isLoading ? 'Waking up…' : 'Samwell';
+  const statusText = samwellMode === 'cloud' ? 'Grand Maester Samwell' : isLoading ? 'Waking up…' : 'Samwell';
 
   return (
     <Touchable style={styles.container} onPress={onPress} disabled={samwellMode === 'cloud' || isLoading || isLoaded}>

@@ -2,10 +2,14 @@ import { and, desc, eq } from 'drizzle-orm';
 import { create } from 'zustand';
 import {
   CompassMorningAnalysisSchema,
+  type CompassChatMessage,
   type CompassMorningAnalysis,
   type CompassMorningPlan,
+  type CompassMorningTurn,
   type CompassNightAnalysis,
+  type CompassNightTurn,
   type CompassSetupProposal,
+  type CompassSetupTurn,
   type CompassTelemetry,
 } from 'samwell-shared';
 
@@ -13,9 +17,9 @@ import { db } from '@/db/client';
 import { compassActions, compassCheckins, compassGoals, compassMilestones } from '@/db/schema';
 import {
   CompassApiError,
-  requestMorningAnalysis,
-  requestNightAnalysis,
-  requestSetupProposal as apiRequestSetupProposal,
+  requestMorningTurn,
+  requestNightTurn,
+  requestSetupTurn,
 } from '@/services/compass-api';
 import {
   buildTelemetry,
@@ -42,22 +46,25 @@ type CompassState = {
   todayNight: CompassCheckinRow | null;
   recentCheckins: CompassCheckinRow[];
   telemetry: CompassTelemetry | null;
-  setupProposal: CompassSetupProposal | null;
   isLoaded: boolean;
   submitting: 'setup' | 'morning' | 'night' | null;
   error: string | null;
 
   loadCompass: () => Promise<void>;
-  requestSetupProposal: (description: string) => Promise<void>;
-  clearSetupProposal: () => void;
-  confirmSetup: (args: {
+  // Conversational turns: send the exchange so far, get Samwell's reply + an
+  // optional structured draft. Nothing is persisted until the driver finalizes.
+  sendSetupTurn: (messages: CompassChatMessage[]) => Promise<CompassSetupTurn | null>;
+  sendMorningTurn: (messages: CompassChatMessage[]) => Promise<CompassMorningTurn | null>;
+  sendNightTurn: (messages: CompassChatMessage[]) => Promise<CompassNightTurn | null>;
+  finalizeSetup: (args: {
+    proposal: CompassSetupProposal;
     targetDate: string;
     goalTitle?: string;
     milestoneTitle?: string;
     estimatedEffortUnits?: number;
   }) => Promise<boolean>;
-  submitMorning: (text: string) => Promise<CompassMorningAnalysis | null>;
-  submitNight: (text: string) => Promise<CompassNightAnalysis | null>;
+  finalizeMorning: (args: { analysis: CompassMorningAnalysis; transcript: string }) => Promise<boolean>;
+  finalizeNight: (args: { analysis: CompassNightAnalysis; transcript: string }) => Promise<boolean>;
   completeMilestone: () => Promise<void>;
   clearError: () => void;
 };
@@ -69,6 +76,13 @@ function createId(prefix: string): string {
 function currentCompassDay(): string {
   const { compassMorningTime, compassNightTime } = useSettingsStore.getState();
   return compassDayFor(new Date(), compassMorningTime, compassNightTime);
+}
+
+function userText(messages: CompassChatMessage[]): string {
+  return messages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content)
+    .join(' ');
 }
 
 function friendlyError(err: unknown): string {
@@ -118,7 +132,7 @@ function morningPlanFrom(checkin: CompassCheckinRow | null): CompassMorningPlan 
     const parsed = CompassMorningAnalysisSchema.safeParse(JSON.parse(checkin.analysisJson));
     if (!parsed.success) return null;
     return {
-      missionSummary: parsed.data.missionSummary,
+      missionSummary: parsed.data.mission.map((m) => m.title).join('; '),
       actions: parsed.data.actions.map((a) => ({
         description: a.description,
         category: a.category,
@@ -138,7 +152,6 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   todayNight: null,
   recentCheckins: [],
   telemetry: null,
-  setupProposal: null,
   isLoaded: false,
   submitting: null,
   error: null,
@@ -229,32 +242,82 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     });
   },
 
-  requestSetupProposal: async (description: string) => {
+  sendSetupTurn: async (messages) => {
     set({ submitting: 'setup', error: null });
     try {
       const { goal } = get();
-      const proposal = await apiRequestSetupProposal({
+      const turn = await requestSetupTurn({
         ...(await cloudArgs()),
         body: {
-          description,
+          messages,
           existingGoal: goal ? { title: goal.title, description: goal.description } : undefined,
           readingContext: selectReadingContext(
-            goal ? `${goal.title} ${description}` : description,
+            goal ? `${goal.title} ${userText(messages)}` : userText(messages),
           ),
         },
       });
-      set({ setupProposal: proposal, submitting: null });
+      set({ submitting: null });
+      return turn;
     } catch (err) {
       set({ error: friendlyError(err), submitting: null });
+      return null;
     }
   },
 
-  clearSetupProposal: () => set({ setupProposal: null }),
+  sendMorningTurn: async (messages) => {
+    const { goal, milestone } = get();
+    if (!goal || !milestone) return null;
 
-  confirmSetup: async ({ targetDate, goalTitle, milestoneTitle, estimatedEffortUnits }) => {
-    const { setupProposal } = get();
-    if (!setupProposal) return false;
+    set({ submitting: 'morning', error: null });
+    try {
+      const telemetry = buildTelemetry(goal, milestone, currentCompassDay());
+      const turn = await requestMorningTurn({
+        ...(await cloudArgs()),
+        body: {
+          messages,
+          telemetry,
+          readingContext: selectReadingContext(
+            `${goal.title} ${milestone.title} ${userText(messages)}`,
+          ),
+          journey: buildJourneySnapshot() || undefined,
+        },
+      });
+      set({ submitting: null });
+      return turn;
+    } catch (err) {
+      set({ error: friendlyError(err), submitting: null });
+      return null;
+    }
+  },
 
+  sendNightTurn: async (messages) => {
+    const { goal, milestone } = get();
+    if (!goal || !milestone) return null;
+
+    set({ submitting: 'night', error: null });
+    try {
+      const telemetry = buildTelemetry(goal, milestone, currentCompassDay());
+      const turn = await requestNightTurn({
+        ...(await cloudArgs()),
+        body: {
+          messages,
+          telemetry,
+          morningPlan: morningPlanFrom(get().todayMorning),
+          readingContext: selectReadingContext(
+            `${goal.title} ${milestone.title} ${userText(messages)}`,
+          ),
+          journey: buildJourneySnapshot() || undefined,
+        },
+      });
+      set({ submitting: null });
+      return turn;
+    } catch (err) {
+      set({ error: friendlyError(err), submitting: null });
+      return null;
+    }
+  },
+
+  finalizeSetup: async ({ proposal, targetDate, goalTitle, milestoneTitle, estimatedEffortUnits }) => {
     const now = new Date().toISOString();
     const startDate = currentCompassDay();
     if (daysBetween(startDate, targetDate) <= 0) {
@@ -268,8 +331,8 @@ export const useCompassStore = create<CompassState>((set, get) => ({
       db.insert(compassGoals)
         .values({
           id: goalId,
-          title: goalTitle?.trim() || setupProposal.goalTitle,
-          description: setupProposal.goalSummary,
+          title: goalTitle?.trim() || proposal.goalTitle,
+          description: proposal.goalSummary,
           status: 'active',
           createdAt: now,
         })
@@ -288,10 +351,10 @@ export const useCompassStore = create<CompassState>((set, get) => ({
       .values({
         id: createId('cmile'),
         goalId: goal.id,
-        title: milestoneTitle?.trim() || setupProposal.milestoneTitle,
-        effortUnitDefinition: setupProposal.effortUnitDefinition,
+        title: milestoneTitle?.trim() || proposal.milestoneTitle,
+        effortUnitDefinition: proposal.effortUnitDefinition,
         status: 'active',
-        estimatedEffortUnits: estimatedEffortUnits ?? setupProposal.estimatedEffortUnits,
+        estimatedEffortUnits: estimatedEffortUnits ?? proposal.estimatedEffortUnits,
         completedEffortUnits: 0,
         startDate,
         targetDate,
@@ -308,29 +371,17 @@ export const useCompassStore = create<CompassState>((set, get) => ({
       hasActiveGoal: true,
     });
 
-    set({ setupProposal: null, error: null });
+    set({ error: null });
     await get().loadCompass();
     return true;
   },
 
-  submitMorning: async (text: string) => {
+  finalizeMorning: async ({ analysis, transcript }) => {
     const { goal, milestone } = get();
-    if (!goal || !milestone) return null;
+    if (!goal || !milestone) return false;
 
-    set({ submitting: 'morning', error: null });
     try {
       const compassDay = currentCompassDay();
-      const telemetry = buildTelemetry(goal, milestone, compassDay);
-      const analysis = await requestMorningAnalysis({
-        ...(await cloudArgs()),
-        body: {
-          text,
-          telemetry,
-          readingContext: selectReadingContext(`${goal.title} ${milestone.title} ${text}`),
-          journey: buildJourneySnapshot() || undefined,
-        },
-      });
-
       const now = new Date().toISOString();
       const existing = get().todayMorning;
       if (existing) deleteCheckin(existing.id);
@@ -343,8 +394,8 @@ export const useCompassStore = create<CompassState>((set, get) => ({
           milestoneId: milestone.id,
           localDate: compassDay,
           kind: 'morning',
-          rawText: text,
-          missionSummary: analysis.missionSummary,
+          rawText: transcript,
+          missionSummary: analysis.mission.map((m) => m.title).join('\n'),
           focusScore: computeFocusScore(analysis.actions),
           pitWallMessage: analysis.pitWallMessage,
           analysisJson: JSON.stringify(analysis),
@@ -354,34 +405,20 @@ export const useCompassStore = create<CompassState>((set, get) => ({
         .run();
       insertActions(checkinId, analysis.actions, true, now);
 
-      set({ submitting: null });
       await get().loadCompass();
-      return analysis;
+      return true;
     } catch (err) {
-      set({ error: friendlyError(err), submitting: null });
-      return null;
+      set({ error: friendlyError(err) });
+      return false;
     }
   },
 
-  submitNight: async (text: string) => {
+  finalizeNight: async ({ analysis, transcript }) => {
     const { goal, milestone } = get();
-    if (!goal || !milestone) return null;
+    if (!goal || !milestone) return false;
 
-    set({ submitting: 'night', error: null });
     try {
       const compassDay = currentCompassDay();
-      const telemetry = buildTelemetry(goal, milestone, compassDay);
-      const analysis = await requestNightAnalysis({
-        ...(await cloudArgs()),
-        body: {
-          text,
-          telemetry,
-          morningPlan: morningPlanFrom(get().todayMorning),
-          readingContext: selectReadingContext(`${goal.title} ${milestone.title} ${text}`),
-          journey: buildJourneySnapshot() || undefined,
-        },
-      });
-
       const now = new Date().toISOString();
       const existing = get().todayNight;
       const previousUnits = existing?.effortUnitsCompleted ?? 0;
@@ -395,7 +432,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
           milestoneId: milestone.id,
           localDate: compassDay,
           kind: 'night',
-          rawText: text,
+          rawText: transcript,
           focusScore: computeFocusScore(analysis.actions),
           effortUnitsCompleted: analysis.effortUnitsCompleted,
           pitWallMessage: analysis.pitWallMessage,
@@ -421,17 +458,16 @@ export const useCompassStore = create<CompassState>((set, get) => ({
         .where(eq(compassMilestones.id, milestone.id))
         .run();
 
-      // Persist a journey reflection (distilled at zero extra cost from the night analysis).
+      // Persist a journey reflection (distilled at zero extra cost from the analysis).
       if (analysis.journeyNote) {
         saveJourneyReflection(analysis.journeyNote, checkinId);
       }
 
-      set({ submitting: null });
       await get().loadCompass();
-      return analysis;
+      return true;
     } catch (err) {
-      set({ error: friendlyError(err), submitting: null });
-      return null;
+      set({ error: friendlyError(err) });
+      return false;
     }
   },
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   actionWeight,
+  activeCheckin,
   addDaysYmd,
   compassDayFor,
   computeFinalVarianceDays,
@@ -88,6 +89,31 @@ describe('compassDayFor', () => {
     expect(compassDayFor(at(4, 29), '09:00', '00:00')).toBe('2026-07-22');
     expect(compassDayFor(at(8, 30), '09:00', '00:00')).toBe('2026-07-23');
     expect(compassDayFor(at(23, 59), '09:00', '00:00')).toBe('2026-07-23');
+  });
+});
+
+describe('activeCheckin', () => {
+  const at = (h: number, m: number) => new Date(2026, 6, 23, h, m);
+
+  it('08:00/21:00 user: morning window is day until night, night window is night until ~02:30', () => {
+    expect(activeCheckin(at(8, 0), '08:00', '21:00')).toBe('morning');
+    expect(activeCheckin(at(12, 0), '08:00', '21:00')).toBe('morning');
+    expect(activeCheckin(at(20, 59), '08:00', '21:00')).toBe('morning');
+    expect(activeCheckin(at(21, 0), '08:00', '21:00')).toBe('night');
+    expect(activeCheckin(at(23, 53), '08:00', '21:00')).toBe('night'); // cannot plan the morning this late
+    expect(activeCheckin(at(2, 0), '08:00', '21:00')).toBe('night'); // before the 02:30 boundary, still reviewing
+    expect(activeCheckin(at(2, 31), '08:00', '21:00')).toBe('morning'); // past the boundary, planning again
+  });
+
+  it('grace: a forgotten morning is still loggable through the afternoon', () => {
+    expect(activeCheckin(at(16, 0), '08:00', '21:00')).toBe('morning');
+  });
+
+  it('09:00/00:00 night owl: boundary at 04:30', () => {
+    expect(activeCheckin(at(23, 0), '09:00', '00:00')).toBe('morning'); // before midnight night time
+    expect(activeCheckin(at(0, 30), '09:00', '00:00')).toBe('night');
+    expect(activeCheckin(at(4, 0), '09:00', '00:00')).toBe('night');
+    expect(activeCheckin(at(5, 0), '09:00', '00:00')).toBe('morning');
   });
 });
 

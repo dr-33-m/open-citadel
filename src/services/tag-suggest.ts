@@ -56,7 +56,7 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
 
   if (samwellMode === 'cloud') {
     if (!cloudBaseUrl) {
-      throw new Error('Samwell Cloud is not configured for this build.');
+      throw new Error('Grand Maester Samwell is not set up in this build.');
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
@@ -72,13 +72,13 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
         signal: controller.signal,
       });
     } catch {
-      throw new Error('Cannot reach Samwell Cloud. Check your connection.');
+      throw new Error('Cannot reach Grand Maester Samwell. Check your connection.');
     } finally {
       clearTimeout(timer);
     }
 
     if (res.status === 429) {
-      throw new Error('Samwell Cloud has reached the current usage limit.');
+      throw new Error('Grand Maester Samwell has reached the current usage limit.');
     }
     if (!res.ok) {
       throw new Error("Couldn't suggest tags. Try again.");
@@ -92,7 +92,7 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
   }
 
   if (!Inference.isModelLoaded()) {
-    throw new Error('Load a local model in Settings, or switch to Samwell Cloud, to suggest tags.');
+    throw new Error('Load a local model in Settings, or switch to Grand Maester Samwell, to suggest tags.');
   }
 
   Inference.resetConversation();

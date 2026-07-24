@@ -59,7 +59,7 @@ tagsRoutes.post('/suggest', async (c) => {
   const result = await runStructuredAnalysis({
     modelId,
     systemPrompts: [SUGGEST_TAGS_PROMPT],
-    userContent: JSON.stringify(payload),
+    messages: [{ role: 'user', content: JSON.stringify(payload) }],
     schema: SuggestTagsResponseSchema,
     usageEventId,
     maxCompletionTokens: 100,
