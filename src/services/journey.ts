@@ -276,18 +276,44 @@ export function saveBookFinishedNote(bookId: string): void {
 }
 
 /**
- * Deterministic note written when a goal is archived: how the finish compared
- * to the original target, so the next goal-setup conversation can size
- * against real history instead of starting from zero each time. No LLM call.
+ * Deterministic note written when a goal is archived: either how the finish
+ * compared to the original target (completed) or that it was retired before
+ * reaching its planned scope (abandoned) — so the next goal-setup
+ * conversation sizes against real history instead of starting from zero. No
+ * LLM call.
  */
 export function saveGoalFinishedNote(
   goalId: string,
   title: string,
-  rank: 'A' | 'B' | 'C' | null,
-  varianceDays: number | null,
+  outcome: {
+    completed: boolean;
+    rank: 'A' | 'B' | 'C' | null;
+    varianceDays: number | null;
+    completedMilestones: number;
+    estimatedMilestones: number | null;
+  },
 ): void {
+  if (!outcome.completed) {
+    const scope =
+      outcome.estimatedMilestones != null
+        ? ` after ${outcome.completedMilestones} of ${outcome.estimatedMilestones} planned milestones`
+        : '';
+    db.insert(journeyNotes)
+      .values({
+        id: createId(),
+        kind: 'goal_finished',
+        text: `Abandoned goal "${title}"${scope}, before reaching its planned scope. No rank earned.`,
+        tags: null,
+        sourceRef: goalId,
+        createdAt: new Date().toISOString(),
+      })
+      .run();
+    return;
+  }
+
   // Word the timing from rank, not a re-derived threshold, so this note can
   // never disagree with the rank shown in Settings.
+  const { rank, varianceDays } = outcome;
   const timing =
     rank === 'A' && varianceDays != null
       ? `${-varianceDays} days early`
@@ -302,7 +328,7 @@ export function saveGoalFinishedNote(
     .values({
       id: createId(),
       kind: 'goal_finished',
-      text: `Archived goal "${title}": ${rankLabel}finished ${timing}.`,
+      text: `Completed goal "${title}": ${rankLabel}finished ${timing}.`,
       tags: null,
       sourceRef: goalId,
       createdAt: new Date().toISOString(),

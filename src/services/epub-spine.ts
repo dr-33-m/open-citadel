@@ -63,8 +63,13 @@ export function resolveReadCutoff(
     return { cutoffIndex: idx, progression: locator.locations?.progression ?? 1 };
   }
 
-  // Locator href not in the spine — fall back to whole-book progression.
-  const total = locator.locations?.totalProgression ?? 1;
+  // Locator href not in the spine — fall back to totalProgression if we have
+  // one. Without it, fail CLOSED (nothing read) rather than defaulting to
+  // 100% and silently treating the whole book as already-read, which would
+  // invert the spoiler boundary this function exists to enforce.
+  const total = locator.locations?.totalProgression;
+  if (total == null) return { cutoffIndex: -1, progression: 1 };
+
   return {
     cutoffIndex: Math.min(spine.length - 1, Math.floor(spine.length * total)),
     progression: 1,

@@ -15,12 +15,17 @@ type ApprovalState = {
   sessionAllowed: Set<string>;
   requestApproval: (request: PendingApproval) => Promise<boolean>;
   respond: (approved: boolean, options?: RespondOptions) => void;
+  /** Call when a (different) chat session becomes active — "for this
+   * session" should mean the chat thread, not the whole app process. */
+  resetSessionAllowed: () => void;
 };
 
 export const useApprovalStore = create<ApprovalState>((set, get) => ({
   pending: null,
   resolver: null,
   sessionAllowed: new Set(),
+
+  resetSessionAllowed: () => set({ sessionAllowed: new Set() }),
 
   requestApproval: (request: PendingApproval) => {
     if (get().sessionAllowed.has(request.toolName)) {

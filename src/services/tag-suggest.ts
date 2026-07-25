@@ -59,7 +59,10 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
       throw new Error('Grand Maester Samwell is not set up in this build.');
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20_000);
+    // Matches compass-api.ts's ANALYSIS_TIMEOUT_MS — same runStructuredAnalysis
+    // backend, and removing its completion-token cap means a legitimately
+    // longer reasoning pass can now take this long to finish.
+    const timer = setTimeout(() => controller.abort(), 60_000);
     let res: Response;
     try {
       res = await fetch(`${cloudBaseUrl}/tags/suggest`, {

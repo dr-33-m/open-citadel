@@ -80,6 +80,17 @@ describe('resolveReadCutoff (the spoiler boundary)', () => {
     ).toEqual({ cutoffIndex: 2, progression: 1 });
   });
 
+  it('fails closed (nothing read) when the href is unmatched AND totalProgression is missing, instead of defaulting to the whole book', () => {
+    expect(resolveReadCutoff(spine, { href: 'missing.xhtml' })).toEqual({
+      cutoffIndex: -1,
+      progression: 1,
+    });
+    expect(resolveReadCutoff(spine, { href: 'missing.xhtml', locations: {} })).toEqual({
+      cutoffIndex: -1,
+      progression: 1,
+    });
+  });
+
   it('empty spine ⇒ nothing readable', () => {
     expect(resolveReadCutoff([], null)).toEqual({ cutoffIndex: -1, progression: 1 });
   });

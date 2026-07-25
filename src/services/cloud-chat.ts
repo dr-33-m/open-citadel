@@ -344,7 +344,8 @@ export async function sendCloudChatTurn({
     }
 
     console.warn('[Samwell Cloud] Turn did not settle before timeout; returning partial content.');
-    return latestAssistantText(client.getMessages()).trim();
+    const partial = latestAssistantText(client.getMessages()).trim();
+    return partial || "Samwell got stuck mid-response and couldn't finish. Try again.";
   } finally {
     client.dispose();
   }

@@ -182,6 +182,18 @@ export function computeFinalVarianceDays(
 }
 
 /**
+ * A goal only earns a rank when it actually reached its planned scope —
+ * determined from completed-milestone count, not self-report, so archiving
+ * early to quit can't be relabeled as an "early finish" for a free A.
+ */
+export function isGoalComplete(
+  completedMilestones: number,
+  estimatedMilestones: number | null,
+): boolean {
+  return estimatedMilestones != null && completedMilestones >= estimatedMilestones;
+}
+
+/**
  * A/B/C rank for an archived goal, from its final variance vs the original
  * target. Same ±1-day "on track" tolerance as computeScheduleStatus, so the
  * grade agrees with whatever pace verdict the driver saw along the way.
@@ -273,7 +285,7 @@ export function buildTelemetry(
     daysRemaining > 0 ? remainingUnits / daysRemaining : remainingUnits;
 
   const goalTrack =
-    goal.startDate && goal.targetDate && goal.estimatedMilestones
+    goal.startDate && goal.targetDate && goal.estimatedMilestones != null
       ? computeGoalTrack({
           startDate: goal.startDate,
           targetDate: goal.targetDate,

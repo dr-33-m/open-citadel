@@ -272,6 +272,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   async openSession(id) {
+    // "Allow for this session" must not leak into the next chat thread.
+    useApprovalStore.getState().resetSessionAllowed();
+
     const session = get().sessions.find((s) => s.id === id) ?? null;
     const rows = db
       .select()
@@ -534,6 +537,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
 
       finalContent = result.text.trim();
+      // Exhausted MAX_TOOL_ITERATIONS while the model was still mid-tool-call
+      // (not mid-answer) — result.text is typically empty here, which would
+      // otherwise silently show nothing at all.
+      if (!finalContent && result.toolCalls?.length) {
+        finalContent = "Samwell got stuck calling tools repeatedly and couldn't finish. Try rephrasing.";
+      }
       // Capture thinking text from the final result (available after generation completes)
       if (result.thinkingText) {
         set({ thinkingContent: result.thinkingText });
@@ -576,6 +585,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   stopGeneration() {
     Inference.stopGeneration();
+    // A pending approval dialog would otherwise keep waiting for a tap that
+    // will never come once generation is stopped. No-op if nothing pending.
+    useApprovalStore.getState().respond(false);
   },
 
   async deleteSession(id) {

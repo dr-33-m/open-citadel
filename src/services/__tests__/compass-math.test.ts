@@ -13,6 +13,7 @@ import {
   computeScheduleStatus,
   daysBetween,
   deriveGoalRank,
+  isGoalComplete,
   todayLocalYmd,
 } from '../compass-math';
 
@@ -222,6 +223,23 @@ describe('deriveGoalRank', () => {
   it('is C when finished late, beyond the tolerance', () => {
     expect(deriveGoalRank(2)).toBe('C');
     expect(deriveGoalRank(10)).toBe('C');
+  });
+});
+
+describe('isGoalComplete', () => {
+  it('is false with no estimate to compare against', () => {
+    expect(isGoalComplete(5, null)).toBe(false);
+    expect(isGoalComplete(0, null)).toBe(false);
+  });
+
+  it('is false when archived before reaching the planned scope', () => {
+    expect(isGoalComplete(0, 7)).toBe(false);
+    expect(isGoalComplete(6, 7)).toBe(false);
+  });
+
+  it('is true once completed milestones reach or pass the estimate', () => {
+    expect(isGoalComplete(7, 7)).toBe(true);
+    expect(isGoalComplete(9, 7)).toBe(true);
   });
 });
 

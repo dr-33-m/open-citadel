@@ -272,7 +272,9 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     const bookId = bookIdOverride ?? currentBook?.id;
     if (!bookId) return "";
 
-    const id = `hl-${Date.now()}`;
+    // A random suffix alongside the timestamp avoids id collisions when two
+    // highlights are created within the same millisecond.
+    const id = `hl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const now = new Date().toISOString();
 
     await db.insert(highlights).values({
@@ -320,20 +322,23 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     id: string,
     updates: { color?: string; tags?: string; chatSessionId?: string },
   ) => {
-    const { currentBook } = get();
-    if (!currentBook) return;
-
+    // The write itself doesn't need currentBook — only refreshing this
+    // store's own highlight list afterward does. Gating the write on it too
+    // silently dropped updates whenever called from outside the reader.
     await db.update(highlights).set(updates).where(eq(highlights.id, id));
 
-    const bookHighlights = await db
-      .select()
-      .from(highlights)
-      .where(eq(highlights.bookId, currentBook.id));
+    const { currentBook } = get();
+    if (currentBook) {
+      const bookHighlights = await db
+        .select()
+        .from(highlights)
+        .where(eq(highlights.bookId, currentBook.id));
 
-    const allTagsList =
-      "tags" in updates ? await fetchAllTags() : get().allTags;
+      const allTagsList =
+        "tags" in updates ? await fetchAllTags() : get().allTags;
 
-    set({ highlights: bookHighlights, allTags: allTagsList });
+      set({ highlights: bookHighlights, allTags: allTagsList });
+    }
   },
 
   deleteHighlight: async (id: string) => {

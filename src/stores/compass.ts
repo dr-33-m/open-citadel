@@ -31,6 +31,7 @@ import {
   computeProjection,
   daysBetween,
   deriveGoalRank,
+  isGoalComplete,
 } from '@/services/compass-math';
 import { syncCompassReminders } from '@/services/compass-notifications';
 import { selectReadingContext } from '@/services/compass-reading';
@@ -414,11 +415,31 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     if (!goal) return false;
 
     const today = currentCompassDay();
+    if (milestoneTargetDate && daysBetween(today, milestoneTargetDate) <= 0) {
+      set({ error: 'The milestone date must be after today.' });
+      return false;
+    }
+    if (goalTargetDate && daysBetween(today, goalTargetDate) <= 0) {
+      set({ error: 'The goal date must be after today.' });
+      return false;
+    }
+
+    // Validate both dates together against whichever one isn't being changed
+    // right now — editing just one field independently (the only path this
+    // action supports) must not leave the goal's own deadline earlier than
+    // its current milestone's, the same invariant finalizeSetup enforces.
+    const effectiveMilestoneDate = milestoneTargetDate ?? milestone?.targetDate ?? null;
+    const effectiveGoalDate = goalTargetDate ?? goal.targetDate ?? null;
+    if (
+      effectiveMilestoneDate &&
+      effectiveGoalDate &&
+      daysBetween(effectiveMilestoneDate, effectiveGoalDate) < 0
+    ) {
+      set({ error: 'The goal date cannot be before the milestone date.' });
+      return false;
+    }
+
     if (milestoneTargetDate && milestone) {
-      if (daysBetween(today, milestoneTargetDate) <= 0) {
-        set({ error: 'The milestone date must be after today.' });
-        return false;
-      }
       db.update(compassMilestones)
         .set({
           targetDate: milestoneTargetDate,
@@ -429,10 +450,6 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     }
 
     if (goalTargetDate) {
-      if (daysBetween(today, goalTargetDate) <= 0) {
-        set({ error: 'The goal date must be after today.' });
-        return false;
-      }
       db.update(compassGoals)
         .set({ targetDate: goalTargetDate, startDate: goal.startDate ?? today })
         .where(eq(compassGoals.id, goal.id))
@@ -579,11 +596,15 @@ export const useCompassStore = create<CompassState>((set, get) => ({
       .where(eq(compassMilestones.id, milestone.id))
       .run();
 
+    // The GOAL is still active — completing a milestone just means the next
+    // one needs planning. Reminders are scoped to the goal, not the
+    // milestone, so they must stay on or the driver gets zero nudge to come
+    // back and the goal quietly stalls.
     const { compassMorningTime, compassNightTime } = useSettingsStore.getState();
     await syncCompassReminders({
       morningTime: compassMorningTime,
       nightTime: compassNightTime,
-      hasActiveGoal: false,
+      hasActiveGoal: true,
     });
 
     await get().loadCompass();
@@ -593,11 +614,19 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     const { goal } = get();
     if (!goal) return;
 
+    const completedMilestones = db
+      .select({ id: compassMilestones.id })
+      .from(compassMilestones)
+      .where(and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'completed')))
+      .all().length;
+    const completed = isGoalComplete(completedMilestones, goal.estimatedMilestones);
+
     const today = currentCompassDay();
-    const finalVarianceDays = goal.targetDate
-      ? computeFinalVarianceDays(goal.targetDate, today)
-      : null;
-    const rank = deriveGoalRank(finalVarianceDays);
+    // Only a goal that actually reached its planned scope earns a rank —
+    // archiving early to quit isn't a finish, so it isn't graded as one.
+    const finalVarianceDays =
+      completed && goal.targetDate ? computeFinalVarianceDays(goal.targetDate, today) : null;
+    const rank = completed ? deriveGoalRank(finalVarianceDays) : null;
 
     db.update(compassGoals)
       .set({
@@ -609,7 +638,13 @@ export const useCompassStore = create<CompassState>((set, get) => ({
       .where(eq(compassGoals.id, goal.id))
       .run();
 
-    saveGoalFinishedNote(goal.id, goal.title, rank, finalVarianceDays);
+    saveGoalFinishedNote(goal.id, goal.title, {
+      completed,
+      rank,
+      varianceDays: finalVarianceDays,
+      completedMilestones,
+      estimatedMilestones: goal.estimatedMilestones,
+    });
 
     const { compassMorningTime, compassNightTime } = useSettingsStore.getState();
     await syncCompassReminders({

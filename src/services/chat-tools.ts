@@ -333,72 +333,72 @@ async function searchHighlights(
 
   const results: SearchResult[] = [];
 
-  // Build OR conditions for the WHERE clause
+  // Each filter TYPE the caller supplied must ALL hold (AND) — query, tag,
+  // and book_title narrow together, not as alternatives. Within a single
+  // type, any of its own words matching is enough (OR): e.g. a two-word
+  // query matches either word, but {query, tag} together requires both.
   const conditions = [];
   if (q) {
-    for (const word of q.split(/\s+/).filter(Boolean)) {
-      conditions.push(like(highlights.text, `%${word}%`));
-      conditions.push(like(books.title, `%${word}%`));
-    }
+    const words = q.split(/\s+/).filter(Boolean);
+    conditions.push(or(...words.map((w) => or(like(highlights.text, `%${w}%`), like(books.title, `%${w}%`)))));
   }
   if (b) {
-    for (const word of b.split(/\s+/).filter(Boolean)) {
-      conditions.push(like(books.title, `%${word}%`));
-    }
+    const words = b.split(/\s+/).filter(Boolean);
+    conditions.push(or(...words.map((w) => like(books.title, `%${w}%`))));
   }
   if (t) conditions.push(like(highlights.tags, `%"${t}"%`));
 
-  if (conditions.length > 0) {
-    const rows = db
-      .select({
-        id: highlights.id,
-        text: highlights.text,
-        tags: highlights.tags,
-        locator: highlights.locator,
-        bookId: highlights.bookId,
-        bookTitle: books.title,
-        noteText: notes.text,
-      })
-      .from(highlights)
-      .innerJoin(books, eq(highlights.bookId, books.id))
-      .leftJoin(notes, eq(notes.highlightId, highlights.id))
-      .where(or(...conditions))
-      .orderBy(desc(highlights.createdAt))
-      .limit(15)
-      .all();
+  const rows = db
+    .select({
+      id: highlights.id,
+      text: highlights.text,
+      tags: highlights.tags,
+      locator: highlights.locator,
+      bookId: highlights.bookId,
+      bookTitle: books.title,
+      noteText: notes.text,
+    })
+    .from(highlights)
+    .innerJoin(books, eq(highlights.bookId, books.id))
+    .leftJoin(notes, eq(notes.highlightId, highlights.id))
+    .where(and(...conditions))
+    .orderBy(desc(highlights.createdAt))
+    .limit(15)
+    .all();
 
-    // Post-filter: when book_title is given alongside query/tag, narrow to books matching ANY word
-    const filtered = b
-      ? rows.filter((r) => {
-          const title = r.bookTitle.toLowerCase();
-          return b.split(/\s+/).some((w) => title.includes(w.toLowerCase()));
-        })
-      : rows;
-
-    // Dedup by highlight id (a highlight can have multiple notes)
-    const seen = new Map<string, SearchResult>();
-    for (const row of filtered) {
-      if (seen.has(row.id)) {
-        const existing = seen.get(row.id)!;
-        if (row.noteText && existing.noteText) existing.noteText += ` | ${row.noteText}`;
-        continue;
-      }
-      seen.set(row.id, {
-        id: row.id,
-        type: 'highlight',
-        bookId: row.bookId,
-        bookTitle: row.bookTitle,
-        text: row.text,
-        tags: row.tags ? JSON.parse(row.tags) : [],
-        locator: row.locator,
-        noteText: row.noteText ?? null,
-      });
+  // Dedup by highlight id (a highlight can have multiple notes)
+  const seen = new Map<string, SearchResult>();
+  for (const row of rows) {
+    if (seen.has(row.id)) {
+      const existing = seen.get(row.id)!;
+      if (row.noteText && existing.noteText) existing.noteText += ` | ${row.noteText}`;
+      continue;
     }
-    results.push(...seen.values());
+    seen.set(row.id, {
+      id: row.id,
+      type: 'highlight',
+      bookId: row.bookId,
+      bookTitle: row.bookTitle,
+      text: row.text,
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      locator: row.locator,
+      noteText: row.noteText ?? null,
+    });
   }
+  results.push(...seen.values());
 
-  // Also search notes text directly (may surface highlights via note content)
+  // Also search notes text directly (may surface highlights via note content),
+  // still respecting book_title/tag if the caller gave them.
   if (q) {
+    const noteConditions = [
+      or(...q.split(/\s+/).filter(Boolean).map((w) => like(notes.text, `%${w}%`))),
+    ];
+    if (b) {
+      const words = b.split(/\s+/).filter(Boolean);
+      noteConditions.push(or(...words.map((w) => like(books.title, `%${w}%`))));
+    }
+    if (t) noteConditions.push(like(highlights.tags, `%"${t}"%`));
+
     const noteRows = db
       .select({
         highlightId: notes.highlightId,
@@ -412,7 +412,7 @@ async function searchHighlights(
       .from(notes)
       .innerJoin(highlights, eq(notes.highlightId, highlights.id))
       .innerJoin(books, eq(highlights.bookId, books.id))
-      .where(or(...q.split(/\s+/).filter(Boolean).map((w) => like(notes.text, `%${w}%`))))
+      .where(and(...noteConditions))
       .limit(5)
       .all();
 
@@ -506,18 +506,19 @@ async function searchThoughts(
     }));
   }
 
+  // query and tag must both hold when both are given — see the identical
+  // fix in searchHighlights above for why this used to be a plain OR.
   const conditions = [];
   if (q) {
-    for (const word of q.split(/\s+/).filter(Boolean)) {
-      conditions.push(like(thoughts.text, `%${word}%`));
-    }
+    const words = q.split(/\s+/).filter(Boolean);
+    conditions.push(or(...words.map((w) => like(thoughts.text, `%${w}%`))));
   }
   if (t) conditions.push(like(thoughts.tags, `%"${t}"%`));
 
   const rows = db
     .select()
     .from(thoughts)
-    .where(or(...conditions))
+    .where(and(...conditions))
     .orderBy(desc(thoughts.createdAt))
     .limit(5)
     .all();

@@ -8,7 +8,7 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
-import { computeProgress } from '@/services/compass-math';
+import { computeProgress, isGoalComplete } from '@/services/compass-math';
 import type { CompassMilestoneRow } from '@/stores/compass';
 
 type ProgressSheetProps = {
@@ -112,6 +112,9 @@ export function ProgressSheet({
           : colors.primary.default;
   const paceColor = paceTint(status);
   const goalTrack = telemetry?.goalTrack ?? null;
+  const goalComplete = goalTrack
+    ? isGoalComplete(goalTrack.completedMilestones, goalTrack.estimatedMilestones)
+    : false;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -201,12 +204,18 @@ export function ProgressSheet({
               onPress={() => (confirmArchive ? onArchiveGoal() : setConfirmArchive(true))}
             >
               <ThemedText type="labelSm" color={confirmArchive ? SCORE_RED : colors.text.secondary}>
-                {confirmArchive ? 'TAP AGAIN TO ARCHIVE' : 'ARCHIVE GOAL'}
+                {confirmArchive
+                  ? 'TAP AGAIN TO ARCHIVE'
+                  : goalComplete
+                    ? 'COMPLETE GOAL'
+                    : 'ABANDON GOAL'}
               </ThemedText>
             </Touchable>
             {confirmArchive && (
               <ThemedText type="bodySm" color={colors.text.secondary}>
-                Your check-in history is kept. You can plan a fresh goal after this.
+                {goalComplete
+                  ? 'Your check-in history is kept, and this counts toward your rank.'
+                  : "Your check-in history is kept, but this goal hasn't reached its planned scope, so it won't earn a rank."}
               </ThemedText>
             )}
           </View>
