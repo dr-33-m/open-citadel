@@ -207,6 +207,12 @@ export const compassGoals = sqliteTable("compass_goals", {
     .$type<"active" | "completed" | "archived">()
     .notNull()
     .default("active"),
+  startDate: text("start_date"),
+  /** The outer commitment, one level above the milestone. Fixed, like the milestone's. */
+  targetDate: text("target_date"),
+  /** How many milestones the goal is expected to take; goal progress is counted in these. */
+  estimatedMilestones: integer("estimated_milestones"),
+  currentProjectedDate: text("current_projected_date"),
   createdAt: text("created_at").notNull(),
   completedAt: text("completed_at"),
 });

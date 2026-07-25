@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { MessageSquarePlus, Bot } from 'lucide-react-native';
+import { BookOpen, MessageSquarePlus, Bot } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookPickerSheet } from '@/components/chat/book-picker-sheet';
 import { ThemedText } from '@/components/themed-text';
+import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
@@ -67,11 +68,15 @@ export default function ChatTab() {
     container: { flex: 1, backgroundColor: colors.surface.base },
     headerWrap: { paddingTop: insets.top },
     sessionItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
       paddingHorizontal: spacing[4],
       paddingVertical: spacing[3],
       borderBottomWidth: 1,
       borderBottomColor: colors.outline.variant,
     },
+    sessionBody: { flex: 1 },
     sessionTop: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -141,24 +146,27 @@ export default function ChatTab() {
         onPress={() => router.push({ pathname: '/chat/[id]', params: { id: item.id } })}
         onLongPress={() => setConfirmDelete(item)}
       >
-        <View style={styles.sessionTop}>
-          <ThemedText type="bodyMd" style={{ flex: 1, marginRight: spacing[2] }} numberOfLines={1}>
-            {item.title}
-          </ThemedText>
-          <ThemedText type="labelSm" color={colors.text.secondary}>
-            {timeAgo(item.updatedAt)}
-          </ThemedText>
-        </View>
-        {item.bookTitle && (
-          <View style={styles.bookChip}>
-            <ThemedText type="labelSm" color={colors.primary.default}>{item.bookTitle}</ThemedText>
+        <PrefixIcon icon={item.bookTitle ? BookOpen : MessageSquarePlus} />
+        <View style={styles.sessionBody}>
+          <View style={styles.sessionTop}>
+            <ThemedText type="bodyMd" style={{ flex: 1, marginRight: spacing[2] }} numberOfLines={1}>
+              {item.title}
+            </ThemedText>
+            <ThemedText type="labelSm" color={colors.text.secondary}>
+              {timeAgo(item.updatedAt)}
+            </ThemedText>
           </View>
-        )}
-        {item.lastMessage && (
-          <ThemedText type="bodySm" color={colors.text.secondary} numberOfLines={1}>
-            {item.lastMessage}
-          </ThemedText>
-        )}
+          {item.bookTitle && (
+            <View style={styles.bookChip}>
+              <ThemedText type="labelSm" color={colors.primary.default}>{item.bookTitle}</ThemedText>
+            </View>
+          )}
+          {item.lastMessage && (
+            <ThemedText type="bodySm" color={colors.text.secondary} numberOfLines={1}>
+              {item.lastMessage}
+            </ThemedText>
+          )}
+        </View>
       </Touchable>
     );
   }, [styles, colors, router]);

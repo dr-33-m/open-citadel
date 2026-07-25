@@ -7,6 +7,7 @@ import {
   compassDayFor,
   computeFinalVarianceDays,
   computeFocusScore,
+  computeGoalTrack,
   computeProgress,
   computeProjection,
   computeScheduleStatus,
@@ -198,5 +199,63 @@ describe('progress and final variance', () => {
   it('final variance is actual minus target in days', () => {
     expect(computeFinalVarianceDays('2026-07-15', '2026-07-19')).toBe(4);
     expect(computeFinalVarianceDays('2026-07-15', '2026-07-13')).toBe(-2);
+  });
+});
+
+describe('computeGoalTrack', () => {
+  it('counts progress in fractional milestones, not steps', () => {
+    const track = computeGoalTrack({
+      startDate: '2026-07-01',
+      targetDate: '2026-12-19',
+      estimatedMilestones: 7,
+      completedMilestones: 2,
+      currentMilestoneProgress: 0.4,
+      today: '2026-07-21',
+    });
+    expect(track.milestonesDone).toBeCloseTo(2.4);
+    expect(track.estimatedMilestones).toBe(7);
+    expect(track.completedMilestones).toBe(2);
+  });
+
+  it('caps a milestone that overran its estimate at one whole milestone', () => {
+    const track = computeGoalTrack({
+      startDate: '2026-07-01',
+      targetDate: '2026-12-19',
+      estimatedMilestones: 3,
+      completedMilestones: 2,
+      currentMilestoneProgress: 1.8,
+      today: '2026-07-21',
+    });
+    expect(track.milestonesDone).toBe(3);
+  });
+
+  it('reads the goal as behind while the milestone alone looks fine', () => {
+    // "100 videos by December" chunked into 7 milestones of 15. One video shipped
+    // on day two: comfortable against a 15-video chunk, nowhere near 100 by December.
+    const goal = computeGoalTrack({
+      startDate: '2026-07-23',
+      targetDate: '2026-12-19',
+      estimatedMilestones: 7,
+      completedMilestones: 0,
+      currentMilestoneProgress: 1 / 15,
+      today: '2026-07-24',
+    });
+    expect(goal.scheduleStatus).toBe('behind');
+    expect(goal.varianceDays).toBeGreaterThan(30);
+    expect(goal.daysRemaining).toBe(148);
+  });
+
+  it('stays unknown until there is enough execution data', () => {
+    const track = computeGoalTrack({
+      startDate: '2026-07-23',
+      targetDate: '2026-12-19',
+      estimatedMilestones: 7,
+      completedMilestones: 0,
+      currentMilestoneProgress: 0,
+      today: '2026-07-24',
+    });
+    expect(track.currentProjectedDate).toBeNull();
+    expect(track.scheduleStatus).toBe('unknown');
+    expect(track.varianceDays).toBeNull();
   });
 });

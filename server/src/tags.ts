@@ -56,13 +56,15 @@ tagsRoutes.post('/suggest', async (c) => {
   });
 
   const { modelId: _requestedModel, ...payload } = parsed.data;
+  // No tight token cap here: reasoning-capable models spend completion tokens on
+  // reasoning before they emit the JSON, so a small budget gets exhausted first and
+  // the structured output never validates. The reply is a handful of tokens anyway.
   const result = await runStructuredAnalysis({
     modelId,
     systemPrompts: [SUGGEST_TAGS_PROMPT],
     messages: [{ role: 'user', content: JSON.stringify(payload) }],
     schema: SuggestTagsResponseSchema,
     usageEventId,
-    maxCompletionTokens: 100,
   });
 
   const tags = normalizeTags(result.tags);

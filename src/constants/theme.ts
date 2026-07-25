@@ -145,6 +145,41 @@ export const spacing = {
   20: 80,
 } as const;
 
+// ── Citadel Frame ────────────────────────────────────────────────────
+// The house design language: sharp geometry, restrained colour, hierarchy from
+// light and spacing rather than decoration. Corners stay at 0 throughout, the one
+// place we go harder than the framework: square edges are the house signature.
+
+/**
+ * Depth comes from light, not blur. One architectural shadow, low opacity, so
+ * layers separate without floating. Level 0 is the background, level 1 is cards,
+ * level 2 is reserved: the focus card, Compass, the floating button, the active
+ * nav cell. Nothing else earns it.
+ */
+export const elevation = {
+  card: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 30,
+    elevation: 4,
+  },
+} as const;
+
+/** Stroke icons only, never filled. */
+export const iconSize = {
+  default: 22,
+  nav: 24,
+  hero: 28,
+} as const;
+
+/** Slow and elegant, no spring physics. Pair with an ease-out curve. */
+export const motion = {
+  fast: 120,
+  base: 180,
+  slow: 250,
+} as const;
+
 // ── Layout ───────────────────────────────────────────────────────────
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;

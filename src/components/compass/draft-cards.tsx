@@ -54,7 +54,7 @@ function DraftCardShell({ label, approveLabel, onApprove, onRefine, disabled, ch
         <GoldButton label={approveLabel} onPress={disabled ? undefined : onApprove} />
         <Touchable style={styles.refine} onPress={disabled ? undefined : onRefine}>
           <ThemedText type="labelMd" color={colors.text.secondary}>
-            WORK ON IT MORE
+            REFINE
           </ThemedText>
         </Touchable>
       </View>
@@ -77,7 +77,7 @@ export function SetupDraftCard({
   return (
     <DraftCardShell
       label="DRAFT · GOAL"
-      approveLabel="APPROVE & PICK DATE"
+      approveLabel="APPROVE & SET DATES"
       onApprove={onApprove}
       onRefine={onRefine}
       disabled={disabled}
@@ -90,12 +90,21 @@ export function SetupDraftCard({
         {proposal.goalSummary}
       </ThemedText>
 
+      {proposal.goalDurationDays != null && proposal.estimatedMilestones != null && (
+        <ThemedText type="labelSm" color={colors.text.secondary}>
+          ~{proposal.goalDurationDays} DAYS · ~{proposal.estimatedMilestones} MILESTONES
+        </ThemedText>
+      )}
+
       <ThemedText type="labelSm" color={colors.text.secondary} style={{ marginTop: spacing[2] }}>
         FIRST MILESTONE
       </ThemedText>
       <ThemedText type="bodyMd">{proposal.milestoneTitle}</ThemedText>
       <ThemedText type="labelSm" color={colors.text.secondary}>
-        {proposal.estimatedEffortUnits} STEPS · {proposal.effortUnitDefinition}
+        {proposal.estimatedEffortUnits} STEPS · ~{proposal.milestoneDurationDays} DAYS
+      </ThemedText>
+      <ThemedText type="labelSm" color={colors.text.secondary}>
+        {proposal.effortUnitDefinition}
       </ThemedText>
     </DraftCardShell>
   );

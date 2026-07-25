@@ -7,7 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ThemedText } from '@/components/themed-text';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { useColors } from '@/hooks/use-colors';
-import { fontFamily, spacing } from '@/constants/theme';
+import { elevation, fontFamily, spacing } from '@/constants/theme';
 import type { books } from '@/db/schema';
 import { db } from '@/db/client';
 import { readingProgress } from '@/db/schema';
@@ -31,6 +31,7 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
       backgroundColor: colors.surface.low,
       padding: spacing[5],
       gap: spacing[5],
+      ...elevation.card,
     },
     cover: {
       width: 90,

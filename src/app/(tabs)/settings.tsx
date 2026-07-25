@@ -1,5 +1,5 @@
 import * as Speech from 'expo-speech';
-import { Download, Info, MemoryStick, Power, Search, SlidersHorizontal, Trash2, Volume2, X } from 'lucide-react-native';
+import { AudioLines, BookOpen, Cloud, Download, Info, MemoryStick, Moon, Power, Search, SlidersHorizontal, Smartphone, Sun, Trash2, User, Volume2, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -22,11 +22,12 @@ import { TimePickerSheet } from '@/components/compass/time-picker-sheet';
 import { EngineInfoSheet, type EngineMode } from '@/components/settings/engine-info-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
-import { fontFamily, spacing } from '@/constants/theme';
+import { fontFamily, iconSize, spacing } from '@/constants/theme';
 import { db } from '@/db/client';
 import { compassGoals } from '@/db/schema';
 import { syncCompassReminders } from '@/services/compass-notifications';
@@ -229,11 +230,17 @@ export default function SettingsScreen() {
       letterSpacing: 1.2,
     },
     input: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
       backgroundColor: colors.surface.mid,
+      paddingHorizontal: spacing[4],
+    },
+    inputField: {
+      flex: 1,
       color: colors.text.primary,
       fontFamily: fontFamily.sans,
       fontSize: 16,
-      paddingHorizontal: spacing[4],
       paddingVertical: spacing[4],
     },
     row: {
@@ -243,6 +250,18 @@ export default function SettingsScreen() {
       backgroundColor: colors.surface.low,
       paddingHorizontal: spacing[5],
       paddingVertical: spacing[4],
+    },
+    rowLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
+    },
+    formatCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
+      backgroundColor: colors.surface.low,
+      padding: spacing[4],
     },
     saveBtn: {
       alignSelf: 'flex-end',
@@ -307,9 +326,6 @@ export default function SettingsScreen() {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    formatNote: {
-      marginTop: spacing[2],
-    },
     // SAMWELL / MODEL
     modelCard: {
       backgroundColor: colors.surface.low,
@@ -358,7 +374,7 @@ export default function SettingsScreen() {
     modeCard: {
       flex: 1,
       padding: spacing[4],
-      gap: spacing[1],
+      gap: spacing[2],
       borderWidth: 1,
       borderColor: colors.surface.highest,
       backgroundColor: colors.surface.low,
@@ -496,17 +512,20 @@ export default function SettingsScreen() {
           <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
             PROFILE
           </ThemedText>
-          <TextInput
-            style={styles.input}
-            placeholder="Display name"
-            placeholderTextColor={colors.text.secondary}
-            value={editingName}
-            onChangeText={setEditingName}
-            onBlur={handleNameBlur}
-            onSubmitEditing={handleNameBlur}
-            returnKeyType="done"
-            autoCorrect={false}
-          />
+          <View style={styles.input}>
+            <User size={iconSize.default} color={colors.text.primary} strokeWidth={2} />
+            <TextInput
+              style={styles.inputField}
+              placeholder="Display name"
+              placeholderTextColor={colors.text.secondary}
+              value={editingName}
+              onChangeText={setEditingName}
+              onBlur={handleNameBlur}
+              onSubmitEditing={handleNameBlur}
+              returnKeyType="done"
+              autoCorrect={false}
+            />
+          </View>
         </View>
 
         <View style={styles.divider} />
@@ -520,7 +539,10 @@ export default function SettingsScreen() {
             style={styles.row}
             onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           >
-            <ThemedText type="bodyMd">Light Mode</ThemedText>
+            <View style={styles.rowLeft}>
+              <PrefixIcon icon={Sun} size={36} />
+              <ThemedText type="bodyMd">Light Mode</ThemedText>
+            </View>
             <Switch
               value={theme === 'light'}
               onValueChange={(val) => setTheme(val ? 'light' : 'dark')}
@@ -537,9 +559,12 @@ export default function SettingsScreen() {
           <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
             BOOKS
           </ThemedText>
-          <ThemedText type="bodySm" color={colors.text.secondary} style={styles.formatNote}>
-            Open Citadel is EPUB-only. EPUB is the best format for knowledge capture. It supports themes, custom fonts, and text-to-speech.
-          </ThemedText>
+          <View style={styles.formatCard}>
+            <PrefixIcon icon={BookOpen} size={36} />
+            <ThemedText type="bodySm" color={colors.text.secondary} style={{ flex: 1 }}>
+              Open Citadel is EPUB-only. EPUB is the best format for knowledge capture. It supports themes, custom fonts, and text-to-speech.
+            </ThemedText>
+          </View>
         </View>
 
         <View style={styles.divider} />
@@ -561,9 +586,16 @@ export default function SettingsScreen() {
               style={[styles.modeCard, samwellMode === 'offline' && styles.modeCardActive]}
               onPress={() => setSamwellMode('offline')}
             >
-              <ThemedText type="bodyMd" color={samwellMode === 'offline' ? colors.primary.default : colors.text.primary}>
-                Offline
-              </ThemedText>
+              <View style={styles.rowLeft}>
+                <PrefixIcon
+                  icon={Smartphone}
+                  size={36}
+                  color={samwellMode === 'offline' ? colors.primary.default : colors.text.primary}
+                />
+                <ThemedText type="bodyMd" color={samwellMode === 'offline' ? colors.primary.default : colors.text.primary}>
+                  Offline
+                </ThemedText>
+              </View>
               <ThemedText type="bodySm" color={colors.text.secondary}>
                 Samwell on your device.
               </ThemedText>
@@ -575,9 +607,16 @@ export default function SettingsScreen() {
               style={[styles.modeCard, samwellMode === 'cloud' && styles.modeCardActive]}
               onPress={() => setSamwellMode('cloud')}
             >
-              <ThemedText type="bodyMd" color={samwellMode === 'cloud' ? colors.primary.default : colors.text.primary}>
-                Cloud
-              </ThemedText>
+              <View style={styles.rowLeft}>
+                <PrefixIcon
+                  icon={Cloud}
+                  size={36}
+                  color={samwellMode === 'cloud' ? colors.primary.default : colors.text.primary}
+                />
+                <ThemedText type="bodyMd" color={samwellMode === 'cloud' ? colors.primary.default : colors.text.primary}>
+                  Cloud
+                </ThemedText>
+              </View>
               <ThemedText type="bodySm" color={colors.text.secondary}>
                 Grand Maester Samwell in the cloud.
               </ThemedText>
@@ -797,13 +836,19 @@ export default function SettingsScreen() {
             </ThemedText>
           </View>
           <Touchable style={styles.row} onPress={() => setTimePickerFor('morning')}>
-            <ThemedText type="bodyMd">Morning check-in</ThemedText>
+            <View style={styles.rowLeft}>
+              <PrefixIcon icon={Sun} size={36} />
+              <ThemedText type="bodyMd">Morning check-in</ThemedText>
+            </View>
             <ThemedText type="bodySm" color={colors.text.secondary}>
               {compassMorningTime} ›
             </ThemedText>
           </Touchable>
           <Touchable style={styles.row} onPress={() => setTimePickerFor('night')}>
-            <ThemedText type="bodyMd">Night check-in</ThemedText>
+            <View style={styles.rowLeft}>
+              <PrefixIcon icon={Moon} size={36} />
+              <ThemedText type="bodyMd">Night check-in</ThemedText>
+            </View>
             <ThemedText type="bodySm" color={colors.text.secondary}>
               {compassNightTime} ›
             </ThemedText>
@@ -840,7 +885,10 @@ export default function SettingsScreen() {
           </View>
 
           <Touchable style={styles.row} onPress={openVoiceModal}>
-            <ThemedText type="bodyMd">Voice</ThemedText>
+            <View style={styles.rowLeft}>
+              <PrefixIcon icon={AudioLines} size={36} />
+              <ThemedText type="bodyMd">Voice</ThemedText>
+            </View>
             <ThemedText type="bodySm" color={colors.text.secondary}>
               {currentVoiceName} ›
             </ThemedText>

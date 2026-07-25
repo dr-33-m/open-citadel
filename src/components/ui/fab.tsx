@@ -4,7 +4,7 @@ import { StyleSheet, Text } from 'react-native';
 
 import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
+import { elevation, spacing } from '@/constants/theme';
 
 type FabProps = {
   onPress?: () => void;
@@ -23,6 +23,7 @@ export function Fab({ onPress }: FabProps) {
       height: 52,
       alignItems: 'center',
       justifyContent: 'center',
+      ...elevation.card,
     },
     icon: {
       fontSize: 28,

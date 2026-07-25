@@ -26,15 +26,19 @@ export default function CompassSetupScreen() {
   const { mode } = useLocalSearchParams<{ mode?: string }>();
   const milestoneMode = mode === 'milestone';
 
-  const { submitting, error, sendSetupTurn, finalizeSetup } = useCompassStore();
+  const { goal, submitting, error, sendSetupTurn, finalizeSetup } = useCompassStore();
   const { compassMorningTime, compassNightTime, setCompassTimes } = useSettingsStore();
   const inputRef = useRef<TextInput | null>(null);
+
+  // An existing goal already carries its own target; only the milestone needs a date.
+  const hasGoal = goal != null;
 
   const [messages, setMessages] = useState<CompassChatMessage[]>([]);
   const [draft, setDraft] = useState<CompassSetupProposal | null>(null);
   const [committing, setCommitting] = useState<CompassSetupProposal | null>(null);
-  const [targetDate, setTargetDate] = useState<string | null>(null);
-  const [calendarVisible, setCalendarVisible] = useState(false);
+  const [milestoneDate, setMilestoneDate] = useState<string | null>(null);
+  const [goalDate, setGoalDate] = useState<string | null>(null);
+  const [calendarFor, setCalendarFor] = useState<'milestone' | 'goal' | null>(null);
   const [timeEditing, setTimeEditing] = useState<'morning' | 'night' | null>(null);
   const [finalizing, setFinalizing] = useState(false);
 
@@ -98,14 +102,32 @@ export default function CompassSetupScreen() {
     void runTurn(messages);
   }
 
+  /** Samwell sizes each horizon in days; the driver commits to the actual dates. */
+  function approveDraft(proposal: CompassSetupProposal) {
+    const today = todayLocalYmd();
+    setCommitting(proposal);
+    setMilestoneDate(addDaysYmd(today, proposal.milestoneDurationDays));
+    if (!hasGoal && proposal.goalDurationDays) {
+      setGoalDate(addDaysYmd(today, proposal.goalDurationDays));
+    }
+  }
+
   async function handleConfirm() {
     if (!committing) return;
-    if (!targetDate) {
-      setCalendarVisible(true);
+    if (!milestoneDate) {
+      setCalendarFor('milestone');
+      return;
+    }
+    if (!hasGoal && !goalDate) {
+      setCalendarFor('goal');
       return;
     }
     setFinalizing(true);
-    const ok = await finalizeSetup({ proposal: committing, targetDate });
+    const ok = await finalizeSetup({
+      proposal: committing,
+      milestoneTargetDate: milestoneDate,
+      goalTargetDate: goalDate,
+    });
     setFinalizing(false);
     if (ok) router.back();
   }
@@ -145,17 +167,40 @@ export default function CompassSetupScreen() {
 
           <View style={styles.field}>
             <ThemedText type="labelSm" color={colors.text.secondary}>
-              TARGET DATE
+              MILESTONE DUE
             </ThemedText>
-            <Touchable style={styles.pickerRow} onPress={() => setCalendarVisible(true)}>
+            <Touchable style={styles.pickerRow} onPress={() => setCalendarFor('milestone')}>
               <ThemedText type="bodyMd">
-                {targetDate ? formatCompassDate(targetDate) : 'Pick a date'}
+                {milestoneDate ? formatCompassDate(milestoneDate) : 'Pick a date'}
               </ThemedText>
               <ThemedText type="labelSm" color={colors.primary.default}>
                 CHANGE
               </ThemedText>
             </Touchable>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              This milestone alone, not the whole goal. Samwell sized it at about{' '}
+              {committing.milestoneDurationDays} days.
+            </ThemedText>
           </View>
+
+          {!hasGoal && (
+            <View style={styles.field}>
+              <ThemedText type="labelSm" color={colors.text.secondary}>
+                GOAL TARGET
+              </ThemedText>
+              <Touchable style={styles.pickerRow} onPress={() => setCalendarFor('goal')}>
+                <ThemedText type="bodyMd">
+                  {goalDate ? formatCompassDate(goalDate) : 'Pick a date'}
+                </ThemedText>
+                <ThemedText type="labelSm" color={colors.primary.default}>
+                  CHANGE
+                </ThemedText>
+              </Touchable>
+              <ThemedText type="bodySm" color={colors.text.secondary}>
+                When the whole goal is due. Both dates stay fixed from here.
+              </ThemedText>
+            </View>
+          )}
 
           <View style={styles.field}>
             <ThemedText type="labelSm" color={colors.text.secondary}>
@@ -193,14 +238,19 @@ export default function CompassSetupScreen() {
         </ScrollView>
 
         <CalendarPicker
-          visible={calendarVisible}
-          selectedDate={targetDate ?? ''}
-          minDate={addDaysYmd(todayLocalYmd(), 1)}
+          visible={calendarFor !== null}
+          selectedDate={(calendarFor === 'goal' ? goalDate : milestoneDate) ?? ''}
+          minDate={
+            calendarFor === 'goal' && milestoneDate
+              ? milestoneDate
+              : addDaysYmd(todayLocalYmd(), 1)
+          }
           onSelectDate={(date) => {
-            setTargetDate(date);
-            setCalendarVisible(false);
+            if (calendarFor === 'goal') setGoalDate(date);
+            else setMilestoneDate(date);
+            setCalendarFor(null);
           }}
-          onClose={() => setCalendarVisible(false)}
+          onClose={() => setCalendarFor(null)}
         />
 
         <TimePickerSheet
@@ -232,7 +282,7 @@ export default function CompassSetupScreen() {
         draft ? (
           <SetupDraftCard
             proposal={draft}
-            onApprove={() => setCommitting(draft)}
+            onApprove={() => approveDraft(draft)}
             onRefine={() => inputRef.current?.focus()}
           />
         ) : null

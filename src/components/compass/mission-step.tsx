@@ -51,14 +51,15 @@ export function MissionStep({
 
   return (
     <View style={styles.row}>
-      <View style={styles.number}>
-        <ThemedText type="labelSm" color={colors.primary.default}>
-          {index}
-        </ThemedText>
-      </View>
-      {showIcon && (
+      {showIcon ? (
         <View style={styles.iconWrap}>
           <Icon size={18} color={colors.text.primary} />
+        </View>
+      ) : (
+        <View style={styles.number}>
+          <ThemedText type="labelSm" color={colors.primary.default}>
+            {index}
+          </ThemedText>
         </View>
       )}
       <View style={styles.text}>

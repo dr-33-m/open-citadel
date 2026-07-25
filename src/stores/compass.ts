@@ -26,6 +26,8 @@ import {
   compassDayFor,
   computeFinalVarianceDays,
   computeFocusScore,
+  computeGoalTrack,
+  computeProgress,
   computeProjection,
   daysBetween,
 } from '@/services/compass-math';
@@ -58,14 +60,24 @@ type CompassState = {
   sendNightTurn: (messages: CompassChatMessage[]) => Promise<CompassNightTurn | null>;
   finalizeSetup: (args: {
     proposal: CompassSetupProposal;
-    targetDate: string;
+    /** The near commitment: when THIS milestone is due. */
+    milestoneTargetDate: string;
+    /** The outer commitment. Ignored when the goal already has one. */
+    goalTargetDate?: string | null;
     goalTitle?: string;
     milestoneTitle?: string;
     estimatedEffortUnits?: number;
   }) => Promise<boolean>;
+  /** Re-commit the dates on an existing race, for a milestone that was mis-scoped at setup. */
+  updateTargetDates: (args: {
+    milestoneTargetDate?: string;
+    goalTargetDate?: string;
+  }) => Promise<boolean>;
   finalizeMorning: (args: { analysis: CompassMorningAnalysis; transcript: string }) => Promise<boolean>;
   finalizeNight: (args: { analysis: CompassNightAnalysis; transcript: string }) => Promise<boolean>;
   completeMilestone: () => Promise<void>;
+  /** Retire the current goal so a fresh one can be planned. History is kept, not deleted. */
+  archiveGoal: () => Promise<void>;
   clearError: () => void;
 };
 
@@ -178,18 +190,15 @@ export const useCompassStore = create<CompassState>((set, get) => ({
           .orderBy(desc(compassMilestones.sortOrder))
           .get() ?? null;
 
-      lastCompletedMilestone =
-        db
-          .select()
-          .from(compassMilestones)
-          .where(
-            and(
-              eq(compassMilestones.goalId, goal.id),
-              eq(compassMilestones.status, 'completed'),
-            ),
-          )
-          .orderBy(desc(compassMilestones.sortOrder))
-          .get() ?? null;
+      const completedMilestones = db
+        .select()
+        .from(compassMilestones)
+        .where(
+          and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'completed')),
+        )
+        .orderBy(desc(compassMilestones.sortOrder))
+        .all();
+      lastCompletedMilestone = completedMilestones[0] ?? null;
 
       const compassDay = currentCompassDay();
       todayMorning =
@@ -226,7 +235,11 @@ export const useCompassStore = create<CompassState>((set, get) => ({
         .all();
 
       if (milestone) {
-        telemetry = buildTelemetry(goal, milestone, compassDay);
+        telemetry = buildTelemetry(
+          { ...goal, completedMilestones: completedMilestones.length },
+          milestone,
+          compassDay,
+        );
       }
     }
 
@@ -317,16 +330,31 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     }
   },
 
-  finalizeSetup: async ({ proposal, targetDate, goalTitle, milestoneTitle, estimatedEffortUnits }) => {
+  finalizeSetup: async ({
+    proposal,
+    milestoneTargetDate,
+    goalTargetDate,
+    goalTitle,
+    milestoneTitle,
+    estimatedEffortUnits,
+  }) => {
     const now = new Date().toISOString();
     const startDate = currentCompassDay();
-    if (daysBetween(startDate, targetDate) <= 0) {
-      set({ error: 'The target date must be after today.' });
+    if (daysBetween(startDate, milestoneTargetDate) <= 0) {
+      set({ error: 'The milestone date must be after today.' });
       return false;
     }
 
     let goal = get().goal;
     if (!goal) {
+      if (!goalTargetDate) {
+        set({ error: 'Pick a target date for the goal.' });
+        return false;
+      }
+      if (daysBetween(milestoneTargetDate, goalTargetDate) < 0) {
+        set({ error: 'The goal date cannot be before the milestone date.' });
+        return false;
+      }
       const goalId = createId('cgoal');
       db.insert(compassGoals)
         .values({
@@ -334,6 +362,9 @@ export const useCompassStore = create<CompassState>((set, get) => ({
           title: goalTitle?.trim() || proposal.goalTitle,
           description: proposal.goalSummary,
           status: 'active',
+          startDate,
+          targetDate: goalTargetDate,
+          estimatedMilestones: proposal.estimatedMilestones ?? 1,
           createdAt: now,
         })
         .run();
@@ -357,8 +388,8 @@ export const useCompassStore = create<CompassState>((set, get) => ({
         estimatedEffortUnits: estimatedEffortUnits ?? proposal.estimatedEffortUnits,
         completedEffortUnits: 0,
         startDate,
-        targetDate,
-        originalEstimateDays: daysBetween(startDate, targetDate),
+        targetDate: milestoneTargetDate,
+        originalEstimateDays: daysBetween(startDate, milestoneTargetDate),
         sortOrder: priorMilestones.length,
         createdAt: now,
       })
@@ -370,6 +401,41 @@ export const useCompassStore = create<CompassState>((set, get) => ({
       nightTime: compassNightTime,
       hasActiveGoal: true,
     });
+
+    set({ error: null });
+    await get().loadCompass();
+    return true;
+  },
+
+  updateTargetDates: async ({ milestoneTargetDate, goalTargetDate }) => {
+    const { goal, milestone } = get();
+    if (!goal) return false;
+
+    const today = currentCompassDay();
+    if (milestoneTargetDate && milestone) {
+      if (daysBetween(today, milestoneTargetDate) <= 0) {
+        set({ error: 'The milestone date must be after today.' });
+        return false;
+      }
+      db.update(compassMilestones)
+        .set({
+          targetDate: milestoneTargetDate,
+          originalEstimateDays: daysBetween(milestone.startDate, milestoneTargetDate),
+        })
+        .where(eq(compassMilestones.id, milestone.id))
+        .run();
+    }
+
+    if (goalTargetDate) {
+      if (daysBetween(today, goalTargetDate) <= 0) {
+        set({ error: 'The goal date must be after today.' });
+        return false;
+      }
+      db.update(compassGoals)
+        .set({ targetDate: goalTargetDate, startDate: goal.startDate ?? today })
+        .where(eq(compassGoals.id, goal.id))
+        .run();
+    }
 
     set({ error: null });
     await get().loadCompass();
@@ -458,6 +524,32 @@ export const useCompassStore = create<CompassState>((set, get) => ({
         .where(eq(compassMilestones.id, milestone.id))
         .run();
 
+      // Keep the goal's own projection in step with the milestone that just moved.
+      if (goal.startDate && goal.targetDate && goal.estimatedMilestones) {
+        const completedMilestones = db
+          .select()
+          .from(compassMilestones)
+          .where(
+            and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'completed')),
+          )
+          .all();
+        const track = computeGoalTrack({
+          startDate: goal.startDate,
+          targetDate: goal.targetDate,
+          estimatedMilestones: goal.estimatedMilestones,
+          completedMilestones: completedMilestones.length,
+          currentMilestoneProgress: computeProgress(
+            completedEffortUnits,
+            milestone.estimatedEffortUnits,
+          ),
+          today: compassDay,
+        });
+        db.update(compassGoals)
+          .set({ currentProjectedDate: track.currentProjectedDate })
+          .where(eq(compassGoals.id, goal.id))
+          .run();
+      }
+
       // Persist a journey reflection (distilled at zero extra cost from the analysis).
       if (analysis.journeyNote) {
         saveJourneyReflection(analysis.journeyNote, checkinId);
@@ -492,6 +584,26 @@ export const useCompassStore = create<CompassState>((set, get) => ({
       hasActiveGoal: false,
     });
 
+    await get().loadCompass();
+  },
+
+  archiveGoal: async () => {
+    const { goal } = get();
+    if (!goal) return;
+
+    db.update(compassGoals)
+      .set({ status: 'archived', completedAt: new Date().toISOString() })
+      .where(eq(compassGoals.id, goal.id))
+      .run();
+
+    const { compassMorningTime, compassNightTime } = useSettingsStore.getState();
+    await syncCompassReminders({
+      morningTime: compassMorningTime,
+      nightTime: compassNightTime,
+      hasActiveGoal: false,
+    });
+
+    set({ error: null });
     await get().loadCompass();
   },
 

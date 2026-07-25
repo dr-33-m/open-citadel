@@ -41,6 +41,26 @@ export const CompassActionSchema = z.object({
 });
 export type CompassAction = z.infer<typeof CompassActionSchema>;
 
+/**
+ * The goal-level race, one level above the current milestone. A goal carries its
+ * own fixed target date and an estimate of how many milestones it takes; progress
+ * is counted in fractional milestones so it works even when each milestone counts
+ * a different kind of step. This is what makes the dual read possible: on pace for
+ * this milestone, but the whole goal still lands late.
+ */
+export const CompassGoalTrackSchema = z.object({
+  targetDate: z.string(),
+  estimatedMilestones: z.number(),
+  completedMilestones: z.number(),
+  /** Milestones done including the current one's fraction, e.g. 2.4 of 7. */
+  milestonesDone: z.number(),
+  currentProjectedDate: z.string().nullable(),
+  daysRemaining: z.number().int(),
+  scheduleStatus: z.enum(COMPASS_SCHEDULE_STATUSES),
+  varianceDays: z.number().int().nullable(),
+});
+export type CompassGoalTrack = z.infer<typeof CompassGoalTrackSchema>;
+
 /** Client-computed context sent with every check-in. Dates are local YYYY-MM-DD. */
 export const CompassTelemetrySchema = z.object({
   goalTitle: z.string(),
@@ -58,6 +78,8 @@ export const CompassTelemetrySchema = z.object({
   requiredDailyUnits: z.number(),
   scheduleStatus: z.enum(COMPASS_SCHEDULE_STATUSES),
   varianceDays: z.number().int().nullable(),
+  /** Absent on goals set up before two-level targets existed. */
+  goalTrack: CompassGoalTrackSchema.nullable().optional(),
 });
 export type CompassTelemetry = z.infer<typeof CompassTelemetrySchema>;
 
@@ -127,6 +149,16 @@ export const CompassSetupProposalSchema = z.object({
   milestoneTitle: z.string().min(1),
   effortUnitDefinition: z.string().min(1),
   estimatedEffortUnits: z.number().positive(),
+  /**
+   * Realistic days for THIS milestone alone. A milestone must never inherit the
+   * goal's whole runway, or its pace maths are meaningless; the app pre-fills the
+   * date picker with it and the driver commits to the actual date.
+   */
+  milestoneDurationDays: z.number().int().positive(),
+  /** Days for the whole goal. Null when planning the next milestone of a goal that already has a target. */
+  goalDurationDays: z.number().int().positive().nullable(),
+  /** How many milestones of this size the goal needs end to end. Null in next-milestone mode. */
+  estimatedMilestones: z.number().int().positive().nullable(),
   rationale: z.string(),
 });
 export type CompassSetupProposal = z.infer<typeof CompassSetupProposalSchema>;

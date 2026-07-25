@@ -1,8 +1,8 @@
 import React from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
-import type { CompassTelemetry } from 'samwell-shared';
+import type { CompassScheduleStatus, CompassTelemetry } from 'samwell-shared';
 
-import { formatCompassDate, paceVerdict } from '@/components/compass/format';
+import { formatCompassDate, paceVerdict, SCORE_RED } from '@/components/compass/format';
 import { ThemedText } from '@/components/themed-text';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Touchable } from '@/components/ui/touchable';
@@ -17,6 +17,8 @@ type ProgressSheetProps = {
   goalTitle: string;
   milestone: CompassMilestoneRow;
   telemetry: CompassTelemetry | null;
+  onAdjustDates: (which: 'milestone' | 'goal') => void;
+  onArchiveGoal: () => void;
 };
 
 export function ProgressSheet({
@@ -25,8 +27,16 @@ export function ProgressSheet({
   goalTitle,
   milestone,
   telemetry,
+  onAdjustDates,
+  onArchiveGoal,
 }: ProgressSheetProps) {
   const colors = useColors();
+  const [confirmArchive, setConfirmArchive] = React.useState(false);
+
+  // Reset the two-tap confirm whenever the sheet is dismissed.
+  React.useEffect(() => {
+    if (!visible) setConfirmArchive(false);
+  }, [visible]);
 
   const styles = React.useMemo(
     () =>
@@ -65,6 +75,18 @@ export function ProgressSheet({
           borderTopColor: colors.outline.variant,
           paddingTop: spacing[5],
         },
+        sectionHead: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: spacing[3],
+        },
+        archive: {
+          gap: spacing[2],
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.outline.variant,
+          paddingTop: spacing[5],
+        },
       }),
     [colors],
   );
@@ -78,14 +100,16 @@ export function ProgressSheet({
 
   const status = telemetry?.scheduleStatus ?? 'unknown';
   const variance = telemetry?.varianceDays ?? null;
-  const paceColor =
-    status === 'behind'
+  const paceTint = (s: CompassScheduleStatus) =>
+    s === 'behind'
       ? '#e53935'
-      : status === 'ahead'
+      : s === 'ahead'
         ? '#4caf50'
-        : status === 'unknown'
+        : s === 'unknown'
           ? colors.text.secondary
           : colors.primary.default;
+  const paceColor = paceTint(status);
+  const goalTrack = telemetry?.goalTrack ?? null;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -95,18 +119,49 @@ export function ProgressSheet({
           <View style={styles.grabber} />
 
           <View style={styles.section}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
-              GOAL
-            </ThemedText>
+            <View style={styles.sectionHead}>
+              <ThemedText type="labelSm" color={colors.text.secondary}>
+                GOAL
+              </ThemedText>
+              {goalTrack && (
+                <Touchable onPress={() => onAdjustDates('goal')}>
+                  <ThemedText type="labelSm" color={colors.primary.default}>
+                    ADJUST DATE
+                  </ThemedText>
+                </Touchable>
+              )}
+            </View>
             <ThemedText type="bodyMd" color={colors.text.secondary}>
               {goalTitle}
             </ThemedText>
+            {goalTrack && (
+              <>
+                <ThemedText type="bodySm" color={paceTint(goalTrack.scheduleStatus)}>
+                  {paceVerdict(goalTrack.scheduleStatus, goalTrack.varianceDays)}
+                </ThemedText>
+                <ThemedText type="bodySm" color={colors.text.secondary}>
+                  {Math.round(goalTrack.milestonesDone * 10) / 10} of{' '}
+                  {goalTrack.estimatedMilestones} milestones · target{' '}
+                  {formatCompassDate(goalTrack.targetDate)}
+                  {goalTrack.currentProjectedDate
+                    ? `, now projected ${formatCompassDate(goalTrack.currentProjectedDate)}`
+                    : ''}
+                </ThemedText>
+              </>
+            )}
           </View>
 
           <View style={styles.section}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
-              MILESTONE
-            </ThemedText>
+            <View style={styles.sectionHead}>
+              <ThemedText type="labelSm" color={colors.text.secondary}>
+                MILESTONE
+              </ThemedText>
+              <Touchable onPress={() => onAdjustDates('milestone')}>
+                <ThemedText type="labelSm" color={colors.primary.default}>
+                  ADJUST DATE
+                </ThemedText>
+              </Touchable>
+            </View>
             <ThemedText type="headlineMd">{milestone.title}</ThemedText>
           </View>
 
@@ -133,6 +188,21 @@ export function ProgressSheet({
                 {telemetry.currentProjectedDate
                   ? `, now projected ${formatCompassDate(telemetry.currentProjectedDate)}`
                   : ''}
+              </ThemedText>
+            )}
+          </View>
+
+          <View style={styles.archive}>
+            <Touchable
+              onPress={() => (confirmArchive ? onArchiveGoal() : setConfirmArchive(true))}
+            >
+              <ThemedText type="labelSm" color={confirmArchive ? SCORE_RED : colors.text.secondary}>
+                {confirmArchive ? 'TAP AGAIN TO ARCHIVE' : 'ARCHIVE GOAL'}
+              </ThemedText>
+            </Touchable>
+            {confirmArchive && (
+              <ThemedText type="bodySm" color={colors.text.secondary}>
+                Your check-in history is kept. You can plan a fresh goal after this.
               </ThemedText>
             )}
           </View>

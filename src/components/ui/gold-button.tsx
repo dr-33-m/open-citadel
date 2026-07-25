@@ -17,8 +17,8 @@ export function GoldButton({ label, onPress }: GoldButtonProps) {
   const colors = useColors();
   const styles = React.useMemo(() => StyleSheet.create({
     gradient: {
+      minHeight: 56,
       paddingHorizontal: spacing[6],
-      paddingVertical: spacing[4],
       alignItems: 'center',
       justifyContent: 'center',
     },

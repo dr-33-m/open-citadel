@@ -2,6 +2,7 @@ import type {
   CompassAction,
   CompassAlignment,
   CompassCategory,
+  CompassGoalTrack,
   CompassScheduleStatus,
   CompassTelemetry,
 } from 'samwell-shared';
@@ -180,10 +181,59 @@ export function computeFinalVarianceDays(
   return daysBetween(targetDate, actualCompletedDate);
 }
 
+// ── Goal-level race ──────────────────────────────────────────────────────────
+
+/**
+ * The goal's own projection, one level above the milestone. Progress is counted
+ * in fractional MILESTONES rather than steps, because each milestone defines its
+ * own kind of step ("1 chapter outlined" then "1 chapter written") and those
+ * cannot be summed. Milestones are comparable, so the goal races in those.
+ */
+export function computeGoalTrack(input: {
+  startDate: string;
+  targetDate: string;
+  estimatedMilestones: number;
+  completedMilestones: number;
+  /** The active milestone's own progress, 0..1. */
+  currentMilestoneProgress: number;
+  today: string;
+}): CompassGoalTrack {
+  const estimatedMilestones = Math.max(1, input.estimatedMilestones);
+  const milestonesDone = Math.min(
+    estimatedMilestones,
+    input.completedMilestones + Math.min(1, Math.max(0, input.currentMilestoneProgress)),
+  );
+
+  const { projectedDate } = computeProjection({
+    completedUnits: milestonesDone,
+    estimatedUnits: estimatedMilestones,
+    startDate: input.startDate,
+    today: input.today,
+  });
+  const { status, varianceDays } = computeScheduleStatus(input.targetDate, projectedDate);
+
+  return {
+    targetDate: input.targetDate,
+    estimatedMilestones,
+    completedMilestones: input.completedMilestones,
+    milestonesDone,
+    currentProjectedDate: projectedDate,
+    daysRemaining: Math.max(0, daysBetween(input.today, input.targetDate)),
+    scheduleStatus: status,
+    varianceDays,
+  };
+}
+
 // ── Telemetry context for the AI ─────────────────────────────────────────────
 
 export function buildTelemetry(
-  goal: { title: string },
+  goal: {
+    title: string;
+    startDate?: string | null;
+    targetDate?: string | null;
+    estimatedMilestones?: number | null;
+    completedMilestones?: number;
+  },
   milestone: {
     title: string;
     effortUnitDefinition: string;
@@ -211,6 +261,21 @@ export function buildTelemetry(
   const requiredDailyUnits =
     daysRemaining > 0 ? remainingUnits / daysRemaining : remainingUnits;
 
+  const goalTrack =
+    goal.startDate && goal.targetDate && goal.estimatedMilestones
+      ? computeGoalTrack({
+          startDate: goal.startDate,
+          targetDate: goal.targetDate,
+          estimatedMilestones: goal.estimatedMilestones,
+          completedMilestones: goal.completedMilestones ?? 0,
+          currentMilestoneProgress: computeProgress(
+            milestone.completedEffortUnits,
+            milestone.estimatedEffortUnits,
+          ),
+          today,
+        })
+      : null;
+
   return {
     goalTitle: goal.title,
     milestoneTitle: milestone.title,
@@ -227,5 +292,6 @@ export function buildTelemetry(
     requiredDailyUnits,
     scheduleStatus: status,
     varianceDays,
+    goalTrack,
   };
 }

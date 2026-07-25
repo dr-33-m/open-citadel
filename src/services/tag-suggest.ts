@@ -81,7 +81,11 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
       throw new Error('Grand Maester Samwell has reached the current usage limit.');
     }
     if (!res.ok) {
-      throw new Error("Couldn't suggest tags. Try again.");
+      // Keep the status: a generic failure string hides whether this was a bad
+      // request, a cold server, or the model failing to produce usable tags.
+      const detail = await res.text().catch(() => '');
+      console.warn('[Samwell Cloud] tag suggest failed', res.status, detail.slice(0, 300));
+      throw new Error(`Couldn't suggest tags (${res.status}). Try again.`);
     }
     const parsed = SuggestTagsResponseSchema.safeParse(await res.json());
     const tags = parsed.success ? normalizeTags(parsed.data.tags) : [];
