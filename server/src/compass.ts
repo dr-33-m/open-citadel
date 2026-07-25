@@ -71,7 +71,14 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
       ],
       modelOptions: {
         temperature: 0.2,
-        maxCompletionTokens: args.maxCompletionTokens ?? 1000,
+        // No default cap: reasoning-capable models (our default is a GPT-5 chat
+        // model) spend completion tokens on hidden reasoning before they ever write
+        // the JSON, so a bounded budget runs out mid-thought on longer turns and the
+        // structured output never validates — intermittently, since reasoning length
+        // varies per turn. Callers that genuinely want a ceiling can still pass one.
+        ...(args.maxCompletionTokens != null
+          ? { maxCompletionTokens: args.maxCompletionTokens }
+          : {}),
       },
     }) as Promise<z.infer<TSchema>>;
 
@@ -163,7 +170,6 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
       messages,
       schema: args.outputSchema,
       usageEventId,
-      maxCompletionTokens: 1500,
     });
 
     return c.json(result);
