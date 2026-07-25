@@ -3,12 +3,15 @@ import { View } from 'react-native';
 import { useMarkdown } from 'react-native-marked';
 
 import { HighlightCard } from '@/components/chat/highlight-card';
+import { SuggestionCard } from '@/components/chat/suggestion-card';
 import { ThemedText } from '@/components/themed-text';
 import { fontFamily, spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 
-// Regex to split on [[ref:highlight:hl-123]] or [[ref:thought:th-123]]
-const REF_PATTERN = /\[\[ref:(highlight|thought):([^\]]+)\]\]/g;
+// Regex to split on [[ref:highlight:hl-123]] / [[ref:thought:th-123]] (an
+// existing entry, read-only) or [[suggest:highlight:sugg-1]] /
+// [[suggest:thought:sugg-1]] (a proposed one, approve/reject).
+const MARKER_PATTERN = /\[\[(ref|suggest):(highlight|thought):([^\]]+)\]\]/g;
 
 interface ChatBubbleProps {
   role: 'user' | 'assistant';
@@ -62,31 +65,32 @@ const AssistantContent = React.memo(function AssistantContent({
   onNavigateToHighlight?: (bookId: string, locator: string) => void;
   onNavigateToTimeline?: () => void;
 }) {
-  // Split content into text segments and reference markers
+  // Split content into text segments and reference/suggestion markers
   const segments = useMemo(() => {
-    if (!content.includes('[[ref:')) {
-      return null; // Fast path: no refs, render as plain markdown
+    if (!content.includes('[[ref:') && !content.includes('[[suggest:')) {
+      return null; // Fast path: no markers, render as plain markdown
     }
 
     const parts: Array<
       | { kind: 'text'; text: string }
       | { kind: 'ref'; type: 'highlight' | 'thought'; id: string }
+      | { kind: 'suggest'; type: 'highlight' | 'thought'; id: string }
     > = [];
     let lastIndex = 0;
 
     // Reset regex state
-    REF_PATTERN.lastIndex = 0;
+    MARKER_PATTERN.lastIndex = 0;
     let match;
-    while ((match = REF_PATTERN.exec(content)) !== null) {
+    while ((match = MARKER_PATTERN.exec(content)) !== null) {
       if (match.index > lastIndex) {
         parts.push({ kind: 'text', text: content.slice(lastIndex, match.index) });
       }
       parts.push({
-        kind: 'ref',
-        type: match[1] as 'highlight' | 'thought',
-        id: match[2],
+        kind: match[1] as 'ref' | 'suggest',
+        type: match[2] as 'highlight' | 'thought',
+        id: match[3],
       });
-      lastIndex = REF_PATTERN.lastIndex;
+      lastIndex = MARKER_PATTERN.lastIndex;
     }
     if (lastIndex < content.length) {
       parts.push({ kind: 'text', text: content.slice(lastIndex) });
@@ -112,6 +116,9 @@ const AssistantContent = React.memo(function AssistantContent({
               streaming={isLast ? streaming : false}
             />
           );
+        }
+        if (seg.kind === 'suggest') {
+          return <SuggestionCard key={`suggest-${seg.type}-${seg.id}`} id={seg.id} kind={seg.type} />;
         }
         return (
           <HighlightCard

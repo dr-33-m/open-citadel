@@ -37,7 +37,12 @@ interface TimelineState {
 
   loadTimeline: (date?: string) => Promise<void>;
   setSelectedDate: (date: string) => void;
-  addThought: (text: string, color: string, tags: string[]) => Promise<void>;
+  addThought: (
+    text: string,
+    color: string,
+    tags: string[],
+    chatSessionId?: string,
+  ) => Promise<string>;
   updateThought: (
     id: string,
     text: string,
@@ -243,7 +248,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     get().loadTimeline(date);
   },
 
-  addThought: async (text: string, color: string, tags: string[]) => {
+  addThought: async (text: string, color: string, tags: string[], chatSessionId?: string) => {
     const id = `th-${Date.now()}`;
     const now = new Date().toISOString();
 
@@ -252,10 +257,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       text,
       color,
       tags: tags.length > 0 ? JSON.stringify(tags) : null,
+      chatSessionId: chatSessionId ?? null,
       createdAt: now,
     });
 
     await get().loadTimeline();
+    return id;
   },
 
   updateThought: async (

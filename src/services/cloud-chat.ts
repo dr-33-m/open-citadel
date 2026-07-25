@@ -6,7 +6,9 @@ import {
   searchHighlightsTool,
   searchReadingTool,
   searchThoughtsTool,
+  suggestHighlightTool,
   suggestNextBookTool,
+  suggestThoughtTool,
   tagHighlightTool,
   tagThoughtTool,
 } from 'samwell-shared';
@@ -19,6 +21,7 @@ import {
   type BookCandidate,
   type ReadingSnippet,
   type SearchResult,
+  type ToolCallContext,
 } from '@/services/chat-tools';
 import { useApprovalStore } from '@/stores/approval';
 
@@ -40,6 +43,7 @@ export interface CloudChatTurnOptions {
   deviceId: string;
   modelId: string;
   sessionId: string;
+  bookId: string | null;
   history: StoredChatMessage[];
   content: string;
   onStreamingContent: (content: string) => void;
@@ -89,16 +93,17 @@ function latestAssistantText(messages: UIMessage[]): string {
 function statusForTool(toolName: string): string {
   if (toolName.startsWith('delete_')) return 'Waiting for delete approval…';
   if (toolName.startsWith('tag_')) return 'Waiting for tag approval…';
+  if (toolName.startsWith('suggest_') && toolName !== 'suggest_next_book') return 'Noting that down…';
   if (toolName === 'search_thoughts') return 'Searching through your thoughts…';
   if (toolName === 'search_reading') return 'Checking your books…';
   if (toolName === 'suggest_next_book') return 'Looking over your library…';
   return 'Searching through your highlights…';
 }
 
-function createSamwellClientTools() {
+function createSamwellClientTools(ctx: ToolCallContext) {
   return clientTools(
     searchHighlightsTool.client(async (input) => {
-      const { result } = await executeToolCall('search_highlights', input);
+      const { result } = await executeToolCall('search_highlights', input, ctx);
       const results = Array.isArray(result) ? (result as SearchResult[]) : [];
       return {
         results,
@@ -106,7 +111,7 @@ function createSamwellClientTools() {
       };
     }),
     searchThoughtsTool.client(async (input) => {
-      const { result } = await executeToolCall('search_thoughts', input);
+      const { result } = await executeToolCall('search_thoughts', input, ctx);
       const results = Array.isArray(result) ? (result as SearchResult[]) : [];
       return {
         results,
@@ -114,7 +119,7 @@ function createSamwellClientTools() {
       };
     }),
     searchReadingTool.client(async (input) => {
-      const { result } = await executeToolCall('search_reading', input);
+      const { result } = await executeToolCall('search_reading', input, ctx);
       const results = Array.isArray(result) ? (result as ReadingSnippet[]) : [];
       return {
         results,
@@ -122,7 +127,7 @@ function createSamwellClientTools() {
       };
     }),
     suggestNextBookTool.client(async (input) => {
-      const { result } = await executeToolCall('suggest_next_book', input);
+      const { result } = await executeToolCall('suggest_next_book', input, ctx);
       const candidates = Array.isArray(result) ? (result as BookCandidate[]) : [];
       return {
         candidates,
@@ -130,7 +135,7 @@ function createSamwellClientTools() {
       };
     }),
     tagHighlightTool.client(async (input) => {
-      const { result } = await executeToolCall('tag_highlight', input);
+      const { result } = await executeToolCall('tag_highlight', input, ctx);
       const tagResult = result as { success?: boolean; tags?: string[] };
       return {
         ok: tagResult.success === true,
@@ -141,7 +146,7 @@ function createSamwellClientTools() {
       };
     }),
     tagThoughtTool.client(async (input) => {
-      const { result } = await executeToolCall('tag_thought', input);
+      const { result } = await executeToolCall('tag_thought', input, ctx);
       const tagResult = result as { success?: boolean; tags?: string[] };
       return {
         ok: tagResult.success === true,
@@ -152,7 +157,7 @@ function createSamwellClientTools() {
       };
     }),
     deleteHighlightTool.client(async (input) => {
-      const { result } = await executeToolCall('delete_highlight', input);
+      const { result } = await executeToolCall('delete_highlight', input, ctx);
       const deleteResult = result as { success?: boolean };
       return {
         ok: deleteResult.success === true,
@@ -162,13 +167,31 @@ function createSamwellClientTools() {
       };
     }),
     deleteThoughtTool.client(async (input) => {
-      const { result } = await executeToolCall('delete_thought', input);
+      const { result } = await executeToolCall('delete_thought', input, ctx);
       const deleteResult = result as { success?: boolean };
       return {
         ok: deleteResult.success === true,
         id: input.id,
         type: 'thought' as const,
         ...(deleteResult.success ? {} : { error: 'Thought not found.' }),
+      };
+    }),
+    suggestHighlightTool.client(async (input) => {
+      const { result } = await executeToolCall('suggest_highlight', input, ctx);
+      const suggestResult = result as { ok?: boolean; suggestionId?: string | null; error?: string };
+      return {
+        ok: suggestResult.ok === true,
+        suggestionId: suggestResult.suggestionId ?? null,
+        ...(suggestResult.error ? { error: suggestResult.error } : {}),
+      };
+    }),
+    suggestThoughtTool.client(async (input) => {
+      const { result } = await executeToolCall('suggest_thought', input, ctx);
+      const suggestResult = result as { ok?: boolean; suggestionId?: string | null; error?: string };
+      return {
+        ok: suggestResult.ok === true,
+        suggestionId: suggestResult.suggestionId ?? null,
+        ...(suggestResult.error ? { error: suggestResult.error } : {}),
       };
     }),
   );
@@ -243,6 +266,7 @@ export async function sendCloudChatTurn({
   deviceId,
   modelId,
   sessionId,
+  bookId,
   history,
   content,
   onStreamingContent,
@@ -263,7 +287,7 @@ export async function sendCloudChatTurn({
       headers: { 'x-samwell-device-id': deviceId },
     }),
     forwardedProps: { modelId },
-    tools: createSamwellClientTools(),
+    tools: createSamwellClientTools({ sessionId, bookId }),
     onChunk: (chunk) => {
       const approval = collectApproval(chunk);
       if (approval) approvals.push(approval);

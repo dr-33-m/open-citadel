@@ -2,7 +2,7 @@ import { and, desc, eq, like, or } from 'drizzle-orm';
 import type { ToolDefinition } from '@dr33m/react-native-litert-lm';
 
 import { db } from '@/db/client';
-import { books, highlights, notes, readingProgress, thoughts } from '@/db/schema';
+import { books, chatSuggestions, highlights, notes, readingProgress, thoughts } from '@/db/schema';
 import { extractReadText } from '@/services/book-context';
 
 // ── Tool definitions ────────────────────────────────────────────────────────
@@ -166,6 +166,47 @@ export const SAMWELL_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'suggest_highlight',
+      description:
+        "Propose saving a passage the user has already read as a highlight. Only registers a suggestion for the user to review inline and approve/reject; never saves directly. Only within a chat about a specific book, for something that connects meaningfully to the user's journey. Use sparingly. After calling, mention it in your reply with [[suggest:highlight:<suggestionId>]].",
+      parameters: {
+        type: 'object',
+        properties: {
+          quote: {
+            type: 'string',
+            description: 'The passage text, close to word-for-word, that the user has already read',
+          },
+        },
+        required: ['quote'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'suggest_thought',
+      description:
+        "Propose saving a standalone thought or insight discovered during the conversation. Only registers a suggestion for the user to review inline and approve/reject; never saves directly. Use sparingly, only when it connects meaningfully to the user's journey. After calling, mention it in your reply with [[suggest:thought:<suggestionId>]].",
+      parameters: {
+        type: 'object',
+        properties: {
+          text: {
+            type: 'string',
+            description: 'The thought text to propose saving',
+          },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional tags for the thought',
+          },
+        },
+        required: ['text'],
+      },
+    },
+  },
 ];
 
 // ── Tools that must be user-approved before executing ──────────────────────
@@ -200,9 +241,15 @@ export interface SearchResult {
 
 // ── Tool executor ───────────────────────────────────────────────────────────
 
+export type ToolCallContext = {
+  sessionId: string;
+  bookId: string | null;
+};
+
 export async function executeToolCall(
   name: string,
   args: Record<string, unknown>,
+  ctx: ToolCallContext,
 ): Promise<{ result: unknown; status: string }> {
   console.log(`[Samwell] Tool call: ${name}`, JSON.stringify(args));
   switch (name) {
@@ -252,6 +299,16 @@ export async function executeToolCall(
       return {
         result: await deleteEntry(args.id as string, 'thought'),
         status: 'Deleting thought…',
+      };
+    case 'suggest_highlight':
+      return {
+        result: await suggestHighlight(args.quote as string, ctx),
+        status: 'Noting that down…',
+      };
+    case 'suggest_thought':
+      return {
+        result: await suggestThought(args.text as string, (args.tags as string[]) ?? [], ctx),
+        status: 'Noting that down…',
       };
     default:
       return { result: { error: `Unknown tool: ${name}` }, status: 'Unknown tool' };
@@ -532,6 +589,75 @@ async function deleteEntry(
 
   console.log(`[Samwell] deleteEntry: success, id=${id}`);
   return { success: true };
+}
+
+// ── suggest_highlight / suggest_thought implementation ──────────────────────
+
+function suggestionId(): string {
+  return `sugg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function suggestHighlight(
+  quote: string,
+  ctx: ToolCallContext,
+): Promise<{ ok: boolean; suggestionId: string | null; error?: string }> {
+  if (!ctx.bookId) {
+    return { ok: false, suggestionId: null, error: 'no_book_context' };
+  }
+
+  const progress = db
+    .select({ locator: readingProgress.locator })
+    .from(readingProgress)
+    .where(eq(readingProgress.bookId, ctx.bookId))
+    .get();
+
+  // Without a saved reading position there's nothing to anchor the highlight
+  // to — registering the suggestion anyway would let the user tap Approve
+  // and have it silently do nothing. Fail here instead, where the model can
+  // react to it.
+  if (!progress?.locator) {
+    return { ok: false, suggestionId: null, error: 'no_reading_position' };
+  }
+
+  const id = suggestionId();
+  db.insert(chatSuggestions)
+    .values({
+      id,
+      sessionId: ctx.sessionId,
+      kind: 'highlight',
+      status: 'pending',
+      text: quote,
+      tags: null,
+      bookId: ctx.bookId,
+      locator: progress.locator,
+      createdAt: new Date().toISOString(),
+    })
+    .run();
+
+  return { ok: true, suggestionId: id };
+}
+
+async function suggestThought(
+  text: string,
+  tags: string[],
+  ctx: ToolCallContext,
+): Promise<{ ok: boolean; suggestionId: string | null; error?: string }> {
+  const id = suggestionId();
+  db.insert(chatSuggestions)
+    .values({
+      id,
+      sessionId: ctx.sessionId,
+      kind: 'thought',
+      status: 'pending',
+      text,
+      tags: tags.length > 0 ? JSON.stringify(tags) : null,
+      bookId: null,
+      locator: null,
+      createdAt: new Date().toISOString(),
+    })
+    .run();
+
+  return { ok: true, suggestionId: id };
 }
 
 // ── search_reading implementation (spoiler-bounded full-text) ──────────────

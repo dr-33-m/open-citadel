@@ -14,10 +14,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 
+import { SCORE_GREEN, SCORE_RED } from '@/components/compass/format';
 import { TimePickerSheet } from '@/components/compass/time-picker-sheet';
 import { EngineInfoSheet, type EngineMode } from '@/components/settings/engine-info-sheet';
 import { ThemedText } from '@/components/themed-text';
@@ -115,6 +117,20 @@ export default function SettingsScreen() {
   const [hfLoadingFiles, setHfLoadingFiles] = useState(false);
 
   const nativeAvailable = React.useMemo(() => isNativeAvailable(), []);
+
+  const [playerRank, setPlayerRank] = useState<'A' | 'B' | 'C' | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      const row = db
+        .select({ rank: compassGoals.rank })
+        .from(compassGoals)
+        .where(eq(compassGoals.status, 'archived'))
+        .orderBy(desc(compassGoals.completedAt))
+        .limit(1)
+        .get();
+      setPlayerRank(row?.rank ?? null);
+    }, []),
+  );
 
   useEffect(() => { loadModels(); }, []);
   useEffect(() => {
@@ -242,6 +258,13 @@ export default function SettingsScreen() {
       fontFamily: fontFamily.sans,
       fontSize: 16,
       paddingVertical: spacing[4],
+    },
+    rankBadge: {
+      width: 28,
+      height: 28,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     row: {
       flexDirection: 'row',
@@ -525,6 +548,24 @@ export default function SettingsScreen() {
               returnKeyType="done"
               autoCorrect={false}
             />
+            {playerRank && (
+              <View
+                style={[
+                  styles.rankBadge,
+                  {
+                    borderColor:
+                      playerRank === 'A' ? SCORE_GREEN : playerRank === 'C' ? SCORE_RED : colors.primary.default,
+                  },
+                ]}
+              >
+                <ThemedText
+                  type="labelMd"
+                  color={playerRank === 'A' ? SCORE_GREEN : playerRank === 'C' ? SCORE_RED : colors.primary.default}
+                >
+                  {playerRank}
+                </ThemedText>
+              </View>
+            )}
           </View>
         </View>
 

@@ -181,6 +181,17 @@ export function computeFinalVarianceDays(
   return daysBetween(targetDate, actualCompletedDate);
 }
 
+/**
+ * A/B/C rank for an archived goal, from its final variance vs the original
+ * target. Same ±1-day "on track" tolerance as computeScheduleStatus, so the
+ * grade agrees with whatever pace verdict the driver saw along the way.
+ */
+export function deriveGoalRank(varianceDays: number | null): 'A' | 'B' | 'C' | null {
+  if (varianceDays == null) return null;
+  if (Math.abs(varianceDays) <= 1) return 'B';
+  return varianceDays < 0 ? 'A' : 'C';
+}
+
 // ── Goal-level race ──────────────────────────────────────────────────────────
 
 /**

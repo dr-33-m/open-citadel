@@ -30,10 +30,11 @@ import {
   computeProgress,
   computeProjection,
   daysBetween,
+  deriveGoalRank,
 } from '@/services/compass-math';
 import { syncCompassReminders } from '@/services/compass-notifications';
 import { selectReadingContext } from '@/services/compass-reading';
-import { buildJourneySnapshot, saveJourneyReflection } from '@/services/journey';
+import { buildJourneySnapshot, saveGoalFinishedNote, saveJourneyReflection } from '@/services/journey';
 import { useSettingsStore } from '@/stores/settings';
 
 export type CompassGoalRow = typeof compassGoals.$inferSelect;
@@ -267,6 +268,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
           readingContext: selectReadingContext(
             goal ? `${goal.title} ${userText(messages)}` : userText(messages),
           ),
+          journey: buildJourneySnapshot() || undefined,
         },
       });
       set({ submitting: null });
@@ -591,10 +593,23 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     const { goal } = get();
     if (!goal) return;
 
+    const today = currentCompassDay();
+    const finalVarianceDays = goal.targetDate
+      ? computeFinalVarianceDays(goal.targetDate, today)
+      : null;
+    const rank = deriveGoalRank(finalVarianceDays);
+
     db.update(compassGoals)
-      .set({ status: 'archived', completedAt: new Date().toISOString() })
+      .set({
+        status: 'archived',
+        completedAt: new Date().toISOString(),
+        rank,
+        finalVarianceDays,
+      })
       .where(eq(compassGoals.id, goal.id))
       .run();
+
+    saveGoalFinishedNote(goal.id, goal.title, rank, finalVarianceDays);
 
     const { compassMorningTime, compassNightTime } = useSettingsStore.getState();
     await syncCompassReminders({

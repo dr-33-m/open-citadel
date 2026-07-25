@@ -15,6 +15,7 @@ type ProgressSheetProps = {
   visible: boolean;
   onClose: () => void;
   goalTitle: string;
+  goalActive: boolean;
   milestone: CompassMilestoneRow;
   telemetry: CompassTelemetry | null;
   onAdjustDates: (which: 'milestone' | 'goal') => void;
@@ -25,6 +26,7 @@ export function ProgressSheet({
   visible,
   onClose,
   goalTitle,
+  goalActive,
   milestone,
   telemetry,
   onAdjustDates,
@@ -123,7 +125,7 @@ export function ProgressSheet({
               <ThemedText type="labelSm" color={colors.text.secondary}>
                 GOAL
               </ThemedText>
-              {goalTrack && (
+              {goalTrack && goalActive && (
                 <Touchable onPress={() => onAdjustDates('goal')}>
                   <ThemedText type="labelSm" color={colors.primary.default}>
                     ADJUST DATE
@@ -156,11 +158,13 @@ export function ProgressSheet({
               <ThemedText type="labelSm" color={colors.text.secondary}>
                 MILESTONE
               </ThemedText>
-              <Touchable onPress={() => onAdjustDates('milestone')}>
-                <ThemedText type="labelSm" color={colors.primary.default}>
-                  ADJUST DATE
-                </ThemedText>
-              </Touchable>
+              {milestone.status === 'active' && (
+                <Touchable onPress={() => onAdjustDates('milestone')}>
+                  <ThemedText type="labelSm" color={colors.primary.default}>
+                    ADJUST DATE
+                  </ThemedText>
+                </Touchable>
+              )}
             </View>
             <ThemedText type="headlineMd">{milestone.title}</ThemedText>
           </View>

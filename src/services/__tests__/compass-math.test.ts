@@ -12,6 +12,7 @@ import {
   computeProjection,
   computeScheduleStatus,
   daysBetween,
+  deriveGoalRank,
   todayLocalYmd,
 } from '../compass-math';
 
@@ -199,6 +200,28 @@ describe('progress and final variance', () => {
   it('final variance is actual minus target in days', () => {
     expect(computeFinalVarianceDays('2026-07-15', '2026-07-19')).toBe(4);
     expect(computeFinalVarianceDays('2026-07-15', '2026-07-13')).toBe(-2);
+  });
+});
+
+describe('deriveGoalRank', () => {
+  it('is null with no variance data', () => {
+    expect(deriveGoalRank(null)).toBeNull();
+  });
+
+  it('is B within the ±1 day on-track tolerance', () => {
+    expect(deriveGoalRank(0)).toBe('B');
+    expect(deriveGoalRank(1)).toBe('B');
+    expect(deriveGoalRank(-1)).toBe('B');
+  });
+
+  it('is A when finished early, beyond the tolerance', () => {
+    expect(deriveGoalRank(-2)).toBe('A');
+    expect(deriveGoalRank(-10)).toBe('A');
+  });
+
+  it('is C when finished late, beyond the tolerance', () => {
+    expect(deriveGoalRank(2)).toBe('C');
+    expect(deriveGoalRank(10)).toBe('C');
   });
 });
 

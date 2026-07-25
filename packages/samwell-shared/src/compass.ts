@@ -258,6 +258,7 @@ export const CompassSetupTurnRequestSchema = z.object({
     })
     .optional(),
   readingContext: ReadingContextSchema,
+  journey: z.string().max(4000).optional(),
 });
 export type CompassSetupTurnRequest = z.infer<typeof CompassSetupTurnRequestSchema>;
 

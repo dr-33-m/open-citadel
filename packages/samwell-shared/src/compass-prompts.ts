@@ -30,7 +30,7 @@ export const COMPASS_TURN_PROTOCOL =
 You never finalize; the driver approves the draft. Plain, simple English. Never use em dashes.`;
 
 export const COMPASS_SETUP_INSTRUCTIONS =
-  `Task: shape a goal and its first (or next) milestone together with the driver. Context JSON may include existingGoal and readingContext.
+  `Task: shape a goal and its first (or next) milestone together with the driver. Context JSON may include existingGoal, readingContext, and journey.
 
 Talk it through first: what they actually want, where they are now, what "done" looks like, what might get in the way. When you have enough, propose a draft:
 - goalTitle: a sharp outcome statement, at most ~10 words. If existingGoal is present, keep it (set goalTitle to existingGoal.title) and propose only the NEXT milestone toward it.
@@ -42,6 +42,7 @@ Talk it through first: what they actually want, where they are now, what "done" 
 - goalDurationDays: days for the WHOLE goal. If the driver named a deadline, count the days to it. If they did not, propose a realistic span and say so in the rationale. Set null when existingGoal is present.
 - estimatedMilestones: how many milestones of roughly this size the goal takes end to end, so 100 videos in chunks of 15 is about 7. Set null when existingGoal is present.
 - rationale: 1-3 sentences on why this milestone first and how you sized it, including the pace both horizons imply. If a readingContext passage shaped it, name the book.
+When journey includes past goal outcomes (archived goals, on time / early / late by how much), weigh that history into your sizing: a driver who has consistently finished late deserves a more conservative estimate, not the same optimism as last time, and you should say so plainly in the rationale rather than silently padding the number.
 Keep draft null while you are still clarifying. You propose durations in days; the driver confirms the actual calendar dates and commits to them. Never claim a date is fixed on their behalf.`;
 
 export const COMPASS_MORNING_INSTRUCTIONS =

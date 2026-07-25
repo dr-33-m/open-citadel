@@ -2,7 +2,7 @@ import { desc, eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
 import { db } from '@/db/client';
-import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
+import { books, chatMessages, chatSessions, chatSuggestions, readingProgress } from '@/db/schema';
 import { extractChapterTextToLocator } from '@/services/book-context';
 import { buildJourneySnapshot } from '@/services/journey';
 import {
@@ -355,6 +355,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           deviceId,
           modelId: cloudModelId,
           sessionId: activeSession.id,
+          bookId: activeSession.bookId,
           history,
           content,
           onStreamingContent: (streamed) => {
@@ -482,6 +483,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         db.insert(chatMessages).values(toolCallMsg).run();
 
         // Execute each tool call and collect responses for the engine
+        const toolCallCtx = { sessionId: activeSession.id, bookId: activeSession.bookId };
         const toolResponses: Inference.ToolResponse[] = [];
         for (const tc of result.toolCalls) {
           let args: Record<string, unknown> = {};
@@ -498,11 +500,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             if (!approved) {
               toolContent = JSON.stringify({ approved: false, message: 'User denied this action' });
             } else {
-              const { result: toolResult } = await executeToolCall(tc.name, args);
+              const { result: toolResult } = await executeToolCall(tc.name, args, toolCallCtx);
               toolContent = JSON.stringify(toolResult);
             }
           } else {
-            const { result: toolResult } = await executeToolCall(tc.name, args);
+            const { result: toolResult } = await executeToolCall(tc.name, args, toolCallCtx);
             // Format search results with reference markers for the LLM
             toolContent = (tc.name === 'search_highlights' || tc.name === 'search_thoughts') && Array.isArray(toolResult)
               ? formatSearchResultsForLLM(toolResult as SearchResult[])
@@ -578,6 +580,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   async deleteSession(id) {
     db.delete(chatMessages).where(eq(chatMessages.sessionId, id)).run();
+    db.delete(chatSuggestions).where(eq(chatSuggestions.sessionId, id)).run();
     db.delete(chatSessions).where(eq(chatSessions.id, id)).run();
     set((s) => ({
       sessions: s.sessions.filter((sess) => sess.id !== id),

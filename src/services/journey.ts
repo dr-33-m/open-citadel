@@ -274,3 +274,38 @@ export function saveBookFinishedNote(bookId: string): void {
     })
     .run();
 }
+
+/**
+ * Deterministic note written when a goal is archived: how the finish compared
+ * to the original target, so the next goal-setup conversation can size
+ * against real history instead of starting from zero each time. No LLM call.
+ */
+export function saveGoalFinishedNote(
+  goalId: string,
+  title: string,
+  rank: 'A' | 'B' | 'C' | null,
+  varianceDays: number | null,
+): void {
+  // Word the timing from rank, not a re-derived threshold, so this note can
+  // never disagree with the rank shown in Settings.
+  const timing =
+    rank === 'A' && varianceDays != null
+      ? `${-varianceDays} days early`
+      : rank === 'C' && varianceDays != null
+        ? `${varianceDays} days late`
+        : rank === 'B'
+          ? 'on time'
+          : 'no target date was set';
+  const rankLabel = rank ? `${rank} player — ` : '';
+
+  db.insert(journeyNotes)
+    .values({
+      id: createId(),
+      kind: 'goal_finished',
+      text: `Archived goal "${title}": ${rankLabel}finished ${timing}.`,
+      tags: null,
+      sourceRef: goalId,
+      createdAt: new Date().toISOString(),
+    })
+    .run();
+}

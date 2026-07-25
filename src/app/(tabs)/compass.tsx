@@ -662,6 +662,7 @@ export default function CompassTab() {
         visible={showProgress}
         onClose={() => setShowProgress(false)}
         goalTitle={goal.title}
+        goalActive={goal.status === 'active'}
         milestone={milestone}
         telemetry={telemetry}
         onAdjustDates={(which) => {

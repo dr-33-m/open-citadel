@@ -151,6 +151,29 @@ export const chatMessages = sqliteTable("chat_messages", {
   createdAt: text("created_at").notNull(),
 });
 
+/**
+ * A highlight/thought Samwell proposed mid-chat via suggest_highlight /
+ * suggest_thought. Rendered inline as a [[suggest:kind:id]] marker in the
+ * assistant's reply; nothing is saved to the user's real library until they
+ * approve it here.
+ */
+export const chatSuggestions = sqliteTable("chat_suggestions", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => chatSessions.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<"highlight" | "thought">().notNull(),
+  status: text("status").$type<"pending" | "approved" | "rejected">().notNull().default("pending"),
+  text: text("text").notNull(),
+  tags: text("tags"),
+  bookId: text("book_id"),
+  /** JSON Locator, captured at suggestion time (current reading position). */
+  locator: text("locator"),
+  /** The highlights.id / thoughts.id created once approved. */
+  resultEntryId: text("result_entry_id"),
+  createdAt: text("created_at").notNull(),
+});
+
 // ── Sync pipeline tables ─────────────────────────────────────────────────────
 
 export const syncJobs = sqliteTable("sync_jobs", {
@@ -213,6 +236,9 @@ export const compassGoals = sqliteTable("compass_goals", {
   /** How many milestones the goal is expected to take; goal progress is counted in these. */
   estimatedMilestones: integer("estimated_milestones"),
   currentProjectedDate: text("current_projected_date"),
+  /** Set once, at archive: how the finish compared to the original target. */
+  rank: text("rank").$type<"A" | "B" | "C">(),
+  finalVarianceDays: integer("final_variance_days"),
   createdAt: text("created_at").notNull(),
   completedAt: text("completed_at"),
 });
@@ -281,8 +307,8 @@ export const compassActions = sqliteTable("compass_actions", {
 
 export const journeyNotes = sqliteTable("journey_notes", {
   id: text("id").primaryKey(),
-  /** 'reflection' = distilled from a night check-in; 'book_finished' = deterministic on finishing */
-  kind: text("kind").$type<"reflection" | "book_finished">().notNull(),
+  /** 'reflection' = distilled from a night check-in; 'book_finished'/'goal_finished' = deterministic */
+  kind: text("kind").$type<"reflection" | "book_finished" | "goal_finished">().notNull(),
   text: text("text").notNull(),
   /** JSON string[] for keyword retrieval */
   tags: text("tags"),

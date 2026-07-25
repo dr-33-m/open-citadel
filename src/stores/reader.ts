@@ -40,6 +40,8 @@ interface ReaderState {
     locator: Locator,
     color?: string,
     chatSessionId?: string,
+    /** Explicit book to attach to, when called outside the reader (falls back to currentBook). */
+    bookIdOverride?: string,
   ) => Promise<string>;
   updateHighlight: (
     id: string,
@@ -264,16 +266,18 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     locator: Locator,
     color?: string,
     chatSessionId?: string,
+    bookIdOverride?: string,
   ) => {
     const { currentBook } = get();
-    if (!currentBook) return "";
+    const bookId = bookIdOverride ?? currentBook?.id;
+    if (!bookId) return "";
 
     const id = `hl-${Date.now()}`;
     const now = new Date().toISOString();
 
     await db.insert(highlights).values({
       id,
-      bookId: currentBook.id,
+      bookId,
       text,
       locator: JSON.stringify(locator),
       color: color || "#f2ca50",
@@ -283,8 +287,12 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
 
     // Capture the surrounding chapter text in the background so the highlight
     // keeps the progression it was lifted from (chats, tags, Compass context).
-    if (currentBook.filePath) {
-      const filePath = currentBook.filePath;
+    const filePath =
+      currentBook?.id === bookId
+        ? currentBook.filePath
+        : db.select({ filePath: books.filePath }).from(books).where(eq(books.id, bookId)).get()
+            ?.filePath;
+    if (filePath) {
       void extractSurroundingText(filePath, locator)
         .then((surrounding) =>
           db
@@ -297,12 +305,14 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         });
     }
 
-    const bookHighlights = await db
-      .select()
-      .from(highlights)
-      .where(eq(highlights.bookId, currentBook.id));
+    // Only refresh the reader's own highlight list when it's for the book
+    // currently open there — a suggestion approved from chat may target a
+    // different book entirely.
+    if (currentBook?.id === bookId) {
+      const bookHighlights = await db.select().from(highlights).where(eq(highlights.bookId, bookId));
+      set({ highlights: bookHighlights });
+    }
 
-    set({ highlights: bookHighlights });
     return id;
   },
 

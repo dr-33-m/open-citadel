@@ -85,6 +85,21 @@ export const SuggestNextBookOutputSchema = z.object({
   formatted: z.string(),
 });
 
+export const SuggestHighlightInputSchema = z.object({
+  quote: z.string().min(1),
+});
+
+export const SuggestThoughtInputSchema = z.object({
+  text: z.string().min(1),
+  tags: z.array(z.string()).optional(),
+});
+
+export const SuggestionResultSchema = z.object({
+  ok: z.boolean(),
+  suggestionId: z.string().nullable(),
+  error: z.string().optional(),
+});
+
 export const searchHighlightsTool = toolDefinition({
   name: 'search_highlights',
   description:
@@ -153,6 +168,22 @@ export const deleteThoughtTool = toolDefinition({
   needsApproval: true,
 });
 
+export const suggestHighlightTool = toolDefinition({
+  name: 'suggest_highlight',
+  description:
+    "Propose saving a passage the user has ALREADY read as a highlight. This only registers a suggestion for the user to review inline in the chat, approve, or reject; it never saves anything directly. Only call this within a chat about a specific book, for a passage that connects meaningfully to the user's journey (their goals, recurring themes, or something they're actively working through), not just anything that seems interesting in isolation. Use sparingly. `quote` must be text the user has actually read, close to word-for-word. After calling this, mention it in your reply using the marker [[suggest:highlight:<suggestionId>]] so it renders for the user.",
+  inputSchema: SuggestHighlightInputSchema,
+  outputSchema: SuggestionResultSchema,
+});
+
+export const suggestThoughtTool = toolDefinition({
+  name: 'suggest_thought',
+  description:
+    "Propose saving a standalone thought or insight discovered during the conversation (not tied to a specific book passage). This only registers a suggestion for the user to review inline in the chat, approve, or reject; it never saves anything directly. Use sparingly, only when something connects meaningfully to the user's journey. After calling this, mention it in your reply using the marker [[suggest:thought:<suggestionId>]] so it renders for the user.",
+  inputSchema: SuggestThoughtInputSchema,
+  outputSchema: SuggestionResultSchema,
+});
+
 export const SAMWELL_TOOL_DEFINITIONS = [
   searchHighlightsTool,
   searchThoughtsTool,
@@ -162,6 +193,8 @@ export const SAMWELL_TOOL_DEFINITIONS = [
   tagThoughtTool,
   deleteHighlightTool,
   deleteThoughtTool,
+  suggestHighlightTool,
+  suggestThoughtTool,
 ] as const;
 
 export const SAMWELL_CLIENT_TOOL_DEFINITIONS = SAMWELL_TOOL_DEFINITIONS.map((tool) =>
