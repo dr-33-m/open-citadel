@@ -1,11 +1,12 @@
 import * as Speech from 'expo-speech';
-import { AudioLines, BookOpen, Cloud, Download, Info, MemoryStick, Moon, Power, Search, SlidersHorizontal, Smartphone, Sun, Trash2, User, Volume2, X } from 'lucide-react-native';
+import { AudioLines, BookOpen, ChevronUp, Cloud, Download, ExternalLink, Info, MemoryStick, Moon, Power, Search, SlidersHorizontal, Smartphone, Sun, Trash2, User, Volume2, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   ScrollView,
   SectionList,
@@ -24,6 +25,7 @@ import { TimePickerSheet } from '@/components/compass/time-picker-sheet';
 import { EngineInfoSheet, type EngineMode } from '@/components/settings/engine-info-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { InstagramIcon, TikTokIcon, XIcon } from '@/components/ui/brand-icons';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ScreenHeader } from '@/components/ui/screen-header';
@@ -278,6 +280,19 @@ export default function SettingsScreen() {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing[3],
+    },
+    rowValue: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[1],
+    },
+    brandIconBox: {
+      width: 36,
+      height: 36,
+      borderWidth: 1,
+      borderColor: colors.outline.variant,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     formatCard: {
       flexDirection: 'row',
@@ -885,18 +900,24 @@ export default function SettingsScreen() {
               <PrefixIcon icon={Sun} size={36} />
               <ThemedText type="bodyMd">Morning check-in</ThemedText>
             </View>
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              {compassMorningTime} ›
-            </ThemedText>
+            <View style={styles.rowValue}>
+              <ThemedText type="bodySm" color={colors.text.secondary}>
+                {compassMorningTime}
+              </ThemedText>
+              <ChevronUp size={14} color={colors.text.secondary} />
+            </View>
           </Touchable>
           <Touchable style={styles.row} onPress={() => setTimePickerFor('night')}>
             <View style={styles.rowLeft}>
               <PrefixIcon icon={Moon} size={36} />
               <ThemedText type="bodyMd">Night check-in</ThemedText>
             </View>
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              {compassNightTime} ›
-            </ThemedText>
+            <View style={styles.rowValue}>
+              <ThemedText type="bodySm" color={colors.text.secondary}>
+                {compassNightTime}
+              </ThemedText>
+              <ChevronUp size={14} color={colors.text.secondary} />
+            </View>
           </Touchable>
         </View>
 
@@ -934,9 +955,71 @@ export default function SettingsScreen() {
               <PrefixIcon icon={AudioLines} size={36} />
               <ThemedText type="bodyMd">Voice</ThemedText>
             </View>
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              {currentVoiceName} ›
+            <View style={styles.rowValue}>
+              <ThemedText type="bodySm" color={colors.text.secondary}>
+                {currentVoiceName}
+              </ThemedText>
+              <ChevronUp size={14} color={colors.text.secondary} />
+            </View>
+          </Touchable>
+        </View>
+
+        <View style={styles.divider} />
+
+        {/* REACH OUT */}
+        <View style={styles.section}>
+          <View style={{ gap: spacing[1] }}>
+            <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
+              REACH OUT
             </ThemedText>
+            <ThemedText type="bodyMd">A little note from the creator of Open Citadel</ThemedText>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              Open Citadel started as a tool I needed myself. If you&apos;re using it,
+              we&apos;re probably chasing the same thing: real growth and real execution.
+            </ThemedText>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              I&apos;d love to hear what&apos;s working, what isn&apos;t, and the ideas
+              you&apos;d like to see next. My DMs are always open.
+            </ThemedText>
+          </View>
+
+          <Touchable
+            style={styles.row}
+            onPress={() => Linking.openURL('https://twitter.com/dr_33_m')}
+          >
+            <View style={styles.rowLeft}>
+              <View style={styles.brandIconBox}>
+                <XIcon color={colors.text.primary} />
+              </View>
+              <ThemedText type="bodyMd">X (Twitter)</ThemedText>
+            </View>
+            <ExternalLink size={16} color={colors.text.secondary} />
+          </Touchable>
+
+          <Touchable
+            style={styles.row}
+            onPress={() => Linking.openURL('https://www.tiktok.com/@_dr_33_m_')}
+          >
+            <View style={styles.rowLeft}>
+              <View style={styles.brandIconBox}>
+                <TikTokIcon />
+              </View>
+              <ThemedText type="bodyMd">TikTok</ThemedText>
+            </View>
+            <ExternalLink size={16} color={colors.text.secondary} />
+          </Touchable>
+
+          <Touchable
+            style={styles.row}
+            onPress={() => Linking.openURL('https://www.instagram.com/_dr_33_m_')}
+          >
+            <View style={styles.rowLeft}>
+              <View style={styles.brandIconBox}>
+                <InstagramIcon />
+              </View>
+              <ThemedText type="bodyMd">Instagram</ThemedText>
+            </View>
+            <ExternalLink size={16} color={colors.text.secondary} />
           </Touchable>
         </View>
       </ScrollView>
