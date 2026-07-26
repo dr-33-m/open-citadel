@@ -9,7 +9,7 @@ import {
 } from 'samwell-shared';
 
 import { runStructuredAnalysis } from './compass.js';
-import { checkUsageLimit, createUsageEvent, listCloudModels } from './db.js';
+import { listCloudModels, reserveUsageEvent } from './db.js';
 import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
 
 function resolveModelId(requested: string | undefined, knownModelIds: string[]): string {
@@ -28,18 +28,6 @@ tagsRoutes.post('/suggest', async (c) => {
     throw new HTTPException(400, { message: parsed.error.message });
   }
 
-  const limit = await checkUsageLimit(deviceId);
-  if (!limit.allowed) {
-    return c.json(
-      {
-        error: 'usage_limit_reached',
-        reason: limit.reason,
-        usage: limit.usage,
-      },
-      429,
-    );
-  }
-
   const knownModels = await listCloudModels();
   const modelId = resolveModelId(
     parsed.data.modelId,
@@ -47,13 +35,23 @@ tagsRoutes.post('/suggest', async (c) => {
   );
   const usageEventId = `tags-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  await createUsageEvent({
+  const reservation = await reserveUsageEvent({
     id: usageEventId,
     deviceId,
     modelId,
     countsTowardLimit: true,
     kind: 'tag_suggest',
   });
+  if (!reservation.allowed) {
+    return c.json(
+      {
+        error: 'usage_limit_reached',
+        reason: reservation.reason,
+        usage: reservation.usage,
+      },
+      429,
+    );
+  }
 
   const { modelId: _requestedModel, ...payload } = parsed.data;
   // No tight token cap here: reasoning-capable models spend completion tokens on

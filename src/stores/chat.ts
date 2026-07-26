@@ -498,7 +498,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (APPROVAL_REQUIRED_TOOLS.has(tc.name)) {
             const approved = await useApprovalStore
               .getState()
-              .requestApproval({ toolName: tc.name, input: args });
+              .requestApproval({ sessionId: activeSession.id, toolName: tc.name, input: args });
 
             if (!approved) {
               toolContent = JSON.stringify({ approved: false, message: 'User denied this action' });
@@ -586,14 +586,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   stopGeneration() {
     Inference.stopGeneration();
     // A pending approval dialog would otherwise keep waiting for a tap that
-    // will never come once generation is stopped. No-op if nothing pending.
-    useApprovalStore.getState().respond(false);
+    // will never come once generation is stopped. No-op if nothing pending
+    // for the currently active session.
+    const sessionId = get().activeSession?.id;
+    if (sessionId) {
+      useApprovalStore.getState().respond(sessionId, false);
+    }
   },
 
   async deleteSession(id) {
     db.delete(chatMessages).where(eq(chatMessages.sessionId, id)).run();
     db.delete(chatSuggestions).where(eq(chatSuggestions.sessionId, id)).run();
     db.delete(chatSessions).where(eq(chatSessions.id, id)).run();
+    // Any approval still awaiting a response for this session would otherwise
+    // leak an unresolved promise once the session it belongs to is gone.
+    useApprovalStore.getState().clearSession(id);
     set((s) => ({
       sessions: s.sessions.filter((sess) => sess.id !== id),
       activeSession: s.activeSession?.id === id ? null : s.activeSession,

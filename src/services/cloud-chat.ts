@@ -331,7 +331,7 @@ export async function sendCloudChatTurn({
         if (!approval) continue;
         const approved = await useApprovalStore
           .getState()
-          .requestApproval({ toolName: approval.toolName, input: approval.input });
+          .requestApproval({ sessionId, toolName: approval.toolName, input: approval.input });
         await client.addToolApprovalResponse({ id: approval.id, approved });
       }
 

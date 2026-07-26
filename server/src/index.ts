@@ -19,11 +19,10 @@ import { z } from 'zod';
 import { compassRoutes } from './compass.js';
 import { tagsRoutes } from './tags.js';
 import {
-  checkUsageLimit,
-  createUsageEvent,
   getUsageState,
   initDb,
   listCloudModels,
+  reserveUsageEvent,
   updateUsageEvent,
   upsertCloudModel,
 } from './db.js';
@@ -221,19 +220,6 @@ app.post('/chat/http', async (c) => {
   }
 
   const countsTowardLimit = isCountableUserTurn(body.messages);
-  if (countsTowardLimit) {
-    const limit = await checkUsageLimit(deviceId);
-    if (!limit.allowed) {
-      return c.json(
-        {
-          error: 'usage_limit_reached',
-          reason: limit.reason,
-          usage: limit.usage,
-        },
-        429,
-      );
-    }
-  }
 
   const rawMessages = body.messages as Array<{ role?: string; content?: unknown }>;
   const sessionSystemPrompts = rawMessages
@@ -247,12 +233,22 @@ app.post('/chat/http', async (c) => {
   const usageEventId =
     body.runId ?? `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  await createUsageEvent({
+  const reservation = await reserveUsageEvent({
     id: usageEventId,
     deviceId,
     modelId,
     countsTowardLimit,
   });
+  if (!reservation.allowed) {
+    return c.json(
+      {
+        error: 'usage_limit_reached',
+        reason: reservation.reason,
+        usage: reservation.usage,
+      },
+      429,
+    );
+  }
 
   const stream = chat({
     adapter: openRouterText(modelId as any, {

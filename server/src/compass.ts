@@ -19,9 +19,8 @@ import {
 import { z } from 'zod';
 
 import {
-  checkUsageLimit,
-  createUsageEvent,
   listCloudModels,
+  reserveUsageEvent,
   updateUsageEvent,
 } from './db.js';
 import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
@@ -46,7 +45,13 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
   usageEventId: string;
   maxCompletionTokens?: number;
 }): Promise<z.infer<TSchema>> {
-  let usage: CapturedUsage | undefined;
+  // Accumulated across attempts, not overwritten: a retry can follow a first
+  // attempt that already burned real, billed tokens (it replied, but the
+  // reply failed structured-output validation). If we kept only the latest
+  // attempt's numbers, the first attempt's actual spend would silently vanish
+  // from the metering record while still having been billed by the provider.
+  let usage: CapturedUsage = {};
+  let usageRecorded = false;
 
   const attempt = (): Promise<z.infer<TSchema>> =>
     chat({
@@ -60,11 +65,12 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
       middleware: [
         {
           onUsage: (_ctx, reported) => {
+            usageRecorded = true;
             usage = {
-              promptTokens: reported.promptTokens,
-              completionTokens: reported.completionTokens,
-              totalTokens: reported.totalTokens,
-              cost: reported.cost,
+              promptTokens: (usage.promptTokens ?? 0) + (reported.promptTokens ?? 0),
+              completionTokens: (usage.completionTokens ?? 0) + (reported.completionTokens ?? 0),
+              totalTokens: (usage.totalTokens ?? 0) + (reported.totalTokens ?? 0),
+              cost: (usage.cost ?? 0) + (reported.cost ?? 0),
             };
           },
         },
@@ -93,18 +99,25 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
 
     await updateUsageEvent(args.usageEventId, {
       status: 'completed',
-      promptTokens: usage?.promptTokens ?? null,
-      completionTokens: usage?.completionTokens ?? null,
-      totalTokens: usage?.totalTokens ?? null,
-      costUsd: usage?.cost ?? null,
+      promptTokens: usageRecorded ? (usage.promptTokens ?? null) : null,
+      completionTokens: usageRecorded ? (usage.completionTokens ?? null) : null,
+      totalTokens: usageRecorded ? (usage.totalTokens ?? null) : null,
+      costUsd: usageRecorded ? (usage.cost ?? null) : null,
     });
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Compass analysis failed.';
     console.error('[Samwell Cloud] Compass analysis failed:', error);
+    // Even a fully-failed run (both attempts exhausted) may have consumed
+    // real tokens on the failed attempt(s) — record whatever was billed
+    // rather than losing it just because no attempt ultimately validated.
     await updateUsageEvent(args.usageEventId, {
       status: 'errored',
       error: message,
+      promptTokens: usageRecorded ? (usage.promptTokens ?? null) : null,
+      completionTokens: usageRecorded ? (usage.completionTokens ?? null) : null,
+      totalTokens: usageRecorded ? (usage.totalTokens ?? null) : null,
+      costUsd: usageRecorded ? (usage.cost ?? null) : null,
     });
     throw new HTTPException(502, { message: 'compass_analysis_failed' });
   }
@@ -128,18 +141,6 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
       throw new HTTPException(400, { message: parsed.error.message });
     }
 
-    const limit = await checkUsageLimit(deviceId);
-    if (!limit.allowed) {
-      return c.json(
-        {
-          error: 'usage_limit_reached',
-          reason: limit.reason,
-          usage: limit.usage,
-        },
-        429,
-      );
-    }
-
     const knownModels = await listCloudModels();
     const modelId = resolveModelId(
       parsed.data.modelId,
@@ -147,13 +148,23 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
     );
     const usageEventId = `compass-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    await createUsageEvent({
+    const reservation = await reserveUsageEvent({
       id: usageEventId,
       deviceId,
       modelId,
       countsTowardLimit: true,
       kind: args.kind,
     });
+    if (!reservation.allowed) {
+      return c.json(
+        {
+          error: 'usage_limit_reached',
+          reason: reservation.reason,
+          usage: reservation.usage,
+        },
+        429,
+      );
+    }
 
     const { modelId: _requestedModel, messages, ...context } = parsed.data as {
       modelId?: string;

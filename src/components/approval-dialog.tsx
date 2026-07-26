@@ -6,6 +6,7 @@ import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { useApprovalStore, type PendingApproval } from '@/stores/approval';
+import { useChatStore } from '@/stores/chat';
 
 type ApprovalCopy = {
   title: string;
@@ -41,8 +42,18 @@ function getApprovalCopy({ toolName, input }: PendingApproval): ApprovalCopy {
 
 export function ApprovalDialog() {
   const colors = useColors();
-  const pending = useApprovalStore((s) => s.pending);
-  const respond = useApprovalStore((s) => s.respond);
+  const activeSessionId = useChatStore((s) => s.activeSession?.id);
+  // Only ever show the approval that belongs to the session the user is
+  // currently looking at — a tool call awaiting approval in a session they've
+  // since navigated away from stays pending in the store, but must not float
+  // over an unrelated screen.
+  const pending = useApprovalStore((s) =>
+    activeSessionId ? (s.pendingBySession.get(activeSessionId)?.request ?? null) : null,
+  );
+  const respondRaw = useApprovalStore((s) => s.respond);
+  const respond = (approved: boolean, options?: { rememberForSession?: boolean }) => {
+    if (pending) respondRaw(pending.sessionId, approved, options);
+  };
 
   if (!pending) return null;
 

@@ -177,47 +177,77 @@ export async function getUsageState(deviceId: string, nowMs = Date.now()): Promi
   };
 }
 
-export async function checkUsageLimit(deviceId: string): Promise<UsageLimitCheck> {
-  const usage = await getUsageState(deviceId);
-
-  if (usage.fiveHour.remaining <= 0) {
-    return { allowed: false, usage, reason: 'fiveHour' };
-  }
-
-  if (usage.weekly.remaining <= 0) {
-    return { allowed: false, usage, reason: 'weekly' };
-  }
-
-  return { allowed: true, usage };
-}
-
-export async function createUsageEvent(args: {
+/**
+ * Checks the usage cap and records the event in one atomic statement. The
+ * previous approach (a separate SELECT-based check, then a separate INSERT)
+ * left a race window between the two round-trips: two concurrent requests
+ * from the same device could both observe "room remaining" before either had
+ * inserted, letting them both through and overshooting the cap. Folding the
+ * cap check into the INSERT's own WHERE clause means the count-and-decide
+ * happens as part of a single statement, which SQLite (and libsql/Turso,
+ * which is SQLite-compatible) executes atomically with respect to other
+ * connections — a concurrent writer can't observe or interleave with a
+ * partially-applied statement.
+ */
+export async function reserveUsageEvent(args: {
   id: string;
   deviceId: string;
   modelId: string;
   countsTowardLimit: boolean;
   kind?: string;
-}): Promise<void> {
-  await db.execute({
+}): Promise<UsageLimitCheck> {
+  const now = Date.now();
+
+  if (!args.countsTowardLimit) {
+    // Not subject to the cap — always allowed, still recorded for the log.
+    await db.execute({
+      sql: `INSERT INTO usage_events (
+          id, device_id, model_id, status, counts_toward_limit, kind, created_at_ms
+        )
+        VALUES (?, ?, ?, 'started', 0, ?, ?)`,
+      args: [args.id, args.deviceId, args.modelId, args.kind ?? 'chat', now],
+    });
+    return { allowed: true, usage: await getUsageState(args.deviceId, now) };
+  }
+
+  const sinceFiveHour = now - CLOUD_LIMITS.fiveHourWindowMs;
+  const sinceWeekly = now - CLOUD_LIMITS.weeklyWindowMs;
+
+  const result = await db.execute({
     sql: `INSERT INTO usage_events (
-        id,
-        device_id,
-        model_id,
-        status,
-        counts_toward_limit,
-        kind,
-        created_at_ms
+        id, device_id, model_id, status, counts_toward_limit, kind, created_at_ms
       )
-      VALUES (?, ?, ?, 'started', ?, ?, ?)`,
+      SELECT ?, ?, ?, 'started', 1, ?, ?
+      WHERE (
+        SELECT COUNT(*) FROM usage_events
+        WHERE device_id = ? AND created_at_ms >= ? AND counts_toward_limit = 1
+      ) < ?
+      AND (
+        SELECT COUNT(*) FROM usage_events
+        WHERE device_id = ? AND created_at_ms >= ? AND counts_toward_limit = 1
+      ) < ?`,
     args: [
       args.id,
       args.deviceId,
       args.modelId,
-      args.countsTowardLimit ? 1 : 0,
       args.kind ?? 'chat',
-      Date.now(),
+      now,
+      args.deviceId,
+      sinceFiveHour,
+      CLOUD_LIMITS.fiveHourMessageCap,
+      args.deviceId,
+      sinceWeekly,
+      CLOUD_LIMITS.weeklyMessageCap,
     ],
   });
+
+  const usage = await getUsageState(args.deviceId, now);
+  if (result.rowsAffected === 0) {
+    const reason: 'fiveHour' | 'weekly' = usage.fiveHour.remaining <= 0 ? 'fiveHour' : 'weekly';
+    return { allowed: false, usage, reason };
+  }
+
+  return { allowed: true, usage };
 }
 
 export async function updateUsageEvent(
