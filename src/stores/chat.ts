@@ -11,6 +11,7 @@ import {
   formatSearchResultsForLLM,
   type SearchResult,
 } from '@/services/chat-tools';
+import { suggestChatTitle } from '@/services/chat-title';
 import { sendCloudChatTurn } from '@/services/cloud-chat';
 import * as Inference from '@/services/inference';
 import { useApprovalStore } from '@/stores/approval';
@@ -60,6 +61,23 @@ interface ChatStore {
   sendMessage(content: string): Promise<void>;
   stopGeneration(): void;
   deleteSession(id: string): Promise<void>;
+  updateSessionTitle(id: string, title: string): Promise<void>;
+  /** Best-effort quick title from a bookless session's opening exchange.
+   * Never throws — a failure just leaves the placeholder title in place. */
+  maybeTitleFirstMessage(sessionId: string, userText: string, assistantText: string): Promise<void>;
+  /** Called when the user leaves a bookless chat screen — re-titles from the
+   * whole conversation if it's grown since the last title update. */
+  refineSessionTitleOnExit(): Promise<void>;
+}
+
+// How many real (user/assistant) messages a session had the last time its
+// title was auto-generated, keyed by session id. Plain module state, not
+// store state — purely to avoid redundant re-titling, doesn't need to
+// persist or trigger re-renders.
+const titledMessageCounts = new Map<string, number>();
+
+function realMessageCount(messages: ChatMessage[]): number {
+  return messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
 }
 
 // Base identity for sessions started without a book. The engine-level system
@@ -326,6 +344,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { activeSession } = get();
     if (!activeSession) return;
 
+    // Captured before the user message is added below — this is only true
+    // for the very first turn of a bookless session, which is when a quick
+    // AI title is worth generating.
+    const isFirstRealMessage = !activeSession.bookId && realMessageCount(get().messages) === 0;
+
     const {
       samwellMode,
       cloudBaseUrl,
@@ -417,6 +440,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }));
       } else {
         set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, isGenerating: false });
+      }
+
+      if (isFirstRealMessage) {
+        // Cloud titling is an independent, stateless HTTP call — no shared
+        // engine to race, so this doesn't need to block the turn.
+        void get().maybeTitleFirstMessage(activeSession.id, content, finalContent);
       }
 
       await get().loadSessions();
@@ -580,8 +609,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         isThinking: false,
         isToolCalling: false,
         toolCallStatus: null,
-        isGenerating: false,
       }));
+
+      if (isFirstRealMessage) {
+        // Offline shares one local engine instance — keep isGenerating true
+        // (so the input stays blocked) until this one-shot title call is
+        // done, since it also calls resetConversation() and would otherwise
+        // race a second message the user sends in the meantime.
+        await get().maybeTitleFirstMessage(activeSession.id, content, finalContent);
+      }
+      set({ isGenerating: false });
     } else {
       set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, isGenerating: false });
     }
@@ -612,5 +649,55 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       activeSession: s.activeSession?.id === id ? null : s.activeSession,
       messages: s.activeSession?.id === id ? [] : s.messages,
     }));
+  },
+
+  async updateSessionTitle(id, title) {
+    db.update(chatSessions).set({ title }).where(eq(chatSessions.id, id)).run();
+    set((s) => ({
+      sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, title } : sess)),
+      activeSession:
+        s.activeSession?.id === id ? { ...s.activeSession, title } : s.activeSession,
+    }));
+  },
+
+  async maybeTitleFirstMessage(sessionId, userText, assistantText) {
+    try {
+      const conversation = assistantText
+        ? `User: ${userText}\nSamwell: ${assistantText}`
+        : `User: ${userText}`;
+      const title = await suggestChatTitle(conversation);
+      if (title) {
+        await get().updateSessionTitle(sessionId, title);
+        titledMessageCounts.set(sessionId, 1);
+      }
+    } catch (err) {
+      // Best-effort — a failed auto-title just leaves "New chat" in place.
+      console.warn('[Chat] Could not auto-title session:', err);
+    }
+  },
+
+  async refineSessionTitleOnExit() {
+    const { activeSession, messages } = get();
+    if (!activeSession || activeSession.bookId) return;
+
+    const count = realMessageCount(messages);
+    const lastTitled = titledMessageCounts.get(activeSession.id) ?? 0;
+    // Needs at least one full exchange beyond what the quick title already
+    // covered, or there's nothing new to summarize.
+    if (count < 2 || count <= lastTitled) return;
+
+    try {
+      const conversation = messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
+        .join('\n');
+      const title = await suggestChatTitle(conversation);
+      if (title) {
+        await get().updateSessionTitle(activeSession.id, title);
+        titledMessageCounts.set(activeSession.id, count);
+      }
+    } catch (err) {
+      console.warn('[Chat] Could not refine session title:', err);
+    }
   },
 }));

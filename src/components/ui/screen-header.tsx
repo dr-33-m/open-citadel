@@ -35,6 +35,8 @@ export function ScreenHeader({
       justifyContent: 'space-between',
       paddingHorizontal: spacing[6],
       paddingVertical: spacing[4],
+      borderBottomWidth: 1,
+      borderBottomColor: colors.outline.variant,
     },
     centerTitle: {
       flex: 1,
@@ -54,6 +56,7 @@ export function ScreenHeader({
       alignItems: 'center',
       justifyContent: 'center',
     },
+    subtitle: { fontSize: 12, lineHeight: 16 },
   }), [colors]);
 
   if (align === 'left') {
@@ -61,13 +64,17 @@ export function ScreenHeader({
       <View style={styles.container}>
         <View>
           <ThemedText
-            type="headlineLg"
+            type="headlineSm"
             style={titleItalic ? { fontFamily: fontFamily.serifItalic } : undefined}
           >
             {title}
           </ThemedText>
           {subtitle && (
-            <ThemedText type="bodySm" color={colors.text.secondary}>
+            <ThemedText
+              type="bodySm"
+              color={colors.text.secondary}
+              style={styles.subtitle}
+            >
               {subtitle}
             </ThemedText>
           )}

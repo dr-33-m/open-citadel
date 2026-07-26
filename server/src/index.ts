@@ -16,6 +16,7 @@ import {
 } from 'samwell-shared';
 import { z } from 'zod';
 
+import { chatTitleRoutes } from './chat-title.js';
 import { compassRoutes } from './compass.js';
 import { tagsRoutes } from './tags.js';
 import {
@@ -209,6 +210,7 @@ app.get('/usage', async (c) => {
 
 app.route('/compass', compassRoutes);
 app.route('/tags', tagsRoutes);
+app.route('/chat', chatTitleRoutes);
 
 app.post('/chat/http', async (c) => {
   requireOpenRouterKey();

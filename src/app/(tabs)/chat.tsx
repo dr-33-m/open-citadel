@@ -67,6 +67,7 @@ export default function ChatTab() {
   const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.surface.base },
     headerWrap: { paddingTop: insets.top },
+    listContent: { paddingTop: spacing[5] },
     sessionItem: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -188,7 +189,7 @@ export default function ChatTab() {
         keyExtractor={(item) => item.id}
         renderItem={renderSession}
         ListEmptyComponent={renderEmpty}
-        contentContainerStyle={sessions.length === 0 ? { flex: 1 } : undefined}
+        contentContainerStyle={sessions.length === 0 ? { flex: 1 } : styles.listContent}
       />
 
       <BookPickerSheet

@@ -1,3 +1,4 @@
+export * from './chat-title';
 export * from './compass';
 export * from './compass-prompts';
 export * from './limits';

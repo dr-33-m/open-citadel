@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Search, Send, Sparkles, Square } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -58,6 +58,17 @@ export default function ChatSessionScreen() {
   useEffect(() => {
     if (id) openSession(id);
   }, [id]);
+
+  // Re-title a bookless chat from the whole conversation once the user
+  // leaves it, so a name generated from just the opening exchange can be
+  // corrected once there's more to go on.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        useChatStore.getState().refineSessionTitleOnExit();
+      };
+    }, []),
+  );
 
   // Check model validity when app returns from background
   useEffect(() => {
@@ -201,7 +212,10 @@ export default function ChatSessionScreen() {
       flexDirection: "row",
       alignItems: "center",
       gap: spacing[2],
-      flexWrap: "nowrap",
+      // "wrap" (not "nowrap") so the book badge drops below Samwell's name
+      // instead of overflowing off-screen when the name is long — it's
+      // "Grand Maester Samwell" in cloud mode, vs. just "Samwell" offline.
+      flexWrap: "wrap",
     },
     bookChip: {
       alignSelf: "flex-start",

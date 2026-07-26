@@ -167,7 +167,7 @@ export default function LibraryScreen() {
     return (
       <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
         <ScreenHeader
-          title="Open Citadel"
+          title="Library"
           subtitle="See what you're reading. Plan what's next."
           align="left"
         />
@@ -181,7 +181,7 @@ export default function LibraryScreen() {
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
       <ScreenHeader
-        title="Open Citadel"
+        title="Library"
         subtitle="See what you're reading. Plan what's next."
         align="left"
         rightIcon={
@@ -448,7 +448,7 @@ function useStyles(colors: ReturnType<typeof useColors>) {
       StyleSheet.create({
         container: { flex: 1 },
         scroll: { flex: 1 },
-        scrollContent: { paddingBottom: spacing[8] },
+        scrollContent: { paddingTop: spacing[5], paddingBottom: spacing[8] },
         section: { gap: spacing[5], marginBottom: spacing[16] },
         syncIndicator: {
           flexDirection: "row",

@@ -186,7 +186,7 @@ export default function TimelineScreen() {
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
       <ScreenHeader
-        title="Open Citadel"
+        title="Timeline"
         subtitle="A record of your reading and thoughts."
         align="left"
         rightIcon={<Calendar size={20} color={colors.text.primary} />}

@@ -137,6 +137,7 @@ export default function CompassTab() {
         headerWrap: { paddingTop: insets.top },
         scrollContent: {
           paddingHorizontal: spacing[6],
+          paddingTop: spacing[5],
           paddingBottom: BottomTabInset + spacing[6],
           gap: spacing[5],
         },
@@ -255,7 +256,6 @@ export default function CompassTab() {
             title="Compass"
             subtitle="Stay aligned. Take the right action."
             align="left"
-            rightIcon={<CompassIcon size={20} color={colors.primary.default} />}
           />
         </View>
         <View style={styles.centered}>
@@ -288,7 +288,6 @@ export default function CompassTab() {
             title="Compass"
             subtitle="Stay aligned. Take the right action."
             align="left"
-            rightIcon={<CompassIcon size={20} color={colors.primary.default} />}
           />
         </View>
       </View>
@@ -303,7 +302,6 @@ export default function CompassTab() {
             title="Compass"
             subtitle="Stay aligned. Take the right action."
             align="left"
-            rightIcon={<CompassIcon size={20} color={colors.primary.default} />}
           />
         </View>
         <View style={styles.centered}>
@@ -341,7 +339,6 @@ export default function CompassTab() {
         title="Compass"
         subtitle="Stay aligned. Take the right action."
         align="left"
-        rightIcon={<CompassIcon size={20} color={colors.primary.default} />}
       />
     </View>
   );
