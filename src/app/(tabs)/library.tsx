@@ -166,7 +166,11 @@ export default function LibraryScreen() {
   if (showEmptyState) {
     return (
       <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-        <ScreenHeader title="Open Citadel" />
+        <ScreenHeader
+          title="Open Citadel"
+          subtitle="See what you're reading. Plan what's next."
+          align="left"
+        />
         <DirectoryPrompt
           onPress={isIOS ? handleGetStarted : handleSelectDirectory}
         />
@@ -178,6 +182,8 @@ export default function LibraryScreen() {
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
       <ScreenHeader
         title="Open Citadel"
+        subtitle="See what you're reading. Plan what's next."
+        align="left"
         rightIcon={
           isIOS ? <Plus size={22} color={colors.text.primary} /> : undefined
         }

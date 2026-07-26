@@ -15,10 +15,27 @@ type ApprovalCopy = {
   destructive: boolean;
 };
 
-function getApprovalCopy({ toolName, input }: PendingApproval): ApprovalCopy {
-  const entryType = toolName.endsWith('_highlight') ? 'highlight' : 'thought';
+function stringField(input: unknown, key: string): string | undefined {
+  if (input && typeof input === 'object' && key in input) {
+    const value = (input as Record<string, unknown>)[key];
+    return typeof value === 'string' ? value : undefined;
+  }
+  return undefined;
+}
 
-  if (toolName.startsWith('delete_')) {
+function bookCountFrom(input: unknown): number {
+  const titles =
+    input && typeof input === 'object' ? (input as { book_titles?: unknown }).book_titles : undefined;
+  return Array.isArray(titles) && titles.length > 0 ? titles.length : 1;
+}
+
+function approve(title: string, body: string): ApprovalCopy {
+  return { title, body, confirmLabel: 'APPROVE', destructive: false };
+}
+
+function getApprovalCopy({ toolName, input }: PendingApproval): ApprovalCopy {
+  if (toolName === 'delete_highlight' || toolName === 'delete_thought') {
+    const entryType = toolName.endsWith('_highlight') ? 'highlight' : 'thought';
     return {
       title: `Delete ${entryType}?`,
       body: `Samwell wants to permanently delete this ${entryType}. This can't be undone.`,
@@ -27,17 +44,49 @@ function getApprovalCopy({ toolName, input }: PendingApproval): ApprovalCopy {
     };
   }
 
-  const tags =
-    typeof input === 'object' && input !== null && Array.isArray((input as { tags?: unknown }).tags)
-      ? (input as { tags: string[] }).tags.join(', ')
-      : 'these tags';
+  if (toolName === 'tag_highlight' || toolName === 'tag_thought') {
+    const entryType = toolName.endsWith('_highlight') ? 'highlight' : 'thought';
+    const tags =
+      input && typeof input === 'object' && Array.isArray((input as { tags?: unknown }).tags)
+        ? (input as { tags: string[] }).tags.join(', ')
+        : 'these tags';
+    return approve('Add tags?', `Samwell wants to add ${tags} to this ${entryType}.`);
+  }
 
-  return {
-    title: 'Add tags?',
-    body: `Samwell wants to add ${tags} to this ${entryType}.`,
-    confirmLabel: 'APPROVE',
-    destructive: false,
-  };
+  const books = bookCountFrom(input);
+  const bookWord = books === 1 ? 'a book' : `${books} books`;
+
+  switch (toolName) {
+    case 'remove_from_currently_reading':
+      return approve(
+        'Remove from Currently Reading?',
+        `Samwell wants to remove ${bookWord} from Currently Reading.`,
+      );
+    case 'add_to_queue':
+      return approve('Add to queue?', `Samwell wants to add ${bookWord} to your reading queue.`);
+    case 'remove_from_queue':
+      return approve('Remove from queue?', `Samwell wants to remove ${bookWord} from your reading queue.`);
+    case 'reorder_queue':
+      return approve('Reorder queue?', `Samwell wants to move ${bookWord} in your reading queue.`);
+    case 'toggle_favorite':
+      return approve('Update favorites?', `Samwell wants to update favorites for ${bookWord}.`);
+    case 'mark_as_finished':
+      return approve('Mark as finished?', `Samwell wants to mark ${bookWord} as finished.`);
+    case 'create_collection': {
+      const name = stringField(input, 'name') ?? 'a new collection';
+      return approve('Create collection?', `Samwell wants to create a collection called "${name}".`);
+    }
+    case 'add_book_to_collection': {
+      const collectionName = stringField(input, 'collection_name') ?? 'a collection';
+      return approve('Add to collection?', `Samwell wants to add ${bookWord} to "${collectionName}".`);
+    }
+    case 'remove_book_from_collection': {
+      const collectionName = stringField(input, 'collection_name') ?? 'a collection';
+      return approve('Remove from collection?', `Samwell wants to remove ${bookWord} from "${collectionName}".`);
+    }
+    default:
+      return approve('Approve this action?', 'Samwell wants to make a change.');
+  }
 }
 
 export function ApprovalDialog() {

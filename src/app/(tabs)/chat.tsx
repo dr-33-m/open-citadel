@@ -176,6 +176,8 @@ export default function ChatTab() {
       <View style={styles.headerWrap}>
         <ScreenHeader
           title="Chats"
+          subtitle="Talk to Samwell about your books and goals."
+          align="left"
           rightIcon={<MessageSquarePlus size={22} color={colors.primary.default} />}
           onRightPress={handleNewChat}
         />

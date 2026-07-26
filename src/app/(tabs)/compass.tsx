@@ -35,6 +35,7 @@ import {
   activeCheckin,
   addDaysYmd,
   computeProgress,
+  orderMissionSteps,
   todayLocalYmd,
 } from '@/services/compass-math';
 import { useCompassStore } from '@/stores/compass';
@@ -134,22 +135,6 @@ export default function CompassTab() {
       StyleSheet.create({
         container: { flex: 1, backgroundColor: colors.surface.base },
         headerWrap: { paddingTop: insets.top },
-        appHeader: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: spacing[6],
-          paddingTop: insets.top + spacing[3],
-          paddingBottom: spacing[4],
-        },
-        headerIcon: {
-          width: 40,
-          height: 40,
-          borderWidth: 1,
-          borderColor: colors.outline.variant,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
         scrollContent: {
           paddingHorizontal: spacing[6],
           paddingBottom: BottomTabInset + spacing[6],
@@ -266,7 +251,12 @@ export default function CompassTab() {
     return (
       <View style={styles.container}>
         <View style={styles.headerWrap}>
-          <ScreenHeader title="Compass" />
+          <ScreenHeader
+            title="Compass"
+            subtitle="Stay aligned. Take the right action."
+            align="left"
+            rightIcon={<CompassIcon size={20} color={colors.primary.default} />}
+          />
         </View>
         <View style={styles.centered}>
           <CompassIcon size={48} color={colors.text.secondary} style={styles.dimIcon} />
@@ -294,7 +284,12 @@ export default function CompassTab() {
     return (
       <View style={styles.container}>
         <View style={styles.headerWrap}>
-          <ScreenHeader title="Compass" />
+          <ScreenHeader
+            title="Compass"
+            subtitle="Stay aligned. Take the right action."
+            align="left"
+            rightIcon={<CompassIcon size={20} color={colors.primary.default} />}
+          />
         </View>
       </View>
     );
@@ -304,7 +299,12 @@ export default function CompassTab() {
     return (
       <View style={styles.container}>
         <View style={styles.headerWrap}>
-          <ScreenHeader title="Compass" />
+          <ScreenHeader
+            title="Compass"
+            subtitle="Stay aligned. Take the right action."
+            align="left"
+            rightIcon={<CompassIcon size={20} color={colors.primary.default} />}
+          />
         </View>
         <View style={styles.centered}>
           <CompassIcon size={48} color={colors.text.secondary} style={styles.dimIcon} />
@@ -336,16 +336,13 @@ export default function CompassTab() {
   );
 
   const appHeader = (
-    <View style={styles.appHeader}>
-      <View>
-        <ThemedText type="headlineLg">Compass</ThemedText>
-        <ThemedText type="bodySm" color={colors.text.secondary}>
-          Stay aligned. Take the right action.
-        </ThemedText>
-      </View>
-      <View style={styles.headerIcon}>
-        <CompassIcon size={20} color={colors.primary.default} />
-      </View>
+    <View style={styles.headerWrap}>
+      <ScreenHeader
+        title="Compass"
+        subtitle="Stay aligned. Take the right action."
+        align="left"
+        rightIcon={<CompassIcon size={20} color={colors.primary.default} />}
+      />
     </View>
   );
 
@@ -399,6 +396,7 @@ export default function CompassTab() {
   const focusColor = scoreColor(latest?.focusScore, colors.primary.default);
   const structuredMission = parseMission(todayMorning);
   const mission = structuredMission ?? fallbackMission(todayMorning?.missionSummary);
+  const orderedMission = orderMissionSteps(mission);
   const nightLogged = todayNight != null;
   const nightColor = scoreColor(todayNight?.focusScore, colors.primary.default);
 
@@ -565,7 +563,7 @@ export default function CompassTab() {
                     )}
                   </View>
                   <View style={nightLogged ? styles.missionListDone : styles.missionList}>
-                    {mission.map((step, i) => (
+                    {orderedMission.map((step, i) => (
                       <MissionStep
                         key={i}
                         index={i + 1}

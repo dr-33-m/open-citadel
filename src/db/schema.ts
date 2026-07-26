@@ -27,6 +27,9 @@ export const books = sqliteTable("books", {
   metaError: text("meta_error"),
   /** When 1, sync will not overwrite the user-edited title */
   titleLocked: integer("title_locked").notNull().default(0),
+  /** Manual position within the queue (lower = earlier). Null for books
+   * that predate this column or have never been queued. */
+  queueOrder: integer("queue_order"),
 });
 
 export const readingProgress = sqliteTable("reading_progress", {

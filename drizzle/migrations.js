@@ -16,6 +16,7 @@ import m0012 from "./0012_journey_notes.js";
 import m0013 from "./0013_goal_target.js";
 import m0014 from "./0014_goal_rank.js";
 import m0015 from "./0015_chat_suggestions.js";
+import m0016 from "./0016_queue_order.js";
 import journal from "./meta/_journal.json";
 
 export default {
@@ -37,5 +38,6 @@ export default {
     m0013,
     m0014,
     m0015,
+    m0016,
   },
 };

@@ -9,7 +9,7 @@ import { GoldButton } from '@/components/ui/gold-button';
 import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
-import { computeFocusScore } from '@/services/compass-math';
+import { computeFocusScore, orderMissionSteps } from '@/services/compass-math';
 
 type ShellProps = {
   label: string;
@@ -130,7 +130,7 @@ export function MorningDraftCard({
       disabled={disabled}
     >
       <ThemedText type="headlineSm">{analysis.headline}</ThemedText>
-      {analysis.mission.map((step, i) => (
+      {orderMissionSteps(analysis.mission).map((step, i) => (
         <MissionStep key={i} index={i + 1} step={step} />
       ))}
     </DraftCardShell>

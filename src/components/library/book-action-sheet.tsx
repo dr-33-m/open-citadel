@@ -1,4 +1,4 @@
-import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, Pencil, RotateCcw, Star, StarOff, Trash2 } from 'lucide-react-native';
+import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, Pencil, RotateCcw, Star, StarOff, Trash2, XCircle } from 'lucide-react-native';
 import React from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
 
@@ -77,6 +77,7 @@ export function BookActionSheet({
 
   const isArchived = book.status === 'archived';
   const isQueued = book.status === 'queued';
+  const isReading = book.status === 'reading';
   const isFav = book.isFavorite === 1;
 
   const handleOpen = () => {
@@ -105,6 +106,11 @@ export function BookActionSheet({
   };
 
   const handleUnfinish = () => {
+    onSetStatus(book.id, null);
+    onClose();
+  };
+
+  const handleRemoveFromCurrentlyReading = () => {
     onSetStatus(book.id, null);
     onClose();
   };
@@ -171,6 +177,19 @@ export function BookActionSheet({
                 <FolderPlus size={20} color={colors.text.primary} />
                 <ThemedText type="bodyMd" color={colors.text.primary}>
                   Add to Collection
+                </ThemedText>
+              </Touchable>
+            </>
+          )}
+
+          {/* Remove from Currently Reading — only if currently reading */}
+          {isReading && (
+            <>
+              <View style={styles.separator} />
+              <Touchable style={styles.row} onPress={handleRemoveFromCurrentlyReading}>
+                <XCircle size={20} color={colors.text.primary} />
+                <ThemedText type="bodyMd" color={colors.text.primary}>
+                  Remove from Currently Reading
                 </ThemedText>
               </Touchable>
             </>

@@ -54,8 +54,14 @@ function topHighlightTags(limit: number): string[] {
 /**
  * Deterministic synthesis of the journey from existing local data. No LLM.
  * Returns a compact, token-bounded text block.
+ *
+ * `includeCompass` (default true) gates the goal/milestone/focus-score
+ * lines. Compass is a paid, cloud-only feature — offline chat sessions must
+ * not get its analysis output for free via journey context, so callers on
+ * the offline path pass `includeCompass: false`.
  */
-export function buildJourneySnapshot(): string {
+export function buildJourneySnapshot(options?: { includeCompass?: boolean }): string {
+  const includeCompass = options?.includeCompass ?? true;
   const lines: string[] = [];
 
   const finished = db
@@ -106,63 +112,65 @@ export function buildJourneySnapshot(): string {
     lines.push('Themes they return to (from tagged highlights): ' + tags.join(', '));
   }
 
-  const goal = db.select().from(compassGoals).where(eq(compassGoals.status, 'active')).get();
-  if (goal) {
-    const milestone = db
-      .select()
-      .from(compassMilestones)
-      .where(and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'active')))
-      .orderBy(desc(compassMilestones.sortOrder))
-      .get();
-    lines.push(
-      `Active goal: ${goal.title}` + (milestone ? `, current milestone: ${milestone.title}` : ''),
-    );
-
-    const recentNight = db
-      .select({ focusScore: compassCheckins.focusScore, localDate: compassCheckins.localDate })
-      .from(compassCheckins)
-      .where(and(eq(compassCheckins.goalId, goal.id), eq(compassCheckins.kind, 'night')))
-      .orderBy(desc(compassCheckins.localDate))
-      .limit(RECENT_CHECKINS)
-      .all();
-    const scores = recentNight.map((r) => r.focusScore).filter((s): s is number => s != null);
-    if (scores.length > 0) {
+  if (includeCompass) {
+    const goal = db.select().from(compassGoals).where(eq(compassGoals.status, 'active')).get();
+    if (goal) {
+      const milestone = db
+        .select()
+        .from(compassMilestones)
+        .where(and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'active')))
+        .orderBy(desc(compassMilestones.sortOrder))
+        .get();
       lines.push(
-        `Recent focus scores (newest first): ${scores.join(', ')}` +
-          (scores.length >= 2
-            ? scores[0] > scores[scores.length - 1]
-              ? ', trending up'
-              : scores[0] < scores[scores.length - 1]
-                ? ', trending down'
-                : ''
-            : ''),
+        `Active goal: ${goal.title}` + (milestone ? `, current milestone: ${milestone.title}` : ''),
+      );
+
+      const recentNight = db
+        .select({ focusScore: compassCheckins.focusScore, localDate: compassCheckins.localDate })
+        .from(compassCheckins)
+        .where(and(eq(compassCheckins.goalId, goal.id), eq(compassCheckins.kind, 'night')))
+        .orderBy(desc(compassCheckins.localDate))
+        .limit(RECENT_CHECKINS)
+        .all();
+      const scores = recentNight.map((r) => r.focusScore).filter((s): s is number => s != null);
+      if (scores.length > 0) {
+        lines.push(
+          `Recent focus scores (newest first): ${scores.join(', ')}` +
+            (scores.length >= 2
+              ? scores[0] > scores[scores.length - 1]
+                ? ', trending up'
+                : scores[0] < scores[scores.length - 1]
+                  ? ', trending down'
+                  : ''
+              : ''),
+        );
+      }
+    }
+
+    const completed = db
+      .select({
+        title: compassMilestones.title,
+        variance: compassMilestones.finalVarianceDays,
+      })
+      .from(compassMilestones)
+      .where(eq(compassMilestones.status, 'completed'))
+      .orderBy(desc(compassMilestones.sortOrder))
+      .limit(3)
+      .all();
+    if (completed.length > 0) {
+      lines.push(
+        'Completed milestones: ' +
+          completed
+            .map(
+              (m) =>
+                `${m.title}` +
+                (m.variance != null
+                  ? ` (${m.variance > 0 ? `+${m.variance}d over` : m.variance < 0 ? `${-m.variance}d under` : 'on target'})`
+                  : ''),
+            )
+            .join('; '),
       );
     }
-  }
-
-  const completed = db
-    .select({
-      title: compassMilestones.title,
-      variance: compassMilestones.finalVarianceDays,
-    })
-    .from(compassMilestones)
-    .where(eq(compassMilestones.status, 'completed'))
-    .orderBy(desc(compassMilestones.sortOrder))
-    .limit(3)
-    .all();
-  if (completed.length > 0) {
-    lines.push(
-      'Completed milestones: ' +
-        completed
-          .map(
-            (m) =>
-              `${m.title}` +
-              (m.variance != null
-                ? ` (${m.variance > 0 ? `+${m.variance}d over` : m.variance < 0 ? `${-m.variance}d under` : 'on target'})`
-                : ''),
-          )
-          .join('; '),
-    );
   }
 
   return lines.join('\n').slice(0, MAX_SNAPSHOT_CHARS);

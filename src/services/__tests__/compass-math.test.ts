@@ -14,8 +14,16 @@ import {
   daysBetween,
   deriveGoalRank,
   isGoalComplete,
+  orderMissionSteps,
   todayLocalYmd,
 } from '../compass-math';
+
+const step = (title: string, order?: number) => ({
+  title,
+  detail: '',
+  icon: 'circle' as const,
+  ...(order != null ? { order } : {}),
+});
 
 describe('computeFocusScore', () => {
   it('returns 0 for no actions', () => {
@@ -240,6 +248,18 @@ describe('isGoalComplete', () => {
   it('is true once completed milestones reach or pass the estimate', () => {
     expect(isGoalComplete(7, 7)).toBe(true);
     expect(isGoalComplete(9, 7)).toBe(true);
+  });
+});
+
+describe('orderMissionSteps', () => {
+  it('sorts by order when every step has one', () => {
+    const mission = [step('third', 3), step('first', 1), step('second', 2)];
+    expect(orderMissionSteps(mission).map((s) => s.title)).toEqual(['first', 'second', 'third']);
+  });
+
+  it('leaves the array untouched when any step is missing order (historical rows)', () => {
+    const mission = [step('third'), step('first', 1), step('second', 2)];
+    expect(orderMissionSteps(mission).map((s) => s.title)).toEqual(['third', 'first', 'second']);
   });
 });
 

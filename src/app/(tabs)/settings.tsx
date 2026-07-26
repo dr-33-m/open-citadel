@@ -527,7 +527,11 @@ export default function SettingsScreen() {
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Settings" />
+      <ScreenHeader
+        title="Settings"
+        subtitle="Samwell, sync, and your profile."
+        align="left"
+      />
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + spacing[10] }}>
         {/* Display name */}

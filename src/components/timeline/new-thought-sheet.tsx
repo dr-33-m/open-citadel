@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -10,12 +11,13 @@ import {
 } from 'react-native';
 
 import { Touchable } from '@/components/ui/touchable';
-import { Check, X } from 'lucide-react-native';
+import { Check, Sparkles, X } from 'lucide-react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
 import { useColors } from '@/hooks/use-colors';
 import { fontFamily, spacing } from '@/constants/theme';
+import { suggestTags } from '@/services/tag-suggest';
 
 const COLORS = [
   '#f2ca50', // gold
@@ -54,6 +56,9 @@ export function NewThoughtSheet({
   const [selectedColor, setSelectedColor] = useState(COLORS[0]);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
 
   // Populate fields when editing
   useEffect(() => {
@@ -68,6 +73,9 @@ export function NewThoughtSheet({
       setTags([]);
       setTagInput('');
     }
+    setAiSuggestions([]);
+    setSuggesting(false);
+    setSuggestError(null);
   }, [visible, editData]);
 
   const styles = React.useMemo(() => StyleSheet.create({
@@ -141,6 +149,19 @@ export function NewThoughtSheet({
       borderRadius: 99,
     },
     suggestionChipAdded: { opacity: 0.5 },
+    aiSuggestRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: spacing[2],
+    },
+    aiSuggestBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[1],
+      paddingVertical: spacing[1],
+    },
+    aiSuggestionChip: { borderColor: colors.primary.default },
     actions: { gap: spacing[3] },
     cancel: { alignItems: 'center', paddingVertical: spacing[3] },
   }), [colors]);
@@ -159,6 +180,19 @@ export function NewThoughtSheet({
 
   const removeTag = (tag: string) => {
     setTags(tags.filter((t) => t !== tag));
+  };
+
+  const handleSuggestTags = async () => {
+    if (suggesting || !text.trim()) return;
+    setSuggesting(true);
+    setSuggestError(null);
+    try {
+      setAiSuggestions(await suggestTags({ text: text.trim(), existingTags: allTags }));
+    } catch (err) {
+      setSuggestError(err instanceof Error ? err.message : 'Could not suggest tags.');
+    } finally {
+      setSuggesting(false);
+    }
   };
 
   const handleSave = () => {
@@ -264,6 +298,52 @@ export function NewThoughtSheet({
                   <Check size={16} color={tagInput.trim() ? colors.primary.default : colors.text.secondary} />
                 </Touchable>
               </View>
+
+              <View style={styles.aiSuggestRow}>
+                <Touchable
+                  style={styles.aiSuggestBtn}
+                  onPress={handleSuggestTags}
+                  disabled={suggesting || !text.trim()}
+                  hitSlop={6}
+                >
+                  {suggesting ? (
+                    <ActivityIndicator size={14} color={colors.primary.default} />
+                  ) : (
+                    <Sparkles size={14} color={colors.primary.default} />
+                  )}
+                  <ThemedText type="labelSm" color={colors.primary.default}>
+                    {suggesting ? 'SUGGESTING…' : 'SUGGEST TAGS'}
+                  </ThemedText>
+                </Touchable>
+                {aiSuggestions.map((tag) => {
+                  const isAdded = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
+                  return (
+                    <Touchable
+                      key={tag}
+                      style={[
+                        styles.suggestionChip,
+                        styles.aiSuggestionChip,
+                        isAdded && styles.suggestionChipAdded,
+                      ]}
+                      onPress={() => !isAdded && addTag(tag)}
+                    >
+                      {isAdded && <Check size={11} color={colors.text.secondary} />}
+                      <ThemedText
+                        type="labelSm"
+                        color={isAdded ? colors.text.secondary : colors.text.primary}
+                        style={styles.chipText}
+                      >
+                        {tag}
+                      </ThemedText>
+                    </Touchable>
+                  );
+                })}
+              </View>
+              {suggestError && (
+                <ThemedText type="labelSm" color={colors.text.secondary}>
+                  {suggestError}
+                </ThemedText>
+              )}
 
               {allTags.length > 0 && (
                 <ScrollView

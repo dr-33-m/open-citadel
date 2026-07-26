@@ -208,6 +208,10 @@ export const CompassMissionStepSchema = z.object({
   title: z.string().min(1),
   detail: z.string(),
   icon: z.enum(COMPASS_MISSION_ICONS),
+  /** 1 for the very next physical action, counting up from there. Optional
+   * so historical rows saved before this field existed still parse; the
+   * client only sorts by it when every step in the array has one. */
+  order: z.number().int().min(1).optional(),
 });
 export type CompassMissionStep = z.infer<typeof CompassMissionStepSchema>;
 

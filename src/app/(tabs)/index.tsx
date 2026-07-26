@@ -187,6 +187,8 @@ export default function TimelineScreen() {
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
       <ScreenHeader
         title="Open Citadel"
+        subtitle="A record of your reading and thoughts."
+        align="left"
         rightIcon={<Calendar size={20} color={colors.text.primary} />}
         onRightPress={() => setShowCalendar(true)}
       />

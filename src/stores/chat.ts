@@ -75,9 +75,13 @@ const BASE_SYSTEM_PROMPT =
 // The user's journey (finished books, recurring themes, goal history) synthesized
 // on-device. Only this compact slice travels with a cloud request the user is
 // already making; the full history never leaves the device.
-function journeyBlock(): string {
+//
+// Compass is a paid, cloud-only feature. `includeCompass` must be false for
+// an offline session so its goal/milestone/focus-score analysis doesn't
+// reach the free tier as a side channel through journey context.
+function journeyBlock(includeCompass: boolean): string {
   try {
-    const snapshot = buildJourneySnapshot();
+    const snapshot = buildJourneySnapshot({ includeCompass });
     return snapshot
       ? `\n\nThe user's journey so far (use it to give continuity and to ground what you suggest; never assume beyond it):\n${snapshot}`
       : '';
@@ -155,6 +159,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   async createSession({ bookId, title, contextText, contextLocator }) {
     const id = uuid();
     const ts = now();
+    // Compass data may only reach a cloud session — see journeyBlock's comment.
+    const includeCompass = useSettingsStore.getState().samwellMode === 'cloud';
 
     // Spoiler boundary: Samwell may only discuss what the user has read.
     const progress = bookId
@@ -247,7 +253,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               `You are a reading assistant for "${bookRow.title}" by ${bookRow.author}. Help the user understand, analyse, and discuss the book. Be concise and insightful.` +
               readExcerpt +
               (boundaryLine ? `\n\n${boundaryLine}` : '') +
-              journeyBlock(),
+              journeyBlock(includeCompass),
             createdAt: ts,
           })
           .run();
@@ -261,7 +267,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           id: uuid(),
           sessionId: id,
           role: 'system',
-          content: BASE_SYSTEM_PROMPT + journeyBlock(),
+          content: BASE_SYSTEM_PROMPT + journeyBlock(includeCompass),
           createdAt: ts,
         })
         .run();

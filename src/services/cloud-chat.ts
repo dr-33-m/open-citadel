@@ -1,8 +1,17 @@
 import { ChatClient, clientTools, xhrHttpStream, type UIMessage } from '@tanstack/ai-client';
 import type { StreamChunk } from '@tanstack/ai/client';
 import {
+  addBookToCollectionTool,
+  addToQueueTool,
+  createCollectionTool,
   deleteHighlightTool,
   deleteThoughtTool,
+  listCollectionsTool,
+  markAsFinishedTool,
+  removeBookFromCollectionTool,
+  removeFromCurrentlyReadingTool,
+  removeFromQueueTool,
+  reorderQueueTool,
   searchHighlightsTool,
   searchReadingTool,
   searchThoughtsTool,
@@ -11,14 +20,17 @@ import {
   suggestThoughtTool,
   tagHighlightTool,
   tagThoughtTool,
+  toggleFavoriteTool,
 } from 'samwell-shared';
 
 import {
   executeToolCall,
   formatBookCandidatesForLLM,
+  formatCollectionsForLLM,
   formatReadingForLLM,
   formatSearchResultsForLLM,
   type BookCandidate,
+  type CollectionSummary,
   type ReadingSnippet,
   type SearchResult,
   type ToolCallContext,
@@ -97,6 +109,17 @@ function statusForTool(toolName: string): string {
   if (toolName === 'search_thoughts') return 'Searching through your thoughts…';
   if (toolName === 'search_reading') return 'Checking your books…';
   if (toolName === 'suggest_next_book') return 'Looking over your library…';
+  if (toolName === 'remove_from_currently_reading') return 'Updating your library…';
+  if (toolName === 'add_to_queue' || toolName === 'remove_from_queue' || toolName === 'reorder_queue') {
+    return 'Updating your queue…';
+  }
+  if (toolName === 'toggle_favorite') return 'Updating favorites…';
+  if (toolName === 'mark_as_finished') return 'Marking as finished…';
+  if (toolName === 'create_collection') return 'Creating collection…';
+  if (toolName === 'add_book_to_collection' || toolName === 'remove_book_from_collection') {
+    return 'Updating collection…';
+  }
+  if (toolName === 'list_collections') return 'Looking over your collections…';
   return 'Searching through your highlights…';
 }
 
@@ -192,6 +215,62 @@ function createSamwellClientTools(ctx: ToolCallContext) {
         ok: suggestResult.ok === true,
         suggestionId: suggestResult.suggestionId ?? null,
         ...(suggestResult.error ? { error: suggestResult.error } : {}),
+      };
+    }),
+    removeFromCurrentlyReadingTool.client(async (input) => {
+      const { result } = await executeToolCall('remove_from_currently_reading', input, ctx);
+      return result as { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
+    }),
+    addToQueueTool.client(async (input) => {
+      const { result } = await executeToolCall('add_to_queue', input, ctx);
+      return result as { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
+    }),
+    removeFromQueueTool.client(async (input) => {
+      const { result } = await executeToolCall('remove_from_queue', input, ctx);
+      return result as { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
+    }),
+    reorderQueueTool.client(async (input) => {
+      const { result } = await executeToolCall('reorder_queue', input, ctx);
+      return result as { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
+    }),
+    toggleFavoriteTool.client(async (input) => {
+      const { result } = await executeToolCall('toggle_favorite', input, ctx);
+      return result as { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
+    }),
+    markAsFinishedTool.client(async (input) => {
+      const { result } = await executeToolCall('mark_as_finished', input, ctx);
+      return result as { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
+    }),
+    createCollectionTool.client(async (input) => {
+      const { result } = await executeToolCall('create_collection', input, ctx);
+      return result as { ok: boolean; collectionId?: string; error?: string };
+    }),
+    addBookToCollectionTool.client(async (input) => {
+      const { result } = await executeToolCall('add_book_to_collection', input, ctx);
+      return result as {
+        ok: boolean;
+        collectionName?: string;
+        succeeded: string[];
+        failed: { title: string; error: string }[];
+        error?: string;
+      };
+    }),
+    removeBookFromCollectionTool.client(async (input) => {
+      const { result } = await executeToolCall('remove_book_from_collection', input, ctx);
+      return result as {
+        ok: boolean;
+        collectionName?: string;
+        succeeded: string[];
+        failed: { title: string; error: string }[];
+        error?: string;
+      };
+    }),
+    listCollectionsTool.client(async (input) => {
+      const { result } = await executeToolCall('list_collections', input, ctx);
+      const collectionList = Array.isArray(result) ? (result as CollectionSummary[]) : [];
+      return {
+        collections: collectionList,
+        formatted: formatCollectionsForLLM(collectionList),
       };
     }),
   );

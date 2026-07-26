@@ -100,6 +100,82 @@ export const SuggestionResultSchema = z.object({
   error: z.string().optional(),
 });
 
+export const BookTitlesInputSchema = z.object({
+  book_titles: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Titles of the books to act on (partial match ok). If omitted, uses the book the current chat is about. Pass multiple titles to act on several books in one call.',
+    ),
+});
+
+export const BookActionFailureSchema = z.object({
+  title: z.string(),
+  error: z.string(),
+});
+
+export const BookBatchActionResultSchema = z.object({
+  ok: z.boolean(),
+  succeeded: z.array(z.string()),
+  failed: z.array(BookActionFailureSchema),
+  /** Set only when the whole batch couldn't proceed (e.g. an anchor book for
+   * reorder_queue didn't resolve) — distinct from per-title failures. */
+  error: z.string().optional(),
+});
+
+export const ReorderQueueInputSchema = z.object({
+  book_titles: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Titles of the books to move, in the order they should end up. If omitted, uses the book the current chat is about.',
+    ),
+  after_title: z.string().optional(),
+  before_title: z.string().optional(),
+  position: z.enum(['top', 'bottom']).optional(),
+});
+
+export const CreateCollectionInputSchema = z.object({
+  name: z.string().min(1),
+});
+
+export const CreateCollectionResultSchema = z.object({
+  ok: z.boolean(),
+  collectionId: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export const CollectionBooksInputSchema = z.object({
+  book_titles: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Titles of the books to act on (partial match ok). If omitted, uses the book the current chat is about. Pass multiple titles to act on several books in one call.',
+    ),
+  collection_name: z.string().min(1),
+});
+
+export const CollectionBatchActionResultSchema = z.object({
+  ok: z.boolean(),
+  collectionName: z.string().optional(),
+  succeeded: z.array(z.string()),
+  failed: z.array(BookActionFailureSchema),
+  error: z.string().optional(),
+});
+
+export const ListCollectionsInputSchema = z.object({});
+
+export const CollectionSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  bookCount: z.number(),
+});
+
+export const ListCollectionsOutputSchema = z.object({
+  collections: z.array(CollectionSummarySchema),
+  formatted: z.string(),
+});
+
 export const searchHighlightsTool = toolDefinition({
   name: 'search_highlights',
   description:
@@ -184,6 +260,93 @@ export const suggestThoughtTool = toolDefinition({
   outputSchema: SuggestionResultSchema,
 });
 
+export const removeFromCurrentlyReadingTool = toolDefinition({
+  name: 'remove_from_currently_reading',
+  description:
+    "Remove one or more books from Currently Reading, clearing status back to unstarted (not queued, not finished). Use when the user opened a book by mistake or wants to stop reading it without marking it queued or finished. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.",
+  inputSchema: BookTitlesInputSchema,
+  outputSchema: BookBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const addToQueueTool = toolDefinition({
+  name: 'add_to_queue',
+  description:
+    "Add one or more books to the user's reading queue. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.",
+  inputSchema: BookTitlesInputSchema,
+  outputSchema: BookBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const removeFromQueueTool = toolDefinition({
+  name: 'remove_from_queue',
+  description:
+    'Remove one or more books from the reading queue, clearing status back to unstarted. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.',
+  inputSchema: BookTitlesInputSchema,
+  outputSchema: BookBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const reorderQueueTool = toolDefinition({
+  name: 'reorder_queue',
+  description:
+    "Move one or more books to a new position in the reading queue, as a block, preserving the order given in book_titles: give after_title or before_title to place them relative to another queued book, or position ('top'/'bottom') to send them to an end. Use this after critiquing the queue against the user's goals and journey, to actually put the right books next. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.",
+  inputSchema: ReorderQueueInputSchema,
+  outputSchema: BookBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const toggleFavoriteTool = toolDefinition({
+  name: 'toggle_favorite',
+  description:
+    'Add or remove one or more books from Favorites. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.',
+  inputSchema: BookTitlesInputSchema,
+  outputSchema: BookBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const markAsFinishedTool = toolDefinition({
+  name: 'mark_as_finished',
+  description:
+    'Mark one or more books as finished. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.',
+  inputSchema: BookTitlesInputSchema,
+  outputSchema: BookBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const createCollectionTool = toolDefinition({
+  name: 'create_collection',
+  description: 'Create a new, empty book collection with the given name. Requires user approval.',
+  inputSchema: CreateCollectionInputSchema,
+  outputSchema: CreateCollectionResultSchema,
+  needsApproval: true,
+});
+
+export const addBookToCollectionTool = toolDefinition({
+  name: 'add_book_to_collection',
+  description:
+    "Add one or more books to an existing collection. If book_titles is omitted, applies to the book the current chat is about. If the collection doesn't exist yet, call create_collection first. Requires user approval.",
+  inputSchema: CollectionBooksInputSchema,
+  outputSchema: CollectionBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const removeBookFromCollectionTool = toolDefinition({
+  name: 'remove_book_from_collection',
+  description:
+    'Remove one or more books from a collection. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.',
+  inputSchema: CollectionBooksInputSchema,
+  outputSchema: CollectionBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const listCollectionsTool = toolDefinition({
+  name: 'list_collections',
+  description: "List the user's collections with how many books are in each.",
+  inputSchema: ListCollectionsInputSchema,
+  outputSchema: ListCollectionsOutputSchema,
+});
+
 export const SAMWELL_TOOL_DEFINITIONS = [
   searchHighlightsTool,
   searchThoughtsTool,
@@ -195,6 +358,16 @@ export const SAMWELL_TOOL_DEFINITIONS = [
   deleteThoughtTool,
   suggestHighlightTool,
   suggestThoughtTool,
+  removeFromCurrentlyReadingTool,
+  addToQueueTool,
+  removeFromQueueTool,
+  reorderQueueTool,
+  toggleFavoriteTool,
+  markAsFinishedTool,
+  createCollectionTool,
+  addBookToCollectionTool,
+  removeBookFromCollectionTool,
+  listCollectionsTool,
 ] as const;
 
 export const SAMWELL_CLIENT_TOOL_DEFINITIONS = SAMWELL_TOOL_DEFINITIONS.map((tool) =>

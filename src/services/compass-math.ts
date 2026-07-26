@@ -3,6 +3,7 @@ import type {
   CompassAlignment,
   CompassCategory,
   CompassGoalTrack,
+  CompassMissionStep,
   CompassScheduleStatus,
   CompassTelemetry,
 } from 'samwell-shared';
@@ -202,6 +203,17 @@ export function deriveGoalRank(varianceDays: number | null): 'A' | 'B' | 'C' | n
   if (varianceDays == null) return null;
   if (Math.abs(varianceDays) <= 1) return 'B';
   return varianceDays < 0 ? 'A' : 'C';
+}
+
+/**
+ * Defensive sort for today's mission steps. `order` only exists on rows
+ * generated after it was added to the schema, so it's only trusted as a sort
+ * key when every step in the array has one — historical rows without it keep
+ * whatever order they were originally rendered in.
+ */
+export function orderMissionSteps(mission: CompassMissionStep[]): CompassMissionStep[] {
+  if (!mission.every((step) => step.order != null)) return mission;
+  return [...mission].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
 // ── Goal-level race ──────────────────────────────────────────────────────────

@@ -103,6 +103,15 @@ interface BooksState {
     bookId: string,
     status: BookStatus | null,
   ) => Promise<void>;
+  /** Moves one or more queued books, as a contiguous block preserving the
+   * given order, to a new position. Resequences the whole queue 0..n-1 each
+   * call — queues are small, so this is simpler and just as correct as
+   * fractional-index bookkeeping. Books that aren't currently queued are
+   * silently skipped. */
+  reorderQueue: (
+    bookIds: string[],
+    target: { position?: 'top' | 'bottom'; beforeId?: string; afterId?: string },
+  ) => Promise<void>;
   clearQueue: () => Promise<void>;
   toggleFavorite: (bookId: string) => Promise<void>;
   updateBookMetadata: (
@@ -267,6 +276,17 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     if (status === "archived") {
       updates.completedAt = new Date().toISOString();
     }
+    if (status === "queued") {
+      // Append to the end of the current queue. Stamped here (not in the
+      // chat tool) so every caller — the UI button and Samwell's
+      // add_to_queue tool alike — gets correct ordering for free.
+      const currentlyQueued = get().books.filter((b) => b.status === "queued");
+      const maxOrder = currentlyQueued.reduce(
+        (max, b) => Math.max(max, b.queueOrder ?? -1),
+        -1,
+      );
+      updates.queueOrder = maxOrder + 1;
+    }
     await db.update(books).set(updates).where(eq(books.id, bookId));
     // Record a journey note the first time a book is finished.
     if (status === "archived" && !wasArchived) {
@@ -275,6 +295,42 @@ export const useBooksStore = create<BooksState>((set, get) => ({
       } catch {
         // Journey notes are best-effort; never block a status change.
       }
+    }
+    await get().loadBooks();
+  },
+
+  reorderQueue: async (bookIds, target) => {
+    // Resolved as a block up front (not one bookId reorderQueue call per
+    // book) so the given order is preserved exactly — moving books one at a
+    // time against a shared anchor/position would telescope and reverse
+    // their relative order on the second and later moves.
+    const movingIds = new Set(bookIds);
+    const moving = bookIds
+      .map((id) => get().books.find((b) => b.id === id))
+      .filter((b): b is Book => !!b && b.status === "queued");
+    if (moving.length === 0) return;
+
+    const rest = get()
+      .books.filter((b) => b.status === "queued" && !movingIds.has(b.id))
+      .sort((a, b) => {
+        const orderA = a.queueOrder ?? Number.MAX_SAFE_INTEGER;
+        const orderB = b.queueOrder ?? Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.addedAt.localeCompare(b.addedAt);
+      });
+
+    let insertAt = target.position === "bottom" ? rest.length : 0;
+    if (target.afterId) {
+      const idx = rest.findIndex((b) => b.id === target.afterId);
+      if (idx >= 0) insertAt = idx + 1;
+    } else if (target.beforeId) {
+      const idx = rest.findIndex((b) => b.id === target.beforeId);
+      if (idx >= 0) insertAt = idx;
+    }
+
+    const reordered = [...rest.slice(0, insertAt), ...moving, ...rest.slice(insertAt)];
+    for (let i = 0; i < reordered.length; i++) {
+      await db.update(books).set({ queueOrder: i }).where(eq(books.id, reordered[i].id));
     }
     await get().loadBooks();
   },
@@ -325,7 +381,16 @@ export const useCurrentlyReading = () =>
   );
 export const useQueuedBooks = () =>
   useBooksStore(
-    useShallow((s) => s.books.filter((b) => b.status === "queued")),
+    useShallow((s) =>
+      s.books
+        .filter((b) => b.status === "queued")
+        .sort((a, b) => {
+          const orderA = a.queueOrder ?? Number.MAX_SAFE_INTEGER;
+          const orderB = b.queueOrder ?? Number.MAX_SAFE_INTEGER;
+          if (orderA !== orderB) return orderA - orderB;
+          return a.addedAt.localeCompare(b.addedAt);
+        }),
+    ),
   );
 export const useArchivedBooks = () =>
   useBooksStore(

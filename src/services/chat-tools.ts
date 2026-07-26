@@ -2,8 +2,10 @@ import { and, desc, eq, like, or } from 'drizzle-orm';
 import type { ToolDefinition } from '@dr33m/react-native-litert-lm';
 
 import { db } from '@/db/client';
-import { books, chatSuggestions, highlights, notes, readingProgress, thoughts } from '@/db/schema';
+import { books, chatSuggestions, collections, highlights, notes, readingProgress, thoughts } from '@/db/schema';
 import { extractReadText } from '@/services/book-context';
+import { useBooksStore } from '@/stores/books';
+import { useCollectionsStore } from '@/stores/collections';
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
@@ -207,6 +209,203 @@ export const SAMWELL_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'remove_from_currently_reading',
+      description:
+        "Remove one or more books from Currently Reading, clearing status back to unstarted (not queued, not finished). Use when the user opened a book by mistake or wants to stop reading it without marking it queued or finished. Requires user approval.",
+      parameters: {
+        type: 'object',
+        properties: {
+          book_titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Titles of the books (partial match ok). If omitted, uses the book the current chat is about.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'add_to_queue',
+      description:
+        "Add one or more books to the user's reading queue. Requires user approval.",
+      parameters: {
+        type: 'object',
+        properties: {
+          book_titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Titles of the books (partial match ok). If omitted, uses the book the current chat is about.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'remove_from_queue',
+      description:
+        'Remove one or more books from the reading queue, clearing status back to unstarted. Requires user approval.',
+      parameters: {
+        type: 'object',
+        properties: {
+          book_titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Titles of the books (partial match ok). If omitted, uses the book the current chat is about.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'reorder_queue',
+      description:
+        "Move one or more books to a new position in the reading queue, as a block, preserving the order given in book_titles: give after_title or before_title to place them relative to another queued book, or position ('top'/'bottom') to send them to an end. Use this after critiquing the queue against the user's goals and journey, to actually put the right books next. Requires user approval.",
+      parameters: {
+        type: 'object',
+        properties: {
+          book_titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Titles of the books to move, in order. If omitted, uses the book the current chat is about.',
+          },
+          after_title: {
+            type: 'string',
+            description: 'Title of the book these should come right after in the queue.',
+          },
+          before_title: {
+            type: 'string',
+            description: 'Title of the book these should come right before in the queue.',
+          },
+          position: {
+            type: 'string',
+            enum: ['top', 'bottom'],
+            description: 'Move to the very top or bottom of the queue. Ignored if after_title or before_title is given.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'toggle_favorite',
+      description:
+        'Add or remove one or more books from Favorites. Requires user approval.',
+      parameters: {
+        type: 'object',
+        properties: {
+          book_titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Titles of the books (partial match ok). If omitted, uses the book the current chat is about.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'mark_as_finished',
+      description:
+        'Mark one or more books as finished. Requires user approval.',
+      parameters: {
+        type: 'object',
+        properties: {
+          book_titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Titles of the books (partial match ok). If omitted, uses the book the current chat is about.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'create_collection',
+      description:
+        'Create a new, empty book collection with the given name. Requires user approval.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Name for the new collection',
+          },
+        },
+        required: ['name'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'add_book_to_collection',
+      description:
+        "Add one or more books to an existing collection. If the collection doesn't exist yet, call create_collection first. Requires user approval.",
+      parameters: {
+        type: 'object',
+        properties: {
+          book_titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Titles of the books (partial match ok). If omitted, uses the book the current chat is about.',
+          },
+          collection_name: {
+            type: 'string',
+            description: 'Name of the collection (partial match ok)',
+          },
+        },
+        required: ['collection_name'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'remove_book_from_collection',
+      description:
+        'Remove one or more books from a collection. Requires user approval.',
+      parameters: {
+        type: 'object',
+        properties: {
+          book_titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Titles of the books (partial match ok). If omitted, uses the book the current chat is about.',
+          },
+          collection_name: {
+            type: 'string',
+            description: 'Name of the collection (partial match ok)',
+          },
+        },
+        required: ['collection_name'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'list_collections',
+      description:
+        "List the user's collections with how many books are in each.",
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
 ];
 
 // ── Tools that must be user-approved before executing ──────────────────────
@@ -216,6 +415,15 @@ export const APPROVAL_REQUIRED_TOOLS = new Set([
   'tag_thought',
   'delete_highlight',
   'delete_thought',
+  'remove_from_currently_reading',
+  'add_to_queue',
+  'remove_from_queue',
+  'reorder_queue',
+  'toggle_favorite',
+  'mark_as_finished',
+  'create_collection',
+  'add_book_to_collection',
+  'remove_book_from_collection',
 ]);
 
 // ── Tool definitions in litert-lm format ────────────────────────────────────
@@ -309,6 +517,66 @@ export async function executeToolCall(
       return {
         result: await suggestThought(args.text as string, (args.tags as string[]) ?? [], ctx),
         status: 'Noting that down…',
+      };
+    case 'remove_from_currently_reading':
+      return {
+        result: await setBookStatusBatch(args.book_titles as string[] | undefined, null, ctx, 'reading'),
+        status: 'Updating your library…',
+      };
+    case 'add_to_queue':
+      return {
+        result: await setBookStatusBatch(args.book_titles as string[] | undefined, 'queued', ctx),
+        status: 'Updating your queue…',
+      };
+    case 'remove_from_queue':
+      return {
+        result: await setBookStatusBatch(args.book_titles as string[] | undefined, null, ctx, 'queued'),
+        status: 'Updating your queue…',
+      };
+    case 'reorder_queue':
+      return {
+        result: await reorderQueueForModel(args, ctx),
+        status: 'Reordering your queue…',
+      };
+    case 'toggle_favorite':
+      return {
+        result: await toggleFavoriteForModel(args.book_titles as string[] | undefined, ctx),
+        status: 'Updating favorites…',
+      };
+    case 'mark_as_finished':
+      return {
+        result: await setBookStatusBatch(args.book_titles as string[] | undefined, 'archived', ctx),
+        status: 'Marking as finished…',
+      };
+    case 'create_collection':
+      return {
+        result: await createCollectionForModel(args.name as string),
+        status: 'Creating collection…',
+      };
+    case 'add_book_to_collection':
+      return {
+        result: await updateBookCollectionBatch(
+          args.book_titles as string[] | undefined,
+          args.collection_name as string,
+          'add',
+          ctx,
+        ),
+        status: 'Adding to collection…',
+      };
+    case 'remove_book_from_collection':
+      return {
+        result: await updateBookCollectionBatch(
+          args.book_titles as string[] | undefined,
+          args.collection_name as string,
+          'remove',
+          ctx,
+        ),
+        status: 'Updating collection…',
+      };
+    case 'list_collections':
+      return {
+        result: await listCollectionsForModel(),
+        status: 'Looking over your collections…',
       };
     default:
       return { result: { error: `Unknown tool: ${name}` }, status: 'Unknown tool' };
@@ -819,4 +1087,251 @@ export function formatSearchResultsForLLM(results: SearchResult[]): string {
       return lines.join('\n');
     })
     .join('\n\n');
+}
+
+// ── Library-management tools ────────────────────────────────────────────────
+
+type Book = typeof books.$inferSelect;
+
+type BookResolution =
+  | { ok: true; book: Book }
+  | { ok: false; error: 'no_book_specified' | 'book_not_found' | 'ambiguous_book'; matches?: string[] };
+
+/** Resolves a book from a (possibly partial) title, falling back to the book
+ * the current chat is about when no title is given — so "add this to my
+ * queue" said mid-book-chat just works. */
+function resolveBookByTitle(title: string | undefined, ctx: ToolCallContext): BookResolution {
+  const trimmed = title?.trim();
+
+  if (!trimmed) {
+    if (!ctx.bookId) return { ok: false, error: 'no_book_specified' };
+    const book = db.select().from(books).where(eq(books.id, ctx.bookId)).get();
+    if (!book) return { ok: false, error: 'book_not_found' };
+    return { ok: true, book };
+  }
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  const rows = db
+    .select()
+    .from(books)
+    .where(or(...words.map((w) => like(books.title, `%${w}%`))))
+    .all();
+
+  if (rows.length === 0) return { ok: false, error: 'book_not_found' };
+  if (rows.length === 1) return { ok: true, book: rows[0] };
+
+  const exact = rows.find((b) => b.title.toLowerCase() === trimmed.toLowerCase());
+  if (exact) return { ok: true, book: exact };
+
+  return { ok: false, error: 'ambiguous_book', matches: rows.map((b) => b.title) };
+}
+
+type CollectionResolution =
+  | { ok: true; collection: { id: string; name: string } }
+  | { ok: false; error: 'collection_not_found' };
+
+/** Exact (case-insensitive) match first, then partial. Never auto-creates —
+ * a missing collection is reported back so the model can chain
+ * create_collection itself if that's what the user wants. */
+function resolveCollectionByName(name: string): CollectionResolution {
+  const trimmed = (name ?? '').trim().toLowerCase();
+  if (!trimmed) return { ok: false, error: 'collection_not_found' };
+
+  const rows = db.select().from(collections).all();
+  const exact = rows.find((c) => c.name.toLowerCase() === trimmed);
+  if (exact) return { ok: true, collection: exact };
+
+  const partial = rows.find((c) => c.name.toLowerCase().includes(trimmed));
+  if (partial) return { ok: true, collection: partial };
+
+  return { ok: false, error: 'collection_not_found' };
+}
+
+interface BookActionFailure {
+  title: string;
+  error: string;
+}
+
+interface BookBatchActionResult {
+  ok: boolean;
+  succeeded: string[];
+  failed: BookActionFailure[];
+  error?: string;
+}
+
+/** Resolves each title independently via resolveBookByTitle, collecting
+ * successes and per-title failures separately rather than failing the whole
+ * batch over one bad title. Falls back to the book the current chat is about
+ * when `titles` is empty/omitted, same as the single-book resolver. */
+function resolveBooksByTitles(
+  titles: string[] | undefined,
+  ctx: ToolCallContext,
+): { books: Book[]; failed: BookActionFailure[] } {
+  const list = titles && titles.length > 0 ? titles : [undefined];
+  const resolved: Book[] = [];
+  const failed: BookActionFailure[] = [];
+
+  for (const title of list) {
+    const resolution = resolveBookByTitle(title, ctx);
+    if (resolution.ok) {
+      resolved.push(resolution.book);
+    } else {
+      failed.push({ title: title ?? '(current book)', error: resolution.error });
+    }
+  }
+
+  return { books: resolved, failed };
+}
+
+/** Shared setter for the queued/archived/null transitions. Delegates to
+ * `useBooksStore.getState().updateBookStatus`, which is also where the queue
+ * ordering gets stamped, so the UI and chat can never disagree about it.
+ * `requireStatus`, when given, guards against acting on the wrong shelf (e.g.
+ * calling remove_from_queue on a book that's actually Currently Reading). */
+async function setBookStatusBatch(
+  bookTitles: string[] | undefined,
+  newStatus: 'queued' | 'archived' | null,
+  ctx: ToolCallContext,
+  requireStatus?: 'reading' | 'queued' | 'archived',
+): Promise<BookBatchActionResult> {
+  const { books: resolved, failed } = resolveBooksByTitles(bookTitles, ctx);
+  const succeeded: string[] = [];
+
+  for (const book of resolved) {
+    if (requireStatus && book.status !== requireStatus) {
+      failed.push({ title: book.title, error: 'unexpected_status' });
+      continue;
+    }
+    await useBooksStore.getState().updateBookStatus(book.id, newStatus);
+    succeeded.push(book.title);
+  }
+
+  return { ok: failed.length === 0, succeeded, failed };
+}
+
+async function reorderQueueForModel(
+  args: Record<string, unknown>,
+  ctx: ToolCallContext,
+): Promise<BookBatchActionResult> {
+  const { books: resolved, failed } = resolveBooksByTitles(args.book_titles as string[] | undefined, ctx);
+
+  const queued = resolved.filter((b) => b.status === 'queued');
+  for (const book of resolved) {
+    if (book.status !== 'queued') failed.push({ title: book.title, error: 'not_in_queue' });
+  }
+  if (queued.length === 0) {
+    return { ok: false, succeeded: [], failed };
+  }
+
+  const target: { position?: 'top' | 'bottom'; beforeId?: string; afterId?: string } = {};
+  const afterTitle = args.after_title as string | undefined;
+  const beforeTitle = args.before_title as string | undefined;
+
+  if (afterTitle) {
+    const afterResolution = resolveBookByTitle(afterTitle, ctx);
+    if (!afterResolution.ok) {
+      return { ok: false, succeeded: [], failed, error: `anchor_${afterResolution.error}` };
+    }
+    target.afterId = afterResolution.book.id;
+  } else if (beforeTitle) {
+    const beforeResolution = resolveBookByTitle(beforeTitle, ctx);
+    if (!beforeResolution.ok) {
+      return { ok: false, succeeded: [], failed, error: `anchor_${beforeResolution.error}` };
+    }
+    target.beforeId = beforeResolution.book.id;
+  } else {
+    target.position = (args.position as 'top' | 'bottom' | undefined) ?? 'top';
+  }
+
+  // One block move, in the given order — not one reorderQueue call per book,
+  // which would telescope and reverse their relative order on the second
+  // and later moves against a shared anchor/position.
+  await useBooksStore.getState().reorderQueue(queued.map((b) => b.id), target);
+  return { ok: failed.length === 0, succeeded: queued.map((b) => b.title), failed };
+}
+
+async function toggleFavoriteForModel(
+  bookTitles: string[] | undefined,
+  ctx: ToolCallContext,
+): Promise<BookBatchActionResult> {
+  const { books: resolved, failed } = resolveBooksByTitles(bookTitles, ctx);
+  const succeeded: string[] = [];
+
+  for (const book of resolved) {
+    await useBooksStore.getState().toggleFavorite(book.id);
+    succeeded.push(book.title);
+  }
+
+  return { ok: failed.length === 0, succeeded, failed };
+}
+
+interface CreateCollectionResult {
+  ok: boolean;
+  collectionId?: string;
+  error?: string;
+}
+
+async function createCollectionForModel(name: string): Promise<CreateCollectionResult> {
+  const trimmed = name?.trim();
+  if (!trimmed) return { ok: false, error: 'name_required' };
+
+  const collectionId = await useCollectionsStore.getState().createCollection(trimmed);
+  return { ok: true, collectionId };
+}
+
+interface CollectionBatchActionResult {
+  ok: boolean;
+  collectionName?: string;
+  succeeded: string[];
+  failed: BookActionFailure[];
+  error?: string;
+}
+
+async function updateBookCollectionBatch(
+  bookTitles: string[] | undefined,
+  collectionName: string,
+  action: 'add' | 'remove',
+  ctx: ToolCallContext,
+): Promise<CollectionBatchActionResult> {
+  const collectionResolution = resolveCollectionByName(collectionName);
+  if (!collectionResolution.ok) {
+    return { ok: false, succeeded: [], failed: [], error: collectionResolution.error };
+  }
+  const { collection } = collectionResolution;
+
+  const { books: resolved, failed } = resolveBooksByTitles(bookTitles, ctx);
+  const succeeded: string[] = [];
+
+  for (const book of resolved) {
+    if (action === 'add') {
+      await useCollectionsStore.getState().addBookToCollection(book.id, collection.id);
+    } else {
+      await useCollectionsStore.getState().removeBookFromCollection(book.id, collection.id);
+    }
+    succeeded.push(book.title);
+  }
+
+  return { ok: failed.length === 0, collectionName: collection.name, succeeded, failed };
+}
+
+export interface CollectionSummary {
+  id: string;
+  name: string;
+  bookCount: number;
+}
+
+async function listCollectionsForModel(): Promise<CollectionSummary[]> {
+  await useCollectionsStore.getState().loadCollections();
+  return useCollectionsStore.getState().collections.map((c) => ({
+    id: c.id,
+    name: c.name,
+    bookCount: c.count,
+  }));
+}
+
+export function formatCollectionsForLLM(collectionList: CollectionSummary[]): string {
+  if (collectionList.length === 0) return 'No collections yet.';
+  return collectionList
+    .map((c) => `- "${c.name}" (${c.bookCount} book${c.bookCount === 1 ? '' : 's'})`)
+    .join('\n');
 }

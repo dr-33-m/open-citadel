@@ -25,7 +25,7 @@ export const SuggestTagsResponseSchema = z.object({
 export type SuggestTagsResponse = z.infer<typeof SuggestTagsResponseSchema>;
 
 export const SUGGEST_TAGS_PROMPT =
-  `Task: suggest 1-3 tags for a passage the user saved from their reading. The user message is JSON: { text, note?, surrounding?, bookTitle?, author?, existingTags, goal? }.
+  `Task: suggest 1-3 tags for a passage or personal note the user saved. The user message is JSON: { text, note?, surrounding?, bookTitle?, author?, existingTags, goal? }.
 
 - Tags capture WHY this passage matters, the theme, principle, or application, not what it literally mentions.
 - Prefer reusing a tag from existingTags whenever one fits the meaning; a small consistent vocabulary beats many one-off tags.
