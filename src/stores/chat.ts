@@ -48,6 +48,7 @@ interface ChatStore {
     bookId?: string;
     title: string;
     contextText?: string;
+    passageText?: string;
     contextLocator?: string;
   }): Promise<string>;
   openSession(id: string): Promise<void>;
@@ -132,7 +133,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ sessions });
   },
 
-  async createSession({ bookId, title, contextText, contextLocator }) {
+  async createSession({ bookId, title, contextText, passageText, contextLocator }) {
     const id = uuid();
     const ts = now();
 
@@ -149,7 +150,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       .run();
 
     // Persist the system message so history is always complete when reloading
-    if (contextText) {
+    if (contextText || passageText) {
       const bookRow = bookId
         ? db.select({ title: books.title, author: books.author }).from(books).where(eq(books.id, bookId)).get()
         : null;
@@ -158,9 +159,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ? `You are discussing "${bookRow.title}" by ${bookRow.author}. `
         : '';
 
-      const systemContent =
-        `${bookLine}The user is reading the following passage:\n\n${contextText}\n\n` +
-        'Answer questions about it, provide analysis, and discuss themes. Be concise and insightful.';
+      // When the user highlighted a specific passage, keep the surrounding
+      // chapter text as background but tell the model to focus on the passage
+      // itself — otherwise it treats the whole preceding chapter as equally
+      // relevant and loses track of what the user actually selected.
+      const backgroundSection = contextText
+        ? `Here is the context leading up to a passage the user highlighted:\n\n${contextText}\n\n`
+        : '';
+
+      const systemContent = passageText
+        ? `${bookLine}${backgroundSection}` +
+          `The user specifically highlighted this passage — focus your answers on it${contextText ? ', using the context above only as background' : ''}:\n\n${passageText}\n\n` +
+          'Answer questions about the highlighted passage, provide analysis, and discuss themes. Be concise and insightful.'
+        : `${bookLine}The user is reading the following passage:\n\n${contextText}\n\n` +
+          'Answer questions about it, provide analysis, and discuss themes. Be concise and insightful.';
 
       db.insert(chatMessages)
         .values({
