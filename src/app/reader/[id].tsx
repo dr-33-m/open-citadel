@@ -54,6 +54,10 @@ import {
 // Height of the header content below the status bar
 const HEADER_CONTENT_HEIGHT = 10;
 
+// Reserved space above the bottom safe area for the floating TTS controls /
+// page indicator, so paginated text never renders underneath them
+const FOOTER_CONTROLS_HEIGHT = spacing[16];
+
 export default function ReaderScreen() {
   const colors = useColors();
   const appTheme = useSettingsStore((s) => s.theme);
@@ -668,6 +672,12 @@ export default function ReaderScreen() {
   // completely unaffected — swipes and text selection work normally.
   const headerZoneHeight = insets.top + HEADER_CONTENT_HEIGHT;
 
+  // Reserved space below the reading area, covering the home indicator safe
+  // area and room for the floating TTS controls. The controls are centered
+  // within the FULL zone (not just the portion above the safe area) so the
+  // gap above them (to the text) matches the gap below them (to the screen edge).
+  const footerZoneHeight = insets.bottom + FOOTER_CONTROLS_HEIGHT;
+
   if (isLoading || !currentBook || !currentBook.filePath) {
     return (
       <View style={styles.loading}>
@@ -691,11 +701,11 @@ export default function ReaderScreen() {
       {/* ReadiumView — replaced with a dark placeholder while leaving so the
           native SurfaceView doesn't flash white during the slide animation */}
       {leaving ? (
-        <View style={styles.reader} />
+        <View style={[styles.reader, { marginBottom: footerZoneHeight }]} />
       ) : (
         <ReadiumView
           ref={readerRef}
-          style={styles.reader}
+          style={[styles.reader, { marginBottom: footerZoneHeight }]}
           file={{
             url: currentBook.filePath!,
             initialLocation,
@@ -771,7 +781,8 @@ export default function ReaderScreen() {
             styles.bottomFloating,
             {
               opacity: headerAnim,
-              bottom: insets.bottom + spacing[4],
+              bottom: 0,
+              height: footerZoneHeight,
               transform: [
                 {
                   translateY: headerAnim.interpolate({
@@ -790,39 +801,6 @@ export default function ReaderScreen() {
             onSkipPrevious={() => readerRef.current?.ttsSkipPrevious()}
             onSkipNext={() => readerRef.current?.ttsSkipNext()}
           />
-        </Animated.View>
-      )}
-
-      {/* Page indicator — floating pill, shows/hides with header when TTS is off */}
-      {!isTTSActive && !selectionEvent && (
-        <Animated.View
-          style={[
-            styles.bottomFloating,
-            {
-              opacity: headerAnim,
-              bottom: insets.bottom + spacing[4],
-              transform: [
-                {
-                  translateY: headerAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [60, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-          pointerEvents="none"
-        >
-          <View style={styles.progressPill}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
-              {currentLocator?.locations?.position !== undefined &&
-              currentBook?.totalPages
-                ? `${currentLocator.locations.position} of ${currentBook.totalPages}`
-                : progress !== undefined
-                  ? `${Math.round(progress * 100)}%`
-                  : ""}
-            </ThemedText>
-          </View>
         </Animated.View>
       )}
 
@@ -1069,18 +1047,13 @@ function useReaderStyles(colors: ReturnType<typeof useColors>) {
           left: 0,
           right: 0,
           alignItems: "center",
+          justifyContent: "center",
         },
         topFloating: {
           position: "absolute",
           left: 0,
           right: 0,
           alignItems: "center",
-        },
-        progressPill: {
-          backgroundColor: colors.surface.mid,
-          paddingHorizontal: spacing[3],
-          paddingVertical: spacing[2],
-          borderRadius: 20,
         },
         returnBanner: {
           position: "absolute",
