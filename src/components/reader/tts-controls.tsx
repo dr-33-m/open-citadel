@@ -30,17 +30,17 @@ export function TTSControls({
       gap: spacing[4],
     },
     btn: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       backgroundColor: colors.surface.mid,
       alignItems: 'center',
       justifyContent: 'center',
     },
     btnPrimary: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       backgroundColor: colors.surface.mid,
       alignItems: 'center',
       justifyContent: 'center',
@@ -50,17 +50,17 @@ export function TTSControls({
   return (
     <View style={styles.row}>
       <Touchable onPress={onSkipPrevious} style={styles.btn} hitSlop={8}>
-        <SkipBack size={20} color={colors.text.primary} />
+        <SkipBack size={16} color={colors.text.primary} />
       </Touchable>
       <Touchable onPress={onPlayPause} style={styles.btnPrimary} hitSlop={8}>
         {isPlaying ? (
-          <Pause size={26} color={colors.primary.default} />
+          <Pause size={20} color={colors.primary.default} />
         ) : (
-          <Play size={26} color={colors.primary.default} />
+          <Play size={20} color={colors.primary.default} />
         )}
       </Touchable>
       <Touchable onPress={onSkipNext} style={styles.btn} hitSlop={8}>
-        <SkipForward size={20} color={colors.text.primary} />
+        <SkipForward size={16} color={colors.text.primary} />
       </Touchable>
     </View>
   );

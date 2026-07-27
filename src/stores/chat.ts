@@ -48,7 +48,7 @@ interface ChatStore {
   toolCallStatus: string | null;
   streamingContent: string;
   thinkingContent: string;
-  contextPrimed: boolean;
+  primedGeneration: number | null;
 
   loadSessions(): Promise<void>;
   createSession(opts: {
@@ -126,7 +126,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   toolCallStatus: null,
   streamingContent: '',
   thinkingContent: '',
-  contextPrimed: false,
+  primedGeneration: null,
 
   async loadSessions() {
     const rows = db
@@ -315,7 +315,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       createdAt: r.createdAt,
     }));
 
-    set({ activeSession: session, messages, streamingContent: '', thinkingContent: '', contextPrimed: false });
+    set({ activeSession: session, messages, streamingContent: '', thinkingContent: '', primedGeneration: null });
 
     // Reset stateful conversation in the engine
     Inference.resetConversation();
@@ -332,7 +332,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           systemMsg.content + '\n\nAcknowledge this context with "OK".',
           () => {},
         );
-        set({ contextPrimed: true });
+        set({ primedGeneration: Inference.getGeneration() });
         console.log('[Chat] Context priming complete');
       } catch (err) {
         console.warn('[Chat] Context priming failed:', err);
@@ -452,9 +452,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
 
-    // Lazy context priming — if the model wasn't loaded when the session
-    // was opened, prime the engine with book context before the first message
-    if (!get().contextPrimed) {
+    // Lazy context priming — if the engine wasn't primed for this session's
+    // current native engine (never primed, or the engine was rebuilt since
+    // e.g. a WAKE UP reload), prime it with book context before the first message
+    if (get().primedGeneration !== Inference.getGeneration()) {
       const systemMsg = get().messages.find((m) => m.role === 'system');
       if (systemMsg) {
         try {
@@ -463,12 +464,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             systemMsg.content + '\n\nAcknowledge this context with "OK".',
             () => {},
           );
-          set({ contextPrimed: true });
+          set({ primedGeneration: Inference.getGeneration() });
         } catch (err) {
           console.warn('[Chat] Lazy context priming failed:', err);
         }
       } else {
-        set({ contextPrimed: true });
+        set({ primedGeneration: Inference.getGeneration() });
       }
     }
 
