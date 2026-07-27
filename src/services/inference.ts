@@ -4,6 +4,7 @@ import { SAMWELL_TOOLS_LITERT } from './chat-tools';
 type LiteRTLM = ReturnType<typeof createLLM>;
 
 let _llm: LiteRTLM | null = null;
+let _generation = 0;
 
 export type { ExecuteResult, ToolResponse, Backend };
 
@@ -50,6 +51,11 @@ export async function loadModel(filePath: string, settings?: Partial<ModelSettin
     enableSpeculativeDecoding: settings?.enableSpeculativeDecoding ?? false,
     tools: enableToolCalling ? SAMWELL_TOOLS_LITERT : [],
   });
+  _generation += 1;
+}
+
+export function getGeneration(): number {
+  return _generation;
 }
 
 export async function unloadModel(): Promise<void> {

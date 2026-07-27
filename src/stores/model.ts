@@ -487,6 +487,11 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       return;
     }
 
+    if (!Inference.isNativeAvailable()) {
+      set({ loadError: "AI chat isn't supported on this device." });
+      return;
+    }
+
     set({ isLoading: true, loadError: null, activeBackend: null });
     try {
       const { inference } = get();
