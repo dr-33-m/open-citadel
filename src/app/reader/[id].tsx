@@ -300,12 +300,12 @@ export default function ReaderScreen() {
       if (!currentBook || chatLoading) return;
 
       setChatLoading(true);
-      let contextText = text;
+      let contextText: string | undefined;
       if (currentBook.filePath) {
         try {
           contextText = await extractChapterTextToLocator(currentBook.filePath, locator);
         } catch {
-          // fallback to selected text only
+          // fallback to selected text only — no separate background context
         }
       }
 
@@ -315,6 +315,7 @@ export default function ReaderScreen() {
         bookId: currentBook.id,
         title: text.slice(0, 60),
         contextText,
+        passageText: text,
         contextLocator: JSON.stringify(locator),
       });
       // Link the highlight to the chat session
@@ -366,18 +367,19 @@ export default function ReaderScreen() {
 
     if (!currentBook || chatLoading) return;
     setChatLoading(true);
-    let contextText = text;
+    let contextText: string | undefined;
     if (currentBook.filePath && locator) {
       try {
         contextText = await extractChapterTextToLocator(currentBook.filePath, locator);
       } catch {
-        // fallback to selected text only
+        // fallback to selected text only — no separate background context
       }
     }
     const sessionId = await createChatSession({
       bookId: currentBook.id,
       title: text.slice(0, 60),
       contextText,
+      passageText: text,
       contextLocator: locator ? JSON.stringify(locator) : undefined,
     });
     await updateHighlight(highlightId, { chatSessionId: sessionId });
