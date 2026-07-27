@@ -5,9 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@dr33m/react-native-readium@5.0.0-rc.32':
-    hash: 9ad51c64682f6ec1475e0559dcbe6b3b4654f128fd232916cfe5441d40846c4a
-    path: patches/@dr33m__react-native-readium@5.0.0-rc.32.patch
   react-native-gesture-handler@2.30.0:
     hash: a6f5aae2e3562f0b107581c8caa4e908acb91aa61e527541b8ec768fbf44bf65
     path: patches/react-native-gesture-handler@2.30.0.patch
@@ -20,8 +17,8 @@ importers:
         specifier: ^0.5.5
         version: 0.5.5(expo@55.0.8)(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       '@dr33m/react-native-readium':
-        specifier: 5.0.0-rc.32
-        version: 5.0.0-rc.32(patch_hash=9ad51c64682f6ec1475e0559dcbe6b3b4654f128fd232916cfe5441d40846c4a)(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+        specifier: 5.0.0-rc.33
+        version: 5.0.0-rc.33(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       '@expo-google-fonts/manrope':
         specifier: ^0.4.2
         version: 0.4.2
@@ -771,8 +768,8 @@ packages:
       react-native:
         optional: true
 
-  '@dr33m/react-native-readium@5.0.0-rc.32':
-    resolution: {integrity: sha512-ivYe1BiLTxYnJaat+sZ1kg29hvgRKJaRPH+Gop3Ex5bRAQUljNdJwvTgVVsfg2CGsCtxuaoFx1juTxluZhfkng==}
+  '@dr33m/react-native-readium@5.0.0-rc.33':
+    resolution: {integrity: sha512-lZuV7jvWD4bu3nyl9m91TYCZ7B1O1rjjTsv207Q3FwUnpbLarFODA3wYpVsy8SB3QeDfq9pRAt86beVRzdxxFw==}
     engines: {node: '>=20'}
     peerDependencies:
       react: '*'
@@ -5969,7 +5966,7 @@ snapshots:
       react: 19.2.0
       react-native: 0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0)
 
-  '@dr33m/react-native-readium@5.0.0-rc.32(patch_hash=9ad51c64682f6ec1475e0559dcbe6b3b4654f128fd232916cfe5441d40846c4a)(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
+  '@dr33m/react-native-readium@5.0.0-rc.33(react-native-nitro-modules@0.35.10(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)':
     dependencies:
       '@readium/css': 2.0.0
       '@readium/navigator': 2.3.1
