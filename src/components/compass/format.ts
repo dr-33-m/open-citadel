@@ -9,6 +9,18 @@ export function formatCompassDate(ymd: string, now: Date = new Date()): string {
   return year === now.getFullYear() ? base : `${base} ${year}`;
 }
 
+/**
+ * `daysRemaining` is signed, so overdue reads as overdue instead of stalling at
+ * "0 days left" forever once a target has passed.
+ */
+export function daysLeftText(daysRemaining: number | null | undefined): string {
+  if (daysRemaining == null) return '';
+  if (daysRemaining === 0) return 'due today';
+  const days = Math.abs(daysRemaining);
+  const unit = days === 1 ? 'day' : 'days';
+  return daysRemaining > 0 ? `${days} ${unit} left` : `${days} ${unit} over`;
+}
+
 /** Short pace read for the dashboard strip and the progress sheet: "On track", "2 days behind". */
 export function paceVerdict(status: CompassScheduleStatus, varianceDays: number | null): string {
   if (status === 'unknown' || varianceDays === null) return 'Not enough data yet';

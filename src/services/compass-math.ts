@@ -144,13 +144,27 @@ export function computeProgress(completedUnits: number, estimatedUnits: number):
   return Math.min(1, Math.max(0, completedUnits / estimatedUnits));
 }
 
+/**
+ * Pace is measured over the days the driver actually REPORTED, and the finish is
+ * projected forward from that same day — not from the clock. Anchoring to today
+ * meant an untouched milestone slid later every morning and recovered every
+ * night, so the same state read `on_track` at bedtime and `behind` at breakfast.
+ * Now the projection only moves when new data lands.
+ *
+ * It is still floored at today, because a finish date in the past is not a
+ * projection; that is what keeps a long silence decaying honestly instead of
+ * freezing on the last good day.
+ */
 export function computeProjection(input: {
   completedUnits: number;
   estimatedUnits: number;
   startDate: string;
   today: string;
+  /** Last compass day with a night check-in. Falls back to today when never reported. */
+  lastReportedDate?: string | null;
 }): { projectedDate: string | null; avgDailyUnits: number | null } {
-  const daysElapsed = daysBetween(input.startDate, input.today) + 1;
+  const anchor = input.lastReportedDate ?? input.today;
+  const daysElapsed = daysBetween(input.startDate, anchor) + 1;
   if (daysElapsed < 2 || input.completedUnits <= 0) {
     return { projectedDate: null, avgDailyUnits: null };
   }
@@ -158,21 +172,50 @@ export function computeProjection(input: {
   const avgDailyUnits = input.completedUnits / daysElapsed;
   const remainingUnits = Math.max(0, input.estimatedUnits - input.completedUnits);
   const projectedRemainingDays = Math.ceil(remainingUnits / avgDailyUnits);
+  const projectedDate = addDaysYmd(anchor, projectedRemainingDays);
   return {
-    projectedDate: addDaysYmd(input.today, projectedRemainingDays),
+    projectedDate:
+      daysBetween(input.today, projectedDate) < 0 ? input.today : projectedDate,
     avgDailyUnits,
   };
 }
 
-/** Positive variance = behind the original target. Within a day = on track. */
+/**
+ * Positive variance = behind the original target. Within a day = on track.
+ *
+ * Nothing can finish before today, so when there is no pace data today IS the
+ * earliest possible finish. That is enough to prove "behind" once the target
+ * has passed, while staying honestly `unknown` while it hasn't — a driver who
+ * has logged nothing against a target that is already gone is late, and saying
+ * "not enough data yet" to them is the one reading that helps no one.
+ */
 export function computeScheduleStatus(
   targetDate: string,
   projectedDate: string | null,
+  today: string,
 ): { status: CompassScheduleStatus; varianceDays: number | null } {
-  if (!projectedDate) return { status: 'unknown', varianceDays: null };
-  const varianceDays = daysBetween(targetDate, projectedDate);
+  const varianceDays = daysBetween(targetDate, projectedDate ?? today);
+  if (!projectedDate && varianceDays <= 1) return { status: 'unknown', varianceDays: null };
   if (Math.abs(varianceDays) <= 1) return { status: 'on_track', varianceDays };
   return { status: varianceDays > 0 ? 'behind' : 'ahead', varianceDays };
+}
+
+/**
+ * The pace the milestone still demands, per day.
+ *
+ * Null once the target has passed: no daily cadence meets a date that is gone,
+ * and returning a number there (the old behaviour returned the entire remainder)
+ * read as a plan the driver could actually follow. On the target day itself the
+ * honest answer IS the whole remainder, because they still have today.
+ */
+export function computeRequiredDailyUnits(
+  remainingUnits: number,
+  daysRemaining: number,
+): number | null {
+  if (remainingUnits <= 0) return 0;
+  if (daysRemaining > 0) return remainingUnits / daysRemaining;
+  if (daysRemaining === 0) return remainingUnits;
+  return null;
 }
 
 export function computeFinalVarianceDays(
@@ -180,6 +223,67 @@ export function computeFinalVarianceDays(
   actualCompletedDate: string,
 ): number {
   return daysBetween(targetDate, actualCompletedDate);
+}
+
+/**
+ * The latest of a set of YMD dates, ignoring gaps. Used to date a goal's finish
+ * by when its last milestone was actually completed rather than by when the
+ * driver got round to tapping archive — that tap is not the achievement, and
+ * grading it as one turned on-time work into a C. YMD strings sort
+ * chronologically, so this is just a filtered max.
+ */
+export function latestYmd(dates: (string | null | undefined)[]): string | null {
+  let latest: string | null = null;
+  for (const date of dates) {
+    if (date && (latest === null || date > latest)) latest = date;
+  }
+  return latest;
+}
+
+/** The earliest of a set of YMD dates, ignoring gaps. */
+export function earliestYmd(dates: (string | null | undefined)[]): string | null {
+  let earliest: string | null = null;
+  for (const date of dates) {
+    if (date && (earliest === null || date < earliest)) earliest = date;
+  }
+  return earliest;
+}
+
+/**
+ * The day a milestone's logged steps first reached its estimate.
+ *
+ * Night reports arrive one per compass day, so walking them in date order finds
+ * the day the work actually crossed the line. That, not the day the driver got
+ * round to acknowledging it, is what the milestone should be dated by — the
+ * same principle that keeps the goal's rank off the archive tap.
+ */
+export function stepThresholdDate(
+  reports: { date: string; units: number }[],
+  estimatedUnits: number,
+): string | null {
+  if (estimatedUnits <= 0) return null;
+  const inOrder = [...reports].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  let total = 0;
+  for (const report of inOrder) {
+    total += report.units;
+    if (total >= estimatedUnits) return report.date;
+  }
+  return null;
+}
+
+/**
+ * A milestone whose logged steps have reached its estimate is done in every
+ * sense the app can verify, whether or not the driver pressed the button. The
+ * rank must not hinge on which card they happened to tap.
+ */
+export function isMilestoneFullyStepped(milestone: {
+  completedEffortUnits: number;
+  estimatedEffortUnits: number;
+}): boolean {
+  return (
+    milestone.estimatedEffortUnits > 0 &&
+    milestone.completedEffortUnits >= milestone.estimatedEffortUnits
+  );
 }
 
 /**
@@ -232,6 +336,8 @@ export function computeGoalTrack(input: {
   /** The active milestone's own progress, 0..1. */
   currentMilestoneProgress: number;
   today: string;
+  /** Last compass day with a night check-in, so the goal's pace is as stable as the milestone's. */
+  lastReportedDate?: string | null;
 }): CompassGoalTrack {
   const estimatedMilestones = Math.max(1, input.estimatedMilestones);
   const milestonesDone = Math.min(
@@ -244,8 +350,13 @@ export function computeGoalTrack(input: {
     estimatedUnits: estimatedMilestones,
     startDate: input.startDate,
     today: input.today,
+    lastReportedDate: input.lastReportedDate,
   });
-  const { status, varianceDays } = computeScheduleStatus(input.targetDate, projectedDate);
+  const { status, varianceDays } = computeScheduleStatus(
+    input.targetDate,
+    projectedDate,
+    input.today,
+  );
 
   return {
     targetDate: input.targetDate,
@@ -253,7 +364,7 @@ export function computeGoalTrack(input: {
     completedMilestones: input.completedMilestones,
     milestonesDone,
     currentProjectedDate: projectedDate,
-    daysRemaining: Math.max(0, daysBetween(input.today, input.targetDate)),
+    daysRemaining: daysBetween(input.today, input.targetDate),
     scheduleStatus: status,
     varianceDays,
   };
@@ -276,25 +387,32 @@ export function buildTelemetry(
     completedEffortUnits: number;
     startDate: string;
     targetDate: string;
+    lastReportedDate?: string | null;
   },
   today: string,
 ): CompassTelemetry {
+  const lastReportedDate = milestone.lastReportedDate ?? null;
   const { projectedDate, avgDailyUnits } = computeProjection({
     completedUnits: milestone.completedEffortUnits,
     estimatedUnits: milestone.estimatedEffortUnits,
     startDate: milestone.startDate,
     today,
+    lastReportedDate,
   });
-  const { status, varianceDays } = computeScheduleStatus(milestone.targetDate, projectedDate);
+  const { status, varianceDays } = computeScheduleStatus(
+    milestone.targetDate,
+    projectedDate,
+    today,
+  );
 
   const daysElapsed = daysBetween(milestone.startDate, today) + 1;
-  const daysRemaining = Math.max(0, daysBetween(today, milestone.targetDate));
+  /** Signed: negative once the target has passed, so overdue cannot hide as 0. */
+  const daysRemaining = daysBetween(today, milestone.targetDate);
   const remainingUnits = Math.max(
     0,
     milestone.estimatedEffortUnits - milestone.completedEffortUnits,
   );
-  const requiredDailyUnits =
-    daysRemaining > 0 ? remainingUnits / daysRemaining : remainingUnits;
+  const requiredDailyUnits = computeRequiredDailyUnits(remainingUnits, daysRemaining);
 
   const goalTrack =
     goal.startDate && goal.targetDate && goal.estimatedMilestones != null
@@ -308,6 +426,7 @@ export function buildTelemetry(
             milestone.estimatedEffortUnits,
           ),
           today,
+          lastReportedDate,
         })
       : null;
 
@@ -321,6 +440,7 @@ export function buildTelemetry(
     targetDate: milestone.targetDate,
     currentProjectedDate: projectedDate,
     today,
+    lastReportedDate,
     daysElapsed,
     daysRemaining,
     avgDailyUnits,

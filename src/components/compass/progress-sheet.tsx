@@ -8,7 +8,11 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
-import { computeProgress, isGoalComplete } from '@/services/compass-math';
+import {
+  computeProgress,
+  isGoalComplete,
+  isMilestoneFullyStepped,
+} from '@/services/compass-math';
 import type { CompassMilestoneRow } from '@/stores/compass';
 
 type ProgressSheetProps = {
@@ -112,8 +116,13 @@ export function ProgressSheet({
           : colors.primary.default;
   const paceColor = paceTint(status);
   const goalTrack = telemetry?.goalTrack ?? null;
+  // Count the active milestone when its steps are all logged: archiving will
+  // close it out too, so the label must promise the rank that will be awarded.
   const goalComplete = goalTrack
-    ? isGoalComplete(goalTrack.completedMilestones, goalTrack.estimatedMilestones)
+    ? isGoalComplete(
+        goalTrack.completedMilestones + (isMilestoneFullyStepped(milestone) ? 1 : 0),
+        goalTrack.estimatedMilestones,
+      )
     : false;
 
   return (

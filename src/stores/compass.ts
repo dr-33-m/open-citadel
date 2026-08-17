@@ -21,9 +21,9 @@ import {
   requestNightTurn,
   requestSetupTurn,
 } from '@/services/compass-api';
+import { currentCompassDay } from '@/services/compass-day';
 import {
   buildTelemetry,
-  compassDayFor,
   computeFinalVarianceDays,
   computeFocusScore,
   computeGoalTrack,
@@ -31,7 +31,11 @@ import {
   computeProjection,
   daysBetween,
   deriveGoalRank,
+  earliestYmd,
   isGoalComplete,
+  isMilestoneFullyStepped,
+  latestYmd,
+  stepThresholdDate,
 } from '@/services/compass-math';
 import { syncCompassReminders } from '@/services/compass-notifications';
 import { selectReadingContext } from '@/services/compass-reading';
@@ -87,11 +91,6 @@ function createId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function currentCompassDay(): string {
-  const { compassMorningTime, compassNightTime } = useSettingsStore.getState();
-  return compassDayFor(new Date(), compassMorningTime, compassNightTime);
-}
-
 function userText(messages: CompassChatMessage[]): string {
   return messages
     .filter((m) => m.role === 'user')
@@ -138,6 +137,85 @@ function insertActions(
       })
       .run();
   }
+}
+
+function completedMilestonesFor(goalId: string): CompassMilestoneRow[] {
+  return db
+    .select()
+    .from(compassMilestones)
+    .where(and(eq(compassMilestones.goalId, goalId), eq(compassMilestones.status, 'completed')))
+    .all();
+}
+
+/**
+ * When a milestone actually finished: the night check-in whose steps crossed the
+ * estimate, else the last day reported, else today. Dating it by the moment the
+ * driver pressed a button would put the same lag into the milestone's variance
+ * that the goal's rank was just freed from.
+ */
+function milestoneFinishDate(milestone: CompassMilestoneRow, fallbackDay: string): string {
+  const reports = db
+    .select({
+      date: compassCheckins.localDate,
+      units: compassCheckins.effortUnitsCompleted,
+    })
+    .from(compassCheckins)
+    .where(
+      and(eq(compassCheckins.milestoneId, milestone.id), eq(compassCheckins.kind, 'night')),
+    )
+    .all();
+
+  return (
+    stepThresholdDate(
+      reports.map((r) => ({ date: r.date, units: r.units ?? 0 })),
+      milestone.estimatedEffortUnits,
+    ) ??
+    milestone.lastReportedDate ??
+    fallbackDay
+  );
+}
+
+/** Mark a milestone done, dated by when the work landed and graded against its own target. */
+function completeMilestoneRow(milestone: CompassMilestoneRow, fallbackDay: string): string {
+  const actualCompletedDate = milestoneFinishDate(milestone, fallbackDay);
+  db.update(compassMilestones)
+    .set({
+      status: 'completed',
+      actualCompletedDate,
+      finalVarianceDays: computeFinalVarianceDays(milestone.targetDate, actualCompletedDate),
+    })
+    .where(eq(compassMilestones.id, milestone.id))
+    .run();
+  return actualCompletedDate;
+}
+
+/**
+ * Recompute and persist the goal's own projection. Called from every write that
+ * moves goal-level progress — a night check-in AND a milestone completion — so
+ * the stored date can't go stale across a milestone boundary.
+ */
+function refreshGoalProjection(
+  goal: CompassGoalRow,
+  args: {
+    currentMilestoneProgress: number;
+    today: string;
+    lastReportedDate?: string | null;
+  },
+): void {
+  if (!goal.startDate || !goal.targetDate || !goal.estimatedMilestones) return;
+  const track = computeGoalTrack({
+    startDate: goal.startDate,
+    targetDate: goal.targetDate,
+    estimatedMilestones: goal.estimatedMilestones,
+    completedMilestones: completedMilestonesFor(goal.id).length,
+    currentMilestoneProgress: args.currentMilestoneProgress,
+    today: args.today,
+    lastReportedDate: args.lastReportedDate,
+  });
+  db.update(compassGoals)
+    .set({ currentProjectedDate: track.currentProjectedDate })
+    .where(eq(compassGoals.id, goal.id))
+    .run();
 }
 
 function morningPlanFrom(checkin: CompassCheckinRow | null): CompassMorningPlan | null {
@@ -349,13 +427,24 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     }
 
     let goal = get().goal;
+
+    // A milestone may never outlive the goal it serves. This has to guard every
+    // milestone, not just the first: the check used to sit inside the
+    // goal-creation branch, so milestone two onwards could be dated past the
+    // goal's own deadline — a state updateTargetDates would refuse to create.
+    const effectiveGoalDate = goal?.targetDate ?? goalTargetDate;
+    if (effectiveGoalDate && daysBetween(milestoneTargetDate, effectiveGoalDate) < 0) {
+      set({
+        error: goal
+          ? "This milestone is due after the goal's own target date."
+          : 'The goal date cannot be before the milestone date.',
+      });
+      return false;
+    }
+
     if (!goal) {
       if (!goalTargetDate) {
         set({ error: 'Pick a target date for the goal.' });
-        return false;
-      }
-      if (daysBetween(milestoneTargetDate, goalTargetDate) < 0) {
-        set({ error: 'The goal date cannot be before the milestone date.' });
         return false;
       }
       const goalId = createId('cgoal');
@@ -450,8 +539,22 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     }
 
     if (goalTargetDate) {
+      // Backfill a missing startDate from the earliest milestone rather than
+      // from today: defaulting to today would reset the goal's elapsed clock and
+      // make an old goal's projection read far more optimistic than it is.
+      const startDate =
+        goal.startDate ??
+        earliestYmd(
+          db
+            .select({ startDate: compassMilestones.startDate })
+            .from(compassMilestones)
+            .where(eq(compassMilestones.goalId, goal.id))
+            .all()
+            .map((m) => m.startDate),
+        ) ??
+        today;
       db.update(compassGoals)
-        .set({ targetDate: goalTargetDate, startDate: goal.startDate ?? today })
+        .set({ targetDate: goalTargetDate, startDate })
         .where(eq(compassGoals.id, goal.id))
         .run();
     }
@@ -532,42 +635,33 @@ export const useCompassStore = create<CompassState>((set, get) => ({
         0,
         milestone.completedEffortUnits - previousUnits + analysis.effortUnitsCompleted,
       );
+      // This night check-in IS the newest data point, so it becomes the anchor
+      // the pace is measured to from here on.
       const { projectedDate } = computeProjection({
         completedUnits: completedEffortUnits,
         estimatedUnits: milestone.estimatedEffortUnits,
         startDate: milestone.startDate,
         today: compassDay,
+        lastReportedDate: compassDay,
       });
       db.update(compassMilestones)
-        .set({ completedEffortUnits, currentProjectedDate: projectedDate })
+        .set({
+          completedEffortUnits,
+          currentProjectedDate: projectedDate,
+          lastReportedDate: compassDay,
+        })
         .where(eq(compassMilestones.id, milestone.id))
         .run();
 
       // Keep the goal's own projection in step with the milestone that just moved.
-      if (goal.startDate && goal.targetDate && goal.estimatedMilestones) {
-        const completedMilestones = db
-          .select()
-          .from(compassMilestones)
-          .where(
-            and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'completed')),
-          )
-          .all();
-        const track = computeGoalTrack({
-          startDate: goal.startDate,
-          targetDate: goal.targetDate,
-          estimatedMilestones: goal.estimatedMilestones,
-          completedMilestones: completedMilestones.length,
-          currentMilestoneProgress: computeProgress(
-            completedEffortUnits,
-            milestone.estimatedEffortUnits,
-          ),
-          today: compassDay,
-        });
-        db.update(compassGoals)
-          .set({ currentProjectedDate: track.currentProjectedDate })
-          .where(eq(compassGoals.id, goal.id))
-          .run();
-      }
+      refreshGoalProjection(goal, {
+        currentMilestoneProgress: computeProgress(
+          completedEffortUnits,
+          milestone.estimatedEffortUnits,
+        ),
+        today: compassDay,
+        lastReportedDate: compassDay,
+      });
 
       // Persist a journey reflection (distilled at zero extra cost from the analysis).
       if (analysis.journeyNote) {
@@ -583,18 +677,21 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   },
 
   completeMilestone: async () => {
-    const { milestone } = get();
+    const { goal, milestone } = get();
     if (!milestone) return;
 
-    const actualCompletedDate = currentCompassDay();
-    db.update(compassMilestones)
-      .set({
-        status: 'completed',
-        actualCompletedDate,
-        finalVarianceDays: computeFinalVarianceDays(milestone.targetDate, actualCompletedDate),
-      })
-      .where(eq(compassMilestones.id, milestone.id))
-      .run();
+    const today = currentCompassDay();
+    completeMilestoneRow(milestone, today);
+
+    // The goal just gained a whole milestone, so its projection moved too. The
+    // next milestone has no progress yet, hence 0.
+    if (goal) {
+      refreshGoalProjection(goal, {
+        currentMilestoneProgress: 0,
+        today,
+        lastReportedDate: milestone.lastReportedDate,
+      });
+    }
 
     // The GOAL is still active — completing a milestone just means the next
     // one needs planning. Reminders are scoped to the goal, not the
@@ -611,21 +708,30 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   },
 
   archiveGoal: async () => {
-    const { goal } = get();
+    const { goal, milestone } = get();
     if (!goal) return;
 
-    const completedMilestones = db
-      .select({ id: compassMilestones.id })
-      .from(compassMilestones)
-      .where(and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'completed')))
-      .all().length;
+    const today = currentCompassDay();
+
+    // Close out a final milestone whose steps are all logged. It is finished by
+    // the only measure the app can verify, and the driver should not lose the
+    // rank they earned because "mark complete" lives on a different card.
+    if (milestone && isMilestoneFullyStepped(milestone)) {
+      completeMilestoneRow(milestone, today);
+    }
+
+    const completedRows = completedMilestonesFor(goal.id);
+    const completedMilestones = completedRows.length;
     const completed = isGoalComplete(completedMilestones, goal.estimatedMilestones);
 
-    const today = currentCompassDay();
+    // Date the finish by when the work actually landed, not by when archive was
+    // tapped. Archiving weeks after finishing on time used to grade as a C, and
+    // that C is fed back into future sizing through the journey note below.
+    const finishDate = latestYmd(completedRows.map((m) => m.actualCompletedDate)) ?? today;
     // Only a goal that actually reached its planned scope earns a rank —
     // archiving early to quit isn't a finish, so it isn't graded as one.
     const finalVarianceDays =
-      completed && goal.targetDate ? computeFinalVarianceDays(goal.targetDate, today) : null;
+      completed && goal.targetDate ? computeFinalVarianceDays(goal.targetDate, finishDate) : null;
     const rank = completed ? deriveGoalRank(finalVarianceDays) : null;
 
     db.update(compassGoals)

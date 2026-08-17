@@ -15,7 +15,9 @@ import { GoldButton } from '@/components/ui/gold-button';
 import { Touchable } from '@/components/ui/touchable';
 import { fontFamily, spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
-import { addDaysYmd, todayLocalYmd } from '@/services/compass-math';
+import { currentCompassDay } from '@/services/compass-day';
+import { addDaysYmd } from '@/services/compass-math';
+import { syncCompassReminders } from '@/services/compass-notifications';
 import { useCompassStore } from '@/stores/compass';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -32,6 +34,15 @@ export default function CompassSetupScreen() {
 
   // An existing goal already carries its own target; only the milestone needs a date.
   const hasGoal = goal != null;
+
+  // A milestone cannot be due after the goal it serves, so cap the picker there.
+  // Only when the cap is actually reachable though: a goal whose own target has
+  // already passed would otherwise leave every day unselectable with no reason
+  // given. In that case let the driver pick and let finalizeSetup explain that
+  // the goal's date needs re-committing first.
+  const earliestMilestoneDate = addDaysYmd(currentCompassDay(), 1);
+  const milestoneMaxDate =
+    goal?.targetDate && goal.targetDate >= earliestMilestoneDate ? goal.targetDate : undefined;
 
   const [messages, setMessages] = useState<CompassChatMessage[]>([]);
   const [draft, setDraft] = useState<CompassSetupProposal | null>(null);
@@ -104,7 +115,9 @@ export default function CompassSetupScreen() {
 
   /** Samwell sizes each horizon in days; the driver commits to the actual dates. */
   function approveDraft(proposal: CompassSetupProposal) {
-    const today = todayLocalYmd();
+    // The compass day, not the local date: finalizeSetup stamps the milestone's
+    // startDate with the same value, and after midnight those differ by a day.
+    const today = currentCompassDay();
     setCommitting(proposal);
     setMilestoneDate(addDaysYmd(today, proposal.milestoneDurationDays));
     if (!hasGoal && proposal.goalDurationDays) {
@@ -241,10 +254,9 @@ export default function CompassSetupScreen() {
           visible={calendarFor !== null}
           selectedDate={(calendarFor === 'goal' ? goalDate : milestoneDate) ?? ''}
           minDate={
-            calendarFor === 'goal' && milestoneDate
-              ? milestoneDate
-              : addDaysYmd(todayLocalYmd(), 1)
+            calendarFor === 'goal' && milestoneDate ? milestoneDate : earliestMilestoneDate
           }
+          maxDate={calendarFor === 'milestone' ? milestoneMaxDate : undefined}
           onSelectDate={(date) => {
             if (calendarFor === 'goal') setGoalDate(date);
             else setMilestoneDate(date);
@@ -258,8 +270,12 @@ export default function CompassSetupScreen() {
           label={timeEditing === 'night' ? 'NIGHT CHECK-IN' : 'MORNING CHECK-IN'}
           value={timeEditing === 'night' ? compassNightTime : compassMorningTime}
           onSelect={(nextTime) => {
-            if (timeEditing === 'night') setCompassTimes(compassMorningTime, nextTime);
-            else setCompassTimes(nextTime, compassNightTime);
+            const morningTime = timeEditing === 'night' ? compassMorningTime : nextTime;
+            const nightTime = timeEditing === 'night' ? nextTime : compassNightTime;
+            void setCompassTimes(morningTime, nightTime);
+            // Resync here rather than only on confirm: backing out of setup left
+            // the reminders firing on the old schedule.
+            void syncCompassReminders({ morningTime, nightTime, hasActiveGoal: hasGoal });
           }}
           onClose={() => setTimeEditing(null)}
         />

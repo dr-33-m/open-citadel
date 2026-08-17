@@ -18,7 +18,7 @@ import {
   type CompassScheduleStatus,
 } from 'samwell-shared';
 
-import { paceVerdict, scoreColor } from '@/components/compass/format';
+import { daysLeftText, paceVerdict, SCORE_RED, scoreColor } from '@/components/compass/format';
 import { MissionStep } from '@/components/compass/mission-step';
 import { ProgressRing } from '@/components/compass/progress-ring';
 import { ProgressSheet } from '@/components/compass/progress-sheet';
@@ -31,12 +31,13 @@ import { ScreenHeader } from '@/components/ui/screen-header';
 import { Touchable } from '@/components/ui/touchable';
 import { BottomTabInset, elevation, spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
+import { currentCompassDay } from '@/services/compass-day';
 import {
   activeCheckin,
   addDaysYmd,
   computeProgress,
+  isMilestoneFullyStepped,
   orderMissionSteps,
-  todayLocalYmd,
 } from '@/services/compass-math';
 import { useCompassStore } from '@/stores/compass';
 import { useSettingsStore } from '@/stores/settings';
@@ -85,8 +86,10 @@ function stepNum(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-function cadenceText(required: number | undefined): string {
-  if (!required || required <= 0) return 'on pace';
+/** Null once the target has passed: there is no cadence that still meets it. */
+function cadenceText(required: number | null | undefined): string {
+  if (required == null) return 'past due';
+  if (required <= 0) return 'steps complete';
   if (required >= 1) {
     const n = Math.round(required);
     return `~${n} step${n === 1 ? '' : 's'} / day`;
@@ -193,6 +196,14 @@ export default function CompassTab() {
           gap: spacing[3],
         },
         loggedInline: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], flexShrink: 1 },
+        completeRow: {
+          alignSelf: 'center',
+          alignItems: 'center',
+          paddingHorizontal: spacing[4],
+          paddingVertical: spacing[2],
+          borderWidth: 1,
+          borderColor: colors.primary.default,
+        },
 
         // Mission card
         missionCard: {
@@ -397,7 +408,7 @@ export default function CompassTab() {
   const nightLogged = todayNight != null;
   const nightColor = scoreColor(todayNight?.focusScore, colors.primary.default);
 
-  const milestoneComplete = milestone.completedEffortUnits >= milestone.estimatedEffortUnits;
+  const milestoneComplete = isMilestoneFullyStepped(milestone);
   const progress = computeProgress(
     milestone.completedEffortUnits,
     milestone.estimatedEffortUnits,
@@ -485,8 +496,15 @@ export default function CompassTab() {
                         </ThemedText>
                       </View>
                     </ProgressRing>
-                    <ThemedText type="bodySm">
-                      {telemetry?.daysRemaining ?? 0} days left
+                    <ThemedText
+                      type="bodySm"
+                      color={
+                        telemetry != null && telemetry.daysRemaining < 0
+                          ? SCORE_RED
+                          : colors.text.primary
+                      }
+                    >
+                      {daysLeftText(telemetry?.daysRemaining)}
                     </ThemedText>
                     <ThemedText type="bodySm" color={colors.text.secondary}>
                       {cadenceText(telemetry?.requiredDailyUnits)}
@@ -505,9 +523,10 @@ export default function CompassTab() {
 
                 <View style={styles.focusDivider} />
 
-                {milestoneComplete ? (
-                  <GoldButton label="MARK MILESTONE COMPLETE" onPress={() => completeMilestone()} />
-                ) : dueDone ? (
+                {/* Hitting the step estimate must not lock the driver out of
+                    checking in. An estimate that was simply too low is common,
+                    and the day still has to be loggable while they finish. */}
+                {dueDone ? (
                   <View style={styles.loggedRow}>
                     <View style={styles.loggedInline}>
                       <Check
@@ -529,6 +548,14 @@ export default function CompassTab() {
                     label={due === 'morning' ? 'MORNING CHECK-IN' : 'NIGHT CHECK-IN'}
                     onPress={() => openCheckin(due)}
                   />
+                )}
+
+                {milestoneComplete && (
+                  <Touchable style={styles.completeRow} onPress={() => completeMilestone()}>
+                    <ThemedText type="labelMd" color={colors.primary.default}>
+                      MARK MILESTONE COMPLETE
+                    </ThemedText>
+                  </Touchable>
                 )}
               </View>
             </View>
@@ -674,7 +701,7 @@ export default function CompassTab() {
         selectedDate={
           (editingDate === 'goal' ? goalTrack?.targetDate : milestone.targetDate) ?? ''
         }
-        minDate={addDaysYmd(todayLocalYmd(), 1)}
+        minDate={addDaysYmd(currentCompassDay(), 1)}
         onSelectDate={(date) => {
           const which = editingDate;
           setEditingDate(null);

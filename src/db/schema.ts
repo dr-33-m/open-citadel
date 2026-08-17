@@ -259,6 +259,12 @@ export const compassMilestones = sqliteTable("compass_milestones", {
   startDate: text("start_date").notNull(),
   /** The original commitment. Never rewritten — the gap to the projection is the product. */
   targetDate: text("target_date").notNull(),
+  /**
+   * The last compass day the driver actually reported (night check-in). Pace is
+   * averaged to here, not to today, so the projection only moves when new data
+   * lands rather than drifting later every morning on its own.
+   */
+  lastReportedDate: text("last_reported_date"),
   currentProjectedDate: text("current_projected_date"),
   actualCompletedDate: text("actual_completed_date"),
   originalEstimateDays: integer("original_estimate_days").notNull(),

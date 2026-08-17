@@ -55,6 +55,7 @@ export const CompassGoalTrackSchema = z.object({
   /** Milestones done including the current one's fraction, e.g. 2.4 of 7. */
   milestonesDone: z.number(),
   currentProjectedDate: z.string().nullable(),
+  /** Signed: negative once the target date has passed, by that many days. */
   daysRemaining: z.number().int(),
   scheduleStatus: z.enum(COMPASS_SCHEDULE_STATUSES),
   varianceDays: z.number().int().nullable(),
@@ -72,10 +73,18 @@ export const CompassTelemetrySchema = z.object({
   targetDate: z.string(),
   currentProjectedDate: z.string().nullable(),
   today: z.string(),
+  /**
+   * Last day the driver actually reported. avgDailyUnits is measured to here,
+   * not to today, and the gap between the two is how stale the pace read is.
+   * Optional so clients built before it existed still validate.
+   */
+  lastReportedDate: z.string().nullable().optional(),
   daysElapsed: z.number().int(),
+  /** Signed: negative once the target date has passed, by that many days. */
   daysRemaining: z.number().int(),
   avgDailyUnits: z.number().nullable(),
-  requiredDailyUnits: z.number(),
+  /** Null once the target has passed — no daily pace still meets a date that is gone. */
+  requiredDailyUnits: z.number().nullable(),
   scheduleStatus: z.enum(COMPASS_SCHEDULE_STATUSES),
   varianceDays: z.number().int().nullable(),
   /** Absent on goals set up before two-level targets existed. */
