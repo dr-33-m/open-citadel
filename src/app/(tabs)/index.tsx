@@ -7,6 +7,7 @@ import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
+import { floatingTabBarHeight } from '@/components/app-tabs';
 import { CalendarPicker } from '@/components/timeline/calendar-picker';
 import { ExportImageCard } from '@/components/export/export-image-card';
 import { captureAndShare } from '@/utils/export-image';
@@ -195,7 +196,10 @@ export default function TimelineScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: spacing[8] + floatingTabBarHeight(insets.bottom) },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Date section */}
@@ -230,7 +234,10 @@ export default function TimelineScreen() {
           ))}
       </ScrollView>
 
-      <Fab onPress={() => { setEditingThought(null); setShowThoughtSheet(true); }} />
+      <Fab
+        bottomOffset={floatingTabBarHeight(insets.bottom)}
+        onPress={() => { setEditingThought(null); setShowThoughtSheet(true); }}
+      />
 
       <NewThoughtSheet
         visible={showThoughtSheet}

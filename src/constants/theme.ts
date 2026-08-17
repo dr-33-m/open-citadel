@@ -1,5 +1,3 @@
-import { Platform } from 'react-native';
-
 // ── Colors: Obsidian & Gold (dark) ───────────────────────────────────
 export const darkColors = {
   surface: {
@@ -181,5 +179,4 @@ export const motion = {
 } as const;
 
 // ── Layout ───────────────────────────────────────────────────────────
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;

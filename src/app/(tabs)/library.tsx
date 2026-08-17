@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { floatingTabBarHeight } from "@/components/app-tabs";
 import { ArchivedCards } from "@/components/library/archived-card";
 import { BookActionSheet } from "@/components/library/book-action-sheet";
 import { BookQueue } from "@/components/library/book-queue";
@@ -215,7 +216,10 @@ export default function LibraryScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: spacing[8] + floatingTabBarHeight(insets.bottom) },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Currently Reading */}

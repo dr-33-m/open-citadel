@@ -10,6 +10,7 @@ import {
 import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { floatingTabBarHeight } from '@/components/app-tabs';
 import { BookPickerSheet } from '@/components/chat/book-picker-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
@@ -67,7 +68,7 @@ export default function ChatTab() {
   const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.surface.base },
     headerWrap: { paddingTop: insets.top },
-    listContent: { paddingTop: spacing[5] },
+    listContent: { paddingTop: spacing[5], paddingBottom: floatingTabBarHeight(insets.bottom) },
     sessionItem: {
       flexDirection: 'row',
       alignItems: 'center',

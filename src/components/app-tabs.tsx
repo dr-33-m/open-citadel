@@ -19,14 +19,20 @@ import { StyleSheet, View } from 'react-native';
 import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/use-colors';
-import { elevation, spacing } from '@/constants/theme';
+import { elevation, iconSize, spacing } from '@/constants/theme';
 
 export default function AppTabs() {
   return (
     <Tabs>
-      <TabSlot style={{ flex: 1 }} />
+      {/* Absolutely filled: the floating bar below is also absolute (removed
+          from flow), so this is the only flex child left and would otherwise
+          stretch to fill the space anyway — but staying explicit here means
+          screen content genuinely extends the full height behind the bar
+          rather than stopping short of it, which is what makes the bar's
+          transparent margins show scrolled content instead of empty screen
+          background. */}
+      <TabSlot style={StyleSheet.absoluteFillObject} />
       <TabList asChild>
         <CustomTabBar>
           <TabTrigger name="index" href="/" asChild>
@@ -53,7 +59,20 @@ export default function AppTabs() {
   );
 }
 
-const TAB_BAR_PADDING_TOP = spacing[3];
+const TAB_BAR_CONTENT_HEIGHT = iconSize.nav + spacing[3] * 2;
+const TAB_BAR_WRAP_TOP = spacing[2];
+const TAB_BAR_WRAP_BOTTOM_MIN = spacing[3];
+
+/**
+ * How much bottom padding a tab screen's own scroll content needs to clear the
+ * floating bar. The bar is a true overlay now (position: absolute, transparent
+ * margins), so content that doesn't reserve this space ends up with its last
+ * items permanently stuck underneath it — this is the single source of truth
+ * for the bar's own footprint, shared by every tab screen.
+ */
+export function floatingTabBarHeight(insetsBottom: number): number {
+  return TAB_BAR_CONTENT_HEIGHT + TAB_BAR_WRAP_TOP + Math.max(insetsBottom, TAB_BAR_WRAP_BOTTOM_MIN);
+}
 
 function TabButton({
   children,
@@ -63,7 +82,6 @@ function TabButton({
   ...props
 }: TabTriggerSlotProps & { icon?: LucideIcon; featured?: boolean }) {
   const colors = useColors();
-  const insets = useSafeAreaInsets();
   const color = isFocused ? colors.primary.default : colors.text.secondary;
   const styles = React.useMemo(
     () =>
@@ -71,12 +89,8 @@ function TabButton({
         tabButton: {
           flex: 1,
           alignItems: 'center',
-          gap: spacing[1],
-          paddingVertical: spacing[1],
-        },
-        label: {
-          fontSize: 10,
-          letterSpacing: 1.5,
+          justifyContent: 'center',
+          paddingVertical: spacing[3],
         },
       }),
     [],
@@ -84,11 +98,12 @@ function TabButton({
 
   /**
    * The Compass cell is a plain tab until it's the active one. Only then does it
-   * become architecturally different: side dividers and a gold top rule run the
-   * full height of the bar, cancelling the bar's own padding so the frame reaches
-   * both edges without moving the icon.
+   * become architecturally different: side dividers and a gold top rule. The bar
+   * row stretches every cell to its own height by default, so this frame just
+   * has to paint its own background and borders — no padding tricks needed to
+   * reach the bar's edges, unlike the old edge-to-edge bar which needed negative
+   * margins to escape its own screen-level padding.
    */
-  const bottomPad = Math.max(insets.bottom, spacing[2]);
   const showFrame = featured && isFocused;
   const frame = {
     backgroundColor: colors.surface.mid,
@@ -98,19 +113,19 @@ function TabButton({
     borderRightColor: colors.outline.variant,
     borderTopWidth: 2,
     borderTopColor: colors.primary.default,
-    marginTop: -TAB_BAR_PADDING_TOP,
-    paddingTop: TAB_BAR_PADDING_TOP,
-    marginBottom: -bottomPad,
-    paddingBottom: bottomPad + spacing[1],
-    ...elevation.card,
   };
 
+  const label = typeof children === 'string' ? children : undefined;
+
   return (
-    <Touchable {...props} style={showFrame ? [styles.tabButton, frame] : styles.tabButton}>
-      {Icon && <Icon size={24} color={color} strokeWidth={2} />}
-      <ThemedText type="labelSm" color={color} numberOfLines={1} style={styles.label}>
-        {children}
-      </ThemedText>
+    <Touchable
+      {...props}
+      accessibilityRole="tab"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: isFocused }}
+      style={showFrame ? [styles.tabButton, frame] : styles.tabButton}
+    >
+      {Icon && <Icon size={iconSize.nav} color={color} strokeWidth={2} />}
     </Touchable>
   );
 }
@@ -121,25 +136,39 @@ function CustomTabBar(props: { children: React.ReactNode }) {
   const styles = React.useMemo(
     () =>
       StyleSheet.create({
-        tabBar: {
+        // Absolute and transparent, removed from flow entirely: TabSlot behind
+        // it fills the whole screen (see AppTabs), so scrolled content is
+        // genuinely visible through the margin on every side, not just the
+        // plain screen background. zIndex guards against a content card's own
+        // elevation.card winning paint order on Android, where elevation (not
+        // just sibling order) can affect stacking.
+        floatingWrap: {
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 10,
+          paddingTop: TAB_BAR_WRAP_TOP,
+          paddingHorizontal: spacing[5],
+          paddingBottom: Math.max(insets.bottom, TAB_BAR_WRAP_BOTTOM_MIN),
+        },
+        bar: {
           flexDirection: 'row',
-          alignItems: 'flex-start',
+          alignItems: 'stretch',
           backgroundColor: colors.surface.low,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.outline.variant,
-          paddingTop: TAB_BAR_PADDING_TOP,
-          paddingHorizontal: spacing[2],
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.outline.variant,
+          ...elevation.card,
         },
       }),
-    [colors],
+    [colors, insets.bottom],
   );
 
   return (
-    <View
-      {...props}
-      style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, spacing[2]) }]}
-    >
-      {props.children}
+    <View style={styles.floatingWrap}>
+      <View {...props} style={styles.bar}>
+        {props.children}
+      </View>
     </View>
   );
 }

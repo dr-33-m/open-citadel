@@ -8,14 +8,22 @@ import { elevation, spacing } from '@/constants/theme';
 
 type FabProps = {
   onPress?: () => void;
+  /**
+   * Extra clearance below the FAB's usual resting position — the tab screens
+   * that use this sit behind a floating, absolutely-positioned nav bar, so
+   * their own container now reaches the true screen bottom rather than
+   * stopping above the bar. Pass `floatingTabBarHeight(insets.bottom)` from
+   * `@/components/app-tabs` so the FAB clears the bar instead of sitting under it.
+   */
+  bottomOffset?: number;
 };
 
-export function Fab({ onPress }: FabProps) {
+export function Fab({ onPress, bottomOffset = 0 }: FabProps) {
   const colors = useColors();
   const styles = React.useMemo(() => StyleSheet.create({
     container: {
       position: 'absolute',
-      bottom: spacing[10],
+      bottom: spacing[10] + bottomOffset,
       right: spacing[6],
     },
     gradient: {
@@ -31,7 +39,7 @@ export function Fab({ onPress }: FabProps) {
       fontWeight: '300',
       marginTop: -2,
     },
-  }), [colors]);
+  }), [colors, bottomOffset]);
 
   return (
     <Touchable onPress={onPress} style={styles.container}>

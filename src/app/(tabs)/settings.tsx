@@ -1,12 +1,11 @@
 import * as Speech from 'expo-speech';
-import { AudioLines, BookOpen, ChevronUp, Cloud, Download, ExternalLink, Info, MemoryStick, Moon, Power, Search, SlidersHorizontal, Smartphone, Sun, Trash2, User, Volume2, X } from 'lucide-react-native';
+import { AudioLines, BookOpen, ChevronUp, Cloud, Download, Info, MemoryStick, MessageCircleHeart, Moon, Power, Search, SlidersHorizontal, Smartphone, Sun, Trash2, User, Volume2, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   FlatList,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   ScrollView,
   SectionList,
@@ -20,12 +19,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { desc, eq } from 'drizzle-orm';
 
+import { floatingTabBarHeight } from '@/components/app-tabs';
 import { SCORE_GREEN, SCORE_RED } from '@/components/compass/format';
 import { TimePickerSheet } from '@/components/compass/time-picker-sheet';
+import { CreatorNoteSheet } from '@/components/settings/creator-note-sheet';
 import { EngineInfoSheet, type EngineMode } from '@/components/settings/engine-info-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { InstagramIcon, TikTokIcon, XIcon } from '@/components/ui/brand-icons';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ScreenHeader } from '@/components/ui/screen-header';
@@ -74,6 +74,7 @@ export default function SettingsScreen() {
     useSettingsStore();
   const [timePickerFor, setTimePickerFor] = useState<'morning' | 'night' | null>(null);
   const [infoSheet, setInfoSheet] = useState<EngineMode | null>(null);
+  const [noteSheetOpen, setNoteSheetOpen] = useState(false);
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(username);
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
@@ -281,18 +282,21 @@ export default function SettingsScreen() {
       alignItems: 'center',
       gap: spacing[3],
     },
+    // A long title with a bare chevron (no value text) has nowhere to give:
+    // forcing extra `gap` here overflowed the row and ate its own right
+    // padding instead. flexShrink lets the title wrap to a second line under
+    // real width pressure, so the chevron always keeps the row's normal
+    // right-edge padding, same as every other row.
+    noteRowLeft: {
+      flexShrink: 1,
+    },
+    noteRowTitle: {
+      flexShrink: 1,
+    },
     rowValue: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing[1],
-    },
-    brandIconBox: {
-      width: 36,
-      height: 36,
-      borderWidth: 1,
-      borderColor: colors.outline.variant,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
     formatCard: {
       flexDirection: 'row',
@@ -548,7 +552,7 @@ export default function SettingsScreen() {
         align="left"
       />
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + spacing[10] }}>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: floatingTabBarHeight(insets.bottom) + spacing[8] }}>
         {/* Display name */}
         <View style={styles.section}>
           <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
@@ -972,54 +976,16 @@ export default function SettingsScreen() {
             <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
               REACH OUT
             </ThemedText>
-            <ThemedText type="bodyMd">A little note from the creator of Open Citadel</ThemedText>
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              Open Citadel started as a tool I needed myself. If you&apos;re using it,
-              we&apos;re probably chasing the same thing: real growth and real execution.
-            </ThemedText>
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              I&apos;d love to hear what&apos;s working, what isn&apos;t, and the ideas
-              you&apos;d like to see next. My DMs are always open.
-            </ThemedText>
           </View>
 
-          <Touchable
-            style={styles.row}
-            onPress={() => Linking.openURL('https://twitter.com/dr_33_m')}
-          >
-            <View style={styles.rowLeft}>
-              <View style={styles.brandIconBox}>
-                <XIcon color={colors.text.primary} />
-              </View>
-              <ThemedText type="bodyMd">X (Twitter)</ThemedText>
+          <Touchable style={styles.row} onPress={() => setNoteSheetOpen(true)}>
+            <View style={[styles.rowLeft, styles.noteRowLeft]}>
+              <PrefixIcon icon={MessageCircleHeart} size={36} />
+              <ThemedText type="bodyMd" style={styles.noteRowTitle}>
+                Note from Thamsanqa Dreem
+              </ThemedText>
             </View>
-            <ExternalLink size={16} color={colors.text.secondary} />
-          </Touchable>
-
-          <Touchable
-            style={styles.row}
-            onPress={() => Linking.openURL('https://www.tiktok.com/@_dr_33_m_')}
-          >
-            <View style={styles.rowLeft}>
-              <View style={styles.brandIconBox}>
-                <TikTokIcon />
-              </View>
-              <ThemedText type="bodyMd">TikTok</ThemedText>
-            </View>
-            <ExternalLink size={16} color={colors.text.secondary} />
-          </Touchable>
-
-          <Touchable
-            style={styles.row}
-            onPress={() => Linking.openURL('https://www.instagram.com/_dr_33_m_')}
-          >
-            <View style={styles.rowLeft}>
-              <View style={styles.brandIconBox}>
-                <InstagramIcon />
-              </View>
-              <ThemedText type="bodyMd">Instagram</ThemedText>
-            </View>
-            <ExternalLink size={16} color={colors.text.secondary} />
+            <ChevronUp size={14} color={colors.text.secondary} />
           </Touchable>
         </View>
       </ScrollView>
@@ -1037,6 +1003,9 @@ export default function SettingsScreen() {
 
       {/* Engine detail sheets */}
       <EngineInfoSheet mode={infoSheet} onClose={() => setInfoSheet(null)} />
+
+      {/* Note from the creator */}
+      <CreatorNoteSheet visible={noteSheetOpen} onClose={() => setNoteSheetOpen(false)} />
 
       {/* Voice picker modal */}
       <Modal

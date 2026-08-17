@@ -29,7 +29,8 @@ import { CalendarPicker } from '@/components/timeline/calendar-picker';
 import { GoldButton } from '@/components/ui/gold-button';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { Touchable } from '@/components/ui/touchable';
-import { BottomTabInset, elevation, spacing } from '@/constants/theme';
+import { floatingTabBarHeight } from '@/components/app-tabs';
+import { elevation, spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { currentCompassDay } from '@/services/compass-day';
 import {
@@ -141,7 +142,7 @@ export default function CompassTab() {
         scrollContent: {
           paddingHorizontal: spacing[6],
           paddingTop: spacing[5],
-          paddingBottom: BottomTabInset + spacing[6],
+          paddingBottom: floatingTabBarHeight(insets.bottom) + spacing[6],
           gap: spacing[5],
         },
         centered: {
@@ -255,7 +256,7 @@ export default function CompassTab() {
           gap: spacing[2],
         },
       }),
-    [colors, insets.top],
+    [colors, insets.top, insets.bottom],
   );
 
   if (!cloudReady) {
