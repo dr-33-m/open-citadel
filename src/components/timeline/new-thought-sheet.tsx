@@ -1,15 +1,14 @@
+import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
-  KeyboardAvoidingView,
-  Modal,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { Check, Sparkles, X } from 'lucide-react-native';
 
@@ -79,22 +78,12 @@ export function NewThoughtSheet({
   }, [visible, editData]);
 
   const styles = React.useMemo(() => StyleSheet.create({
-    container: { flex: 1, justifyContent: 'flex-end' },
-    overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-    kavWrapper: { backgroundColor: colors.surface.low },
     sheet: {
       backgroundColor: colors.surface.low,
       paddingHorizontal: spacing[6],
       paddingTop: spacing[4],
       paddingBottom: spacing[10],
       gap: spacing[4],
-    },
-    handle: {
-      width: 40,
-      height: 4,
-      backgroundColor: colors.surface.highest,
-      alignSelf: 'center',
-      marginBottom: spacing[2],
     },
     textInput: {
       backgroundColor: colors.surface.mid,
@@ -217,177 +206,164 @@ export function NewThoughtSheet({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={handleClose} />
-        <KeyboardAvoidingView behavior="padding" style={styles.kavWrapper}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
+    <Sheet visible={visible} onClose={handleClose} scrollable>
+      <BottomSheetScrollView contentContainerStyle={styles.sheet} keyboardShouldPersistTaps="handled">
+        <ThemedText type="headlineSm">
+          {isEditing ? 'Edit Thought' : 'New Thought'}
+        </ThemedText>
 
-            <ThemedText type="headlineSm">
-              {isEditing ? 'Edit Thought' : 'New Thought'}
-            </ThemedText>
+        <BottomSheetTextInput
+          style={styles.textInput}
+          placeholder="What's on your mind…"
+          placeholderTextColor={colors.text.secondary}
+          value={text}
+          onChangeText={setText}
+          multiline
+        />
 
-            <TextInput
-              style={styles.textInput}
-              placeholder="What's on your mind…"
-              placeholderTextColor={colors.text.secondary}
-              value={text}
-              onChangeText={setText}
-              multiline
-              autoFocus={!isEditing}
+        {/* Color swatches */}
+        <View style={styles.colorRow}>
+          {COLORS.map((c) => (
+            <Touchable
+              key={c}
+              style={[
+                styles.swatch,
+                { backgroundColor: c },
+                selectedColor === c && styles.swatchSelected,
+              ]}
+              onPress={() => setSelectedColor(c)}
             />
+          ))}
+        </View>
 
-            {/* Color swatches */}
-            <View style={styles.colorRow}>
-              {COLORS.map((c) => (
-                <Touchable
-                  key={c}
-                  style={[
-                    styles.swatch,
-                    { backgroundColor: c },
-                    selectedColor === c && styles.swatchSelected,
-                  ]}
-                  onPress={() => setSelectedColor(c)}
-                />
+        {/* Tags */}
+        <View style={styles.tagSection}>
+          {tags.length > 0 && (
+            <View style={styles.tagChips}>
+              {tags.map((tag) => (
+                <View key={tag} style={styles.chip}>
+                  <ThemedText type="labelSm" color={colors.text.primary} style={styles.chipText}>
+                    {tag}
+                  </ThemedText>
+                  <Touchable onPress={() => removeTag(tag)} hitSlop={6}>
+                    <X size={11} color={colors.text.secondary} />
+                  </Touchable>
+                </View>
               ))}
             </View>
+          )}
+          <View style={styles.tagInputRow}>
+            <BottomSheetTextInput
+              style={styles.tagInputField}
+              placeholder="Add tag…"
+              placeholderTextColor={colors.text.secondary}
+              value={tagInput}
+              onChangeText={(v) => {
+                if (v.endsWith(',')) {
+                  commitTag();
+                } else {
+                  setTagInput(v);
+                }
+              }}
+              returnKeyType="done"
+              onSubmitEditing={commitTag}
+            />
+            <Touchable
+              style={[styles.tagInputBtn, !tagInput.trim() && styles.tagInputBtnDisabled]}
+              onPress={commitTag}
+              hitSlop={8}
+            >
+              <Check size={16} color={tagInput.trim() ? colors.primary.default : colors.text.secondary} />
+            </Touchable>
+          </View>
 
-            {/* Tags */}
-            <View style={styles.tagSection}>
-              {tags.length > 0 && (
-                <View style={styles.tagChips}>
-                  {tags.map((tag) => (
-                    <View key={tag} style={styles.chip}>
-                      <ThemedText type="labelSm" color={colors.text.primary} style={styles.chipText}>
-                        {tag}
-                      </ThemedText>
-                      <Touchable onPress={() => removeTag(tag)} hitSlop={6}>
-                        <X size={11} color={colors.text.secondary} />
-                      </Touchable>
-                    </View>
-                  ))}
-                </View>
+          <View style={styles.aiSuggestRow}>
+            <Touchable
+              style={styles.aiSuggestBtn}
+              onPress={handleSuggestTags}
+              disabled={suggesting || !text.trim()}
+              hitSlop={6}
+            >
+              {suggesting ? (
+                <ActivityIndicator size={14} color={colors.primary.default} />
+              ) : (
+                <Sparkles size={14} color={colors.primary.default} />
               )}
-              <View style={styles.tagInputRow}>
-                <TextInput
-                  style={styles.tagInputField}
-                  placeholder="Add tag…"
-                  placeholderTextColor={colors.text.secondary}
-                  value={tagInput}
-                  onChangeText={(v) => {
-                    if (v.endsWith(',')) {
-                      commitTag();
-                    } else {
-                      setTagInput(v);
-                    }
-                  }}
-                  returnKeyType="done"
-                  onSubmitEditing={commitTag}
-                />
+              <ThemedText type="labelSm" color={colors.primary.default}>
+                {suggesting ? 'SUGGESTING…' : 'SUGGEST TAGS'}
+              </ThemedText>
+            </Touchable>
+            {aiSuggestions.map((tag) => {
+              const isAdded = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
+              return (
                 <Touchable
-                  style={[styles.tagInputBtn, !tagInput.trim() && styles.tagInputBtnDisabled]}
-                  onPress={commitTag}
-                  hitSlop={8}
+                  key={tag}
+                  style={[
+                    styles.suggestionChip,
+                    styles.aiSuggestionChip,
+                    isAdded && styles.suggestionChipAdded,
+                  ]}
+                  onPress={() => !isAdded && addTag(tag)}
                 >
-                  <Check size={16} color={tagInput.trim() ? colors.primary.default : colors.text.secondary} />
-                </Touchable>
-              </View>
-
-              <View style={styles.aiSuggestRow}>
-                <Touchable
-                  style={styles.aiSuggestBtn}
-                  onPress={handleSuggestTags}
-                  disabled={suggesting || !text.trim()}
-                  hitSlop={6}
-                >
-                  {suggesting ? (
-                    <ActivityIndicator size={14} color={colors.primary.default} />
-                  ) : (
-                    <Sparkles size={14} color={colors.primary.default} />
-                  )}
-                  <ThemedText type="labelSm" color={colors.primary.default}>
-                    {suggesting ? 'SUGGESTING…' : 'SUGGEST TAGS'}
+                  {isAdded && <Check size={11} color={colors.text.secondary} />}
+                  <ThemedText
+                    type="labelSm"
+                    color={isAdded ? colors.text.secondary : colors.text.primary}
+                    style={styles.chipText}
+                  >
+                    {tag}
                   </ThemedText>
                 </Touchable>
-                {aiSuggestions.map((tag) => {
-                  const isAdded = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
-                  return (
-                    <Touchable
-                      key={tag}
-                      style={[
-                        styles.suggestionChip,
-                        styles.aiSuggestionChip,
-                        isAdded && styles.suggestionChipAdded,
-                      ]}
-                      onPress={() => !isAdded && addTag(tag)}
-                    >
-                      {isAdded && <Check size={11} color={colors.text.secondary} />}
-                      <ThemedText
-                        type="labelSm"
-                        color={isAdded ? colors.text.secondary : colors.text.primary}
-                        style={styles.chipText}
-                      >
-                        {tag}
-                      </ThemedText>
-                    </Touchable>
-                  );
-                })}
-              </View>
-              {suggestError && (
-                <ThemedText type="labelSm" color={colors.text.secondary}>
-                  {suggestError}
-                </ThemedText>
-              )}
-
-              {allTags.length > 0 && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.suggestionsScroll}
-                  contentContainerStyle={styles.suggestionsContent}
-                  keyboardShouldPersistTaps="handled"
-                >
-                  {allTags.map((tag) => {
-                    const isAdded = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
-                    return (
-                      <Touchable
-                        key={tag}
-                        style={[styles.suggestionChip, isAdded && styles.suggestionChipAdded]}
-                        onPress={() => !isAdded && addTag(tag)}
-                      >
-                        {isAdded && <Check size={11} color={colors.text.secondary} />}
-                        <ThemedText
-                          type="labelSm"
-                          color={isAdded ? colors.text.secondary : colors.text.primary}
-                          style={styles.chipText}
-                        >
-                          {tag}
-                        </ThemedText>
-                      </Touchable>
-                    );
-                  })}
-                </ScrollView>
-              )}
-            </View>
-
-            <View style={styles.actions}>
-              <GoldButton
-                label={isEditing ? 'SAVE CHANGES' : 'SAVE THOUGHT'}
-                onPress={handleSave}
-              />
-              <Touchable onPress={handleClose} style={styles.cancel}>
-                <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-              </Touchable>
-            </View>
+              );
+            })}
           </View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+          {suggestError && (
+            <ThemedText type="labelSm" color={colors.text.secondary}>
+              {suggestError}
+            </ThemedText>
+          )}
+
+          {allTags.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.suggestionsScroll}
+              contentContainerStyle={styles.suggestionsContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {allTags.map((tag) => {
+                const isAdded = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
+                return (
+                  <Touchable
+                    key={tag}
+                    style={[styles.suggestionChip, isAdded && styles.suggestionChipAdded]}
+                    onPress={() => !isAdded && addTag(tag)}
+                  >
+                    {isAdded && <Check size={11} color={colors.text.secondary} />}
+                    <ThemedText
+                      type="labelSm"
+                      color={isAdded ? colors.text.secondary : colors.text.primary}
+                      style={styles.chipText}
+                    >
+                      {tag}
+                    </ThemedText>
+                  </Touchable>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+
+        <View style={styles.actions}>
+          <GoldButton
+            label={isEditing ? 'SAVE CHANGES' : 'SAVE THOUGHT'}
+            onPress={handleSave}
+          />
+          <Touchable onPress={handleClose} style={styles.cancel}>
+            <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
+          </Touchable>
+        </View>
+      </BottomSheetScrollView>
+    </Sheet>
   );
 }

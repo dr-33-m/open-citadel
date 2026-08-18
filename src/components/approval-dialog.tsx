@@ -1,7 +1,8 @@
 import React from 'react';
-import { Modal, View } from 'react-native';
+import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
@@ -104,17 +105,14 @@ export function ApprovalDialog() {
     if (pending) respondRaw(pending.sessionId, approved, options);
   };
 
-  if (!pending) return null;
-
-  const copy = getApprovalCopy(pending);
+  // The sheet's own tap-outside/drag-to-dismiss maps to decline (`respond(false)`)
+  // — the same as the old overlay tap did, so this isn't a new way to lose an
+  // approval by accident; it's the same safe direction the sheet already had.
+  const copy = pending ? getApprovalCopy(pending) : null;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={() => respond(false)}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Touchable
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' }}
-          onPress={() => respond(false)}
-        />
+    <Sheet visible={pending != null} onClose={() => respond(false)}>
+      {copy && (
         <View
           style={{
             backgroundColor: colors.surface.low,
@@ -124,7 +122,6 @@ export function ApprovalDialog() {
             gap: spacing[4],
           }}
         >
-          <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
           <ThemedText type="headlineSm">{copy.title}</ThemedText>
           <ThemedText type="bodySm" color={colors.text.secondary}>
             {copy.body}
@@ -170,7 +167,7 @@ export function ApprovalDialog() {
             </Touchable>
           )}
         </View>
-      </View>
-    </Modal>
+      )}
+    </Sheet>
   );
 }

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Modal, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/use-colors';
@@ -26,21 +27,12 @@ export function DeleteBookSheet({
   const styles = React.useMemo(
     () =>
       StyleSheet.create({
-        container: { flex: 1, justifyContent: 'flex-end' },
-        overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
         sheet: {
           backgroundColor: colors.surface.low,
           paddingHorizontal: spacing[6],
           paddingTop: spacing[4],
           paddingBottom: spacing[10],
           gap: spacing[5],
-        },
-        handle: {
-          width: 40,
-          height: 4,
-          backgroundColor: colors.surface.highest,
-          alignSelf: 'center',
-          marginBottom: spacing[2],
         },
         deleteButton: {
           backgroundColor: '#e05252',
@@ -65,41 +57,30 @@ export function DeleteBookSheet({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={onClose} />
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.sheet}>
+        <ThemedText type="headlineSm">Delete Book</ThemedText>
 
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-
-          <ThemedText type="headlineSm">Delete Book</ThemedText>
-
-          <ThemedText type="bodySm" color={colors.text.secondary}>
-            Deleting{' '}
-            <ThemedText type="bodySm" color={colors.text.primary}>
-              {book.title}
-            </ThemedText>
-            {' '}will remove it from Open Citadel and delete it from your phone.
+        <ThemedText type="bodySm" color={colors.text.secondary}>
+          Deleting{' '}
+          <ThemedText type="bodySm" color={colors.text.primary}>
+            {book.title}
           </ThemedText>
+          {' '}will remove it from Open Citadel and delete it from your phone.
+        </ThemedText>
 
-          <Touchable style={styles.deleteButton} onPress={handleConfirm}>
-            <ThemedText type="labelLg" color="#fff">
-              DELETE
-            </ThemedText>
-          </Touchable>
+        <Touchable style={styles.deleteButton} onPress={handleConfirm}>
+          <ThemedText type="labelLg" color="#fff">
+            DELETE
+          </ThemedText>
+        </Touchable>
 
-          <Touchable onPress={onClose} style={styles.cancel}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
-              CANCEL
-            </ThemedText>
-          </Touchable>
-        </View>
+        <Touchable onPress={onClose} style={styles.cancel}>
+          <ThemedText type="labelSm" color={colors.text.secondary}>
+            CANCEL
+          </ThemedText>
+        </Touchable>
       </View>
-    </Modal>
+    </Sheet>
   );
 }

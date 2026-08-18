@@ -2,12 +2,12 @@ import { like } from 'drizzle-orm';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-  Modal,
   StyleSheet,
   View,
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
 import { spacing } from '@/constants/theme';
@@ -91,20 +91,11 @@ export function CalendarPicker({
   }, [viewYear, viewMonth]);
 
   const styles = React.useMemo(() => StyleSheet.create({
-    container: { flex: 1, justifyContent: 'flex-end' },
-    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
     sheet: {
       backgroundColor: colors.surface.low,
       paddingHorizontal: spacing[6],
       paddingTop: spacing[4],
       paddingBottom: spacing[10],
-    },
-    handle: {
-      width: 40,
-      height: 4,
-      backgroundColor: colors.surface.highest,
-      alignSelf: 'center',
-      marginBottom: spacing[4],
     },
     header: {
       flexDirection: 'row',
@@ -189,106 +180,96 @@ export function CalendarPicker({
   }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={onClose} />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.sheet}>
+        <View style={styles.header}>
+          <Touchable onPress={prevMonth} style={styles.navBtn}>
+            <ChevronLeft size={20} color={colors.text.primary} />
+          </Touchable>
+          <ThemedText type="bodyMd">{monthName}</ThemedText>
+          <Touchable onPress={nextMonth} style={styles.navBtn}>
+            <ChevronRight size={20} color={colors.text.primary} />
+          </Touchable>
+        </View>
 
-          <View style={styles.header}>
-            <Touchable onPress={prevMonth} style={styles.navBtn}>
-              <ChevronLeft size={20} color={colors.text.primary} />
-            </Touchable>
-            <ThemedText type="bodyMd">{monthName}</ThemedText>
-            <Touchable onPress={nextMonth} style={styles.navBtn}>
-              <ChevronRight size={20} color={colors.text.primary} />
-            </Touchable>
-          </View>
-
-          {/* Week header */}
-          <View style={styles.weekRow}>
-            {DAYS.map((d, i) => (
-              <View key={i} style={styles.weekCell}>
-                <ThemedText type="labelSm" color={colors.text.secondary}>
-                  {d}
-                </ThemedText>
-              </View>
-            ))}
-          </View>
-
-          {/* Calendar grid */}
-          {rows.map((row, ri) => (
-            <View key={ri} style={styles.gridRow}>
-              {row.map((day, ci) => {
-                if (day === null) {
-                  return <View key={ci} style={styles.dayCell} />;
-                }
-                const dateStr = toDateString(viewYear, viewMonth, day);
-                const isSelected = dateStr === selectedDate;
-                const isToday = dateStr === today;
-                // Disabled if outside the bounds; in legacy (timeline) mode, no future.
-                const isDisabled =
-                  (minDate ? dateStr < minDate : false) ||
-                  (maxDate ? dateStr > maxDate : false) ||
-                  (legacyMode ? dateStr > today : false);
-                const count = activityCounts[dateStr] ?? 0;
-                const dotOpacity = count === 0 ? 1 : Math.max(0.2, Math.min(count / 10, 1));
-                const dotColor = count === 0 ? '#e53935' : colors.primary.default;
-
-                return (
-                  <Touchable
-                    key={ci}
-                    style={[
-                      styles.dayCell,
-                      isSelected && [
-                        styles.daySelected,
-                        { backgroundColor: colors.primary.default },
-                      ],
-                      isToday && !isSelected && [
-                        styles.dayToday,
-                        { borderColor: colors.primary.default },
-                      ],
-                    ]}
-                    onPress={() => {
-                      if (!isDisabled) {
-                        onSelectDate(dateStr);
-                        onClose();
-                      }
-                    }}
-                    disabled={isDisabled}
-                  >
-                    <ThemedText
-                      type="bodySm"
-                      color={
-                        isSelected
-                          ? colors.text.inverse
-                          : isDisabled
-                            ? colors.surface.highest
-                            : colors.text.primary
-                      }
-                    >
-                      {day}
-                    </ThemedText>
-                    {legacyMode && dateStr < today && (
-                      <View
-                        style={[
-                          styles.activityDot,
-                          { backgroundColor: dotColor, opacity: dotOpacity },
-                        ]}
-                      />
-                    )}
-                  </Touchable>
-                );
-              })}
+        {/* Week header */}
+        <View style={styles.weekRow}>
+          {DAYS.map((d, i) => (
+            <View key={i} style={styles.weekCell}>
+              <ThemedText type="labelSm" color={colors.text.secondary}>
+                {d}
+              </ThemedText>
             </View>
           ))}
         </View>
+
+        {/* Calendar grid */}
+        {rows.map((row, ri) => (
+          <View key={ri} style={styles.gridRow}>
+            {row.map((day, ci) => {
+              if (day === null) {
+                return <View key={ci} style={styles.dayCell} />;
+              }
+              const dateStr = toDateString(viewYear, viewMonth, day);
+              const isSelected = dateStr === selectedDate;
+              const isToday = dateStr === today;
+              // Disabled if outside the bounds; in legacy (timeline) mode, no future.
+              const isDisabled =
+                (minDate ? dateStr < minDate : false) ||
+                (maxDate ? dateStr > maxDate : false) ||
+                (legacyMode ? dateStr > today : false);
+              const count = activityCounts[dateStr] ?? 0;
+              const dotOpacity = count === 0 ? 1 : Math.max(0.2, Math.min(count / 10, 1));
+              const dotColor = count === 0 ? '#e53935' : colors.primary.default;
+
+              return (
+                <Touchable
+                  key={ci}
+                  style={[
+                    styles.dayCell,
+                    isSelected && [
+                      styles.daySelected,
+                      { backgroundColor: colors.primary.default },
+                    ],
+                    isToday && !isSelected && [
+                      styles.dayToday,
+                      { borderColor: colors.primary.default },
+                    ],
+                  ]}
+                  onPress={() => {
+                    if (!isDisabled) {
+                      onSelectDate(dateStr);
+                      onClose();
+                    }
+                  }}
+                  disabled={isDisabled}
+                >
+                  <ThemedText
+                    type="bodySm"
+                    color={
+                      isSelected
+                        ? colors.text.inverse
+                        : isDisabled
+                          ? colors.surface.highest
+                          : colors.text.primary
+                    }
+                  >
+                    {day}
+                  </ThemedText>
+                  {legacyMode && dateStr < today && (
+                    <View
+                      style={[
+                        styles.activityDot,
+                        { backgroundColor: dotColor, opacity: dotOpacity },
+                      ]}
+                    />
+                  )}
+                </Touchable>
+              );
+            })}
+          </View>
+        ))}
       </View>
-    </Modal>
+    </Sheet>
   );
 }

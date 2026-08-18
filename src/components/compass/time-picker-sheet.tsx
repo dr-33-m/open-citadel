@@ -1,9 +1,10 @@
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import React from 'react';
-import { Modal, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
@@ -48,30 +49,12 @@ export function TimePickerSheet({ visible, label, value, onSelect, onClose }: Ti
   }, [visible, value]);
 
   const styles = React.useMemo(() => StyleSheet.create({
-    root: {
-      flex: 1,
-      justifyContent: 'flex-end',
-    },
-    overlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-    },
     panel: {
       backgroundColor: colors.surface.low,
       paddingHorizontal: spacing[6],
       paddingTop: spacing[4],
       paddingBottom: spacing[10],
       gap: spacing[4],
-    },
-    grabber: {
-      width: 40,
-      height: 4,
-      backgroundColor: colors.surface.highest,
-      alignSelf: 'center',
     },
     steppers: {
       flexDirection: 'row',
@@ -101,56 +84,52 @@ export function TimePickerSheet({ visible, label, value, onSelect, onClose }: Ti
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Touchable style={styles.overlay} onPress={onClose} />
-        <View style={styles.panel}>
-          <View style={styles.grabber} />
-          <ThemedText type="labelSm" color={colors.primary.default}>
-            {label}
-          </ThemedText>
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.panel}>
+        <ThemedText type="labelSm" color={colors.primary.default}>
+          {label}
+        </ThemedText>
 
-          <View style={styles.steppers}>
-            <View style={styles.stepperColumn}>
-              <Touchable style={styles.stepButton} onPress={() => setHour((h) => (h + 1) % 24)}>
-                <ChevronUp size={20} color={colors.text.secondary} />
-              </Touchable>
-              <ThemedText type="displayLg" style={styles.readout}>
-                {pad2(hour)}
-              </ThemedText>
-              <Touchable style={styles.stepButton} onPress={() => setHour((h) => (h + 23) % 24)}>
-                <ChevronDown size={20} color={colors.text.secondary} />
-              </Touchable>
-            </View>
-
-            <ThemedText type="displayLg" color={colors.text.secondary}>
-              :
+        <View style={styles.steppers}>
+          <View style={styles.stepperColumn}>
+            <Touchable style={styles.stepButton} onPress={() => setHour((h) => (h + 1) % 24)}>
+              <ChevronUp size={20} color={colors.text.secondary} />
+            </Touchable>
+            <ThemedText type="displayLg" style={styles.readout}>
+              {pad2(hour)}
             </ThemedText>
-
-            <View style={styles.stepperColumn}>
-              <Touchable
-                style={styles.stepButton}
-                onPress={() => setMinuteIndex((i) => (i + 1) % MINUTE_STEPS.length)}
-              >
-                <ChevronUp size={20} color={colors.text.secondary} />
-              </Touchable>
-              <ThemedText type="displayLg" style={styles.readout}>
-                {pad2(MINUTE_STEPS[minuteIndex])}
-              </ThemedText>
-              <Touchable
-                style={styles.stepButton}
-                onPress={() =>
-                  setMinuteIndex((i) => (i + MINUTE_STEPS.length - 1) % MINUTE_STEPS.length)
-                }
-              >
-                <ChevronDown size={20} color={colors.text.secondary} />
-              </Touchable>
-            </View>
+            <Touchable style={styles.stepButton} onPress={() => setHour((h) => (h + 23) % 24)}>
+              <ChevronDown size={20} color={colors.text.secondary} />
+            </Touchable>
           </View>
 
-          <GoldButton label="SET TIME" onPress={confirm} />
+          <ThemedText type="displayLg" color={colors.text.secondary}>
+            :
+          </ThemedText>
+
+          <View style={styles.stepperColumn}>
+            <Touchable
+              style={styles.stepButton}
+              onPress={() => setMinuteIndex((i) => (i + 1) % MINUTE_STEPS.length)}
+            >
+              <ChevronUp size={20} color={colors.text.secondary} />
+            </Touchable>
+            <ThemedText type="displayLg" style={styles.readout}>
+              {pad2(MINUTE_STEPS[minuteIndex])}
+            </ThemedText>
+            <Touchable
+              style={styles.stepButton}
+              onPress={() =>
+                setMinuteIndex((i) => (i + MINUTE_STEPS.length - 1) % MINUTE_STEPS.length)
+              }
+            >
+              <ChevronDown size={20} color={colors.text.secondary} />
+            </Touchable>
+          </View>
         </View>
+
+        <GoldButton label="SET TIME" onPress={confirm} />
       </View>
-    </Modal>
+    </Sheet>
   );
 }

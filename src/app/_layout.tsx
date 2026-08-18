@@ -20,6 +20,8 @@ import * as Linking from 'expo-linking';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 import type { ErrorBoundaryProps } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 
 import { ApprovalDialog } from '@/components/approval-dialog';
 import { runMigrations } from '@/db/migrations';
@@ -125,33 +127,43 @@ export default function RootLayout() {
   if (!fontsLoaded || !dbReady) return null;
 
   return (
-    <ThemeProvider value={navTheme}>
-      <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface.base } }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="reader/[id]"
-          options={{
-            animation: 'slide_from_right',
-            gestureEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="section/[type]"
-          options={{
-            animation: 'slide_from_bottom',
-            gestureEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="collection/[id]"
-          options={{
-            animation: 'slide_from_bottom',
-            gestureEnabled: true,
-          }}
-        />
-      </Stack>
-      <ApprovalDialog />
-    </ThemeProvider>
+    // GestureHandlerRootView must be the outermost wrapper — it hosts every
+    // gesture recognizer in the app, including the drag-to-dismiss pan on
+    // every Sheet. BottomSheetModalProvider mounts the portal every Sheet
+    // renders into; it needs to sit near the true root so a sheet opened from
+    // deep in the tree still paints above everything, including the floating
+    // tab bar.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <BottomSheetModalProvider>
+        <ThemeProvider value={navTheme}>
+          <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface.base } }}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen
+              name="reader/[id]"
+              options={{
+                animation: 'slide_from_right',
+                gestureEnabled: true,
+              }}
+            />
+            <Stack.Screen
+              name="section/[type]"
+              options={{
+                animation: 'slide_from_bottom',
+                gestureEnabled: true,
+              }}
+            />
+            <Stack.Screen
+              name="collection/[id]"
+              options={{
+                animation: 'slide_from_bottom',
+                gestureEnabled: true,
+              }}
+            />
+          </Stack>
+          <ApprovalDialog />
+        </ThemeProvider>
+      </BottomSheetModalProvider>
+    </GestureHandlerRootView>
   );
 }

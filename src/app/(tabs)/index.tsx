@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { useRouter } from 'expo-router';
 import { Calendar, MessageSquare, Pencil, Share, Trash2 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,6 +18,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TimelineEntry } from '@/components/timeline/timeline-entry';
 import { Fab } from '@/components/ui/fab';
 import { ScreenHeader } from '@/components/ui/screen-header';
+import { Sheet } from '@/components/ui/sheet';
 import { useColors } from '@/hooks/use-colors';
 import { spacing } from '@/constants/theme';
 import { db } from '@/db/client';
@@ -165,13 +166,6 @@ export default function TimelineScreen() {
       paddingTop: spacing[4],
       gap: spacing[1],
     },
-    sheetHandle: {
-      width: 40,
-      height: 4,
-      backgroundColor: colors.surface.highest,
-      alignSelf: 'center' as const,
-      marginBottom: spacing[3],
-    },
     sheetRow: {
       flexDirection: 'row' as const,
       alignItems: 'center' as const,
@@ -266,17 +260,8 @@ export default function TimelineScreen() {
       />
 
       {/* Entry long-press action sheet */}
-      <Modal
-        visible={longPressEntry !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setLongPressEntry(null)}
-      >
-        <View style={styles.sheetContainer}>
-          <Touchable style={styles.sheetOverlay} onPress={() => setLongPressEntry(null)} />
+      <Sheet visible={longPressEntry !== null} onClose={() => setLongPressEntry(null)}>
           <View style={[sheetStyles.sheet, { paddingBottom: insets.bottom + spacing[4] }]}>
-            <View style={sheetStyles.sheetHandle} />
-
             {longPressEntry && (
               <ThemedText
                 type="bodySm"
@@ -352,8 +337,7 @@ export default function TimelineScreen() {
               <ThemedText type="bodyMd" color={colors.text.secondary}>Delete</ThemedText>
             </Touchable>
           </View>
-        </View>
-      </Modal>
+      </Sheet>
 
       {/* Off-screen export card */}
       {showExportCard && exportEntry && (
@@ -395,14 +379,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     textAlign: 'center',
-  },
-  sheetContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  sheetOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   sheetTitle: {
     marginBottom: spacing[3],

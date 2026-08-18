@@ -1,19 +1,18 @@
+import { BottomSheetScrollView, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Check, MessageSquare, Pencil, Share, Sparkles, StickyNote, Trash2, X } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
-  KeyboardAvoidingView,
-  Modal,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from "react-native";
 
 import { ExportImageCard } from "@/components/export/export-image-card";
 import { captureAndShare } from "@/utils/export-image";
 
+import { Sheet } from "@/components/ui/sheet";
 import { Touchable } from "@/components/ui/touchable";
 
 import { ThemedText } from "@/components/themed-text";
@@ -88,25 +87,12 @@ export function HighlightMenu({
   const styles = React.useMemo(
     () =>
       StyleSheet.create({
-        container: { flex: 1, justifyContent: "flex-end" },
-        overlay: {
-          ...StyleSheet.absoluteFillObject,
-          backgroundColor: "rgba(0,0,0,0.5)",
-        },
-        kavWrapper: { backgroundColor: colors.surface.low },
         sheet: {
           backgroundColor: colors.surface.low,
           paddingHorizontal: spacing[6],
           paddingTop: spacing[4],
           paddingBottom: spacing[10],
           gap: spacing[4],
-        },
-        handle: {
-          width: 40,
-          height: 4,
-          backgroundColor: colors.surface.highest,
-          alignSelf: "center",
-          marginBottom: spacing[2],
         },
         quoteText: { fontFamily: fontFamily.serifItalic, fontSize: 14 },
         colorRow: { flexDirection: "row", gap: spacing[3] },
@@ -208,31 +194,17 @@ export function HighlightMenu({
 
   const [noteText, setNoteText] = useState("");
   const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(currentTags);
   const [selectedColor, setSelectedColor] = useState(currentColor);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<React.ElementRef<typeof BottomSheetTextInput>>(null);
 
   // Export state
   const exportViewRef = useRef<View>(null);
   const [showExport, setShowExport] = useState(false);
-
-  useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", () =>
-      setKeyboardVisible(true),
-    );
-    const hide = Keyboard.addListener("keyboardDidHide", () =>
-      setKeyboardVisible(false),
-    );
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   // Reset when the menu opens for a different highlight
   useEffect(() => {
@@ -254,17 +226,6 @@ export function HighlightMenu({
   useEffect(() => {
     setSelectedColor(currentColor);
   }, [currentColor]);
-
-  const handleRequestClose = () => {
-    if (keyboardVisible) {
-      Keyboard.dismiss();
-    } else if (editingNote) {
-      setEditingNote(null);
-      setNoteText("");
-    } else {
-      onClose();
-    }
-  };
 
   const handleColorSelect = (color: string) => {
     setSelectedColor(color);
@@ -348,107 +309,98 @@ export function HighlightMenu({
   }, []);
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleRequestClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={onClose} />
+    <>
+      <Sheet visible={visible} onClose={onClose} scrollable>
+        <BottomSheetScrollView contentContainerStyle={styles.sheet} keyboardShouldPersistTaps="handled">
+          {/* Highlight quote */}
+          <ThemedText
+            type="bodySm"
+            color={colors.text.secondary}
+            style={styles.quoteText}
+            numberOfLines={3}
+          >
+            &ldquo;{highlightText}&rdquo;
+          </ThemedText>
 
-        <KeyboardAvoidingView behavior="padding" style={styles.kavWrapper}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-
-            {/* Highlight quote */}
-            <ThemedText
-              type="bodySm"
-              color={colors.text.secondary}
-              style={styles.quoteText}
-              numberOfLines={3}
+          {/* Existing notes list */}
+          {existingNotes.length > 0 && (
+            <ScrollView
+              style={styles.notesList}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
             >
-              &ldquo;{highlightText}&rdquo;
-            </ThemedText>
-
-            {/* Existing notes list */}
-            {existingNotes.length > 0 && (
-              <ScrollView
-                style={styles.notesList}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
-                {existingNotes.map((note) => (
-                  <View
-                    key={note.id}
-                    style={[
-                      styles.noteRow,
-                      editingNote?.id === note.id && styles.noteRowEditing,
-                    ]}
-                  >
-                    <StickyNote
-                      size={14}
-                      color={colors.primary.default}
-                      style={styles.noteIcon}
-                    />
-                    <View style={styles.noteText}>
-                      <ThemedText type="bodySm" color={colors.text.primary}>
-                        {note.text}
-                      </ThemedText>
-                      {note.updatedAt && (
-                        <ThemedText
-                          type="labelSm"
-                          color={colors.text.secondary}
-                          style={{ fontStyle: "italic", fontSize: 10 }}
-                        >
-                          edited
-                        </ThemedText>
-                      )}
-                    </View>
-                    <Touchable
-                      onPress={() => handleEditNote(note)}
-                      style={styles.noteAction}
-                      hitSlop={8}
-                    >
-                      <Pencil size={14} color={colors.text.secondary} />
-                    </Touchable>
-                    <Touchable
-                      onPress={() => onDeleteNote(note.id)}
-                      style={styles.noteAction}
-                      hitSlop={8}
-                    >
-                      <Trash2 size={14} color={colors.text.secondary} />
-                    </Touchable>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-
-            {/* Note input */}
-            <TextInput
-              ref={inputRef}
-              style={styles.noteInput}
-              placeholder={editingNote ? "Edit your note…" : "Add a note…"}
-              placeholderTextColor={colors.text.secondary}
-              value={noteText}
-              onChangeText={setNoteText}
-              multiline
-            />
-
-            {/* Color swatches */}
-            <View style={styles.colorRow}>
-              {COLORS.map((c) => (
-                <Touchable
-                  key={c}
+              {existingNotes.map((note) => (
+                <View
+                  key={note.id}
                   style={[
-                    styles.swatch,
-                    { backgroundColor: c },
-                    selectedColor === c && styles.swatchSelected,
+                    styles.noteRow,
+                    editingNote?.id === note.id && styles.noteRowEditing,
                   ]}
-                  onPress={() => handleColorSelect(c)}
-                />
+                >
+                  <StickyNote
+                    size={14}
+                    color={colors.primary.default}
+                    style={styles.noteIcon}
+                  />
+                  <View style={styles.noteText}>
+                    <ThemedText type="bodySm" color={colors.text.primary}>
+                      {note.text}
+                    </ThemedText>
+                    {note.updatedAt && (
+                      <ThemedText
+                        type="labelSm"
+                        color={colors.text.secondary}
+                        style={{ fontStyle: "italic", fontSize: 10 }}
+                      >
+                        edited
+                      </ThemedText>
+                    )}
+                  </View>
+                  <Touchable
+                    onPress={() => handleEditNote(note)}
+                    style={styles.noteAction}
+                    hitSlop={8}
+                  >
+                    <Pencil size={14} color={colors.text.secondary} />
+                  </Touchable>
+                  <Touchable
+                    onPress={() => onDeleteNote(note.id)}
+                    style={styles.noteAction}
+                    hitSlop={8}
+                  >
+                    <Trash2 size={14} color={colors.text.secondary} />
+                  </Touchable>
+                </View>
               ))}
-            </View>
+            </ScrollView>
+          )}
+
+          {/* Note input */}
+          <BottomSheetTextInput
+            ref={inputRef}
+            style={styles.noteInput}
+            placeholder={editingNote ? "Edit your note…" : "Add a note…"}
+            placeholderTextColor={colors.text.secondary}
+            value={noteText}
+            onChangeText={setNoteText}
+            multiline
+          />
+
+          {/* Color swatches */}
+          <View style={styles.colorRow}>
+            {COLORS.map((c) => (
+              <Touchable
+                key={c}
+                style={[
+                  styles.swatch,
+                  { backgroundColor: c },
+                  selectedColor === c && styles.swatchSelected,
+                ]}
+                onPress={() => handleColorSelect(c)}
+              />
+            ))}
+          </View>
 
             {/* Tags */}
             <View style={styles.tagSection}>
@@ -471,7 +423,7 @@ export function HighlightMenu({
                 </View>
               )}
               <View style={styles.tagInputRow}>
-                <TextInput
+                <BottomSheetTextInput
                   style={styles.tagInput}
                   placeholder="Add tag…"
                   placeholderTextColor={colors.text.secondary}
@@ -636,11 +588,12 @@ export function HighlightMenu({
                 )}
               </View>
             </View>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
+        </BottomSheetScrollView>
+      </Sheet>
 
-      {/* Off-screen export card */}
+      {/* Off-screen export card — a sibling of the sheet, not inside it: this
+          is a headless capture target, never meant to be visible, and doesn't
+          need the sheet's presentation at all. */}
       {showExport && (
         <View style={{ position: "absolute", left: -9999, top: -9999 }}>
           <ExportImageCard
@@ -654,6 +607,6 @@ export function HighlightMenu({
           />
         </View>
       )}
-    </Modal>
+    </>
   );
 }

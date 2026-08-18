@@ -1,12 +1,11 @@
+import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import React, { useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Modal,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
@@ -41,25 +40,12 @@ export function EditTitleSheet({
   const styles = React.useMemo(
     () =>
       StyleSheet.create({
-        container: { flex: 1, justifyContent: 'flex-end' },
-        overlay: {
-          ...StyleSheet.absoluteFillObject,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-        },
-        kavWrapper: { backgroundColor: colors.surface.low },
         sheet: {
           backgroundColor: colors.surface.low,
           paddingHorizontal: spacing[6],
           paddingTop: spacing[4],
           paddingBottom: spacing[10],
           gap: spacing[5],
-        },
-        handle: {
-          width: 40,
-          height: 4,
-          backgroundColor: colors.surface.highest,
-          alignSelf: 'center',
-          marginBottom: spacing[2],
         },
         input: {
           backgroundColor: colors.surface.mid,
@@ -90,37 +76,25 @@ export function EditTitleSheet({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={handleClose} />
-        <KeyboardAvoidingView behavior="padding" style={styles.kavWrapper}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-            <ThemedText type="headlineSm">Edit Title</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="Book title…"
-              placeholderTextColor={colors.text.secondary}
-              value={title}
-              onChangeText={setTitle}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleSave}
-            />
-            <GoldButton label="SAVE" onPress={handleSave} />
-            <Touchable onPress={handleClose} style={styles.cancel}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
-                CANCEL
-              </ThemedText>
-            </Touchable>
-          </View>
-        </KeyboardAvoidingView>
+    <Sheet visible={visible} onClose={handleClose}>
+      <View style={styles.sheet}>
+        <ThemedText type="headlineSm">Edit Title</ThemedText>
+        <BottomSheetTextInput
+          style={styles.input}
+          placeholder="Book title…"
+          placeholderTextColor={colors.text.secondary}
+          value={title}
+          onChangeText={setTitle}
+          returnKeyType="done"
+          onSubmitEditing={handleSave}
+        />
+        <GoldButton label="SAVE" onPress={handleSave} />
+        <Touchable onPress={handleClose} style={styles.cancel}>
+          <ThemedText type="labelSm" color={colors.text.secondary}>
+            CANCEL
+          </ThemedText>
+        </Touchable>
       </View>
-    </Modal>
+    </Sheet>
   );
 }

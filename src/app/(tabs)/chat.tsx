@@ -3,7 +3,6 @@ import { BookOpen, MessageSquarePlus, Bot } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
-  Modal,
   StyleSheet,
   View,
 } from 'react-native';
@@ -15,6 +14,7 @@ import { BookPickerSheet } from '@/components/chat/book-picker-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { ScreenHeader } from '@/components/ui/screen-header';
+import { Sheet } from '@/components/ui/sheet';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { useChatStore, type ChatSession } from '@/stores/chat';
@@ -200,37 +200,28 @@ export default function ChatTab() {
         onClose={() => setBookPickerVisible(false)}
       />
 
-      <Modal
-        visible={confirmDelete !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setConfirmDelete(null)}
-      >
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Touchable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setConfirmDelete(null)} />
-          <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
-            <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
-            <ThemedText type="headlineSm">Delete chat?</ThemedText>
-            <ThemedText type="bodySm" color={colors.text.secondary} numberOfLines={2}>
-              {confirmDelete?.title}
-            </ThemedText>
-            <View style={{ flexDirection: 'row', gap: spacing[3] }}>
-              <Touchable style={styles.actionBtn} onPress={() => setConfirmDelete(null)}>
-                <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-              </Touchable>
-              <Touchable
-                style={[styles.actionBtn, { backgroundColor: '#e53935' }]}
-                onPress={() => {
-                  if (confirmDelete) deleteSession(confirmDelete.id);
-                  setConfirmDelete(null);
-                }}
-              >
-                <ThemedText type="labelSm" color="#fff">DELETE</ThemedText>
-              </Touchable>
-            </View>
+      <Sheet visible={confirmDelete !== null} onClose={() => setConfirmDelete(null)}>
+        <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
+          <ThemedText type="headlineSm">Delete chat?</ThemedText>
+          <ThemedText type="bodySm" color={colors.text.secondary} numberOfLines={2}>
+            {confirmDelete?.title}
+          </ThemedText>
+          <View style={{ flexDirection: 'row', gap: spacing[3] }}>
+            <Touchable style={styles.actionBtn} onPress={() => setConfirmDelete(null)}>
+              <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
+            </Touchable>
+            <Touchable
+              style={[styles.actionBtn, { backgroundColor: '#e53935' }]}
+              onPress={() => {
+                if (confirmDelete) deleteSession(confirmDelete.id);
+                setConfirmDelete(null);
+              }}
+            >
+              <ThemedText type="labelSm" color="#fff">DELETE</ThemedText>
+            </Touchable>
           </View>
         </View>
-      </Modal>
+      </Sheet>
     </View>
   );
 }

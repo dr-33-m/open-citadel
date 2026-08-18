@@ -1,3 +1,4 @@
+import { BottomSheetScrollView, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   Bookmark as BookmarkIcon,
   ChevronDown,
@@ -7,13 +8,11 @@ import {
 } from "lucide-react-native";
 import React, { useState } from "react";
 import {
-  Modal,
-  ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from "react-native";
 
+import { Sheet } from "@/components/ui/sheet";
 import { Touchable } from "@/components/ui/touchable";
 import type { Link, Locator } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -260,7 +259,7 @@ function HighlightsList({
     <>
       <View style={styles.searchRow}>
         <Search size={14} color={colors.text.secondary} />
-        <TextInput
+        <BottomSheetTextInput
           style={styles.searchInput}
           placeholder="Search highlights or tags…"
           placeholderTextColor={colors.text.secondary}
@@ -469,7 +468,7 @@ function BookmarksList({
               {/* Note display / edit */}
               {isEditing ? (
                 <>
-                  <TextInput
+                  <BottomSheetTextInput
                     value={editingNoteText}
                     onChangeText={setEditingNoteText}
                     placeholder="Add a note…"
@@ -545,34 +544,10 @@ export function TocSheet({
   const styles = React.useMemo(
     () =>
       StyleSheet.create({
-        overlay: { flex: 1, justifyContent: "flex-end" },
-        backdrop: {
-          ...StyleSheet.absoluteFillObject,
-          backgroundColor: "rgba(0,0,0,0.6)",
-        },
-        sheet: {
-          flex: 1,
-          maxHeight: "85%",
-          backgroundColor: colors.surface.low,
-          borderTopWidth: 1,
-          borderTopColor: colors.surface.highest,
-        },
-        sheetHeader: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          paddingHorizontal: spacing[6],
-          paddingBottom: spacing[2],
-        },
-        closeButton: {
-          width: 36,
-          height: 36,
-          alignItems: "center",
-          justifyContent: "center",
-        },
         tabBar: {
           flexDirection: "row",
           paddingHorizontal: spacing[6],
+          paddingTop: spacing[4],
           gap: spacing[6],
         },
         tab: {
@@ -588,13 +563,16 @@ export function TocSheet({
         },
         divider: { height: 1, backgroundColor: colors.surface.highest },
         scroll: { flex: 1 },
-        scrollContent: { paddingVertical: spacing[4] },
+        scrollContent: {
+          paddingTop: spacing[4],
+          paddingBottom: insets.bottom + spacing[4],
+        },
         comingSoon: {
           paddingHorizontal: spacing[6],
           paddingVertical: spacing[6],
         },
       }),
-    [colors],
+    [colors, insets.bottom],
   );
 
   const TABS: { id: Tab; label: string }[] = [
@@ -604,99 +582,75 @@ export function TocSheet({
   ];
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.overlay}>
-        <Touchable style={styles.backdrop} onPress={onClose} />
-
-        <View
-          style={[styles.sheet, { paddingBottom: insets.bottom + spacing[4] }]}
-        >
-          <View
-            style={[
-              styles.sheetHeader,
-              { paddingTop: insets.top + spacing[4] },
-            ]}
-          >
-            <Touchable onPress={onClose} style={styles.closeButton}>
-              <X size={20} color={colors.text.secondary} />
+    <Sheet visible={visible} onClose={onClose} fixedHeightRatio={0.85} scrollable>
+      <View style={styles.tabBar}>
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <Touchable
+              key={tab.id}
+              style={styles.tab}
+              onPress={() => setActiveTab(tab.id)}
+            >
+              <ThemedText
+                type="labelSm"
+                color={
+                  isActive ? colors.primary.default : colors.text.secondary
+                }
+              >
+                {tab.label}
+              </ThemedText>
+              {isActive && <View style={styles.tabUnderline} />}
             </Touchable>
-          </View>
-
-          <View style={styles.tabBar}>
-            {TABS.map((tab) => {
-              const isActive = activeTab === tab.id;
-              return (
-                <Touchable
-                  key={tab.id}
-                  style={styles.tab}
-                  onPress={() => setActiveTab(tab.id)}
-                >
-                  <ThemedText
-                    type="labelSm"
-                    color={
-                      isActive ? colors.primary.default : colors.text.secondary
-                    }
-                  >
-                    {tab.label}
-                  </ThemedText>
-                  {isActive && <View style={styles.tabUnderline} />}
-                </Touchable>
-              );
-            })}
-          </View>
-
-          <View style={styles.divider} />
-
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            key={activeTab}
-            keyboardShouldPersistTaps="handled"
-          >
-            {activeTab === "toc" &&
-              (toc.length === 0 ? (
-                <ThemedText
-                  type="bodySm"
-                  color={colors.text.secondary}
-                  style={{ paddingHorizontal: spacing[6] }}
-                >
-                  No table of contents available.
-                </ThemedText>
-              ) : (
-                toc.map((link, i) => (
-                  <ChapterRow
-                    key={`${link.href}-${i}`}
-                    link={link}
-                    depth={0}
-                    currentHref={currentHref}
-                    onPress={onChapterPress}
-                  />
-                ))
-              ))}
-
-            {activeTab === "highlights" && (
-              <HighlightsList
-                highlights={highlights}
-                onHighlightPress={onHighlightPress}
-              />
-            )}
-
-            {activeTab === "bookmarks" && (
-              <BookmarksList
-                bookmarkItems={bookmarkItems}
-                onBookmarkPress={onBookmarkPress}
-                onUpdateBookmarkNote={onUpdateBookmarkNote}
-              />
-            )}
-          </ScrollView>
-        </View>
+          );
+        })}
       </View>
-    </Modal>
+
+      <View style={styles.divider} />
+
+      <BottomSheetScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        key={activeTab}
+        keyboardShouldPersistTaps="handled"
+      >
+        {activeTab === "toc" &&
+          (toc.length === 0 ? (
+            <ThemedText
+              type="bodySm"
+              color={colors.text.secondary}
+              style={{ paddingHorizontal: spacing[6] }}
+            >
+              No table of contents available.
+            </ThemedText>
+          ) : (
+            toc.map((link, i) => (
+              <ChapterRow
+                key={`${link.href}-${i}`}
+                link={link}
+                depth={0}
+                currentHref={currentHref}
+                onPress={onChapterPress}
+              />
+            ))
+          ))}
+
+        {activeTab === "highlights" && (
+          <HighlightsList
+            highlights={highlights}
+            onHighlightPress={onHighlightPress}
+          />
+        )}
+
+        {activeTab === "bookmarks" && (
+          <BookmarksList
+            bookmarkItems={bookmarkItems}
+            onBookmarkPress={onBookmarkPress}
+            onUpdateBookmarkNote={onUpdateBookmarkNote}
+          />
+        )}
+      </BottomSheetScrollView>
+    </Sheet>
   );
 }

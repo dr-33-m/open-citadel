@@ -1,10 +1,11 @@
 import React from 'react';
-import { Modal, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { CompassScheduleStatus, CompassTelemetry } from 'samwell-shared';
 
 import { formatCompassDate, paceVerdict, SCORE_RED } from '@/components/compass/format';
 import { ThemedText } from '@/components/themed-text';
 import { ProgressBar } from '@/components/ui/progress-bar';
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
@@ -47,27 +48,12 @@ export function ProgressSheet({
   const styles = React.useMemo(
     () =>
       StyleSheet.create({
-        root: { flex: 1, justifyContent: 'flex-end' },
-        overlay: {
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-        },
         panel: {
           backgroundColor: colors.surface.low,
           paddingHorizontal: spacing[6],
           paddingTop: spacing[4],
           paddingBottom: spacing[10],
           gap: spacing[6],
-        },
-        grabber: {
-          width: 40,
-          height: 4,
-          backgroundColor: colors.surface.highest,
-          alignSelf: 'center',
         },
         section: { gap: spacing[2] },
         progressNumbers: {
@@ -126,110 +112,105 @@ export function ProgressSheet({
     : false;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Touchable style={styles.overlay} onPress={onClose} />
-        <View style={styles.panel}>
-          <View style={styles.grabber} />
-
-          <View style={styles.section}>
-            <View style={styles.sectionHead}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
-                GOAL
-              </ThemedText>
-              {goalTrack && goalActive && (
-                <Touchable onPress={() => onAdjustDates('goal')}>
-                  <ThemedText type="labelSm" color={colors.primary.default}>
-                    ADJUST DATE
-                  </ThemedText>
-                </Touchable>
-              )}
-            </View>
-            <ThemedText type="bodyMd" color={colors.text.secondary}>
-              {goalTitle}
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.panel}>
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <ThemedText type="labelSm" color={colors.text.secondary}>
+              GOAL
             </ThemedText>
-            {goalTrack && (
-              <>
-                <ThemedText type="bodySm" color={paceTint(goalTrack.scheduleStatus)}>
-                  {paceVerdict(goalTrack.scheduleStatus, goalTrack.varianceDays)}
+            {goalTrack && goalActive && (
+              <Touchable onPress={() => onAdjustDates('goal')}>
+                <ThemedText type="labelSm" color={colors.primary.default}>
+                  ADJUST DATE
                 </ThemedText>
-                <ThemedText type="bodySm" color={colors.text.secondary}>
-                  {Math.round(goalTrack.milestonesDone * 10) / 10} of{' '}
-                  {goalTrack.estimatedMilestones} milestones · target{' '}
-                  {formatCompassDate(goalTrack.targetDate)}
-                  {goalTrack.currentProjectedDate
-                    ? `, now projected ${formatCompassDate(goalTrack.currentProjectedDate)}`
-                    : ''}
-                </ThemedText>
-              </>
+              </Touchable>
             )}
           </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHead}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
-                MILESTONE
+          <ThemedText type="bodyMd" color={colors.text.secondary}>
+            {goalTitle}
+          </ThemedText>
+          {goalTrack && (
+            <>
+              <ThemedText type="bodySm" color={paceTint(goalTrack.scheduleStatus)}>
+                {paceVerdict(goalTrack.scheduleStatus, goalTrack.varianceDays)}
               </ThemedText>
-              {milestone.status === 'active' && (
-                <Touchable onPress={() => onAdjustDates('milestone')}>
-                  <ThemedText type="labelSm" color={colors.primary.default}>
-                    ADJUST DATE
-                  </ThemedText>
-                </Touchable>
-              )}
-            </View>
-            <ThemedText type="headlineMd">{milestone.title}</ThemedText>
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.progressNumbers}>
-              <ThemedText type="displayMd">{percent}%</ThemedText>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
-                {completed} of {milestone.estimatedEffortUnits} steps
-              </ThemedText>
-            </View>
-            <ProgressBar progress={progress} />
-          </View>
-
-          <View style={styles.pace}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
-              PACE
-            </ThemedText>
-            <ThemedText type="headlineSm" color={paceColor}>
-              {paceVerdict(status, variance)}
-            </ThemedText>
-            {telemetry && (
               <ThemedText type="bodySm" color={colors.text.secondary}>
-                Target {formatCompassDate(telemetry.targetDate)}
-                {telemetry.currentProjectedDate
-                  ? `, now projected ${formatCompassDate(telemetry.currentProjectedDate)}`
+                {Math.round(goalTrack.milestonesDone * 10) / 10} of{' '}
+                {goalTrack.estimatedMilestones} milestones · target{' '}
+                {formatCompassDate(goalTrack.targetDate)}
+                {goalTrack.currentProjectedDate
+                  ? `, now projected ${formatCompassDate(goalTrack.currentProjectedDate)}`
                   : ''}
               </ThemedText>
-            )}
-          </View>
+            </>
+          )}
+        </View>
 
-          <View style={styles.archive}>
-            <Touchable
-              onPress={() => (confirmArchive ? onArchiveGoal() : setConfirmArchive(true))}
-            >
-              <ThemedText type="labelSm" color={confirmArchive ? SCORE_RED : colors.text.secondary}>
-                {confirmArchive
-                  ? 'TAP AGAIN TO ARCHIVE'
-                  : goalComplete
-                    ? 'COMPLETE GOAL'
-                    : 'ABANDON GOAL'}
-              </ThemedText>
-            </Touchable>
-            {confirmArchive && (
-              <ThemedText type="bodySm" color={colors.text.secondary}>
-                {goalComplete
-                  ? 'Your check-in history is kept, and this counts toward your rank.'
-                  : "Your check-in history is kept, but this goal hasn't reached its planned scope, so it won't earn a rank."}
-              </ThemedText>
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <ThemedText type="labelSm" color={colors.text.secondary}>
+              MILESTONE
+            </ThemedText>
+            {milestone.status === 'active' && (
+              <Touchable onPress={() => onAdjustDates('milestone')}>
+                <ThemedText type="labelSm" color={colors.primary.default}>
+                  ADJUST DATE
+                </ThemedText>
+              </Touchable>
             )}
           </View>
+          <ThemedText type="headlineMd">{milestone.title}</ThemedText>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.progressNumbers}>
+            <ThemedText type="displayMd">{percent}%</ThemedText>
+            <ThemedText type="labelSm" color={colors.text.secondary}>
+              {completed} of {milestone.estimatedEffortUnits} steps
+            </ThemedText>
+          </View>
+          <ProgressBar progress={progress} />
+        </View>
+
+        <View style={styles.pace}>
+          <ThemedText type="labelSm" color={colors.text.secondary}>
+            PACE
+          </ThemedText>
+          <ThemedText type="headlineSm" color={paceColor}>
+            {paceVerdict(status, variance)}
+          </ThemedText>
+          {telemetry && (
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              Target {formatCompassDate(telemetry.targetDate)}
+              {telemetry.currentProjectedDate
+                ? `, now projected ${formatCompassDate(telemetry.currentProjectedDate)}`
+                : ''}
+            </ThemedText>
+          )}
+        </View>
+
+        <View style={styles.archive}>
+          <Touchable
+            onPress={() => (confirmArchive ? onArchiveGoal() : setConfirmArchive(true))}
+          >
+            <ThemedText type="labelSm" color={confirmArchive ? SCORE_RED : colors.text.secondary}>
+              {confirmArchive
+                ? 'TAP AGAIN TO ARCHIVE'
+                : goalComplete
+                  ? 'COMPLETE GOAL'
+                  : 'ABANDON GOAL'}
+            </ThemedText>
+          </Touchable>
+          {confirmArchive && (
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              {goalComplete
+                ? 'Your check-in history is kept, and this counts toward your rank.'
+                : "Your check-in history is kept, but this goal hasn't reached its planned scope, so it won't earn a rank."}
+            </ThemedText>
+          )}
         </View>
       </View>
-    </Modal>
+    </Sheet>
   );
 }

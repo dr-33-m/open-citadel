@@ -1,12 +1,11 @@
+import { BottomSheetFlatList, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import React, { useEffect, useState } from 'react';
 import {
-  FlatList,
-  Modal,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -42,24 +41,13 @@ export function BookPickerSheet({ visible, onSelect, onSkip, onClose }: BookPick
     : allBooks;
 
   const styles = StyleSheet.create({
-    overlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      justifyContent: 'flex-end',
-    },
     sheet: {
+      flex: 1,
       backgroundColor: colors.surface.low,
       paddingBottom: insets.bottom + spacing[4],
-      maxHeight: '70%',
+      paddingTop: spacing[2],
     },
-    handle: {
-      width: 40,
-      height: 2,
-      backgroundColor: colors.surface.highest,
-      alignSelf: 'center',
-      marginTop: spacing[2],
-      marginBottom: spacing[3],
-    },
+    list: { flex: 1 },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -97,57 +85,55 @@ export function BookPickerSheet({ visible, onSelect, onSkip, onClose }: BookPick
   });
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Touchable style={styles.overlay} onPress={onClose}>
-        <Touchable style={styles.sheet} onPress={() => {}}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <ThemedText type="headlineSm">Pick a book</ThemedText>
-            <Touchable onPress={onClose}>
-              <ThemedText type="labelMd" color={colors.text.secondary}>
-                CANCEL
-              </ThemedText>
-            </Touchable>
+    <Sheet visible={visible} onClose={onClose} fixedHeightRatio={0.7} scrollable>
+      <View style={styles.sheet}>
+        <View style={styles.header}>
+          <ThemedText type="headlineSm">Pick a book</ThemedText>
+          <Touchable onPress={onClose}>
+            <ThemedText type="labelMd" color={colors.text.secondary}>
+              CANCEL
+            </ThemedText>
+          </Touchable>
+        </View>
+
+        <BottomSheetTextInput
+          style={styles.searchInput}
+          placeholder="Search…"
+          placeholderTextColor={colors.text.secondary}
+          value={query}
+          onChangeText={setQuery}
+        />
+
+        {filtered.length === 0 ? (
+          <View style={[styles.noResult, styles.list]}>
+            <ThemedText type="bodySm" color={colors.text.secondary}>
+              No books found
+            </ThemedText>
           </View>
-
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search…"
-            placeholderTextColor={colors.text.secondary}
-            value={query}
-            onChangeText={setQuery}
+        ) : (
+          <BottomSheetFlatList
+            style={styles.list}
+            data={filtered}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <Touchable style={styles.item} onPress={() => onSelect(item.id, item.title)}>
+                <ThemedText type="bodyMd">{item.title}</ThemedText>
+                <ThemedText type="bodySm" color={colors.text.secondary}>
+                  {item.author}
+                </ThemedText>
+              </Touchable>
+            )}
           />
+        )}
 
-          {filtered.length === 0 ? (
-            <View style={styles.noResult}>
-              <ThemedText type="bodySm" color={colors.text.secondary}>
-                No books found
-              </ThemedText>
-            </View>
-          ) : (
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <Touchable style={styles.item} onPress={() => onSelect(item.id, item.title)}>
-                  <ThemedText type="bodyMd">{item.title}</ThemedText>
-                  <ThemedText type="bodySm" color={colors.text.secondary}>
-                    {item.author}
-                  </ThemedText>
-                </Touchable>
-              )}
-            />
-          )}
-
-          {onSkip && (
-            <Touchable style={styles.skipBtn} onPress={onSkip}>
-              <ThemedText type="labelMd" color={colors.text.secondary}>
-                START WITHOUT A BOOK
-              </ThemedText>
-            </Touchable>
-          )}
-        </Touchable>
-      </Touchable>
-    </Modal>
+        {onSkip && (
+          <Touchable style={styles.skipBtn} onPress={onSkip}>
+            <ThemedText type="labelMd" color={colors.text.secondary}>
+              START WITHOUT A BOOK
+            </ThemedText>
+          </Touchable>
+        )}
+      </View>
+    </Sheet>
   );
 }

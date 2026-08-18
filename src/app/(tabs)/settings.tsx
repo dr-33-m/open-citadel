@@ -1,11 +1,9 @@
 import * as Speech from 'expo-speech';
-import { AudioLines, BookOpen, ChevronUp, Cloud, Download, Info, MemoryStick, MessageCircleHeart, Moon, Power, Search, SlidersHorizontal, Smartphone, Sun, Trash2, User, Volume2, X } from 'lucide-react-native';
+import { AudioLines, BookOpen, ChevronUp, Cloud, Download, Info, MemoryStick, MessageCircleHeart, Moon, Power, Search, SlidersHorizontal, Smartphone, Sun, Trash2, User, Volume2 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  FlatList,
-  KeyboardAvoidingView,
   Modal,
   ScrollView,
   SectionList,
@@ -17,6 +15,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BottomSheetFlatList, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { desc, eq } from 'drizzle-orm';
 
 import { floatingTabBarHeight } from '@/components/app-tabs';
@@ -29,6 +28,7 @@ import { ThemedView } from '@/components/themed-view';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ScreenHeader } from '@/components/ui/screen-header';
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
 import { fontFamily, iconSize, spacing } from '@/constants/theme';
@@ -1086,184 +1086,141 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Model picker + HuggingFace search, unified sheet */}
-      <Modal
-        visible={modelSheetVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={closeModelSheet}
-      >
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Touchable
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' }}
-            onPress={closeModelSheet}
-          />
-          <KeyboardAvoidingView behavior="padding" style={{ backgroundColor: colors.surface.low, maxHeight: '80%' }}>
-            <Touchable onPress={() => {}} style={{ paddingBottom: insets.bottom + spacing[4] }}>
-              {/* Handle */}
-              <View style={{ width: 40, height: 2, backgroundColor: colors.surface.highest, alignSelf: 'center', marginTop: spacing[2], marginBottom: spacing[3] }} />
+      {/* Model picker + HuggingFace search, unified sheet.
+          One scroll surface for all three phases: swapping between a separate
+          list per phase made the sheet re-register its scrollable on every
+          transition, which is why the Hugging Face results would not scroll.
+          These lists are short enough that mapping beats virtualizing. */}
+      <Sheet visible={modelSheetVisible} onClose={closeModelSheet} maxHeightRatio={0.8} scrollable>
+        <BottomSheetScrollView
+          contentContainerStyle={{ paddingBottom: insets.bottom + spacing[4] }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <View style={[styles.modelCardRow, { paddingHorizontal: spacing[4], paddingTop: spacing[3], paddingBottom: spacing[3] }]}>
+            {modelSheetView === 'hf' ? (
+              hfRepo ? (
+                <Touchable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2], flex: 1 }} onPress={() => { setHfRepo(null); setHfFiles([]); }}>
+                  <ThemedText type="labelSm" color={colors.primary.default}>← BACK</ThemedText>
+                  <ThemedText type="headlineSm" numberOfLines={1} style={{ flex: 1 }}>{hfRepo.split('/')[1] ?? hfRepo}</ThemedText>
+                </Touchable>
+              ) : (
+                <Touchable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }} onPress={() => { setModelSheetView('list'); resetHfState(); }}>
+                  <ThemedText type="labelSm" color={colors.primary.default}>← BACK</ThemedText>
+                  <ThemedText type="headlineSm">Find Models</ThemedText>
+                </Touchable>
+              )
+            ) : (
+              <ThemedText type="headlineSm">Choose Model</ThemedText>
+            )}
+          </View>
 
-              {/* Header */}
-              <View style={[styles.modelCardRow, { paddingHorizontal: spacing[4], paddingBottom: spacing[3] }]}>
-                {modelSheetView === 'hf' ? (
-                  hfRepo ? (
-                    <Touchable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2], flex: 1 }} onPress={() => { setHfRepo(null); setHfFiles([]); }}>
-                      <ThemedText type="labelSm" color={colors.primary.default}>← BACK</ThemedText>
-                      <ThemedText type="headlineSm" numberOfLines={1} style={{ flex: 1 }}>{hfRepo.split('/')[1] ?? hfRepo}</ThemedText>
-                    </Touchable>
-                  ) : (
-                    <Touchable style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }} onPress={() => { setModelSheetView('list'); resetHfState(); }}>
-                      <ThemedText type="labelSm" color={colors.primary.default}>← BACK</ThemedText>
-                      <ThemedText type="headlineSm">Find Models</ThemedText>
-                    </Touchable>
-                  )
-                ) : (
-                  <ThemedText type="headlineSm">Choose Model</ThemedText>
-                )}
-                <Touchable onPress={closeModelSheet}>
-                  <X size={20} color={colors.text.secondary} />
+          {modelSheetView === 'list' ? (
+            /* Model list view */
+            <>
+              {models.map((m) => (
+                <Touchable
+                  key={m.id}
+                  style={styles.modelSheetItem}
+                  onPress={() => {
+                    setActiveModel(m.id);
+                    closeModelSheet();
+                  }}
+                >
+                  <View style={styles.modelSheetInfo}>
+                    <ThemedText type="bodyMd">{m.name}</ThemedText>
+                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                      {formatBytes(m.sizeBytes)}
+                      {m.isDownloaded ? ' · Downloaded' : ''}
+                      {m.id === 'gemma-4-e2b-it' ? ' · Recommended' : ''}
+                    </ThemedText>
+                  </View>
+                  {m.id === activeModelId && (
+                    <ThemedText type="bodyMd" color={colors.primary.default}>✓</ThemedText>
+                  )}
+                </Touchable>
+              ))}
+              {/* Find models entry point */}
+              <Touchable
+                style={[styles.modelSheetItem, { borderBottomWidth: 0, gap: spacing[2] }]}
+                onPress={() => setModelSheetView('hf')}
+              >
+                <Search size={14} color={colors.primary.default} />
+                <ThemedText type="labelSm" color={colors.primary.default}>FIND MODELS ON HUGGING FACE</ThemedText>
+              </Touchable>
+            </>
+          ) : hfRepo ? (
+            /* Phase 2: file list */
+            hfLoadingFiles ? (
+              <View style={{ alignItems: 'center', padding: spacing[6] }}>
+                <ActivityIndicator color={colors.primary.default} />
+              </View>
+            ) : hfFiles.length === 0 ? (
+              <View style={{ padding: spacing[4] }}>
+                <ThemedText type="bodySm" color={colors.text.secondary}>No LiteRT-LM files found in this repo.</ThemedText>
+              </View>
+            ) : (
+              hfFiles.map((item) => (
+                <Touchable key={item.rfilename} style={styles.hfFileItem} onPress={() => pickFile(item)}>
+                  <ThemedText type="bodyMd" style={{ flex: 1 }} numberOfLines={2}>{item.rfilename}</ThemedText>
+                  <ThemedText type="labelSm" color={colors.text.secondary}>{formatBytes(item.size)}</ThemedText>
+                </Touchable>
+              ))
+            )
+          ) : (
+            /* Phase 1: HF search */
+            <>
+              <View style={styles.hfSearchRow}>
+                <BottomSheetTextInput
+                  style={styles.hfInput}
+                  placeholder="Search Hugging Face…"
+                  placeholderTextColor={colors.text.secondary}
+                  value={hfQuery}
+                  onChangeText={setHfQuery}
+                  onSubmitEditing={searchHF}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                <Touchable style={styles.aiActionBtn} onPress={searchHF}>
+                  <Search size={14} color={colors.primary.default} />
+                  <ThemedText type="labelSm" color={colors.primary.default}>SEARCH</ThemedText>
                 </Touchable>
               </View>
-
-              {modelSheetView === 'list' ? (
-                /* Model list view */
-                <>
-                  <FlatList
-                    data={models}
-                    keyExtractor={(m) => m.id}
-                    style={{ maxHeight: 320 }}
-                    renderItem={({ item: m }) => (
-                      <Touchable
-                        style={styles.modelSheetItem}
-                        onPress={() => {
-                          setActiveModel(m.id);
-                          closeModelSheet();
-                        }}
-                      >
-                        <View style={styles.modelSheetInfo}>
-                          <ThemedText type="bodyMd">{m.name}</ThemedText>
-                          <ThemedText type="labelSm" color={colors.text.secondary}>
-                            {formatBytes(m.sizeBytes)}
-                            {m.isDownloaded ? ' · Downloaded' : ''}
-                            {m.id === 'gemma-4-e2b-it' ? ' · Recommended' : ''}
-                          </ThemedText>
-                        </View>
-                        {m.id === activeModelId && (
-                          <ThemedText type="bodyMd" color={colors.primary.default}>✓</ThemedText>
-                        )}
-                      </Touchable>
-                    )}
-                  />
-                  {/* Find models entry point */}
-                  <Touchable
-                    style={[styles.modelSheetItem, { borderBottomWidth: 0, gap: spacing[2] }]}
-                    onPress={() => setModelSheetView('hf')}
-                  >
-                    <Search size={14} color={colors.primary.default} />
-                    <ThemedText type="labelSm" color={colors.primary.default}>FIND MODELS ON HUGGING FACE</ThemedText>
-                  </Touchable>
-                </>
-              ) : hfRepo ? (
-                /* Phase 2: file list */
-                hfLoadingFiles ? (
-                  <View style={{ alignItems: 'center', padding: spacing[6] }}>
-                    <ActivityIndicator color={colors.primary.default} />
-                  </View>
-                ) : (
-                  <FlatList
-                    data={hfFiles}
-                    keyExtractor={(f) => f.rfilename}
-                    style={{ maxHeight: 320 }}
-                    renderItem={({ item }) => (
-                      <Touchable style={styles.hfFileItem} onPress={() => pickFile(item)}>
-                        <ThemedText type="bodyMd" style={{ flex: 1 }} numberOfLines={2}>{item.rfilename}</ThemedText>
-                        <ThemedText type="labelSm" color={colors.text.secondary}>{formatBytes(item.size)}</ThemedText>
-                      </Touchable>
-                    )}
-                    ListEmptyComponent={
-                      <View style={{ padding: spacing[4] }}>
-                        <ThemedText type="bodySm" color={colors.text.secondary}>No LiteRT-LM files found in this repo.</ThemedText>
-                      </View>
-                    }
-                  />
-                )
+              {hfSearching ? (
+                <View style={{ alignItems: 'center', padding: spacing[6] }}>
+                  <ActivityIndicator color={colors.primary.default} />
+                </View>
+              ) : hfResults.length === 0 ? (
+                <View style={{ padding: spacing[4] }}>
+                  <ThemedText type="bodySm" color={colors.text.secondary}>Search for LiteRT-LM models to get started.</ThemedText>
+                </View>
               ) : (
-                /* Phase 1: HF search */
-                <>
-                  <View style={styles.hfSearchRow}>
-                    <TextInput
-                      style={styles.hfInput}
-                      placeholder="Search Hugging Face…"
-                      placeholderTextColor={colors.text.secondary}
-                      value={hfQuery}
-                      onChangeText={setHfQuery}
-                      onSubmitEditing={searchHF}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      returnKeyType="search"
-                    />
-                    <Touchable style={styles.aiActionBtn} onPress={searchHF}>
-                      <Search size={14} color={colors.primary.default} />
-                      <ThemedText type="labelSm" color={colors.primary.default}>SEARCH</ThemedText>
-                    </Touchable>
-                  </View>
-                  {hfSearching ? (
-                    <View style={{ alignItems: 'center', padding: spacing[6] }}>
-                      <ActivityIndicator color={colors.primary.default} />
-                    </View>
-                  ) : (
-                    <FlatList
-                      data={hfResults}
-                      keyExtractor={(r) => r.id}
-                      style={{ maxHeight: 280 }}
-                      renderItem={({ item }) => (
-                        <Touchable style={styles.hfResultItem} onPress={() => loadRepoFiles(item.id)}>
-                          <ThemedText type="bodyMd" numberOfLines={1}>{item.id}</ThemedText>
-                          <ThemedText type="labelSm" color={colors.text.secondary}>
-                            {formatDownloads(item.downloads)} downloads
-                          </ThemedText>
-                        </Touchable>
-                      )}
-                      ListEmptyComponent={
-                        <View style={{ padding: spacing[4] }}>
-                          <ThemedText type="bodySm" color={colors.text.secondary}>Search for LiteRT-LM models to get started.</ThemedText>
-                        </View>
-                      }
-                    />
-                  )}
-                </>
+                hfResults.map((item) => (
+                  <Touchable key={item.id} style={styles.hfResultItem} onPress={() => loadRepoFiles(item.id)}>
+                    <ThemedText type="bodyMd" numberOfLines={1}>{item.id}</ThemedText>
+                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                      {formatDownloads(item.downloads)} downloads
+                    </ThemedText>
+                  </Touchable>
+                ))
               )}
-            </Touchable>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+            </>
+          )}
+        </BottomSheetScrollView>
+      </Sheet>
 
       {/* Cloud model picker */}
-      <Modal
-        visible={cloudModelSheetVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setCloudModelSheetVisible(false)}
-      >
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Touchable
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' }}
-            onPress={() => setCloudModelSheetVisible(false)}
-          />
-          <View style={{ backgroundColor: colors.surface.low, maxHeight: '80%', paddingBottom: insets.bottom + spacing[4] }}>
-            <View style={{ width: 40, height: 2, backgroundColor: colors.surface.highest, alignSelf: 'center', marginTop: spacing[2], marginBottom: spacing[3] }} />
-
-            <View style={[styles.modelCardRow, { paddingHorizontal: spacing[4], paddingBottom: spacing[3] }]}>
-              <ThemedText type="headlineSm">Choose Model</ThemedText>
-              <Touchable onPress={() => setCloudModelSheetVisible(false)}>
-                <X size={20} color={colors.text.secondary} />
-              </Touchable>
-            </View>
-
-            <FlatList
+      <Sheet visible={cloudModelSheetVisible} onClose={() => setCloudModelSheetVisible(false)} maxHeightRatio={0.8} scrollable>
+          <BottomSheetFlatList
               data={cloudModels}
               keyExtractor={(m) => m.id}
-              style={{ maxHeight: 400 }}
+              contentContainerStyle={{ paddingBottom: insets.bottom + spacing[4] }}
+              ListHeaderComponent={
+                <View style={[styles.modelCardRow, { paddingHorizontal: spacing[4], paddingTop: spacing[3], paddingBottom: spacing[3] }]}>
+                  <ThemedText type="headlineSm">Choose Model</ThemedText>
+                </View>
+              }
               renderItem={({ item: m }) => (
                 <Touchable
                   style={styles.modelSheetItem}
@@ -1284,22 +1241,11 @@ export default function SettingsScreen() {
                 </Touchable>
               )}
             />
-          </View>
-        </View>
-      </Modal>
+      </Sheet>
 
       {/* Tune performance drawer */}
-      <Modal
-        visible={tuneModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setTuneModalVisible(false)}
-      >
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Touchable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setTuneModalVisible(false)} />
-          <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
-            <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
-
+      <Sheet visible={tuneModalVisible} onClose={() => setTuneModalVisible(false)} maxHeightRatio={0.85} scrollable>
+        <BottomSheetScrollView contentContainerStyle={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
             <ThemedText type="bodySm" color={colors.text.secondary}>PERFORMANCE</ThemedText>
 
             <View style={{ gap: spacing[1] }}>
@@ -1452,83 +1398,64 @@ export default function SettingsScreen() {
                 </ThemedText>
               </View>
             )}
-          </View>
-        </View>
-      </Modal>
+        </BottomSheetScrollView>
+      </Sheet>
 
       {/* Confirm delete drawer */}
-      <Modal
-        visible={confirmDeleteId !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setConfirmDeleteId(null)}
-      >
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Touchable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setConfirmDeleteId(null)} />
-          <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
-            <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
-            <ThemedText type="headlineSm">
-              {models.find((m) => m.id === confirmDeleteId)?.isDownloaded ? 'Delete model file?' : 'Remove model?'}
-            </ThemedText>
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              {models.find((m) => m.id === confirmDeleteId)?.isDownloaded
-                ? 'The model will be removed from your device. You can re-download it later.'
-                : 'The model will be removed from your list. You can add it again later.'}
-            </ThemedText>
-            <View style={{ flexDirection: 'row', gap: spacing[3] }}>
-              <Touchable style={styles.aiActionBtn} onPress={() => setConfirmDeleteId(null)}>
-                <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-              </Touchable>
-              <Touchable
-                style={[styles.aiActionBtn, { backgroundColor: '#e53935' }]}
-                onPress={() => {
-                  if (confirmDeleteId) deleteModel(confirmDeleteId);
-                  setConfirmDeleteId(null);
-                }}
-              >
-                <ThemedText type="labelSm" color="#fff">DELETE</ThemedText>
-              </Touchable>
-            </View>
+      <Sheet visible={confirmDeleteId !== null} onClose={() => setConfirmDeleteId(null)}>
+        <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[4] }}>
+          <ThemedText type="headlineSm">
+            {models.find((m) => m.id === confirmDeleteId)?.isDownloaded ? 'Delete model file?' : 'Remove model?'}
+          </ThemedText>
+          <ThemedText type="bodySm" color={colors.text.secondary}>
+            {models.find((m) => m.id === confirmDeleteId)?.isDownloaded
+              ? 'The model will be removed from your device. You can re-download it later.'
+              : 'The model will be removed from your list. You can add it again later.'}
+          </ThemedText>
+          <View style={{ flexDirection: 'row', gap: spacing[3] }}>
+            <Touchable style={styles.aiActionBtn} onPress={() => setConfirmDeleteId(null)}>
+              <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
+            </Touchable>
+            <Touchable
+              style={[styles.aiActionBtn, { backgroundColor: '#e53935' }]}
+              onPress={() => {
+                if (confirmDeleteId) deleteModel(confirmDeleteId);
+                setConfirmDeleteId(null);
+              }}
+            >
+              <ThemedText type="labelSm" color="#fff">DELETE</ThemedText>
+            </Touchable>
           </View>
         </View>
-      </Modal>
+      </Sheet>
       {/* Memory info drawer */}
-      <Modal
-        visible={memoryInfoVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setMemoryInfoVisible(false)}
-      >
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Touchable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setMemoryInfoVisible(false)} />
-          <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[3] }}>
-            <View style={{ width: 40, height: 4, backgroundColor: colors.surface.highest, alignSelf: 'center' }} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
-              <MemoryStick size={18} color={memoryStatus === 'wont_fit' ? '#e53935' : '#f97316'} />
-              <ThemedText type="headlineSm">
-                {memoryStatus === 'wont_fit' ? 'Too Large' : 'Memory Tight'}
+      <Sheet visible={memoryInfoVisible} onClose={() => setMemoryInfoVisible(false)}>
+        <View style={{ backgroundColor: colors.surface.low, paddingHorizontal: spacing[6], paddingTop: spacing[4], paddingBottom: spacing[10], gap: spacing[3] }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+            <MemoryStick size={18} color={memoryStatus === 'wont_fit' ? '#e53935' : '#f97316'} />
+            <ThemedText type="headlineSm">
+              {memoryStatus === 'wont_fit' ? 'Too Large' : 'Memory Tight'}
+            </ThemedText>
+          </View>
+          <ThemedText type="bodySm" color={colors.text.secondary}>
+            {memoryStatus === 'wont_fit'
+              ? 'This model needs more RAM than your device has. Loading it will likely crash the app. Try a smaller or more quantized model.'
+              : 'This model may run slowly or fail to wake up. Free up RAM by closing other apps, or try a smaller model.'}
+          </ThemedText>
+          {memoryEstimate && (
+            <View style={{ gap: spacing[1] }}>
+              {memoryEstimate.minDeviceMemoryGb != null && (
+                <ThemedText type="labelSm" color={colors.text.secondary}>
+                  Minimum RAM: {memoryEstimate.minDeviceMemoryGb} GB
+                </ThemedText>
+              )}
+              <ThemedText type="labelSm" color={colors.text.secondary}>
+                Device RAM: {memoryEstimate.totalGb.toFixed(1)} GB
               </ThemedText>
             </View>
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              {memoryStatus === 'wont_fit'
-                ? 'This model needs more RAM than your device has. Loading it will likely crash the app. Try a smaller or more quantized model.'
-                : 'This model may run slowly or fail to wake up. Free up RAM by closing other apps, or try a smaller model.'}
-            </ThemedText>
-            {memoryEstimate && (
-              <View style={{ gap: spacing[1] }}>
-                {memoryEstimate.minDeviceMemoryGb != null && (
-                  <ThemedText type="labelSm" color={colors.text.secondary}>
-                    Minimum RAM: {memoryEstimate.minDeviceMemoryGb} GB
-                  </ThemedText>
-                )}
-                <ThemedText type="labelSm" color={colors.text.secondary}>
-                  Device RAM: {memoryEstimate.totalGb.toFixed(1)} GB
-                </ThemedText>
-              </View>
-            )}
-          </View>
+          )}
         </View>
-      </Modal>
+      </Sheet>
     </ThemedView>
   );
 }

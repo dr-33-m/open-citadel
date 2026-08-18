@@ -1,14 +1,13 @@
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Check } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import {
-  Dimensions,
   Image,
-  Modal,
-  ScrollView,
   StyleSheet,
   View,
 } from "react-native";
 
+import { Sheet } from "@/components/ui/sheet";
 import { Touchable } from "@/components/ui/touchable";
 
 import { ThemedText } from "@/components/themed-text";
@@ -50,20 +49,11 @@ export function AddBooksSheet({
   const styles = React.useMemo(
     () =>
       StyleSheet.create({
-        container: { flex: 1, justifyContent: "flex-end" },
-        overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)" },
         sheet: {
+          flex: 1,
           backgroundColor: colors.surface.low,
           paddingTop: spacing[4],
           paddingBottom: spacing[10],
-          height: Dimensions.get("window").height * 0.65,
-        },
-        handle: {
-          width: 40,
-          height: 4,
-          backgroundColor: colors.surface.highest,
-          alignSelf: "center",
-          marginBottom: spacing[4],
         },
         header: {
           flexDirection: "row",
@@ -135,105 +125,96 @@ export function AddBooksSheet({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={onClose} />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <ThemedText type="headlineSm">Add Books</ThemedText>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
-              {selectedIds.size} selected
-            </ThemedText>
-          </View>
+    <Sheet visible={visible} onClose={onClose} fixedHeightRatio={0.65} scrollable>
+      <View style={styles.sheet}>
+        <View style={styles.header}>
+          <ThemedText type="headlineSm">Add Books</ThemedText>
+          <ThemedText type="labelSm" color={colors.text.secondary}>
+            {selectedIds.size} selected
+          </ThemedText>
+        </View>
 
-          <ScrollView
-            style={styles.scroll}
-            showsVerticalScrollIndicator={false}
-          >
-            {allBooks.map((book) => {
-              const isSelected = selectedIds.has(book.id);
-              return (
-                <Touchable
-                  key={book.id}
-                  style={styles.row}
-                  onPress={() => toggle(book.id)}
-                >
-                  <View style={styles.cover}>
-                    {book.coverUrl ? (
-                      <Image
-                        source={{ uri: book.coverUrl }}
-                        style={styles.coverImage}
-                      />
-                    ) : (
-                      <View style={styles.coverPlaceholder}>
-                        <ThemedText
-                          type="bodySm"
-                          color={colors.surface.highest}
-                          style={styles.initial}
-                        >
-                          {book.title.charAt(0).toUpperCase()}
-                        </ThemedText>
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.bookInfo}>
-                    <ThemedText
-                      type="bodySm"
-                      color={colors.text.primary}
-                      numberOfLines={1}
-                    >
-                      {book.title}
-                    </ThemedText>
-                    <ThemedText
-                      type="labelSm"
-                      color={colors.text.secondary}
-                      numberOfLines={1}
-                    >
-                      {book.author}
-                    </ThemedText>
-                  </View>
-                  <View
-                    style={[
-                      styles.checkCircle,
-                      {
-                        backgroundColor: isSelected
-                          ? colors.primary.default
-                          : colors.surface.mid,
-                      },
-                    ]}
+        <BottomSheetScrollView
+          style={styles.scroll}
+          showsVerticalScrollIndicator={false}
+        >
+          {allBooks.map((book) => {
+            const isSelected = selectedIds.has(book.id);
+            return (
+              <Touchable
+                key={book.id}
+                style={styles.row}
+                onPress={() => toggle(book.id)}
+              >
+                <View style={styles.cover}>
+                  {book.coverUrl ? (
+                    <Image
+                      source={{ uri: book.coverUrl }}
+                      style={styles.coverImage}
+                    />
+                  ) : (
+                    <View style={styles.coverPlaceholder}>
+                      <ThemedText
+                        type="bodySm"
+                        color={colors.surface.highest}
+                        style={styles.initial}
+                      >
+                        {book.title.charAt(0).toUpperCase()}
+                      </ThemedText>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.bookInfo}>
+                  <ThemedText
+                    type="bodySm"
+                    color={colors.text.primary}
+                    numberOfLines={1}
                   >
-                    {isSelected && (
-                      <Check size={14} color={colors.text.inverse} />
-                    )}
-                  </View>
-                </Touchable>
-              );
-            })}
-          </ScrollView>
+                    {book.title}
+                  </ThemedText>
+                  <ThemedText
+                    type="labelSm"
+                    color={colors.text.secondary}
+                    numberOfLines={1}
+                  >
+                    {book.author}
+                  </ThemedText>
+                </View>
+                <View
+                  style={[
+                    styles.checkCircle,
+                    {
+                      backgroundColor: isSelected
+                        ? colors.primary.default
+                        : colors.surface.mid,
+                    },
+                  ]}
+                >
+                  {isSelected && (
+                    <Check size={14} color={colors.text.inverse} />
+                  )}
+                </View>
+              </Touchable>
+            );
+          })}
+        </BottomSheetScrollView>
 
-          <View style={styles.footer}>
-            <GoldButton
-              label={
-                newlySelected.length > 0
-                  ? `ADD ${newlySelected.length} BOOKS`
-                  : "DONE"
-              }
-              onPress={handleConfirm}
-            />
-            <Touchable onPress={onClose} style={styles.cancel}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
-                CANCEL
-              </ThemedText>
-            </Touchable>
-          </View>
+        <View style={styles.footer}>
+          <GoldButton
+            label={
+              newlySelected.length > 0
+                ? `ADD ${newlySelected.length} BOOKS`
+                : "DONE"
+            }
+            onPress={handleConfirm}
+          />
+          <Touchable onPress={onClose} style={styles.cancel}>
+            <ThemedText type="labelSm" color={colors.text.secondary}>
+              CANCEL
+            </ThemedText>
+          </Touchable>
         </View>
       </View>
-    </Modal>
+    </Sheet>
   );
 }

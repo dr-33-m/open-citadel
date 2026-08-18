@@ -1,8 +1,8 @@
 import React from 'react';
-import { Modal, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Touchable } from '@/components/ui/touchable';
+import { Sheet } from '@/components/ui/sheet';
 import { spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 
@@ -44,27 +44,12 @@ export function EngineInfoSheet({ mode, onClose }: { mode: EngineMode | null; on
   const styles = React.useMemo(
     () =>
       StyleSheet.create({
-        root: { flex: 1, justifyContent: 'flex-end' },
-        overlay: {
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-        },
         panel: {
           backgroundColor: colors.surface.low,
           paddingHorizontal: spacing[6],
           paddingTop: spacing[4],
           paddingBottom: spacing[10],
           gap: spacing[4],
-        },
-        grabber: {
-          width: 40,
-          height: 4,
-          backgroundColor: colors.surface.highest,
-          alignSelf: 'center',
         },
         header: { gap: spacing[1] },
         points: { gap: spacing[3] },
@@ -83,31 +68,27 @@ export function EngineInfoSheet({ mode, onClose }: { mode: EngineMode | null; on
   const info = mode ? CONTENT[mode] : null;
 
   return (
-    <Modal visible={mode !== null} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Touchable style={styles.overlay} onPress={onClose} />
-        {info && (
-          <View style={styles.panel}>
-            <View style={styles.grabber} />
-            <View style={styles.header}>
-              <ThemedText type="labelSm" color={colors.primary.default}>
-                {info.label}
-              </ThemedText>
-              <ThemedText type="headlineSm">{info.persona}</ThemedText>
-            </View>
-            <View style={styles.points}>
-              {info.points.map((point) => (
-                <View key={point} style={styles.point}>
-                  <View style={styles.dot} />
-                  <ThemedText type="bodySm" color={colors.text.secondary} style={styles.pointText}>
-                    {point}
-                  </ThemedText>
-                </View>
-              ))}
-            </View>
+    <Sheet visible={mode !== null} onClose={onClose}>
+      {info && (
+        <View style={styles.panel}>
+          <View style={styles.header}>
+            <ThemedText type="labelSm" color={colors.primary.default}>
+              {info.label}
+            </ThemedText>
+            <ThemedText type="headlineSm">{info.persona}</ThemedText>
           </View>
-        )}
-      </View>
-    </Modal>
+          <View style={styles.points}>
+            {info.points.map((point) => (
+              <View key={point} style={styles.point}>
+                <View style={styles.dot} />
+                <ThemedText type="bodySm" color={colors.text.secondary} style={styles.pointText}>
+                  {point}
+                </ThemedText>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+    </Sheet>
   );
 }
