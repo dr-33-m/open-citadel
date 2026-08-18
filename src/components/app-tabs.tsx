@@ -6,11 +6,11 @@ import {
   type TabTriggerSlotProps,
 } from 'expo-router/ui';
 import {
+  ChartNoAxesGantt,
   Compass,
   Library,
   MessageSquare,
   Settings,
-  Timeline,
   type LucideIcon,
 } from 'lucide-react-native';
 import React from 'react';
@@ -36,7 +36,7 @@ export default function AppTabs() {
       <TabList asChild>
         <CustomTabBar>
           <TabTrigger name="index" href="/" asChild>
-            <TabButton icon={Timeline}>TIMELINE</TabButton>
+            <TabButton icon={ChartNoAxesGantt}>TIMELINE</TabButton>
           </TabTrigger>
           <TabTrigger name="library" href="/library" asChild>
             <TabButton icon={Library}>LIBRARY</TabButton>
