@@ -8,6 +8,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ExportImageCard } from "@/components/export/export-image-card";
@@ -559,7 +560,12 @@ export function HighlightMenu({
               )}
 
               {allTags.length > 0 && (
-                <ScrollView
+                // RNGH's ScrollView, not RN's: the sheet wraps its scrollable
+                // in a GestureDetector, and a plain nested ScrollView loses
+                // the horizontal touch stream to it — the row rendered but
+                // never scrolled. The gesture-handler-aware component
+                // registers with the same system and coordinates correctly.
+                <GestureScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   style={styles.suggestionsScroll}
@@ -596,7 +602,7 @@ export function HighlightMenu({
                       </Touchable>
                     );
                   })}
-                </ScrollView>
+                </GestureScrollView>
               )}
             </View>
 

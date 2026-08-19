@@ -1,9 +1,9 @@
 import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { ScrollView } from 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
-  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
@@ -324,6 +324,11 @@ export function NewThoughtSheet({
           )}
 
           {allTags.length > 0 && (
+            // RNGH's ScrollView, not RN's: the sheet wraps its scrollable in
+            // a GestureDetector, and a plain nested ScrollView loses the
+            // horizontal touch stream to it — the row rendered but never
+            // scrolled. The gesture-handler-aware component registers with
+            // the same system and coordinates correctly.
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
