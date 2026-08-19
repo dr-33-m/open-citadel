@@ -91,8 +91,66 @@ export async function initDb(): Promise<void> {
       })),
       'write',
     );
+  } else {
+    // Catalog drift: rows seeded from an older catalog can outlive their model.
+    // A model ID OpenRouter no longer routes ("No endpoints found") fails
+    // every request that lands on it, so on boot the table is re-synced:
+    // catalog rows take their catalog sort order (the first is the default),
+    // admin-added models keep their relative order but sink below the
+    // catalog, and explicitly retired IDs are removed.
+    const now = Date.now();
+    const catalogIds = CLOUD_MODEL_CATALOG.map((model) => model.id);
+    const existing = await db.execute('SELECT id FROM cloud_models');
+    const existingIds = new Set(existing.rows.map((row) => String(row.id)));
+
+    await db.batch(
+      [
+        {
+          // Push non-catalog rows past the catalog's range so their sort order
+          // never ties with a catalog index. The guard keeps it idempotent.
+          sql: `UPDATE cloud_models
+                SET sort_order = ? + sort_order
+                WHERE sort_order < ?
+                  AND id NOT IN (${catalogIds.map(() => '?').join(', ')})`,
+          args: [catalogIds.length, catalogIds.length, ...catalogIds],
+        },
+        ...CLOUD_MODEL_CATALOG.map((model, index) => ({
+          sql: `INSERT INTO cloud_models (
+              id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              label = excluded.label,
+              provider = excluded.provider,
+              description = excluded.description,
+              capabilities = excluded.capabilities,
+              sort_order = excluded.sort_order,
+              updated_at_ms = excluded.updated_at_ms`,
+          args: [
+            model.id,
+            model.label,
+            model.provider,
+            model.description,
+            JSON.stringify(model.capabilities),
+            index,
+            now,
+            now,
+          ],
+        })),
+        // Requests still naming a retired ID fall back to the default via
+        // resolveModelId, so removing the row heals clients too.
+        ...RETIRED_CLOUD_MODEL_IDS.filter((id) => existingIds.has(id)).map((id) => ({
+          sql: 'DELETE FROM cloud_models WHERE id = ?',
+          args: [id],
+        })),
+      ],
+      'write',
+    );
   }
 }
+
+/** Catalog IDs OpenRouter no longer routes; pruned from cloud_models on boot. */
+const RETIRED_CLOUD_MODEL_IDS = ['openai/gpt-5.2-chat'];
 
 function rowToCloudModel(row: Record<string, unknown>): CloudModelOption {
   return {

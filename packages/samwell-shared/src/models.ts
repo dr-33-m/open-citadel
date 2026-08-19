@@ -10,8 +10,8 @@ export interface CloudModelOption {
 
 export const CLOUD_MODEL_CATALOG: CloudModelOption[] = [
   {
-    id: 'openai/gpt-5.2-chat',
-    label: 'GPT-5.2 Chat',
+    id: 'openai/gpt-5.6-luna',
+    label: 'GPT-5.6 Luna',
     provider: 'OpenAI',
     description: 'Fast default model for everyday Samwell conversations.',
     capabilities: ['text', 'vision', 'tools'],
