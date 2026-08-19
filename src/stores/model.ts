@@ -53,6 +53,10 @@ const DEFAULT_INFERENCE: InferenceSettings = {
 interface ModelStore {
   models: LocalModel[];
   activeModelId: string | null;
+  /** True once loadModels() has completed at least once — distinguishes
+   * "models not loaded yet" from "no model set up", which the chat tab
+   * rendered identically (a false "Set up Samwell" on first open). */
+  modelsHydrated: boolean;
   isLoaded: boolean;
   isLoading: boolean;
   loadError: string | null;
@@ -153,6 +157,7 @@ async function ensureModelsDir() {
 export const useModelStore = create<ModelStore>((set, get) => ({
   models: [],
   activeModelId: null,
+  modelsHydrated: false,
   isLoaded: false,
   isLoading: false,
   loadError: null,
@@ -266,7 +271,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       inference.backend = 'cpu';
     }
 
-    set({ models, activeModelId: active?.id ?? null, inference, unavailableBackends });
+    set({ models, activeModelId: active?.id ?? null, inference, unavailableBackends, modelsHydrated: true });
   },
 
   async addCustomModel(name, downloadUrl) {

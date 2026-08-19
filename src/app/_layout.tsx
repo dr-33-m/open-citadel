@@ -26,6 +26,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ApprovalDialog } from '@/components/approval-dialog';
 import { runMigrations } from '@/db/migrations';
 import { useColors } from '@/hooks/use-colors';
+import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
 import { useBooksStore } from '@/stores/books';
 import { importIncomingFile } from '@/services/book-import';
@@ -76,6 +77,13 @@ export default function RootLayout() {
       .then(() => {
         setupTTSMediaSession();
         setDbReady(true);
+        // Hydrate the local model list at startup — previously only the
+        // Settings screen loaded it, so the chat tab's first open saw an
+        // empty store and claimed Samwell wasn't set up. Fire-and-forget:
+        // the store's modelsHydrated flag carries the completion signal.
+        useModelStore.getState().loadModels().catch((err) => {
+          console.error('Model hydration failed:', err);
+        });
       })
       .catch((err) => {
         console.error('Startup failed:', err);

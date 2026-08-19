@@ -37,13 +37,20 @@ export default function ChatTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { sessions, loadSessions, createSession, deleteSession } = useChatStore();
-  const { models, activeModelId } = useModelStore();
+  const { models, activeModelId, modelsHydrated } = useModelStore();
   const { samwellMode, cloudBaseUrl } = useSettingsStore();
   const [bookPickerVisible, setBookPickerVisible] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<ChatSession | null>(null);
 
   const activeModel = models.find((m) => m.id === activeModelId);
-  const hasModel = samwellMode === 'cloud' ? cloudBaseUrl.length > 0 : (activeModel?.isDownloaded ?? false);
+  // While the local model list is still hydrating we don't know whether a
+  // model is set up — claim nothing, so the first open never flashes the
+  // "Set up Samwell" prompt at an already-configured install.
+  const hasModel = samwellMode === 'cloud'
+    ? cloudBaseUrl.length > 0
+    : modelsHydrated
+      ? (activeModel?.isDownloaded ?? false)
+      : true;
 
   useEffect(() => {
     loadSessions();

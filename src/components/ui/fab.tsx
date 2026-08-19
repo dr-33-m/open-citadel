@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { PencilSparkles } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
@@ -33,12 +34,6 @@ export function Fab({ onPress, bottomOffset = 0 }: FabProps) {
       justifyContent: 'center',
       ...elevation.card,
     },
-    icon: {
-      fontSize: 28,
-      color: colors.text.inverse,
-      fontWeight: '300',
-      marginTop: -2,
-    },
   }), [colors, bottomOffset]);
 
   return (
@@ -49,7 +44,7 @@ export function Fab({ onPress, bottomOffset = 0 }: FabProps) {
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       >
-        <Text style={styles.icon}>+</Text>
+        <PencilSparkles size={24} color={colors.text.inverse} strokeWidth={1.8} />
       </LinearGradient>
     </Touchable>
   );

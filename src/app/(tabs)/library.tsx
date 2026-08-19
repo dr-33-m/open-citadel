@@ -79,6 +79,9 @@ export default function LibraryScreen() {
     string | null
   >(null);
   const [bookCollectionIds, setBookCollectionIds] = useState<string[]>([]);
+  // The store starts empty (no directory, no books) — until the boot sequence
+  // below has loaded it, "no data yet" must not be rendered as "not set up".
+  const [booted, setBooted] = useState(false);
   const readingScrollRef = useRef<ScrollView>(null);
 
   const { collections, loadCollections, createCollection } =
@@ -108,13 +111,24 @@ export default function LibraryScreen() {
 
   useEffect(() => {
     const boot = async () => {
-      // iOS: ensure the owned library folder exists and is the scan root.
-      if (Platform.OS === "ios") await initLibrary();
-      await loadDirectoryUri();
-      await loadBooks();
-      await hydrateSyncState();
-      // iOS: cold-start scan so anything dropped in via the Files app is imported.
-      if (Platform.OS === "ios") await syncBooks();
+      try {
+        // iOS: ensure the owned library folder exists and is the scan root.
+        if (Platform.OS === "ios") await initLibrary();
+        await loadDirectoryUri();
+        await loadBooks();
+        await hydrateSyncState();
+        // Enough state has loaded to decide empty vs configured — hand off
+        // before the iOS cold-start scan, which flips sync.status to running
+        // and shows its own indicator.
+        setBooted(true);
+        // iOS: cold-start scan so anything dropped in via the Files app is imported.
+        if (Platform.OS === "ios") await syncBooks();
+      } catch (err) {
+        console.error("Library boot failed:", err);
+        // Never strand the user on the spinner — the empty state's own
+        // gating still applies on top of booted.
+        setBooted(true);
+      }
     };
     boot();
   }, []);
@@ -160,9 +174,30 @@ export default function LibraryScreen() {
   const isIOS = Platform.OS === "ios";
   // iOS always has an owned folder set, so gate on whether any books exist.
   // Android gates on whether a folder has been picked (unchanged behavior).
-  const showEmptyState = isIOS
-    ? allBooks.length === 0 && sync.status !== "running" && !isLoading
-    : !booksDirectoryUri && !isLoading;
+  // Both require boot to have finished — the store's initial empty state is
+  // "not loaded yet", not "not configured".
+  const showEmptyState = !booted
+    ? false
+    : isIOS
+      ? allBooks.length === 0 && sync.status !== "running" && !isLoading
+      : !booksDirectoryUri && !isLoading;
+
+  // Boot-in-progress: a neutral spinner instead of either branch, so neither
+  // the setup prompt nor an empty library scaffold can flash.
+  if (!booted) {
+    return (
+      <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
+        <ScreenHeader
+          title="Library"
+          subtitle="See what you're reading. Plan what's next."
+          align="left"
+        />
+        <View style={styles.bootIndicator}>
+          <ActivityIndicator color={colors.primary.default} size="small" />
+        </View>
+      </ThemedView>
+    );
+  }
 
   if (showEmptyState) {
     return (
@@ -460,6 +495,11 @@ function useStyles(colors: ReturnType<typeof useColors>) {
           justifyContent: "center",
           gap: spacing[3],
           paddingVertical: spacing[2],
+        },
+        bootIndicator: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
         },
         dotsRow: {
           flexDirection: "row",

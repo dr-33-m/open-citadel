@@ -43,7 +43,7 @@ export default function ChatSessionScreen() {
     sendMessage,
     stopGeneration,
   } = useChatStore();
-  const { isLoaded, isLoading, loadError, activeModelId, models, initContext } =
+  const { isLoaded, isLoading, loadError, activeModelId, models, modelsHydrated, initContext } =
     useModelStore();
   const { samwellMode, cloudBaseUrl } = useSettingsStore();
 
@@ -53,7 +53,14 @@ export default function ChatSessionScreen() {
 
   const activeModel = models.find((m) => m.id === activeModelId);
   const modelReady = samwellMode === 'cloud' ? cloudBaseUrl.length > 0 : isLoaded;
-  const modelDownloaded = samwellMode === 'cloud' ? true : (activeModel?.isDownloaded ?? false);
+  // While the model list is still hydrating we don't know whether a model is
+  // downloaded — claim nothing so the first open never tells an
+  // already-configured install to "set up Samwell".
+  const modelDownloaded = samwellMode === 'cloud'
+    ? true
+    : modelsHydrated
+      ? (activeModel?.isDownloaded ?? false)
+      : true;
 
   useEffect(() => {
     if (id) openSession(id);
