@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@openrouter/sdk@0.13.20':
-    hash: 36262f52d7aad39eca9eed6a56ff58445e96e9bb3d3b6d1872a799f838d7793b
+    hash: ee0dc6a69dc1a10e61d907405556462916ff91db1913c4eb2926c60b4927b98c
     path: patches/@openrouter__sdk@0.13.20.patch
   react-native-gesture-handler@2.30.0:
     hash: a6f5aae2e3562f0b107581c8caa4e908acb91aa61e527541b8ec768fbf44bf65
@@ -7482,7 +7482,7 @@ snapshots:
 
   '@nolyfill/is-core-module@1.0.39': {}
 
-  '@openrouter/sdk@0.13.20(patch_hash=36262f52d7aad39eca9eed6a56ff58445e96e9bb3d3b6d1872a799f838d7793b)':
+  '@openrouter/sdk@0.13.20(patch_hash=ee0dc6a69dc1a10e61d907405556462916ff91db1913c4eb2926c60b4927b98c)':
     dependencies:
       zod: 4.4.3
 
@@ -7970,7 +7970,7 @@ snapshots:
 
   '@tanstack/ai-openrouter@0.15.8(@tanstack/ai@0.40.0)':
     dependencies:
-      '@openrouter/sdk': 0.13.20(patch_hash=36262f52d7aad39eca9eed6a56ff58445e96e9bb3d3b6d1872a799f838d7793b)
+      '@openrouter/sdk': 0.13.20(patch_hash=ee0dc6a69dc1a10e61d907405556462916ff91db1913c4eb2926c60b4927b98c)
       '@tanstack/ai': 0.40.0
       '@tanstack/ai-utils': 0.3.1
 

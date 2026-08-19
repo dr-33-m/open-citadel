@@ -1,8 +1,8 @@
 diff --git a/esm/lib/matchers.js b/esm/lib/matchers.js
-index c047ccd3dc49078450defb6cb1701a63d98ee17f..4ccdc2fa5884fe06ab8f7fb60c77878801925575 100644
+index c047ccd3dc49078450defb6cb1701a63d98ee17f..04b08691665592a6806801fc3bdde8da9da29041 100644
 --- a/esm/lib/matchers.js
 +++ b/esm/lib/matchers.js
-@@ -192,6 +192,22 @@ function safeParseResponse(rawValue, fn, errorMessage, httpMeta) {
+@@ -192,6 +192,38 @@ function safeParseResponse(rawValue, fn, errorMessage, httpMeta) {
          return OK(fn(rawValue));
      }
      catch (err) {
@@ -11,12 +11,28 @@ index c047ccd3dc49078450defb6cb1701a63d98ee17f..4ccdc2fa5884fe06ab8f7fb60c778788
 +        // WHICH field the Speakeasy-generated schema disagreed with.
 +        try {
 +            const issues = err?.issues ?? err?.errors;
++            const status = httpMeta?.response?.status;
++            const parts = [];
 +            if (Array.isArray(issues) && issues.length > 0) {
-+                const summary = issues
++                parts.push(issues
 +                    .slice(0, 10)
 +                    .map((i) => `${(i.path ?? []).join('.') || '(root)'}: ${i.message}`)
-+                    .join('; ');
-+                console.error(`[openrouter-sdk] response validation detail: ${summary}`);
++                    .join('; '));
++            }
++            // For error-status responses, the body is the provider/API error
++            // (not user content) — log it so the REAL failure is visible
++            // instead of being swallowed by this validation error.
++            if (typeof status === "number" && status >= 400) {
++                parts.push(`status=${status}`);
++                const bodyText = typeof httpMeta?.body === "string"
++                    ? httpMeta.body.slice(0, 500)
++                    : undefined;
++                if (bodyText) {
++                    parts.push(`body=${bodyText}`);
++                }
++            }
++            if (parts.length > 0) {
++                console.error(`[openrouter-sdk] response validation detail: ${parts.join(' | ')}`);
 +            }
 +        }
 +        catch {
@@ -91,6 +107,231 @@ index a00c15adf05ef278488115c3a8b42be6c4addb8d..bfd3c3acdfe8a1fc968bfd33c6099e9d
  }).transform((v) => {
      return remap$(v, {
          "upstream_inference_completions_cost": "upstreamInferenceCompletionsCost",
+diff --git a/esm/models/errors/badgatewayresponseerror.js b/esm/models/errors/badgatewayresponseerror.js
+index 481fb7336ba02f068b5306a14d610c725f39e08f..16d8a434822707cfa778afa82d0fff91d199394a 100644
+--- a/esm/models/errors/badgatewayresponseerror.js
++++ b/esm/models/errors/badgatewayresponseerror.js
+@@ -30,8 +30,8 @@ export const BadGatewayResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/badrequestresponseerror.js b/esm/models/errors/badrequestresponseerror.js
+index ac3e8dcda520c51f34ead2854a440147c17ed1b4..dc515280ad275391b853ddba46f3d4dbf4b1e82d 100644
+--- a/esm/models/errors/badrequestresponseerror.js
++++ b/esm/models/errors/badrequestresponseerror.js
+@@ -30,8 +30,8 @@ export const BadRequestResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/conflictresponseerror.js b/esm/models/errors/conflictresponseerror.js
+index c770348e035b127e0404b324b4f243d40ac91118..283842432f5a5357b58d1d2f0fe245c8844ba136 100644
+--- a/esm/models/errors/conflictresponseerror.js
++++ b/esm/models/errors/conflictresponseerror.js
+@@ -30,8 +30,8 @@ export const ConflictResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/edgenetworktimeoutresponseerror.js b/esm/models/errors/edgenetworktimeoutresponseerror.js
+index 8ccb3badc20231185927ad7ccefe3d1cd0e5ac8c..54444f4eef4fee53388c2ccf8ae5a37598e114aa 100644
+--- a/esm/models/errors/edgenetworktimeoutresponseerror.js
++++ b/esm/models/errors/edgenetworktimeoutresponseerror.js
+@@ -30,8 +30,8 @@ export const EdgeNetworkTimeoutResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/forbiddenresponseerror.js b/esm/models/errors/forbiddenresponseerror.js
+index 9b160fb5a897599299432fa3b4c6aeca2284603c..08996ba84a1d550512f1ed12ec520db71fd5dc76 100644
+--- a/esm/models/errors/forbiddenresponseerror.js
++++ b/esm/models/errors/forbiddenresponseerror.js
+@@ -30,8 +30,8 @@ export const ForbiddenResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/internalserverresponseerror.js b/esm/models/errors/internalserverresponseerror.js
+index cb3f6612c82cb3152ec26f5edca66d6b5bc4a2ea..24ae7f19c9e007002a1ddc2a7e261da2b60a0c56 100644
+--- a/esm/models/errors/internalserverresponseerror.js
++++ b/esm/models/errors/internalserverresponseerror.js
+@@ -30,8 +30,8 @@ export const InternalServerResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/notfoundresponseerror.js b/esm/models/errors/notfoundresponseerror.js
+index 87af5188b91350ec6e94252643d7d0bff42f1ebe..c92a7c17d86196afa0f4b220ebbc89eb6546e2a4 100644
+--- a/esm/models/errors/notfoundresponseerror.js
++++ b/esm/models/errors/notfoundresponseerror.js
+@@ -30,8 +30,8 @@ export const NotFoundResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/payloadtoolargeresponseerror.js b/esm/models/errors/payloadtoolargeresponseerror.js
+index b4721c853d91f7c5901a58f69a854d811cee6dee..e3c9e6df5278466859ce7cb0d33031834ea2cbe4 100644
+--- a/esm/models/errors/payloadtoolargeresponseerror.js
++++ b/esm/models/errors/payloadtoolargeresponseerror.js
+@@ -30,8 +30,8 @@ export const PayloadTooLargeResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/paymentrequiredresponseerror.js b/esm/models/errors/paymentrequiredresponseerror.js
+index 87d9a02f2c34bdb6c0e8ae7679a4b8a09833f77d..7da41ea955fb0d16f3a5bd33348e37bee95417ea 100644
+--- a/esm/models/errors/paymentrequiredresponseerror.js
++++ b/esm/models/errors/paymentrequiredresponseerror.js
+@@ -30,8 +30,8 @@ export const PaymentRequiredResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/provideroverloadedresponseerror.js b/esm/models/errors/provideroverloadedresponseerror.js
+index 7439d13fb583d5865c0642972b6dc2df45165829..986cfbccac54955c5014910df62397c5620f8d2f 100644
+--- a/esm/models/errors/provideroverloadedresponseerror.js
++++ b/esm/models/errors/provideroverloadedresponseerror.js
+@@ -30,8 +30,8 @@ export const ProviderOverloadedResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/requesttimeoutresponseerror.js b/esm/models/errors/requesttimeoutresponseerror.js
+index 6271e6606e82ce28eb4de0398e59813cb55f702e..934638df5956ce54600756346dd5f302240f2480 100644
+--- a/esm/models/errors/requesttimeoutresponseerror.js
++++ b/esm/models/errors/requesttimeoutresponseerror.js
+@@ -30,8 +30,8 @@ export const RequestTimeoutResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/serviceunavailableresponseerror.js b/esm/models/errors/serviceunavailableresponseerror.js
+index d9f8e727a7c4819ca843351e29649ff2b25281aa..557f570b62871298bb57dcc8c4ae756978ca59a6 100644
+--- a/esm/models/errors/serviceunavailableresponseerror.js
++++ b/esm/models/errors/serviceunavailableresponseerror.js
+@@ -30,8 +30,8 @@ export const ServiceUnavailableResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/toomanyrequestsresponseerror.js b/esm/models/errors/toomanyrequestsresponseerror.js
+index c6082a05d0ea93177da6c26c297c6bb0fa012a3e..b3a3c356f85f3d4c656fe375ba06186b12cdc0f6 100644
+--- a/esm/models/errors/toomanyrequestsresponseerror.js
++++ b/esm/models/errors/toomanyrequestsresponseerror.js
+@@ -30,8 +30,8 @@ export const TooManyRequestsResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/unauthorizedresponseerror.js b/esm/models/errors/unauthorizedresponseerror.js
+index 927c7c5f694714684d5e501607b4b2f5ea2f0c2f..a27d27837797b8470a0cd9529031592a42af0c17 100644
+--- a/esm/models/errors/unauthorizedresponseerror.js
++++ b/esm/models/errors/unauthorizedresponseerror.js
+@@ -30,8 +30,8 @@ export const UnauthorizedResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
+diff --git a/esm/models/errors/unprocessableentityresponseerror.js b/esm/models/errors/unprocessableentityresponseerror.js
+index bcec1ab325df21a0a355330fa7fdfa869f05bb3f..45778c097759b7aaac9359ae186dcccaf81b8de9 100644
+--- a/esm/models/errors/unprocessableentityresponseerror.js
++++ b/esm/models/errors/unprocessableentityresponseerror.js
+@@ -30,8 +30,8 @@ export const UnprocessableEntityResponseError$inboundSchema = z.object({
+     openrouter_metadata: z.nullable(z.record(z.string(), z.nullable(z.any())))
+         .optional(),
+     user_id: z.nullable(z.string()).optional(),
+-    request$: z.custom(x => x instanceof Request),
+-    response$: z.custom(x => x instanceof Response),
++    request$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
++    response$: z.any(), // Patched (open-citadel): strict instanceof failed in some environments, masking the real API error
+     body$: z.string(),
+ })
+     .transform((v) => {
 diff --git a/esm/models/operations/sendchatcompletionrequest.js b/esm/models/operations/sendchatcompletionrequest.js
 index 0decd5bd1d3980c2580b25920dcad49da64b8545..ac60679fd9dfed624f5c0a021bdabd825bffabbb 100644
 --- a/esm/models/operations/sendchatcompletionrequest.js
