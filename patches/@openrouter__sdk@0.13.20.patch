@@ -1,3 +1,30 @@
+diff --git a/esm/lib/matchers.js b/esm/lib/matchers.js
+index c047ccd3dc49078450defb6cb1701a63d98ee17f..4ccdc2fa5884fe06ab8f7fb60c77878801925575 100644
+--- a/esm/lib/matchers.js
++++ b/esm/lib/matchers.js
+@@ -192,6 +192,22 @@ function safeParseResponse(rawValue, fn, errorMessage, httpMeta) {
+         return OK(fn(rawValue));
+     }
+     catch (err) {
++        // Patched (open-citadel): surface the zod issue paths in server logs.
++        // Without this, "Response validation failed" tells you nothing about
++        // WHICH field the Speakeasy-generated schema disagreed with.
++        try {
++            const issues = err?.issues ?? err?.errors;
++            if (Array.isArray(issues) && issues.length > 0) {
++                const summary = issues
++                    .slice(0, 10)
++                    .map((i) => `${(i.path ?? []).join('.') || '(root)'}: ${i.message}`)
++                    .join('; ');
++                console.error(`[openrouter-sdk] response validation detail: ${summary}`);
++            }
++        }
++        catch {
++            /* logging must never break error handling */
++        }
+         return ERR(new ResponseValidationError(errorMessage, {
+             cause: err,
+             rawValue,
 diff --git a/esm/models/chatresult.d.ts b/esm/models/chatresult.d.ts
 index 6c8e934adf944ff930240c0420e8ebf8f30fc338..09c1ddb04d82c8d2f5805dedbfb482945a231a58 100644
 --- a/esm/models/chatresult.d.ts
@@ -64,3 +91,33 @@ index a00c15adf05ef278488115c3a8b42be6c4addb8d..bfd3c3acdfe8a1fc968bfd33c6099e9d
  }).transform((v) => {
      return remap$(v, {
          "upstream_inference_completions_cost": "upstreamInferenceCompletionsCost",
+diff --git a/esm/models/operations/sendchatcompletionrequest.js b/esm/models/operations/sendchatcompletionrequest.js
+index 0decd5bd1d3980c2580b25920dcad49da64b8545..ac60679fd9dfed624f5c0a021bdabd825bffabbb 100644
+--- a/esm/models/operations/sendchatcompletionrequest.js
++++ b/esm/models/operations/sendchatcompletionrequest.js
+@@ -25,6 +25,17 @@ export function sendChatCompletionRequestRequestToJSON(sendChatCompletionRequest
+     return JSON.stringify(SendChatCompletionRequestRequest$outboundSchema.parse(sendChatCompletionRequestRequest));
+ }
+ /** @internal */
++// Patched (open-citadel): the trailing z.any() is a deliberate permissive
++// fallback. Speakeasy's strict inbound schema has rejected legitimate
++// OpenRouter 200 bodies in production twice already (system_fingerprint
++// required-nullable, cost_details split fields required); some
++// model/provider responses still trip other fields we have not hit yet.
++// When the strict ChatResult branch matches, it applies the snake->camel
++// remap as before; when it does not, the raw body passes through — safe
++// because consumers read the response defensively (choices[0].message.content
++// has identical keys, and the usage/cost extractor accepts both key
++// families). matchers.js logs the zod issue paths either way, so a rejected
++// shape is still visible in server logs.
+ export const SendChatCompletionRequestResponse$inboundSchema = z.union([
+     models.ChatResult$inboundSchema,
+     z.custom(x => x instanceof ReadableStream)
+@@ -39,6 +50,7 @@ export const SendChatCompletionRequestResponse$inboundSchema = z.union([
+             };
+         });
+     }),
++    z.any(),
+ ]);
+ export function sendChatCompletionRequestResponseFromJSON(jsonString) {
+     return safeParse(jsonString, (x) => SendChatCompletionRequestResponse$inboundSchema.parse(JSON.parse(x)), `Failed to parse 'SendChatCompletionRequestResponse' from JSON`);
