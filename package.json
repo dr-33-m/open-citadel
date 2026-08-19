@@ -88,7 +88,8 @@
       "@dr33m/react-native-litert-lm"
     ],
     "patchedDependencies": {
-      "react-native-gesture-handler@2.30.0": "patches/react-native-gesture-handler@2.30.0.patch"
+      "react-native-gesture-handler@2.30.0": "patches/react-native-gesture-handler@2.30.0.patch",
+      "@openrouter/sdk@0.13.20": "patches/@openrouter__sdk@0.13.20.patch"
     }
   }
 }

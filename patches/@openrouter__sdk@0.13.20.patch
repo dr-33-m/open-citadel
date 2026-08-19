@@ -1,0 +1,66 @@
+diff --git a/esm/models/chatresult.d.ts b/esm/models/chatresult.d.ts
+index 6c8e934adf944ff930240c0420e8ebf8f30fc338..09c1ddb04d82c8d2f5805dedbfb482945a231a58 100644
+--- a/esm/models/chatresult.d.ts
++++ b/esm/models/chatresult.d.ts
+@@ -38,7 +38,7 @@ export type ChatResult = {
+     /**
+      * System fingerprint
+      */
+-    systemFingerprint: string | null;
++    systemFingerprint?: string | null | undefined;
+     /**
+      * Token usage statistics
+      */
+diff --git a/esm/models/chatresult.js b/esm/models/chatresult.js
+index 6c5464feee68d4ad51217062d30bbb52c48731ff..bb5d823c2b386a4dd6e42dc75fb3186e0275c1f0 100644
+--- a/esm/models/chatresult.js
++++ b/esm/models/chatresult.js
+@@ -23,7 +23,10 @@ export const ChatResult$inboundSchema = z
+     object: ChatResultObject$inboundSchema,
+     openrouter_metadata: OpenRouterMetadata$inboundSchema.optional(),
+     service_tier: z.nullable(z.string()).optional(),
+-    system_fingerprint: z.nullable(z.string()),
++    // Patched (open-citadel): OpenRouter responses frequently omit this field
++    // entirely (most providers never send it), and the required-nullable here
++    // rejected those 200 responses with "Response validation failed".
++    system_fingerprint: z.nullable(z.string()).optional(),
+     usage: ChatUsage$inboundSchema.optional(),
+ }).transform((v) => {
+     return remap$(v, {
+diff --git a/esm/models/costdetails.d.ts b/esm/models/costdetails.d.ts
+index 1773e9f59844d2756fdf9e344e4de9913af569ad..2969d57a06769e3674449b455b248637e4b0fe31 100644
+--- a/esm/models/costdetails.d.ts
++++ b/esm/models/costdetails.d.ts
+@@ -5,9 +5,9 @@ import { SDKValidationError } from "./errors/sdkvalidationerror.js";
+  * Breakdown of upstream inference costs
+  */
+ export type CostDetails = {
+-    upstreamInferenceCompletionsCost: number;
++    upstreamInferenceCompletionsCost?: number | undefined;
+     upstreamInferenceCost?: number | null | undefined;
+-    upstreamInferencePromptCost: number;
++    upstreamInferencePromptCost?: number | undefined;
+ };
+ /** @internal */
+ export declare const CostDetails$inboundSchema: z.ZodType<CostDetails, unknown>;
+diff --git a/esm/models/costdetails.js b/esm/models/costdetails.js
+index a00c15adf05ef278488115c3a8b42be6c4addb8d..bfd3c3acdfe8a1fc968bfd33c6099e9d708a0071 100644
+--- a/esm/models/costdetails.js
++++ b/esm/models/costdetails.js
+@@ -6,11 +6,14 @@ import * as z from "zod/v4";
+ import { remap as remap$ } from "../lib/primitives.js";
+ import { safeParse } from "../lib/schemas.js";
+ /** @internal */
++// Patched (open-citadel): the split prompt/completions cost fields are only
++// returned by some providers; OpenRouter's documented cost_details shape is
++// { upstream_inference_cost } alone, which the required fields here rejected.
+ export const CostDetails$inboundSchema = z
+     .object({
+-    upstream_inference_completions_cost: z.number(),
++    upstream_inference_completions_cost: z.number().optional(),
+     upstream_inference_cost: z.nullable(z.number()).optional(),
+-    upstream_inference_prompt_cost: z.number(),
++    upstream_inference_prompt_cost: z.number().optional(),
+ }).transform((v) => {
+     return remap$(v, {
+         "upstream_inference_completions_cost": "upstreamInferenceCompletionsCost",
