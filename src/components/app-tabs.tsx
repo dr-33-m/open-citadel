@@ -15,12 +15,25 @@ import {
 } from 'lucide-react-native';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useColors } from '@/hooks/use-colors';
-import { elevation, iconSize, spacing } from '@/constants/theme';
+import { easingCss, elevation, iconSize, motion, spacing } from '@/constants/theme';
+
+/**
+ * Selection is a two-state flip, so it's a CSS transition rather than a
+ * worklet: no shared value, no `useAnimatedStyle`, nothing per-instance to
+ * re-attach when the bar re-renders. Reanimated still runs it on the UI
+ * thread — it just derives the animation from the style change itself.
+ */
+const FADE = {
+  transitionProperty: 'opacity',
+  transitionDuration: `${motion.base}ms`,
+  transitionTimingFunction: easingCss,
+} as const;
 
 export default function AppTabs() {
   return (
@@ -82,7 +95,7 @@ function TabButton({
   ...props
 }: TabTriggerSlotProps & { icon?: LucideIcon; featured?: boolean }) {
   const colors = useColors();
-  const color = isFocused ? colors.primary.default : colors.text.secondary;
+
   const styles = React.useMemo(
     () =>
       StyleSheet.create({
@@ -92,40 +105,68 @@ function TabButton({
           justifyContent: 'center',
           paddingVertical: spacing[3],
         },
+        iconBox: {
+          width: iconSize.nav,
+          height: iconSize.nav,
+        },
+        iconLayer: {
+          ...StyleSheet.absoluteFillObject,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
       }),
     [],
   );
 
   /**
    * The Compass cell is a plain tab until it's the active one. Only then does it
-   * become architecturally different: side dividers and a gold top rule. The bar
-   * row stretches every cell to its own height by default, so this frame just
-   * has to paint its own background and borders — no padding tricks needed to
-   * reach the bar's edges, unlike the old edge-to-edge bar which needed negative
-   * margins to escape its own screen-level padding.
+   * become architecturally different: side dividers and a gold top rule. Both
+   * the frame and the plain layout coexist (the frame is an absolute overlay,
+   * not a swapped style), so selecting Compass fades the frame in rather than
+   * popping it — the bar row still stretches every cell to its own height by
+   * default, so this only ever has to paint its own background and borders.
    */
-  const showFrame = featured && isFocused;
-  const frame = {
-    backgroundColor: colors.surface.mid,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: colors.outline.variant,
-    borderRightColor: colors.outline.variant,
-    borderTopWidth: 2,
-    borderTopColor: colors.primary.default,
-  };
-
+  const frame = React.useMemo(
+    () => ({
+      backgroundColor: colors.surface.mid,
+      borderLeftWidth: StyleSheet.hairlineWidth,
+      borderRightWidth: StyleSheet.hairlineWidth,
+      borderLeftColor: colors.outline.variant,
+      borderRightColor: colors.outline.variant,
+      borderTopWidth: 2,
+      borderTopColor: colors.primary.default,
+    }),
+    [colors],
+  );
   const label = typeof children === 'string' ? children : undefined;
 
   return (
     <Touchable
       {...props}
+      haptic="select"
       accessibilityRole="tab"
       accessibilityLabel={label}
       accessibilityState={{ selected: isFocused }}
-      style={showFrame ? [styles.tabButton, frame] : styles.tabButton}
+      style={styles.tabButton}
     >
-      {Icon && <Icon size={iconSize.nav} color={color} strokeWidth={2} />}
+      {featured && (
+        <Animated.View
+          style={[StyleSheet.absoluteFillObject, frame, FADE, { opacity: isFocused ? 1 : 0 }]}
+        />
+      )}
+      {/* Two stacked icon layers crossfading tint, rather than animating the
+          `color` prop directly — reliable across icon libraries since it never
+          depends on the SVG accepting an animated prop. */}
+      {Icon && (
+        <View style={styles.iconBox}>
+          <Animated.View style={[styles.iconLayer, FADE, { opacity: isFocused ? 0 : 1 }]}>
+            <Icon size={iconSize.nav} color={colors.text.secondary} strokeWidth={2} />
+          </Animated.View>
+          <Animated.View style={[styles.iconLayer, FADE, { opacity: isFocused ? 1 : 0 }]}>
+            <Icon size={iconSize.nav} color={colors.primary.default} strokeWidth={2} />
+          </Animated.View>
+        </View>
+      )}
     </Touchable>
   );
 }

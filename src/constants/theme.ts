@@ -1,3 +1,5 @@
+import { Easing } from 'react-native-reanimated';
+
 // ── Colors: Obsidian & Gold (dark) ───────────────────────────────────
 export const darkColors = {
   surface: {
@@ -155,12 +157,22 @@ export const spacing = {
  * nav cell. Nothing else earns it.
  */
 export const elevation = {
+  /**
+   * The hero surface: the currently-reading card, the floating nav bar. One
+   * step heavier than `soft` so it reads as the thing in front, but still a
+   * near-even ambient shadow rather than a hard directional drop.
+   */
   card: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 30,
-    elevation: 4,
+    boxShadow: '0 4px 18px rgba(0, 0, 0, 0.20)',
+  },
+  /**
+   * Repeated items: book covers, timeline cards. Small offset and low opacity
+   * so a shelf or a feed of them reads as one calm surface with a little
+   * weight, not a field of floating tiles. Even on every side by design —
+   * the light is ambient, not a spotlight.
+   */
+  soft: {
+    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.16)',
   },
 } as const;
 
@@ -177,6 +189,23 @@ export const motion = {
   base: 180,
   slow: 250,
 } as const;
+
+/** The one curve every animation in the app uses — decelerating into rest,
+ * never overshooting. This is what "no spring physics" means in practice. */
+export const easing = Easing.out(Easing.cubic);
+
+/** The same intent as `easing`, for Reanimated's CSS transitions. Use this
+ * for two-state changes (press, focus, toggle) — a CSS transition runs on the
+ * UI thread with no worklet and no shared value, which a plain state flip
+ * should never need.
+ *
+ * A predefined keyword on purpose. `transitionTimingFunction` only parses the
+ * CSS keywords and throws at render time on a `'cubic-bezier(...)'` string;
+ * the `cubicBezier()` helper object clears that but then collides with React
+ * Native's own `ViewStyle`, which types these props as strings, so it can't
+ * sit in a style array or `StyleSheet.create`. Over a 120–180ms fade the
+ * difference from a custom bezier isn't perceptible. */
+export const easingCss = 'ease-out';
 
 // ── Layout ───────────────────────────────────────────────────────────
 export const MaxContentWidth = 800;

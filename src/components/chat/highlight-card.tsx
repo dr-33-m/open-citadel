@@ -6,7 +6,7 @@ import { Touchable } from '@/components/ui/touchable';
 import { eq } from 'drizzle-orm';
 
 import { ThemedText } from '@/components/themed-text';
-import { spacing } from '@/constants/theme';
+import { elevation, spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { db } from '@/db/client';
 import { books, highlights, thoughts } from '@/db/schema';
@@ -165,6 +165,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     marginVertical: spacing[1],
     gap: spacing[1],
+    ...elevation.soft,
   },
   quoteText: {
     fontStyle: 'italic',

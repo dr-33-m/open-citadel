@@ -12,7 +12,8 @@ import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
 import { spacing } from '@/constants/theme';
 import { db } from '@/db/client';
-import { highlights, thoughts } from '@/db/schema';
+import { readingDays } from '@/db/schema';
+import { didReadOn, readingDotStrength } from '@/services/reading-day';
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -69,26 +70,27 @@ export function CalendarPicker({
   const [viewYear, setViewYear] = useState(initialMonth.year);
   const [viewMonth, setViewMonth] = useState(initialMonth.month);
 
-  // Activity counts per day for the current view month: { 'YYYY-MM-DD': count }
-  const [activityCounts, setActivityCounts] = useState<Record<string, number>>({});
+  // How much was actually read per day this month, as a fraction of a book:
+  // { 'YYYY-MM-DD': 0.037 }. Summed across books, so an hour split between two
+  // of them still reads as one solid day.
+  const [readingByDay, setReadingByDay] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!legacyMode) return; // activity dots only in timeline mode
     const monthStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
-    const prefix = `${monthStr}%`;
 
-    Promise.all([
-      db.select({ createdAt: highlights.createdAt }).from(highlights).where(like(highlights.createdAt, prefix)),
-      db.select({ createdAt: thoughts.createdAt }).from(thoughts).where(like(thoughts.createdAt, prefix)),
-    ]).then(([hRows, tRows]) => {
-      const counts: Record<string, number> = {};
-      [...hRows, ...tRows].forEach(({ createdAt }) => {
-        const day = createdAt.split('T')[0];
-        counts[day] = (counts[day] ?? 0) + 1;
-      });
-      setActivityCounts(counts);
-    }).catch(() => {});
-  }, [viewYear, viewMonth]);
+    db.select({ day: readingDays.day, progressDelta: readingDays.progressDelta })
+      .from(readingDays)
+      .where(like(readingDays.day, `${monthStr}%`))
+      .then((rows) => {
+        const totals: Record<string, number> = {};
+        rows.forEach(({ day, progressDelta }) => {
+          totals[day] = (totals[day] ?? 0) + progressDelta;
+        });
+        setReadingByDay(totals);
+      })
+      .catch(() => {});
+  }, [viewYear, viewMonth, legacyMode]);
 
   const styles = React.useMemo(() => StyleSheet.create({
     sheet: {
@@ -218,9 +220,9 @@ export function CalendarPicker({
                 (minDate ? dateStr < minDate : false) ||
                 (maxDate ? dateStr > maxDate : false) ||
                 (legacyMode ? dateStr > today : false);
-              const count = activityCounts[dateStr] ?? 0;
-              const dotOpacity = count === 0 ? 1 : Math.max(0.2, Math.min(count / 10, 1));
-              const dotColor = count === 0 ? '#e53935' : colors.primary.default;
+              const read = readingByDay[dateStr] ?? 0;
+              const dotOpacity = readingDotStrength(read);
+              const dotColor = didReadOn(read) ? colors.primary.default : '#e53935';
 
               return (
                 <Touchable

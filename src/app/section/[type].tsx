@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 
+import { SyncBadge } from "@/components/ui/sync-badge";
 import { Touchable } from "@/components/ui/touchable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -28,7 +29,7 @@ import { EditTitleSheet } from "@/components/library/edit-title-sheet";
 import { NewCollectionPrompt } from "@/components/library/new-collection-prompt";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { fontFamily, spacing } from "@/constants/theme";
+import { elevation, fontFamily, spacing } from "@/constants/theme";
 import type { books as booksTable } from "@/db/schema";
 import { useColors } from "@/hooks/use-colors";
 import {
@@ -284,6 +285,7 @@ export default function SectionScreen() {
             onPress={() => openReader(book.id)}
             onLongPress={() => setActionBook(book)}
           >
+            <View style={styles.coverShadow}>
             <View style={styles.cover}>
               {book.coverUrl ? (
                 <Image
@@ -309,11 +311,8 @@ export default function SectionScreen() {
                   </ThemedText>
                 </View>
               )}
-              {!book.filePath && (
-                <View style={styles.syncBadge}>
-                  <RefreshCw size={14} color={colors.text.secondary} />
-                </View>
-              )}
+              {!book.filePath && <SyncBadge />}
+            </View>
             </View>
             <ThemedText
               type="bodySm"
@@ -454,18 +453,13 @@ function useSectionStyles(colors: ReturnType<typeof useColors>) {
         scroll: { flex: 1 },
         // Books grid
         bookItem: { width: ITEM_WIDTH, gap: spacing[2] },
+        // The shadow lives on a wrapper because `cover` clips its contents,
+        // and a clipping node clips its own shadow away too.
+        coverShadow: { ...elevation.soft },
         cover: {
           aspectRatio: 2 / 3,
           backgroundColor: colors.surface.low,
           overflow: "hidden",
-        },
-        syncBadge: {
-          position: "absolute",
-          top: spacing[2],
-          left: spacing[2],
-          backgroundColor: colors.surface.base,
-          borderRadius: 11,
-          padding: 3,
         },
         coverImage: { width: "100%", height: "100%" },
         coverPlaceholder: {
@@ -500,6 +494,7 @@ function useSectionStyles(colors: ReturnType<typeof useColors>) {
           backgroundColor: colors.surface.low,
           padding: spacing[5],
           gap: spacing[2],
+          ...elevation.soft,
         },
       }),
     [colors],

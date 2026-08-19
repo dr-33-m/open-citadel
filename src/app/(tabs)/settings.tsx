@@ -31,7 +31,7 @@ import { ScreenHeader } from '@/components/ui/screen-header';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { useColors } from '@/hooks/use-colors';
-import { fontFamily, iconSize, spacing } from '@/constants/theme';
+import { elevation, fontFamily, iconSize, spacing } from '@/constants/theme';
 import { db } from '@/db/client';
 import { compassGoals } from '@/db/schema';
 import { syncCompassReminders } from '@/services/compass-notifications';
@@ -276,6 +276,7 @@ export default function SettingsScreen() {
       backgroundColor: colors.surface.low,
       paddingHorizontal: spacing[5],
       paddingVertical: spacing[4],
+      ...elevation.soft,
     },
     rowLeft: {
       flexDirection: 'row',
@@ -304,6 +305,7 @@ export default function SettingsScreen() {
       gap: spacing[3],
       backgroundColor: colors.surface.low,
       padding: spacing[4],
+      ...elevation.soft,
     },
     saveBtn: {
       alignSelf: 'flex-end',
@@ -324,6 +326,7 @@ export default function SettingsScreen() {
       paddingHorizontal: spacing[4],
       paddingVertical: spacing[2],
       backgroundColor: colors.surface.low,
+      ...elevation.soft,
     },
     rateChipActive: {
       backgroundColor: colors.primary.default,
@@ -373,6 +376,7 @@ export default function SettingsScreen() {
       backgroundColor: colors.surface.low,
       padding: spacing[4],
       gap: spacing[3],
+      ...elevation.soft,
     },
     modelCardRow: {
       flexDirection: 'row',
@@ -420,6 +424,7 @@ export default function SettingsScreen() {
       borderWidth: 1,
       borderColor: colors.surface.highest,
       backgroundColor: colors.surface.low,
+      ...elevation.soft,
     },
     modeCardActive: {
       borderColor: colors.primary.default,
@@ -472,6 +477,7 @@ export default function SettingsScreen() {
       backgroundColor: colors.surface.low,
       padding: spacing[4],
       gap: spacing[3],
+      ...elevation.soft,
     },
   }), [colors, insets.top]);
 
@@ -887,43 +893,48 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        <View style={styles.divider} />
+        {/* COMPASS — cloud only: check-ins run through Grand Maester Samwell
+            on the server, so in offline mode there is nothing here to set. */}
+        {samwellMode === 'cloud' && (
+          <>
+          <View style={styles.divider} />
 
-        {/* COMPASS */}
-        <View style={styles.section}>
-          <View style={{ gap: spacing[1] }}>
-            <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
-              COMPASS
-            </ThemedText>
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              Your morning and night check-in times with Grand Maester Samwell.
-            </ThemedText>
+          <View style={styles.section}>
+            <View style={{ gap: spacing[1] }}>
+              <ThemedText type="labelMd" color={colors.primary.default} style={styles.label}>
+                COMPASS
+              </ThemedText>
+              <ThemedText type="bodySm" color={colors.text.secondary}>
+                Your morning and night check-in times with Grand Maester Samwell.
+              </ThemedText>
+            </View>
+            <Touchable style={styles.row} onPress={() => setTimePickerFor('morning')}>
+              <View style={styles.rowLeft}>
+                <PrefixIcon icon={Sun} size={36} />
+                <ThemedText type="bodyMd">Morning check-in</ThemedText>
+              </View>
+              <View style={styles.rowValue}>
+                <ThemedText type="bodySm" color={colors.text.secondary}>
+                  {compassMorningTime}
+                </ThemedText>
+                <ChevronUp size={14} color={colors.text.secondary} />
+              </View>
+            </Touchable>
+            <Touchable style={styles.row} onPress={() => setTimePickerFor('night')}>
+              <View style={styles.rowLeft}>
+                <PrefixIcon icon={Moon} size={36} />
+                <ThemedText type="bodyMd">Night check-in</ThemedText>
+              </View>
+              <View style={styles.rowValue}>
+                <ThemedText type="bodySm" color={colors.text.secondary}>
+                  {compassNightTime}
+                </ThemedText>
+                <ChevronUp size={14} color={colors.text.secondary} />
+              </View>
+            </Touchable>
           </View>
-          <Touchable style={styles.row} onPress={() => setTimePickerFor('morning')}>
-            <View style={styles.rowLeft}>
-              <PrefixIcon icon={Sun} size={36} />
-              <ThemedText type="bodyMd">Morning check-in</ThemedText>
-            </View>
-            <View style={styles.rowValue}>
-              <ThemedText type="bodySm" color={colors.text.secondary}>
-                {compassMorningTime}
-              </ThemedText>
-              <ChevronUp size={14} color={colors.text.secondary} />
-            </View>
-          </Touchable>
-          <Touchable style={styles.row} onPress={() => setTimePickerFor('night')}>
-            <View style={styles.rowLeft}>
-              <PrefixIcon icon={Moon} size={36} />
-              <ThemedText type="bodyMd">Night check-in</ThemedText>
-            </View>
-            <View style={styles.rowValue}>
-              <ThemedText type="bodySm" color={colors.text.secondary}>
-                {compassNightTime}
-              </ThemedText>
-              <ChevronUp size={14} color={colors.text.secondary} />
-            </View>
-          </Touchable>
-        </View>
+          </>
+        )}
 
         <View style={styles.divider} />
 

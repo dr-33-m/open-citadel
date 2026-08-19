@@ -1,5 +1,6 @@
+import { Image } from 'expo-image';
 import React, { useCallback, useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Touchable } from '@/components/ui/touchable';
 import { useFocusEffect } from '@react-navigation/native';
@@ -7,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ThemedText } from '@/components/themed-text';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { useColors } from '@/hooks/use-colors';
-import { elevation, fontFamily, spacing } from '@/constants/theme';
+import { elevation, fontFamily, motion, spacing } from '@/constants/theme';
 import type { books } from '@/db/schema';
 import { db } from '@/db/client';
 import { readingProgress } from '@/db/schema';
@@ -31,7 +32,7 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
       backgroundColor: colors.surface.low,
       padding: spacing[5],
       gap: spacing[5],
-      ...elevation.card,
+      ...elevation.soft,
     },
     cover: {
       width: 90,
@@ -82,7 +83,7 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
     <Touchable onPress={onPress} onLongPress={onLongPress}>
       <View style={styles.card}>
         {book.coverUrl ? (
-          <Image source={{ uri: book.coverUrl }} style={styles.cover} />
+          <Image source={{ uri: book.coverUrl }} style={styles.cover} transition={motion.slow} />
         ) : (
           <View style={styles.cover}>
             <ThemedText type="displayLg" color={colors.surface.highest} style={styles.initial}>

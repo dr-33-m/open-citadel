@@ -100,6 +100,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (fontsLoaded && dbReady) {
+      SplashScreen.setOptions({ fade: true, duration: 400 });
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, dbReady]);

@@ -1,10 +1,11 @@
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import React, { useState } from "react";
 import { StyleSheet, View } from "react-native";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/themed-text";
 import { Touchable } from "@/components/ui/touchable";
-import { fontFamily, spacing } from "@/constants/theme";
+import { easing, elevation, fontFamily, motion, spacing } from "@/constants/theme";
 import { useColors } from "@/hooks/use-colors";
 import type { TimelineItem } from "@/stores/timeline";
 
@@ -47,6 +48,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
           padding: spacing[6],
           paddingLeft: spacing[8],
           paddingRight: spacing[5],
+          ...elevation.soft,
         },
         noteContainer: {
           flexDirection: "row",
@@ -184,6 +186,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
                 <Touchable
                   onPress={prev}
                   disabled={noteIndex === 0}
+                  haptic="tap"
                   hitSlop={8}
                   style={styles.arrow}
                 >
@@ -198,18 +201,24 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
                 </Touchable>
               )}
 
-              <ThemedText
-                type="bodySm"
-                color={colors.text.secondary}
+              {/* Keyed on index: the outgoing note fades out while the next
+                  one fades in, instead of the text swapping instantly. */}
+              <Animated.View
+                key={noteIndex}
+                entering={FadeIn.duration(motion.fast).easing(easing)}
+                exiting={FadeOut.duration(motion.fast).easing(easing)}
                 style={styles.noteText}
               >
-                {noteTexts[noteIndex]}
-              </ThemedText>
+                <ThemedText type="bodySm" color={colors.text.secondary}>
+                  {noteTexts[noteIndex]}
+                </ThemedText>
+              </Animated.View>
 
               {hasMultiple && (
                 <Touchable
                   onPress={next}
                   disabled={noteIndex === noteTexts.length - 1}
+                  haptic="tap"
                   hitSlop={8}
                   style={styles.arrow}
                 >

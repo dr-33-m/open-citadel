@@ -8,6 +8,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ExportImageCard } from "@/components/export/export-image-card";
 import { captureAndShare } from "@/utils/export-image";
@@ -17,7 +18,7 @@ import { Touchable } from "@/components/ui/touchable";
 
 import { ThemedText } from "@/components/themed-text";
 import { GoldButton } from "@/components/ui/gold-button";
-import { fontFamily, spacing } from "@/constants/theme";
+import { easing, easingCss, fontFamily, motion, spacing } from "@/constants/theme";
 import { useColors } from "@/hooks/use-colors";
 
 const COLORS = [
@@ -27,6 +28,51 @@ const COLORS = [
   "#4a90d9", // blue
   "#9b72cf", // purple
 ];
+
+/** One color swatch, with its own selection ring growing in instead of the
+ * border snapping on. Selection is a two-state flip, so it's a CSS transition
+ * (UI thread, no worklet) rather than a shared value per swatch. */
+function ColorSwatch({
+  color,
+  selected,
+  onPress,
+}: {
+  color: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const colors = useColors();
+
+  return (
+    <Touchable
+      haptic="tap"
+      style={[swatchStyles.swatch, { backgroundColor: color }]}
+      onPress={onPress}
+    >
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFillObject,
+          swatchStyles.ring,
+          { borderColor: colors.text.primary },
+          selected ? swatchStyles.ringOn : swatchStyles.ringOff,
+        ]}
+      />
+    </Touchable>
+  );
+}
+
+const swatchStyles = StyleSheet.create({
+  swatch: { width: 28, height: 28, borderRadius: 14 },
+  ring: {
+    borderWidth: 3,
+    borderRadius: 14,
+    transitionProperty: ['opacity', 'transform'],
+    transitionDuration: `${motion.fast}ms`,
+    transitionTimingFunction: easingCss,
+  },
+  ringOn: { opacity: 1, transform: [{ scale: 1 }] },
+  ringOff: { opacity: 0, transform: [{ scale: 0.7 }] },
+});
 
 type NoteItem = {
   id: string;
@@ -96,8 +142,6 @@ export function HighlightMenu({
         },
         quoteText: { fontFamily: fontFamily.serifItalic, fontSize: 14 },
         colorRow: { flexDirection: "row", gap: spacing[3] },
-        swatch: { width: 28, height: 28, borderRadius: 14 },
-        swatchSelected: { borderWidth: 3, borderColor: colors.text.primary },
         tagSection: { gap: spacing[2] },
         tagChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
         chip: {
@@ -390,13 +434,10 @@ export function HighlightMenu({
           {/* Color swatches */}
           <View style={styles.colorRow}>
             {COLORS.map((c) => (
-              <Touchable
+              <ColorSwatch
                 key={c}
-                style={[
-                  styles.swatch,
-                  { backgroundColor: c },
-                  selectedColor === c && styles.swatchSelected,
-                ]}
+                color={c}
+                selected={selectedColor === c}
                 onPress={() => handleColorSelect(c)}
               />
             ))}
@@ -463,6 +504,7 @@ export function HighlightMenu({
                     style={styles.aiSuggestBtn}
                     onPress={handleSuggestTags}
                     disabled={suggesting}
+                    haptic="tap"
                     hitSlop={6}
                   >
                     {suggesting ? (
@@ -474,31 +516,38 @@ export function HighlightMenu({
                       {suggesting ? "SUGGESTING…" : "SUGGEST TAGS"}
                     </ThemedText>
                   </Touchable>
-                  {aiSuggestions.map((tag) => {
+                  {aiSuggestions.map((tag, index) => {
                     const isAdded = tags.some(
                       (t) => t.toLowerCase() === tag.toLowerCase(),
                     );
                     return (
-                      <Touchable
+                      <Animated.View
                         key={tag}
-                        style={[
-                          styles.suggestionChip,
-                          styles.aiSuggestionChip,
-                          isAdded && styles.suggestionChipAdded,
-                        ]}
-                        onPress={() => !isAdded && addTag(tag)}
+                        entering={FadeInUp.duration(motion.base)
+                          .easing(easing)
+                          .delay(index * 50)}
                       >
-                        {isAdded && (
-                          <Check size={11} color={colors.text.secondary} />
-                        )}
-                        <ThemedText
-                          type="labelSm"
-                          color={isAdded ? colors.text.secondary : colors.text.primary}
-                          style={styles.chipText}
+                        <Touchable
+                          style={[
+                            styles.suggestionChip,
+                            styles.aiSuggestionChip,
+                            isAdded && styles.suggestionChipAdded,
+                          ]}
+                          haptic={isAdded ? false : 'tap'}
+                          onPress={() => !isAdded && addTag(tag)}
                         >
-                          {tag}
-                        </ThemedText>
-                      </Touchable>
+                          {isAdded && (
+                            <Check size={11} color={colors.text.secondary} />
+                          )}
+                          <ThemedText
+                            type="labelSm"
+                            color={isAdded ? colors.text.secondary : colors.text.primary}
+                            style={styles.chipText}
+                          >
+                            {tag}
+                          </ThemedText>
+                        </Touchable>
+                      </Animated.View>
                     );
                   })}
                 </View>

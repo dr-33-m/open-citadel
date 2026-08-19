@@ -20,7 +20,7 @@ import { DeleteBookSheet } from "@/components/library/delete-book-sheet";
 import { EditTitleSheet } from "@/components/library/edit-title-sheet";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { fontFamily, spacing } from "@/constants/theme";
+import { elevation, fontFamily, spacing } from "@/constants/theme";
 import type { books as booksTable } from "@/db/schema";
 import { useColors } from "@/hooks/use-colors";
 import { useAllBooks, useBooksStore } from "@/stores/books";
@@ -200,6 +200,7 @@ export default function CollectionScreen() {
                   onPress={() => openReader(book.id)}
                   onLongPress={() => setActionBook(book)}
                 >
+                  <View style={styles.coverShadow}>
                   <View style={styles.cover}>
                     {book.coverUrl ? (
                       <Image
@@ -225,6 +226,7 @@ export default function CollectionScreen() {
                         </ThemedText>
                       </View>
                     )}
+                  </View>
                   </View>
                   <ThemedText
                     type="bodySm"
@@ -340,6 +342,9 @@ function useCollectionStyles(colors: ReturnType<typeof useColors>) {
         grid: { paddingHorizontal: SIDE_PAD },
         row: { flexDirection: "row", flexWrap: "wrap", gap: ITEM_GAP },
         bookItem: { width: ITEM_WIDTH, gap: spacing[2] },
+        // The shadow lives on a wrapper because `cover` clips its contents,
+        // and a clipping node clips its own shadow away too.
+        coverShadow: { ...elevation.soft },
         cover: {
           aspectRatio: 2 / 3,
           backgroundColor: colors.surface.low,

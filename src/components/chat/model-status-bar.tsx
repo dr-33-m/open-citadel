@@ -1,9 +1,10 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { spacing } from '@/constants/theme';
+import { easing, motion, spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
@@ -58,7 +59,16 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
       {showSpinner ? (
         <ActivityIndicator size="small" color={dotColor} style={{ width: 8, height: 8 }} />
       ) : (
-        <View style={[styles.dot, { backgroundColor: dotColor }]} />
+        <View style={styles.dot}>
+          {/* Keyed on color: the outgoing dot plays its exit while the new one
+              crossfades in, instead of the status hard-swapping color. */}
+          <Animated.View
+            key={dotColor}
+            entering={FadeIn.duration(motion.fast).easing(easing)}
+            exiting={FadeOut.duration(motion.fast).easing(easing)}
+            style={[StyleSheet.absoluteFillObject, { borderRadius: 3, backgroundColor: dotColor }]}
+          />
+        </View>
       )}
       <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 11 }}>
         {statusText}

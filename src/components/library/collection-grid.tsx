@@ -5,7 +5,7 @@ import { ScrollView, StyleSheet } from "react-native";
 import { Touchable } from "@/components/ui/touchable";
 
 import { ThemedText } from "@/components/themed-text";
-import { spacing } from "@/constants/theme";
+import { elevation, spacing } from "@/constants/theme";
 import { useColors } from "@/hooks/use-colors";
 import type { CollectionWithCount } from "@/stores/collections";
 
@@ -37,6 +37,7 @@ export function CollectionGrid({
           backgroundColor: colors.surface.low,
           padding: spacing[5],
           gap: spacing[2],
+          ...elevation.soft,
         },
         createCell: {
           width: CELL_WIDTH,

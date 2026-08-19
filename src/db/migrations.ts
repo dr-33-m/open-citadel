@@ -150,10 +150,31 @@ async function ensureChatSchema(): Promise<void> {
   }
 }
 
+/**
+ * Daily reading history, backing the timeline calendar's activity dots.
+ * Same self-heal shape as the tables above so it lands regardless of a
+ * device's migration history.
+ */
+async function ensureReadingDaysSchema(): Promise<void> {
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`reading_days\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`day\` text NOT NULL,
+    \`book_id\` text NOT NULL,
+    \`progress_delta\` real NOT NULL DEFAULT 0,
+    \`updated_at\` text NOT NULL
+  )`);
+  // The calendar reads a month at a time, so `day` carries every lookup.
+  db.run(
+    sql`CREATE INDEX IF NOT EXISTS \`reading_days_day_idx\` ON \`reading_days\` (\`day\`)`,
+  );
+}
+
 export async function runMigrations() {
   await migrate(db, migrations);
   // Self-heal: ensure sync pipeline tables exist regardless of migration history
   await ensureSyncPipelineSchema();
   // Self-heal: ensure chat / local AI tables exist
   await ensureChatSchema();
+  // Self-heal: ensure daily reading history exists
+  await ensureReadingDaysSchema();
 }

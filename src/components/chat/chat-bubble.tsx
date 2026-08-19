@@ -1,12 +1,19 @@
 import React, { Fragment, useMemo } from 'react';
 import { View } from 'react-native';
 import { useMarkdown } from 'react-native-marked';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 
 import { HighlightCard } from '@/components/chat/highlight-card';
 import { SuggestionCard } from '@/components/chat/suggestion-card';
 import { ThemedText } from '@/components/themed-text';
-import { fontFamily, spacing } from '@/constants/theme';
+import { easing, fontFamily, motion, spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
+
+/** New bubbles rise and fade in rather than popping into the list —
+ * fires once per bubble instance, so it plays for a freshly-sent or
+ * freshly-streamed-in message and for one scrolled into view for the
+ * first time, not on every re-render. */
+const bubbleEntering = FadeInUp.duration(motion.base).easing(easing);
 
 // Regex to split on [[ref:highlight:hl-123]] / [[ref:thought:th-123]] (an
 // existing entry, read-only) or [[suggest:highlight:sugg-1]] /
@@ -145,7 +152,8 @@ export const ChatBubble = React.memo(function ChatBubble({
   const isUser = role === 'user';
 
   return (
-    <View
+    <Animated.View
+      entering={bubbleEntering}
       style={{
         flexDirection: 'row',
         justifyContent: isUser ? 'flex-end' : 'flex-start',
@@ -177,6 +185,6 @@ export const ChatBubble = React.memo(function ChatBubble({
           />
         )}
       </View>
-    </View>
+    </Animated.View>
   );
 });

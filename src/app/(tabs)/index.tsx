@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { Calendar, MessageSquare, Pencil, Share, Trash2 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,7 +21,7 @@ import { Fab } from '@/components/ui/fab';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { Sheet } from '@/components/ui/sheet';
 import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
+import { easing, motion, spacing } from '@/constants/theme';
 import { db } from '@/db/client';
 import { highlights, thoughts } from '@/db/schema';
 import { fetchAllTags } from '@/stores/reader';
@@ -215,16 +216,23 @@ export default function TimelineScreen() {
           </View>
         )}
 
-        {/* Timeline entries for selected day */}
+        {/* Timeline entries for selected day — staggered in, capped so a busy
+            day doesn't turn into a slow reveal. */}
         {hasEntries &&
           groups[0].entries.map((entry, index) => (
-            <TimelineEntry
+            <Animated.View
               key={entry.id}
-              entry={entry}
-              isLast={index === groups[0].entries.length - 1}
-              onPress={() => handleEntryPress(entry)}
-              onLongPress={() => setLongPressEntry(entry)}
-            />
+              entering={FadeInUp.duration(motion.base)
+                .easing(easing)
+                .delay(Math.min(index, 8) * 40)}
+            >
+              <TimelineEntry
+                entry={entry}
+                isLast={index === groups[0].entries.length - 1}
+                onPress={() => handleEntryPress(entry)}
+                onLongPress={() => setLongPressEntry(entry)}
+              />
+            </Animated.View>
           ))}
       </ScrollView>
 

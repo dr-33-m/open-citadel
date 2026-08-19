@@ -325,3 +325,30 @@ export const journeyNotes = sqliteTable("journey_notes", {
   sourceRef: text("source_ref"),
   createdAt: text("created_at").notNull(),
 });
+
+// ── Daily reading (did the user actually read that day?) ─────────────────────
+
+/**
+ * One row per (local day, book), accumulating how much of that book was read
+ * that day as a 0..1 fraction of its length.
+ *
+ * `reading_progress` only ever holds a book's CURRENT position — it's updated
+ * in place, so it can say where you are but never that you moved today. This
+ * table is the history that answers "did you read?", which is the honest
+ * signal behind the timeline calendar's activity dots (highlight COUNT was
+ * the old proxy, and it rewarded annotating a single paragraph over reading
+ * fifty pages).
+ */
+export const readingDays = sqliteTable("reading_days", {
+  /** `${day}:${bookId}` — makes the daily upsert a primary-key hit. */
+  id: text("id").primaryKey(),
+  /** Local calendar day, `YYYY-MM-DD`. Local, not UTC: it has to line up with
+   * the day cell the user taps in the calendar. */
+  day: text("day").notNull(),
+  bookId: text("book_id")
+    .notNull()
+    .references(() => books.id),
+  /** Summed forward progress for the day, as a fraction of the book (0..1). */
+  progressDelta: real("progress_delta").notNull().default(0),
+  updatedAt: text("updated_at").notNull(),
+});

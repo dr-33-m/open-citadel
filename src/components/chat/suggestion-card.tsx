@@ -1,12 +1,13 @@
 import { BookOpen, Check, Lightbulb, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { eq } from 'drizzle-orm';
 
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { spacing } from '@/constants/theme';
+import { easing, elevation, motion, spacing } from '@/constants/theme';
 import { useColors } from '@/hooks/use-colors';
 import { db } from '@/db/client';
 import { chatSuggestions } from '@/db/schema';
@@ -80,7 +81,10 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
   const Icon = kind === 'highlight' ? BookOpen : Lightbulb;
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.surface.highest, borderLeftColor: colors.primary.default }]}>
+    <Animated.View
+      layout={LinearTransition.duration(motion.base).easing(easing)}
+      style={[styles.card, { backgroundColor: colors.surface.highest, borderLeftColor: colors.primary.default }]}
+    >
       <ThemedText type="bodySm" color={colors.text.primary} numberOfLines={4} style={styles.quoteText}>
         {data.text}
       </ThemedText>
@@ -98,7 +102,7 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
       )}
 
       {data.status === 'pending' && (
-        <View style={styles.actionsRow}>
+        <Animated.View exiting={FadeOut.duration(motion.fast).easing(easing)} style={styles.actionsRow}>
           <View style={styles.sourceRow}>
             <Icon size={12} color={colors.text.secondary} />
             <ThemedText type="labelSm" color={colors.text.secondary}>
@@ -106,38 +110,44 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
             </ThemedText>
           </View>
           <View style={styles.buttonsRow}>
-            <Touchable style={styles.actionBtn} onPress={handleReject}>
+            <Touchable style={styles.actionBtn} haptic="warn" onPress={handleReject}>
               <ThemedText type="labelSm" color={colors.text.secondary}>
                 REJECT
               </ThemedText>
             </Touchable>
-            <Touchable style={styles.actionBtn} onPress={() => void handleApprove()}>
+            <Touchable style={styles.actionBtn} haptic="commit" onPress={() => void handleApprove()}>
               <ThemedText type="labelSm" color={colors.primary.default}>
                 APPROVE
               </ThemedText>
             </Touchable>
           </View>
-        </View>
+        </Animated.View>
       )}
 
       {data.status === 'approved' && (
-        <View style={styles.sourceRow}>
+        <Animated.View
+          entering={FadeIn.duration(motion.base).easing(easing)}
+          style={styles.sourceRow}
+        >
           <Check size={12} color={colors.primary.default} />
           <ThemedText type="labelSm" color={colors.primary.default}>
             Saved
           </ThemedText>
-        </View>
+        </Animated.View>
       )}
 
       {data.status === 'rejected' && (
-        <View style={styles.sourceRow}>
+        <Animated.View
+          entering={FadeIn.duration(motion.base).easing(easing)}
+          style={styles.sourceRow}
+        >
           <X size={12} color={colors.text.secondary} />
           <ThemedText type="labelSm" color={colors.text.secondary}>
             Dismissed
           </ThemedText>
-        </View>
+        </Animated.View>
       )}
-    </View>
+    </Animated.View>
   );
 });
 
@@ -148,6 +158,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     marginVertical: spacing[1],
     gap: spacing[2],
+    ...elevation.soft,
   },
   quoteText: {
     fontStyle: 'italic',

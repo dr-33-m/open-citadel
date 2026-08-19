@@ -8,11 +8,14 @@ import {
   books,
   highlights,
   notes,
+  readingDays,
   readingProgress,
   thoughts,
 } from "@/db/schema";
 import { extractSurroundingText } from "@/services/book-context";
+import { countableProgress } from "@/services/reading-day";
 import { useBooksStore } from "@/stores/books";
+import { localDayString } from "@/utils/day";
 
 type Book = typeof books.$inferSelect;
 type Bookmark = typeof bookmarks.$inferSelect;
@@ -77,6 +80,27 @@ export async function fetchAllTags(): Promise<string[]> {
   return Array.from(unique).sort();
 }
 
+/** Accumulate the day's reading for this book. What counts as reading (and
+ * what is just navigation) lives in `services/reading-day`. */
+async function recordReadingDay(bookId: string, previousPct: number, nextPct: number) {
+  const delta = countableProgress(previousPct, nextPct);
+  if (delta === 0) return;
+
+  const day = localDayString();
+  const id = `${day}:${bookId}`;
+  const now = new Date().toISOString();
+
+  const [row] = await db.select().from(readingDays).where(eq(readingDays.id, id));
+  if (row) {
+    await db
+      .update(readingDays)
+      .set({ progressDelta: row.progressDelta + delta, updatedAt: now })
+      .where(eq(readingDays.id, id));
+  } else {
+    await db.insert(readingDays).values({ id, day, bookId, progressDelta: delta, updatedAt: now });
+  }
+}
+
 async function saveProgressToDb(bookId: string, locator: Locator) {
   const percentage = locator.locations?.totalProgression ?? 0;
   const now = new Date().toISOString();
@@ -102,6 +126,10 @@ async function saveProgressToDb(bookId: string, locator: Locator) {
       updatedAt: now,
     });
   }
+
+  // First-ever write for a book has no previous position to compare against,
+  // so it contributes nothing — opening a book isn't reading it.
+  await recordReadingDay(bookId, existing?.percentage ?? percentage, percentage);
 }
 
 export const useReaderStore = create<ReaderState>((set, get) => ({

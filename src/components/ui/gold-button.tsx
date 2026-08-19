@@ -25,7 +25,7 @@ export function GoldButton({ label, onPress }: GoldButtonProps) {
   }), [colors]);
 
   return (
-    <Touchable onPress={onPress}>
+    <Touchable onPress={onPress} haptic="commit">
       <LinearGradient
         colors={[colors.primary.default, colors.primary.container]}
         start={{ x: 0, y: 0 }}

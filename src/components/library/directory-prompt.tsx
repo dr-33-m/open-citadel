@@ -1,11 +1,12 @@
 import { LibraryBig } from 'lucide-react-native';
 import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import Animated, { FadeInUp, ZoomIn } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
 import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
+import { easing, motion, spacing } from '@/constants/theme';
 
 type DirectoryPromptProps = {
   onPress: () => void;
@@ -54,25 +55,35 @@ export function DirectoryPrompt({ onPress }: DirectoryPromptProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.iconContainer}>
-        <LibraryBig size={48} color={colors.primary.default} />
-      </View>
-
-      <ThemedText type="headlineLg" style={styles.title}>
-        Build Your Library
-      </ThemedText>
-
-      <ThemedText
-        type="bodyMd"
-        color={colors.text.secondary}
-        style={styles.description}
+      <Animated.View
+        entering={ZoomIn.duration(motion.slow).easing(easing)}
+        style={styles.iconContainer}
       >
-        {COPY.description}
-      </ThemedText>
+        <LibraryBig size={48} color={colors.primary.default} />
+      </Animated.View>
 
-      <View style={styles.buttonContainer}>
+      <Animated.View entering={FadeInUp.duration(motion.base).easing(easing).delay(80)}>
+        <ThemedText type="headlineLg" style={styles.title}>
+          Build Your Library
+        </ThemedText>
+      </Animated.View>
+
+      <Animated.View entering={FadeInUp.duration(motion.base).easing(easing).delay(140)}>
+        <ThemedText
+          type="bodyMd"
+          color={colors.text.secondary}
+          style={styles.description}
+        >
+          {COPY.description}
+        </ThemedText>
+      </Animated.View>
+
+      <Animated.View
+        entering={FadeInUp.duration(motion.base).easing(easing).delay(200)}
+        style={styles.buttonContainer}
+      >
         <GoldButton label={COPY.button} onPress={onPress} />
-      </View>
+      </Animated.View>
     </View>
   );
 }

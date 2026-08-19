@@ -1,12 +1,14 @@
-import { CircleCheckBig, RefreshCw } from 'lucide-react-native';
+import { CircleCheckBig } from 'lucide-react-native';
+import { Image } from 'expo-image';
 import React from 'react';
-import { Image, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { SyncBadge } from '@/components/ui/sync-badge';
 import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/use-colors';
-import { fontFamily, spacing } from '@/constants/theme';
+import { elevation, fontFamily, motion, spacing } from '@/constants/theme';
 import type { books as booksTable } from '@/db/schema';
 
 type Book = typeof booksTable.$inferSelect;
@@ -32,6 +34,7 @@ export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedC
       width: 130,
       height: 170,
       backgroundColor: colors.surface.low,
+      ...elevation.soft,
     },
     coverImage: {
       width: 130,
@@ -61,14 +64,6 @@ export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedC
       backgroundColor: colors.surface.base,
       borderRadius: 11,
     },
-    syncBadge: {
-      position: 'absolute',
-      top: spacing[2],
-      left: spacing[2],
-      backgroundColor: colors.surface.base,
-      borderRadius: 11,
-      padding: 3,
-    },
     title: {
       marginTop: spacing[1],
     },
@@ -89,7 +84,11 @@ export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedC
         >
           <View style={styles.cover}>
             {book.coverUrl ? (
-              <Image source={{ uri: book.coverUrl }} style={styles.coverImage} />
+              <Image
+                source={{ uri: book.coverUrl }}
+                style={styles.coverImage}
+                transition={motion.slow}
+              />
             ) : (
               <View style={styles.coverPlaceholder}>
                 <ThemedText type="displayLg" color={colors.surface.highest} style={styles.initial}>
@@ -101,9 +100,7 @@ export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedC
               </View>
             )}
             {!book.filePath ? (
-              <View style={styles.syncBadge}>
-                <RefreshCw size={14} color={colors.text.secondary} />
-              </View>
+              <SyncBadge />
             ) : (
               <View style={styles.checkBadge}>
                 <CircleCheckBig size={22} color={colors.primary.default} />
