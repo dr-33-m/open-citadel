@@ -5,6 +5,7 @@ import {
   normalizeTags,
   SUGGEST_TAGS_PROMPT,
   SuggestTagsRequestSchema,
+  SuggestTagsModelSchema,
   SuggestTagsResponseSchema,
 } from 'samwell-shared';
 
@@ -61,13 +62,18 @@ tagsRoutes.post('/suggest', async (c) => {
     modelId,
     systemPrompts: [SUGGEST_TAGS_PROMPT],
     messages: [{ role: 'user', content: JSON.stringify(payload) }],
-    schema: SuggestTagsResponseSchema,
+    // Validated loosely, then normalized down to the contract — see
+    // SuggestTagsModelSchema.
+    schema: SuggestTagsModelSchema,
     usageEventId,
+    failureCode: 'tag_suggest_failed',
   });
 
   const tags = normalizeTags(result.tags);
+  // Every candidate was junk (empty, too long, all punctuation). That's a
+  // failed generation, not a suggestion worth showing.
   if (tags.length === 0) {
     throw new HTTPException(502, { message: 'tag_suggest_failed' });
   }
-  return c.json({ tags });
+  return c.json(SuggestTagsResponseSchema.parse({ tags }));
 });

@@ -8,6 +8,7 @@ import {
   COMPASS_NIGHT_INSTRUCTIONS,
   COMPASS_SETUP_INSTRUCTIONS,
   COMPASS_TURN_PROTOCOL,
+  CompassMorningTurnModelSchema,
   CompassMorningTurnRequestSchema,
   CompassMorningTurnSchema,
   CompassNightTurnRequestSchema,
@@ -15,6 +16,7 @@ import {
   CompassSetupTurnRequestSchema,
   CompassSetupTurnSchema,
   DEFAULT_CLOUD_MODEL_ID,
+  normalizeCompassMorningTurn,
 } from 'samwell-shared';
 import { z } from 'zod';
 
@@ -44,6 +46,14 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
   schema: TSchema;
   usageEventId: string;
   maxCompletionTokens?: number;
+  /**
+   * Error code returned to the client if the run fails. Defaults to the
+   * Compass one because Compass was the first caller, but this helper is
+   * shared — chat titles and tag suggestions route through it too, and a
+   * `compass_analysis_failed` in those logs sends you hunting in the wrong
+   * place entirely.
+   */
+  failureCode?: string;
 }): Promise<z.infer<TSchema>> {
   // Accumulated across attempts, not overwritten: a retry can follow a first
   // attempt that already burned real, billed tokens (it replied, but the
@@ -93,7 +103,10 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
     try {
       result = await attempt();
     } catch (firstError) {
-      console.warn('[Samwell Cloud] Compass analysis retrying after failure:', firstError);
+      console.warn(
+      `[Samwell Cloud] structured analysis retrying (${args.failureCode ?? 'compass_analysis_failed'}):`,
+      firstError,
+    );
       result = await attempt();
     }
 
@@ -107,7 +120,10 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Compass analysis failed.';
-    console.error('[Samwell Cloud] Compass analysis failed:', error);
+    console.error(
+      `[Samwell Cloud] structured analysis failed (${args.failureCode ?? 'compass_analysis_failed'}):`,
+      error,
+    );
     // Even a fully-failed run (both attempts exhausted) may have consumed
     // real tokens on the failed attempt(s) — record whatever was billed
     // rather than losing it just because no attempt ultimately validated.
@@ -119,7 +135,7 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
       totalTokens: usageRecorded ? (usage.totalTokens ?? null) : null,
       costUsd: usageRecorded ? (usage.cost ?? null) : null,
     });
-    throw new HTTPException(502, { message: 'compass_analysis_failed' });
+    throw new HTTPException(502, { message: args.failureCode ?? 'compass_analysis_failed' });
   }
 }
 
@@ -130,6 +146,18 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
   kind: 'compass_setup' | 'compass_morning' | 'compass_night';
   requestSchema: z.ZodType<{ modelId?: string | undefined } & Record<string, unknown>>;
   outputSchema: TSchema;
+  /**
+   * Schema the MODEL's raw output is validated against, when it is looser
+   * than the wire contract — the same pattern as SuggestChatTitleModelSchema.
+   * Must be paired with `normalize`. Defaults to validating the model
+   * directly against the strict `outputSchema`.
+   */
+  modelOutputSchema?: z.ZodType;
+  /** Trims loose model output down to the strict `outputSchema` contract.
+   * Takes `any` so typed normalizers like `normalizeCompassMorningTurn` fit
+   * without cast gymnastics — the input has already been validated against
+   * `modelOutputSchema` by the time it gets here. */
+  normalize?: (raw: any) => z.infer<TSchema>;
   instructions: string;
 }): void {
   compassRoutes.post(args.path, async (c) => {
@@ -170,7 +198,7 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
       modelId?: string;
       messages: Array<{ role: 'user' | 'assistant'; content: string }>;
     } & Record<string, unknown>;
-    const result = await runStructuredAnalysis({
+    const modelOutput = await runStructuredAnalysis({
       modelId,
       systemPrompts: [
         COMPASS_ENGINEER_PROMPT,
@@ -179,9 +207,11 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
         `Current context (JSON):\n${JSON.stringify(context)}`,
       ],
       messages,
-      schema: args.outputSchema,
+      schema: (args.modelOutputSchema ?? args.outputSchema) as TSchema,
       usageEventId,
     });
+
+    const result = args.normalize ? args.normalize(modelOutput) : modelOutput;
 
     return c.json(result);
   });
@@ -200,6 +230,9 @@ registerAnalysisRoute({
   kind: 'compass_morning',
   requestSchema: CompassMorningTurnRequestSchema,
   outputSchema: CompassMorningTurnSchema,
+  // Validated loosely, then trimmed to fit — see CompassMorningTurnModelSchema.
+  modelOutputSchema: CompassMorningTurnModelSchema,
+  normalize: normalizeCompassMorningTurn,
   instructions: COMPASS_MORNING_INSTRUCTIONS,
 });
 

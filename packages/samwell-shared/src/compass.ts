@@ -306,6 +306,42 @@ export const CompassMorningTurnSchema = z.object({
 });
 export type CompassMorningTurn = z.infer<typeof CompassMorningTurnSchema>;
 
+/**
+ * What the MODEL is validated against for a morning check-in turn — looser
+ * than `CompassMorningTurnSchema` only where the server can trim losslessly.
+ *
+ * Holding the model to the strict `mission` cap of 4 steps 502s the whole
+ * request when it plans a fifth: structured-output validation fails, the
+ * retry fails the same way, and a turn whose first four steps were a
+ * perfectly good mission is thrown away. Everything else stays strict —
+ * a 0-day milestone or an empty headline is genuinely bad data, and a
+ * retry is the right response to that. The server trims the extra steps
+ * via `normalizeCompassMorningTurn` and re-validates against the strict
+ * schema before returning, so the wire contract never changes.
+ */
+export const CompassMorningAnalysisModelSchema = CompassMorningAnalysisSchema.extend({
+  mission: z.array(CompassMissionStepSchema).min(1).max(8),
+});
+export type CompassMorningAnalysisModel = z.infer<typeof CompassMorningAnalysisModelSchema>;
+
+export const CompassMorningTurnModelSchema = z.object({
+  reply: z.string().min(1),
+  draft: CompassMorningAnalysisModelSchema.nullable(),
+});
+export type CompassMorningTurnModel = z.infer<typeof CompassMorningTurnModelSchema>;
+
+/** Trims a model-produced morning turn down to the strict wire contract:
+ * currently just capping the mission at four steps. */
+export function normalizeCompassMorningTurn(turn: CompassMorningTurnModel): CompassMorningTurn {
+  return {
+    reply: turn.reply,
+    draft:
+      turn.draft === null
+        ? null
+        : { ...turn.draft, mission: turn.draft.mission.slice(0, 4) },
+  };
+}
+
 export const CompassNightTurnSchema = z.object({
   reply: z.string().min(1),
   draft: CompassNightAnalysisSchema.nullable(),

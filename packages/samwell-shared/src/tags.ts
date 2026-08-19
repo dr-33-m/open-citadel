@@ -19,10 +19,29 @@ export const SuggestTagsRequestSchema = z.object({
 });
 export type SuggestTagsRequest = z.infer<typeof SuggestTagsRequestSchema>;
 
+/**
+ * What the API returns — at most three usable tags, the contract the client
+ * relies on.
+ */
 export const SuggestTagsResponseSchema = z.object({
   tags: z.array(z.string().min(1)).min(1).max(3),
 });
 export type SuggestTagsResponse = z.infer<typeof SuggestTagsResponseSchema>;
+
+/**
+ * What the MODEL is validated against, deliberately looser than the response
+ * contract above — the same reasoning as `SuggestChatTitleModelSchema`.
+ *
+ * The strict `.max(3)` used to be applied to the model's raw output, so a
+ * model that offered four tags failed validation, retried, failed again and
+ * 502'd the request — even though `normalizeTags` sitting right behind it
+ * already caps the list at three and would have trimmed the fourth without
+ * complaint. Enforcing a limit we then enforce again ourselves only ever
+ * loses good suggestions.
+ */
+export const SuggestTagsModelSchema = z.object({
+  tags: z.array(z.string()).min(1).max(10),
+});
 
 export const SUGGEST_TAGS_PROMPT =
   `Task: suggest 1-3 tags for a passage or personal note the user saved. The user message is JSON: { text, note?, surrounding?, bookTitle?, author?, existingTags, goal? }.

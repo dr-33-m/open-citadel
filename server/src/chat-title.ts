@@ -2,7 +2,9 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
   DEFAULT_CLOUD_MODEL_ID,
+  normalizeChatTitle,
   SUGGEST_CHAT_TITLE_PROMPT,
+  SuggestChatTitleModelSchema,
   SuggestChatTitleRequestSchema,
   SuggestChatTitleResponseSchema,
 } from 'samwell-shared';
@@ -53,13 +55,22 @@ chatTitleRoutes.post('/title', async (c) => {
   }
 
   const { modelId: _requestedModel, ...payload } = parsed.data;
+  // Validated loosely, then trimmed to fit — see SuggestChatTitleModelSchema.
   const result = await runStructuredAnalysis({
     modelId,
     systemPrompts: [SUGGEST_CHAT_TITLE_PROMPT],
     messages: [{ role: 'user', content: JSON.stringify(payload) }],
-    schema: SuggestChatTitleResponseSchema,
+    schema: SuggestChatTitleModelSchema,
     usageEventId,
+    failureCode: 'chat_title_failed',
   });
 
-  return c.json(result);
+  const title = normalizeChatTitle(result.title);
+  // Normalizing can empty a title that was nothing but quotes or punctuation.
+  // That's a failed generation, not a title worth showing.
+  if (!title) {
+    throw new HTTPException(502, { message: 'chat_title_failed' });
+  }
+
+  return c.json(SuggestChatTitleResponseSchema.parse({ title }));
 });
