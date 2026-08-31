@@ -2,28 +2,27 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { Reveal } from '@/components/navigation/reveal';
 import { ThemedText } from '@/components/themed-text';
 import { asColor } from '@/utils/colors';
 
 /**
  * One settings group, and the two pieces every group shares: the hairline
- * divider above it and the letter-spaced gold label. The wrapper takes the
- * section's own `className` rather than nesting a view — a reveal should
- * not cost a layer.
+ * divider above it and the letter-spaced gold label.
  *
- * Sections that must be on screen during the drawer's rise mount animated;
- * the rest arrive plain after settle — an entering animation below the fold
- * is work nobody sees. The parent gates `mounted`.
+ * These used to rise and fade in one at a time, on a stagger. They no longer
+ * animate at all, because the screen now arrives by dissolving a placeholder
+ * of these same sections into the real ones — and a section that then slid up
+ * from its own offset would be a second entrance played over the first, moving
+ * content the user had already been shown sitting still. The screen's entrance
+ * belongs to the screen; a section's job is to be where the placeholder said
+ * it would be.
  */
 export function SettingsSection({
-  index,
   label,
   divider = true,
   className = 'mt-8 gap-4',
   children,
 }: {
-  index: number;
   label?: string;
   divider?: boolean;
   className?: string;
@@ -32,10 +31,10 @@ export function SettingsSection({
   return (
     <>
       {divider && <View className="h-px bg-surface-tertiary mt-4" />}
-      <Reveal index={index} className={className}>
+      <View className={className}>
         {label && <SectionLabel>{label}</SectionLabel>}
         {children}
-      </Reveal>
+      </View>
     </>
   );
 }

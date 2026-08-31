@@ -31,7 +31,7 @@ export function CompassSection() {
     useCompassTimes();
 
   return (
-    <SettingsSection index={4} label="COMPASS">
+    <SettingsSection label="COMPASS">
       <ThemedText type="bodySm" color={asColor(mutedForeground)}>
         Your morning and night check-in times with Grand Maester Samwell.
       </ThemedText>

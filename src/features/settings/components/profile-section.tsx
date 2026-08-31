@@ -32,7 +32,7 @@ export const ProfileSection = React.memo(function ProfileSection() {
   };
 
   return (
-    <SettingsSection index={0} label="PROFILE" divider={false} className="mt-6 gap-4">
+    <SettingsSection label="PROFILE" divider={false} className="mt-6 gap-4">
       <View className="flex-row items-center gap-3 bg-muted px-4">
         <User size={iconSize.default} color={asColor(foreground)} strokeWidth={2} />
         <TextInput

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Animated, View } from 'react-native';
+import { View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 import { Download, MemoryStick, Power, SlidersHorizontal, Trash2 } from 'lucide-react-native';
 
@@ -9,6 +10,7 @@ import { TuneSheet } from '@/features/settings/components/tune-sheet';
 import { ConfirmDeleteSheet } from '@/features/settings/components/confirm-delete-sheet';
 import { MemoryInfoSheet } from '@/features/settings/components/memory-info-sheet';
 import { ThemedText } from '@/components/themed-text';
+import { usePulse } from '@/hooks/use-pulse';
 import { Touchable } from '@/components/ui/touchable';
 import { elevation } from '@/constants/theme';
 import { useModelStore } from '@/stores/model';
@@ -49,20 +51,7 @@ export function OfflineModelCard() {
   const modelSheet = useModelSheet();
 
   // The power action's heartbeat: pulses only while the engine is loading.
-  const powerPulse = React.useRef(new Animated.Value(0.4)).current;
-  React.useEffect(() => {
-    if (modelLoading) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(powerPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-          Animated.timing(powerPulse, { toValue: 0.4, duration: 800, useNativeDriver: true }),
-        ]),
-      ).start();
-    } else {
-      powerPulse.stopAnimation();
-      powerPulse.setValue(1);
-    }
-  }, [modelLoading, powerPulse]);
+  const powerPulseStyle = usePulse(modelLoading);
 
   // Run when the active model or context size changes — after the sheet is
   // up, never in the same pass as its first paint.
@@ -155,7 +144,7 @@ export function OfflineModelCard() {
                   onPress={isLoaded ? releaseContext : () => useModelStore.getState().initContext()}
                   disabled={busy}
                 >
-                  <Animated.View style={modelLoading ? { opacity: powerPulse } : undefined}>
+                  <Animated.View style={powerPulseStyle}>
                     <Power size={14} color={modelLoading ? asColor(primary) : isLoaded ? '#4caf50' : asColor(mutedForeground)} />
                   </Animated.View>
                   <ThemedText type="labelSm" color={isLoaded ? undefined : asColor(mutedForeground)}>

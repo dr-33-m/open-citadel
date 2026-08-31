@@ -39,7 +39,8 @@ import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
-import { spacing } from "@/constants/theme";
+import ReanimatedView, { FadeOut } from "react-native-reanimated";
+import { easing, motion, spacing } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
 import { useBooksStore } from "@/stores/books";
 import { useChatStore } from "@/stores/chat";
@@ -57,6 +58,10 @@ import {
 // itself rather than guessed: this number is what the reading area reserves
 // for it, and an under-guess is invisible in code and very visible on a page.
 const HEADER_CONTENT_HEIGHT = READER_HEADER_HEIGHT;
+
+/** How long the reading placeholder is held after Readium reports the
+ * publication — see `readerPainted`. Measured, not guessed. */
+const PAINT_GRACE_MS = 450;
 
 // Reserved space above the bottom safe area for the floating TTS controls /
 // page indicator, so paginated text never renders underneath them
@@ -156,8 +161,13 @@ export default function ReaderScreen() {
 
   const createChatSession = useChatStore((s) => s.createSession);
 
-  const { updateBookMetadata } = useBooksStore();
-  const { ttsVoice, ttsVoiceLanguage, ttsRate } = useSettingsStore();
+  // Selectors, not whole-store subscriptions: a bare `useBooksStore()` re-ran
+  // this screen on every library sync tick, and a bare `useSettingsStore()` on
+  // every unrelated setting write — neither of which the reader displays.
+  const updateBookMetadata = useBooksStore((s) => s.updateBookMetadata);
+  const ttsVoice = useSettingsStore((s) => s.ttsVoice);
+  const ttsVoiceLanguage = useSettingsStore((s) => s.ttsVoiceLanguage);
+  const ttsRate = useSettingsStore((s) => s.ttsRate);
 
   const [menuHighlight, setMenuHighlight] = useState<{
     id: string;
@@ -176,6 +186,37 @@ export default function ReaderScreen() {
   const [showToc, setShowToc] = useState(false);
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
   const [publicationReady, setPublicationReady] = useState(false);
+
+  /**
+   * Whether Readium has had time to actually draw a page behind the cover.
+   *
+   * `publicationReady` says the publication is loaded, not that anything has
+   * been painted with it — measured on an A33, the first text lands roughly
+   * 450ms later. Dropping the cover on that signal, or a frame or two after
+   * it, let the skeleton leave before the passage arrived: the blank between
+   * them.
+   *
+   * `onLocationChange` looked like the honest signal and is worse — it reports
+   * that Readium knows *where* it is, which happens before it has drawn
+   * anything, so it uncovers even earlier.
+   *
+   * So this is a measured wait rather than an event, which is worth being
+   * plain about: there is no "first paint" callback on the view to hang it on.
+   * Overshooting is close to free — the cover is a placeholder the reader is
+   * already looking at — while undershooting is the flash this exists to
+   * remove, so the number leans long. Re-measure if the reader's mount path
+   * changes.
+   */
+  const [readerPainted, setReaderPainted] = useState(false);
+
+  // Reset lives with `setPublicationReady(false)` on book change rather than in
+  // here, so this effect only ever schedules — an effect that also writes state
+  // synchronously is the cascading-render pattern the compiler warns about.
+  useEffect(() => {
+    if (!publicationReady) return undefined;
+    const timer = setTimeout(() => setReaderPainted(true), PAINT_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [publicationReady]);
   // Bookmark note prompt — shown after adding a bookmark
   const [bookmarkNotePrompt, setBookmarkNotePrompt] = useState<{
     id: string;
@@ -258,6 +299,7 @@ export default function ReaderScreen() {
 
   useEffect(() => {
     setPublicationReady(false);
+    setReaderPainted(false);
     if (id) openBook(id);
     return () => closeBook();
   }, [id]);
@@ -897,14 +939,15 @@ export default function ReaderScreen() {
             so arriving at a book is one continuous wait. `pointerEvents=none`
             keeps the page-turn taps reaching the reader underneath the moment
             it is live. */}
-        {!publicationReady && (
-          <View
+        {!readerPainted && (
+          <ReanimatedView.View
             pointerEvents="none"
             style={StyleSheet.absoluteFill}
             className="bg-background"
+            exiting={FadeOut.duration(motion.base).easing(easing)}
           >
             <ReadingSkeleton />
-          </View>
+          </ReanimatedView.View>
         )}
       </View>
 

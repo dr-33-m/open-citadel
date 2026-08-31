@@ -32,7 +32,7 @@ export const AppearanceSection = React.memo(function AppearanceSection() {
   );
 
   return (
-    <SettingsSection index={1} label="APPEARANCE">
+    <SettingsSection label="APPEARANCE">
       <Touchable
         className="flex-row items-center justify-between bg-card p-4"
         style={elevation.soft}

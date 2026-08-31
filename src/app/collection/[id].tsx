@@ -4,7 +4,9 @@ import { ArrowLeft, Plus, Search, Trash2, X } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
 import { TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
 import { TransitionFlatList } from "@/components/navigation/transition-scroll";
-import { DeferredBody } from "@/components/navigation/deferred-body";
+import { PageFade } from "@/components/scroll-fades";
+import { Handover } from "@/components/navigation/handover";
+import { BookGridSkeleton } from "@/components/skeletons/book-grid-skeleton";
 import { useScreenSettled } from "@/navigation/use-screen-settled";
 
 import { Touchable } from "@/components/ui/touchable";
@@ -89,7 +91,10 @@ export default function CollectionScreen() {
     removeBookFromCollection,
     getCollectionBooks,
   } = useCollectionsStore();
-  const { updateBookStatus, toggleFavorite, deleteBook, updateBookTitle } = useBooksStore();
+  const updateBookStatus = useBooksStore((s) => s.updateBookStatus);
+  const toggleFavorite = useBooksStore((s) => s.toggleFavorite);
+  const deleteBook = useBooksStore((s) => s.deleteBook);
+  const updateBookTitle = useBooksStore((s) => s.updateBookTitle);
   const allBooks = useAllBooks();
 
   const [books, setBooks] = useState<Book[]>([]);
@@ -241,35 +246,45 @@ export default function CollectionScreen() {
         </View>
       </View>
 
-      {/* Grid — deferred one frame past the shell so the drawer rise keeps a
-          clear JS thread (see `DeferredBody`). */}
-      <DeferredBody>
-        <TransitionFlatList
-          data={filtered}
-          extraData={gridExtraData}
-          keyExtractor={keyExtractor}
-          numColumns={COLUMNS}
-          className="flex-1"
-          style={contentColumn}
-          contentContainerClassName="px-6"
-          contentContainerStyle={gridContentStyle}
-          columnWrapperClassName="mb-4 gap-4"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          initialNumToRender={GRID_INITIAL_RENDER}
-          maxToRenderPerBatch={GRID_MAX_PER_BATCH}
-          windowSize={GRID_WINDOW_SIZE}
-          updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
-          ListEmptyComponent={
-            <View className="w-full items-center pt-16">
-              <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-                {query ? "No results." : "No books in this collection yet."}
-              </ThemedText>
-            </View>
-          }
-          renderItem={renderBook}
-        />
-      </DeferredBody>
+      {/* Grid — held until the screen has settled, behind a placeholder grid of
+          the same geometry. Mounting it mid-push competed with the transition
+          for the UI thread and stalled the slide (see `Handover`). */}
+      <Handover
+        ready={settled}
+        skeleton={
+          <View className="px-6" style={contentColumn}>
+            <BookGridSkeleton width={itemWidth} columns={COLUMNS} />
+          </View>
+        }
+      >
+        <PageFade>
+          <TransitionFlatList
+            data={filtered}
+            extraData={gridExtraData}
+            keyExtractor={keyExtractor}
+            numColumns={COLUMNS}
+            className="flex-1"
+            style={contentColumn}
+            contentContainerClassName="px-6"
+            contentContainerStyle={gridContentStyle}
+            columnWrapperClassName="mb-4 gap-4"
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            initialNumToRender={GRID_INITIAL_RENDER}
+            maxToRenderPerBatch={GRID_MAX_PER_BATCH}
+            windowSize={GRID_WINDOW_SIZE}
+            updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
+            ListEmptyComponent={
+              <View className="w-full items-center pt-16">
+                <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+                  {query ? "No results." : "No books in this collection yet."}
+                </ThemedText>
+              </View>
+            }
+            renderItem={renderBook}
+          />
+        </PageFade>
+      </Handover>
 
       {settled && (
         <>

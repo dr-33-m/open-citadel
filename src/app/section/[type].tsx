@@ -13,7 +13,10 @@ import { TextInput, useWindowDimensions, View, type ViewStyle } from "react-nati
 import {
   TransitionFlatList,
 } from "@/components/navigation/transition-scroll";
-import { DeferredBody } from "@/components/navigation/deferred-body";
+import { PageFade } from "@/components/scroll-fades";
+import { Handover } from "@/components/navigation/handover";
+import { BookGridSkeleton } from "@/components/skeletons/book-grid-skeleton";
+import { CollectionGridSkeleton } from "@/components/skeletons/collection-grid-skeleton";
 import { useScreenSettled } from "@/navigation/use-screen-settled";
 
 import { Touchable } from "@/components/ui/touchable";
@@ -161,8 +164,12 @@ export default function SectionScreen() {
   const [bookCollectionIds, setBookCollectionIds] = useState<string[]>([]);
   const [deleteConfirmBook, setDeleteConfirmBook] = useState<Book | null>(null);
   const [editTitleBook, setEditTitleBook] = useState<Book | null>(null);
-  const { syncBooks, clearQueue, updateBookStatus, toggleFavorite, deleteBook, updateBookTitle } =
-    useBooksStore();
+  const syncBooks = useBooksStore((s) => s.syncBooks);
+  const clearQueue = useBooksStore((s) => s.clearQueue);
+  const updateBookStatus = useBooksStore((s) => s.updateBookStatus);
+  const toggleFavorite = useBooksStore((s) => s.toggleFavorite);
+  const deleteBook = useBooksStore((s) => s.deleteBook);
+  const updateBookTitle = useBooksStore((s) => s.updateBookTitle);
   const sync = useSyncState();
 
   const readingBooks = useCurrentlyReading();
@@ -171,8 +178,9 @@ export default function SectionScreen() {
   const favoriteBooks = useFavoriteBooks();
   const archivedBooks = useArchivedBooks();
 
-  const { collections, loadCollections, createCollection } =
-    useCollectionsStore();
+  const collections = useCollectionsStore((s) => s.collections);
+  const loadCollections = useCollectionsStore((s) => s.loadCollections);
+  const createCollection = useCollectionsStore((s) => s.createCollection);
 
   const sectionBooks = useMemo((): Book[] => {
     switch (type) {
@@ -322,33 +330,42 @@ export default function SectionScreen() {
         {/* Grid — virtualized like the books grid below (it used to map every
             collection into a ScrollView, paying full mount cost up front);
             the transition-scroll FlatList keeps the screen's own transitions. */}
-        <DeferredBody>
-          <TransitionFlatList
-            data={filteredCollections}
-            extraData={gridExtraData}
-            keyExtractor={collectionKeyExtractor}
-            numColumns={NUM_COLUMNS}
-            className="flex-1"
-            style={contentColumn}
-            contentContainerClassName="px-6"
-            contentContainerStyle={gridContentStyle}
-            columnWrapperClassName="mb-4 gap-4"
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            initialNumToRender={GRID_INITIAL_RENDER}
-            maxToRenderPerBatch={GRID_MAX_PER_BATCH}
-            windowSize={GRID_WINDOW_SIZE}
-            updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
-            ListEmptyComponent={
-              <View className="w-full items-center pt-16">
-                <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-                  {query ? "No results." : "No collections yet."}
-                </ThemedText>
-              </View>
-            }
-            renderItem={renderCollection}
-          />
-        </DeferredBody>
+        <Handover
+          ready={settled}
+          skeleton={
+            <View className="px-6" style={contentColumn}>
+              <CollectionGridSkeleton columns={NUM_COLUMNS} />
+            </View>
+          }
+        >
+          <PageFade>
+            <TransitionFlatList
+              data={filteredCollections}
+              extraData={gridExtraData}
+              keyExtractor={collectionKeyExtractor}
+              numColumns={NUM_COLUMNS}
+              className="flex-1"
+              style={contentColumn}
+              contentContainerClassName="px-6"
+              contentContainerStyle={gridContentStyle}
+              columnWrapperClassName="mb-4 gap-4"
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={GRID_INITIAL_RENDER}
+              maxToRenderPerBatch={GRID_MAX_PER_BATCH}
+              windowSize={GRID_WINDOW_SIZE}
+              updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
+              ListEmptyComponent={
+                <View className="w-full items-center pt-16">
+                  <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+                    {query ? "No results." : "No collections yet."}
+                  </ThemedText>
+                </View>
+              }
+              renderItem={renderCollection}
+            />
+          </PageFade>
+        </Handover>
 
         {settled && (
           <NewCollectionPrompt
@@ -435,35 +452,46 @@ export default function SectionScreen() {
         </View>
       </View>
 
-      {/* Grid — held back one frame past the shell so the drawer's rise has a
-          clear JS thread (see `DeferredBody`). */}
-      <DeferredBody>
-        <TransitionFlatList
-          data={filtered}
-          extraData={gridExtraData}
-          keyExtractor={keyExtractor}
-          numColumns={NUM_COLUMNS}
-          className="flex-1"
-          style={contentColumn}
-          contentContainerClassName="px-6"
-          contentContainerStyle={gridContentStyle}
-          columnWrapperClassName="mb-4 gap-4"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          initialNumToRender={GRID_INITIAL_RENDER}
-          maxToRenderPerBatch={GRID_MAX_PER_BATCH}
-          windowSize={GRID_WINDOW_SIZE}
-          updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
-          ListEmptyComponent={
-            <View className="w-full items-center pt-16">
-              <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-                {query ? "No results." : "Nothing here yet."}
-              </ThemedText>
-            </View>
-          }
-          renderItem={renderBook}
-        />
-      </DeferredBody>
+      {/* Grid — held until the screen has settled, behind a placeholder grid of
+          the same geometry so the wait is the shape of the books rather than an
+          empty screen. Mounting it mid-push competed with the transition for the
+          UI thread and stalled the slide near its end (see `Handover`). */}
+      <Handover
+        ready={settled}
+        skeleton={
+          <View className="px-6" style={contentColumn}>
+            <BookGridSkeleton width={itemWidth} columns={NUM_COLUMNS} />
+          </View>
+        }
+      >
+        <PageFade>
+          <TransitionFlatList
+            data={filtered}
+            extraData={gridExtraData}
+            keyExtractor={keyExtractor}
+            numColumns={NUM_COLUMNS}
+            className="flex-1"
+            style={contentColumn}
+            contentContainerClassName="px-6"
+            contentContainerStyle={gridContentStyle}
+            columnWrapperClassName="mb-4 gap-4"
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            initialNumToRender={GRID_INITIAL_RENDER}
+            maxToRenderPerBatch={GRID_MAX_PER_BATCH}
+            windowSize={GRID_WINDOW_SIZE}
+            updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
+            ListEmptyComponent={
+              <View className="w-full items-center pt-16">
+                <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+                  {query ? "No results." : "Nothing here yet."}
+                </ThemedText>
+              </View>
+            }
+            renderItem={renderBook}
+          />
+        </PageFade>
+      </Handover>
 
       {/* Sheets mount after the drawer has settled — four BottomSheetModals is
           more than the rise can absorb in its opening frames. */}

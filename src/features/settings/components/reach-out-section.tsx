@@ -17,7 +17,7 @@ export function ReachOutSection() {
   const [noteOpen, setNoteOpen] = React.useState(false);
 
   return (
-    <SettingsSection index={6} label="REACH OUT">
+    <SettingsSection label="REACH OUT">
       <Touchable
         className="flex-row items-center justify-between bg-card p-4"
         style={elevation.soft}

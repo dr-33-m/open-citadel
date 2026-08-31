@@ -31,7 +31,7 @@ export const SamwellSection = React.memo(function SamwellSection() {
   const nativeAvailable = React.useMemo(() => isNativeAvailable(), []);
 
   return (
-    <SettingsSection index={3}>
+    <SettingsSection>
       <View className="gap-1">
         <ThemedText type="labelMd" color={asColor(primary)} className="tracking-[1.2px]">
           {samwellMode === 'cloud' ? 'GRAND MAESTER SAMWELL' : 'SAMWELL'}

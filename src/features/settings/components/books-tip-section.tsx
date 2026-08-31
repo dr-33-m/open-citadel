@@ -14,7 +14,7 @@ export const BooksTipSection = React.memo(function BooksTipSection() {
   const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
 
   return (
-    <SettingsSection index={2} label="BOOKS">
+    <SettingsSection label="BOOKS">
       <View className="flex-row items-center gap-3 bg-card p-4" style={elevation.soft}>
         <PrefixIcon icon={BookOpen} size={36} />
         <ThemedText type="bodySm" color={asColor(mutedForeground)} className="flex-1">
