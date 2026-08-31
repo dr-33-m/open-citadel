@@ -1,11 +1,10 @@
 import React from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, Text, View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
 import { fontFamily } from "@/constants/theme";
-import { useColors } from "@/hooks/use-colors";
+import { asColor } from "@/utils/colors";
 
-const CARD_SIZE = 1080;
-const PADDING = 70;
 const LOGO = require("../../../assets/icons/oc-adaptive-icon.png");
 
 type ExportImageCardProps = {
@@ -35,7 +34,11 @@ export function ExportImageCard({
   viewRef,
   onReady,
 }: ExportImageCardProps) {
-  const colors = useColors();
+  const [primary, foreground, mutedForeground] = useCSSVariable([
+    "--color-primary",
+    "--color-foreground",
+    "--color-muted-foreground",
+  ]);
   const quoteFontSize = getQuoteFontSize(quoteText.length);
 
   // Track image loading — capture should wait until all images are ready
@@ -50,173 +53,129 @@ export function ExportImageCard({
     }
   }, [onReady]);
 
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        card: {
-          width: CARD_SIZE,
-          height: CARD_SIZE,
-          backgroundColor: colors.surface.base,
-          padding: PADDING,
-          justifyContent: "space-between",
-        },
-
-        // ── Quote section (top ~70%) ──
-        quoteSection: {
-          flex: 1,
-          justifyContent: "center",
-          paddingHorizontal: 10,
-        },
-        openQuote: {
-          fontFamily: fontFamily.serifBold,
-          fontSize: 95,
-          color: colors.primary.default,
-          lineHeight: 95,
-          marginBottom: -30,
-          marginLeft: -8,
-        },
-        quoteTextContainer: {
-          paddingHorizontal: 20,
-        },
-        quoteText: {
-          fontFamily: fontFamily.serif,
-          color: colors.text.primary,
-        },
-        closeQuote: {
-          fontFamily: fontFamily.serifBold,
-          fontSize: 85,
-          color: colors.primary.default,
-          lineHeight: 85,
-          textAlign: "right",
-          marginTop: -30,
-          marginRight: -8,
-        },
-
-        // ── Divider ──
-        divider: {
-          height: 1,
-          backgroundColor: colors.primary.default,
-          marginTop: 40,
-          marginBottom: 35,
-        },
-
-        // ── Footer: cover + metadata + brand ──
-        footer: {
-          flexDirection: "row",
-          alignItems: "flex-start",
-          gap: 30,
-        },
-        coverImage: {
-          width: 120,
-          height: 170,
-          borderRadius: 6,
-          borderWidth: 1,
-          borderColor: `${colors.primary.default}26`,
-        },
-        metadataArea: {
-          flex: 1,
-        },
-        bookTitle: {
-          fontFamily: fontFamily.sansSemiBold,
-          fontSize: 28,
-          letterSpacing: 1.5,
-          color: colors.text.primary,
-        },
-        authorName: {
-          fontFamily: fontFamily.sans,
-          fontSize: 22,
-          color: colors.text.secondary,
-          marginTop: 6,
-        },
-        category: {
-          fontFamily: fontFamily.sans,
-          fontSize: 18,
-          color: colors.text.secondary,
-          marginTop: 4,
-        },
-        brandContainer: {
-          alignItems: "center",
-        },
-        brandRow: {
-          alignItems: "center",
-        },
-        brandText: {
-          fontFamily: fontFamily.sansSemiBold,
-          fontSize: 11,
-          letterSpacing: 2,
-          color: colors.text.secondary,
-        },
-        brandLogo: {
-          width: 132,
-          height: 132,
-          opacity: 0.8,
-          marginTop: -30,
-        },
-      }),
-    [colors],
-  );
-
   return (
     <View
       ref={viewRef}
-      style={styles.card}
       collapsable={false}
+      className="h-[1080px] w-[1080px] justify-between bg-background p-[70px]"
     >
       {/* Quote area */}
-      <View style={styles.quoteSection}>
-        <Text style={styles.openQuote}>{"\u201C"}</Text>
+      <View className="flex-1 justify-center px-[10px]">
+        <Text
+          style={{
+            fontFamily: fontFamily.serifBold,
+            fontSize: 95,
+            lineHeight: 95,
+            color: asColor(primary),
+            marginBottom: -30,
+            marginLeft: -8,
+          }}
+        >
+          {"\u201C"}
+        </Text>
 
-        <View style={styles.quoteTextContainer}>
+        <View className="px-5">
           <Text
-            style={[styles.quoteText, { fontSize: quoteFontSize, lineHeight: quoteFontSize * 1.3 }]}
+            style={{
+              fontFamily: fontFamily.serif,
+              fontSize: quoteFontSize,
+              lineHeight: quoteFontSize * 1.3,
+              color: asColor(foreground),
+            }}
             numberOfLines={12}
           >
             {quoteText}
           </Text>
         </View>
 
-        <Text style={styles.closeQuote}>{"\u201D"}</Text>
+        <Text
+          style={{
+            fontFamily: fontFamily.serifBold,
+            fontSize: 85,
+            lineHeight: 85,
+            textAlign: "right",
+            color: asColor(primary),
+            marginTop: -30,
+            marginRight: -8,
+          }}
+        >
+          {"\u201D"}
+        </Text>
       </View>
 
       {/* Divider */}
-      <View style={styles.divider} />
+      <View className="mb-[35px] mt-[40px] h-px bg-primary" />
 
       {/* Footer: cover + metadata + brand */}
-      <View style={styles.footer}>
+      <View className="flex-row items-start gap-[30px]">
         {coverUri && (
           <Image
             source={{ uri: coverUri }}
-            style={styles.coverImage}
+            className="h-[170px] w-[120px] rounded-[6px] border"
+            style={{ borderColor: `${asColor(primary)}26` }}
             fadeDuration={0}
             onLoad={() => { coverLoaded.current = true; checkReady(); }}
           />
         )}
 
-        <View style={styles.metadataArea}>
-          <Text style={styles.bookTitle} numberOfLines={2}>
+        <View className="flex-1">
+          <Text
+            style={{
+              fontFamily: fontFamily.sansSemiBold,
+              fontSize: 28,
+              letterSpacing: 1.5,
+              color: asColor(foreground),
+            }}
+            numberOfLines={2}
+          >
             {bookTitle.toUpperCase()}
           </Text>
           {authorName.length > 0 && (
-            <Text style={styles.authorName} numberOfLines={1}>
+            <Text
+              style={{
+                fontFamily: fontFamily.sans,
+                fontSize: 22,
+                color: asColor(mutedForeground),
+                marginTop: 6,
+              }}
+              numberOfLines={1}
+            >
               {authorName}
             </Text>
           )}
           {category && (
-            <Text style={styles.category} numberOfLines={1}>
+            <Text
+              style={{
+                fontFamily: fontFamily.sans,
+                fontSize: 18,
+                color: asColor(mutedForeground),
+                marginTop: 4,
+              }}
+              numberOfLines={1}
+            >
               {category}
             </Text>
           )}
         </View>
 
-        <View style={styles.brandContainer}>
-          <View style={styles.brandRow}>
+        <View className="items-center">
+          <View className="items-center">
             <Image
               source={LOGO}
-              style={styles.brandLogo}
+              className="-mt-[30px] h-[132px] w-[132px] opacity-80"
               fadeDuration={0}
               onLoad={() => { logoLoaded.current = true; checkReady(); }}
             />
-            <Text style={styles.brandText}>OPEN CITADEL</Text>
+            <Text
+              style={{
+                fontFamily: fontFamily.sansSemiBold,
+                fontSize: 11,
+                letterSpacing: 2,
+                color: asColor(mutedForeground),
+              }}
+            >
+              OPEN CITADEL
+            </Text>
           </View>
         </View>
       </View>

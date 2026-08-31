@@ -57,11 +57,38 @@ export const DeleteResultSchema = z.object({
 export const ReadingSnippetSchema = z.object({
   book: z.string(),
   author: z.string(),
+  /** Chapter the passage came from, where the book names one. */
+  section: z.string().nullable(),
   snippet: z.string(),
 });
 
 export const SearchReadingInputSchema = z.object({
   query: z.string(),
+});
+
+export const ChapterEntrySchema = z.object({
+  index: z.number(),
+  title: z.string().nullable(),
+  approxWords: z.number(),
+  current: z.boolean(),
+});
+
+export const ListChaptersInputSchema = z.object({
+  book_title: z.string().optional(),
+});
+
+export const ListChaptersOutputSchema = z.object({
+  chapters: z.array(ChapterEntrySchema),
+  formatted: z.string(),
+});
+
+export const ReadChapterInputSchema = z.object({
+  book_title: z.string().optional(),
+  chapter: z.string(),
+});
+
+export const ReadChapterOutputSchema = z.object({
+  formatted: z.string(),
 });
 
 export const SearchReadingOutputSchema = z.object({
@@ -70,6 +97,7 @@ export const SearchReadingOutputSchema = z.object({
 });
 
 export const BookCandidateSchema = z.object({
+  id: z.string(),
   title: z.string(),
   author: z.string(),
   category: z.string().nullable(),
@@ -190,6 +218,22 @@ export const searchReadingTool = toolDefinition({
     "Search the FULL TEXT of the books the user is currently reading or has finished, for passages relevant to a topic or question. Only ever returns text the user has ALREADY read — never content ahead of their current reading position. Use this mid-conversation to ground your points in what the user's own authors actually say, citing the book.",
   inputSchema: SearchReadingInputSchema,
   outputSchema: SearchReadingOutputSchema,
+});
+
+export const listChaptersTool = toolDefinition({
+  name: 'list_chapters',
+  description:
+    "List the chapters of one of the user's books that they have ALREADY reached, with rough lengths. Use this before read_chapter to see what is actually in the book rather than guessing at search terms. Never lists chapters ahead of the user's reading position, since a chapter title gives away plot as readily as the text does.",
+  inputSchema: ListChaptersInputSchema,
+  outputSchema: ListChaptersOutputSchema,
+});
+
+export const readChapterTool = toolDefinition({
+  name: 'read_chapter',
+  description:
+    'Read the FULL text of one chapter the user has already read, by number (from list_chapters) or by title. Use when a keyword search is too narrow and you need the whole argument of a chapter to discuss it properly. Stops at the user\u2019s reading position if they are partway through.',
+  inputSchema: ReadChapterInputSchema,
+  outputSchema: ReadChapterOutputSchema,
 });
 
 export const suggestNextBookTool = toolDefinition({
@@ -351,6 +395,8 @@ export const SAMWELL_TOOL_DEFINITIONS = [
   searchHighlightsTool,
   searchThoughtsTool,
   searchReadingTool,
+  listChaptersTool,
+  readChapterTool,
   suggestNextBookTool,
   tagHighlightTool,
   tagThoughtTool,

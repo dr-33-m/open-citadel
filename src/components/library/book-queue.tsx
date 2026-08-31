@@ -1,14 +1,15 @@
 import { Image } from 'expo-image';
 import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { SyncBadge } from '@/components/ui/sync-badge';
 import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
-import { useColors } from '@/hooks/use-colors';
-import { elevation, fontFamily, motion, spacing } from '@/constants/theme';
+import { fontFamily, motion } from '@/constants/theme';
 import type { books as booksTable } from '@/db/schema';
+import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
 
 type Book = typeof booksTable.$inferSelect;
 
@@ -18,85 +19,66 @@ type BookQueueProps = {
   onBookLongPress?: (book: Book) => void;
 };
 
+/** ThemedText/lucide icons take a literal color, not a className. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+const COVER_FILL = { width: '100%' as const, height: '100%' as const };
+
 export function BookQueue({ books, onBookPress, onBookLongPress }: BookQueueProps) {
-  const colors = useColors();
-  const styles = React.useMemo(() => StyleSheet.create({
-    scrollContent: {
-      paddingHorizontal: spacing[6],
-      gap: spacing[4],
-    },
-    item: {
-      width: 130,
-      gap: spacing[2],
-    },
-    cover: {
-      width: 130,
-      height: 170,
-      backgroundColor: colors.surface.low,
-      ...elevation.soft,
-    },
-    coverImage: {
-      width: 130,
-      height: 170,
-    },
-    coverPlaceholder: {
-      flex: 1,
-      backgroundColor: colors.surface.mid,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    initial: {
-      fontSize: 36,
-      fontFamily: fontFamily.serif,
-    },
-    coverTitle: {
-      position: 'absolute',
-      bottom: spacing[2],
-      paddingHorizontal: spacing[2],
-      textAlign: 'center',
-      fontSize: 9,
-    },
-    title: {
-      marginTop: spacing[1],
-    },
-  }), [colors]);
+  const [ghostInk, mutedForeground] = useCSSVariable([
+    '--color-surface-tertiary',
+    '--color-muted-foreground',
+  ]);
 
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.scrollContent}
+      contentContainerClassName="gap-4 px-6"
     >
       {books.map((book) => (
         <Touchable
           key={book.id}
           onPress={() => onBookPress?.(book.id)}
           onLongPress={() => onBookLongPress?.(book)}
-          style={styles.item}
+          className="w-[130px] gap-2"
         >
-          <View style={styles.cover}>
+          <View className="aspect-[2/3] w-[130px] bg-muted">
             {book.coverUrl ? (
               <Image
                 source={{ uri: book.coverUrl }}
-                style={styles.coverImage}
+                style={COVER_FILL}
+                placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
                 transition={motion.slow}
               />
             ) : (
-              <View style={styles.coverPlaceholder}>
-                <ThemedText type="displayLg" color={colors.surface.highest} style={styles.initial}>
+              <View className="flex-1 items-center justify-center">
+                <ThemedText
+                  type="displayLg"
+                  color={asColor(ghostInk)}
+                  style={{ fontSize: 36, fontFamily: fontFamily.serif }}
+                >
                   {book.title.charAt(0).toUpperCase()}
                 </ThemedText>
-                <ThemedText type="labelSm" color={colors.text.secondary} style={styles.coverTitle} numberOfLines={2}>
+                <ThemedText
+                  type="labelSm"
+                  color={asColor(mutedForeground)}
+                  className="absolute bottom-2 px-2"
+                  style={{ textAlign: 'center', fontSize: 9 }}
+                  numberOfLines={2}
+                >
                   {book.title}
                 </ThemedText>
               </View>
             )}
             {!book.filePath && <SyncBadge />}
           </View>
-          <ThemedText type="bodySm" numberOfLines={1} style={styles.title}>
+          <ThemedText type="bodySm" numberOfLines={1} className="mt-1">
             {book.title}
           </ThemedText>
-          <ThemedText type="labelSm" color={colors.text.secondary} numberOfLines={1}>
+          <ThemedText type="labelSm" color={asColor(mutedForeground)} numberOfLines={1}>
             {book.author}
           </ThemedText>
         </Touchable>

@@ -1,11 +1,10 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 import type { CompassMissionStep } from 'samwell-shared';
 
 import { missionIcon } from '@/components/compass/mission-icon';
 import { ThemedText } from '@/components/themed-text';
-import { spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
 
 export function MissionStep({
   index,
@@ -16,56 +15,34 @@ export function MissionStep({
   step: CompassMissionStep;
   showIcon?: boolean;
 }) {
-  const colors = useColors();
   const Icon = missionIcon(step.icon);
 
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        row: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing[3],
-          backgroundColor: colors.surface.mid,
-          padding: spacing[3],
-        },
-        number: {
-          width: 24,
-          height: 24,
-          borderWidth: 1,
-          borderColor: colors.primary.default,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        iconWrap: {
-          width: 36,
-          height: 36,
-          backgroundColor: colors.surface.highest,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        text: { flex: 1, gap: 2 },
-      }),
-    [colors],
-  );
+  // ThemedText's `color` and a lucide icon's `color` both need a literal
+  // value, not a className — resolve the tokens once here.
+  const foregroundVar = useCSSVariable('--color-foreground');
+  const primaryVar = useCSSVariable('--color-primary');
+  const mutedForegroundVar = useCSSVariable('--color-muted-foreground');
+  const foreground = typeof foregroundVar === 'string' ? foregroundVar : undefined;
+  const primary = typeof primaryVar === 'string' ? primaryVar : undefined;
+  const mutedForeground = typeof mutedForegroundVar === 'string' ? mutedForegroundVar : undefined;
 
   return (
-    <View style={styles.row}>
+    <View className="flex-row items-center gap-3 bg-surface p-3">
       {showIcon ? (
-        <View style={styles.iconWrap}>
-          <Icon size={18} color={colors.text.primary} />
+        <View className="h-9 w-9 items-center justify-center bg-surface-tertiary">
+          <Icon size={18} color={foreground} />
         </View>
       ) : (
-        <View style={styles.number}>
-          <ThemedText type="labelSm" color={colors.primary.default}>
+        <View className="h-6 w-6 items-center justify-center border border-primary">
+          <ThemedText type="labelSm" color={primary} style={{ fontVariant: ['tabular-nums'] }}>
             {index}
           </ThemedText>
         </View>
       )}
-      <View style={styles.text}>
+      <View className="flex-1 gap-0.5">
         <ThemedText type="bodyMd">{step.title}</ThemedText>
         {step.detail.length > 0 && (
-          <ThemedText type="bodySm" color={colors.text.secondary}>
+          <ThemedText type="bodySm" color={mutedForeground}>
             {step.detail}
           </ThemedText>
         )}

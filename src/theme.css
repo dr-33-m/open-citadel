@@ -1,0 +1,414 @@
+/*
+ * Citadel Frame — PanelUI's semantic tokens, mapped onto this app's own
+ * Obsidian & Gold (dark) / Parchment & Gold (light) palette from
+ * `src/constants/theme.ts`, which stays the source of truth for both.
+ *
+ * Every colour is a static rgba/hex value: native cannot evaluate
+ * color-mix() or --alpha() at runtime, so anything derived (soft/subtle
+ * tints, skeleton) is precomputed here rather than expressed as a function.
+ *
+ * Only `light` and `dark` are defined — this app runs one brand, not
+ * PanelUI's selectable Panel/Moon/Grass families, so those were deleted
+ * rather than carried as unused dead weight (Uniwind requires every
+ * *defined* theme to declare every token, which would otherwise make them a
+ * maintenance trap on every future token added here).
+ *
+ * `--color-code-*` and `--color-chart-*` are left on PanelUI's shipped
+ * defaults: code blocks are reachable once chat adopts the `Response`
+ * component, and generic syntax colours don't need to be on-brand, while
+ * charts have no feature surface in this app at all yet. Revisit both with
+ * real content in front of you rather than guessed values.
+ */
+
+@theme {
+  --color-background: unset;
+  --color-foreground: unset;
+  --color-card: unset;
+  --color-card-foreground: unset;
+  --color-popover: unset;
+  --color-popover-foreground: unset;
+  /*
+   * The floating-panel surface, one notch further from the page than
+   * `--color-popover`. A menu is the thing furthest forward on the screen and
+   * usually the thing on top of a popover, so it needs a step of its own —
+   * without one a menu opened over a popover disappears into it.
+   *
+   * Kept separate from the `--color-surface-*` ladder because that ladder
+   * describes depth *within* the page, and this describes leaving it.
+   */
+  --color-overlay: unset;
+  --color-overlay-foreground: unset;
+  /*
+   * A band set *into* a surface rather than raised off it — the footer of
+   * actions under a card or a dialog.
+   *
+   * A translucent black in every theme, rather than a colour of its own,
+   * because it has to come out darker than whatever it is drawn on and that
+   * changes: a card, a popover, or a surface the caller passed in. `--color-
+   * muted` cannot do this job — it is white in a dark theme, so the band it
+   * draws floats forward instead of sinking, which is the opposite of what a
+   * footer is saying.
+   */
+  --color-inset: unset;
+  /*
+   * The dim behind an overlay — and, in a dark theme, what it dims *toward*.
+   *
+   * A token rather than a fixed `bg-black/N` for the same reason `--color-
+   * inset` is one: it has to answer to the surface under it. On parchment
+   * that means black, which is away from the page and reads as the page
+   * receding.
+   *
+   * On obsidian black is the wrong direction. The page is already near black,
+   * so a black dim crushes it further and every surface on screen moves at
+   * once — closing a sheet then lifts the whole screen back up by that much,
+   * which is the "change in shades of black" a dark-mode sheet was reported
+   * for. It is worst exactly where the app is densest: a screen of `bg-card`
+   * swings twice as far as a bare background, because the shift is
+   * proportional to what is underneath.
+   *
+   * So the dark scrim is the *background colour* rather than black. The page
+   * flattens toward its own base instead of past it: the background — most of
+   * the screen — does not change at all, and a card settles back by about
+   * four levels rather than sixteen. It can be this gentle because the sheet
+   * no longer depends on it to be visible: `--color-popover` is its own rung
+   * above `--color-card` now, so the separation is light, and the dim only
+   * has to say the page is inert.
+   */
+  --color-scrim: unset;
+  --color-primary: unset;
+  --color-primary-foreground: unset;
+  /*
+   * The deeper step of the gold ramp, for gradients (the FAB, the GoldButton)
+   * that shade from `--color-primary` into it. Formerly `primary.container`
+   * on the legacy JS palette, which had no PanelUI equivalent — promoted to
+   * a real token so a gradient never hardcodes a hex.
+   */
+  --color-primary-deep: unset;
+  --color-secondary: unset;
+  --color-secondary-foreground: unset;
+  --color-muted: unset;
+  --color-muted-foreground: unset;
+  --color-accent: unset;
+  --color-accent-foreground: unset;
+  --color-destructive: unset;
+  --color-destructive-foreground: unset;
+  --color-destructive-solid-foreground: unset;
+  --color-info: unset;
+  --color-info-foreground: unset;
+  --color-info-solid-foreground: unset;
+  --color-success: unset;
+  --color-success-foreground: unset;
+  --color-success-solid-foreground: unset;
+  --color-warning: unset;
+  --color-warning-foreground: unset;
+  --color-warning-solid-foreground: unset;
+  --color-border: unset;
+  --color-input: unset;
+  --color-ring: unset;
+  /*
+   * Elevation ladder. Each step sits one notch further from the page
+   * background than the last, so nesting Surfaces reads as hierarchy.
+   */
+  --color-surface: unset;
+  --color-surface-secondary: unset;
+  --color-surface-tertiary: unset;
+  --color-skeleton: unset;
+
+  /*
+   * Tinted status fills. These exist as real tokens rather than `bg-info/10
+   * dark:bg-info/[0.06]` because `dark:` only resolves in the light/dark
+   * themes — inside a named theme (moon, grass) Uniwind compiles it to a
+   * plain class selector that never matches, so the tint would vanish.
+   * `-soft` is the Alert fill, `-subtle` the lighter Badge fill.
+   */
+  --color-info-soft: unset;
+  --color-info-subtle: unset;
+  --color-success-soft: unset;
+  --color-success-subtle: unset;
+  --color-warning-soft: unset;
+  --color-warning-subtle: unset;
+  --color-destructive-soft: unset;
+  --color-destructive-subtle: unset;
+
+  /* Chart series — left on PanelUI's shipped ramp; see file header. */
+  /* Syntax colours, for CodeBlock — left on PanelUI's shipped ramp; see file header. */
+  --color-code-keyword: unset;
+  --color-code-string: unset;
+  --color-code-number: unset;
+  --color-code-comment: unset;
+  --color-code-function: unset;
+  --color-code-property: unset;
+  --color-code-punctuation: unset;
+  --color-code-inserted: unset;
+  --color-code-deleted: unset;
+
+  --color-chart-1: unset;
+  --color-chart-2: unset;
+  --color-chart-3: unset;
+  --color-chart-4: unset;
+  --color-chart-5: unset;
+
+  /*
+   * Radius scale. Themed in PanelUI's own families, but Citadel Frame goes
+   * harder than the framework here: every corner in this app is square, so
+   * every step of this scale is 0 in both modes. See `constants/theme.ts`'s
+   * own note: "square edges are the house signature."
+   */
+  --radius-xs: unset;
+  --radius-sm: unset;
+  --radius-md: unset;
+  --radius-lg: unset;
+  --radius-xl: unset;
+  --radius-2xl: unset;
+  --radius-3xl: unset;
+
+  /*
+   * The monospace family. Declared because Tailwind's default is a *stack* —
+   * eight families separated by commas — and React Native takes fontFamily as
+   * one name. The whole list arrives at the platform as a single family that
+   * does not exist, so `font-mono` silently draws in the system font and code
+   * stops looking like code. One real name per platform is the fix.
+   *
+   * The four weight names are deliberately *not* declared here, and that is
+   * the mechanism by which an app changes the font. Tailwind resolves the
+   * `font-*` utility against `--font-*` before `--font-weight-*`, so leaving
+   * `--font-normal` and friends undefined is what keeps `font-semibold`
+   * meaning a weight. An app that defines them flips every one of those
+   * classes to a font family, which is the right trade on native: a weight
+   * there is a separately registered face, not a variation of one family.
+   * Declaring them here — even as `unset` — would take the weights away from
+   * every app that never asked for a custom font.
+   */
+  --font-mono: unset;
+}
+
+@layer theme {
+  :root {
+    /*
+     * Not themed — a platform's monospace face is a property of the platform,
+     * not of the palette. `Menlo` ships with iOS; `monospace` is Android's
+     * alias for its own. Neither exists on the other, which is why this cannot
+     * be one value.
+     */
+    @variant ios {
+      --font-mono: Menlo;
+    }
+    @variant android {
+      --font-mono: monospace;
+    }
+
+    /* ── Parchment & Gold ─────────────────────────────────────────── */
+    @variant light {
+      --color-background: #F5EEE0;
+      --color-foreground: #1C1510;
+
+      --color-card: #FDFAF4;
+      --color-card-foreground: #1C1510;
+
+      --color-popover: #FDFAF4;
+      --color-popover-foreground: #1C1510;
+
+      --color-overlay: #EDE5D4;
+      --color-overlay-foreground: #1C1510;
+      /* the sunken band under a card or dialog: ink at 5% */
+      --color-inset: rgba(0, 0, 0, 0.05);
+      /* overlay dim: parchment can take a heavy one and wants it */
+      --color-scrim: rgba(0, 0, 0, 0.45);
+
+      --color-primary: #B8861A;
+      --color-primary-foreground: #F5EEE0;
+      --color-primary-deep: #9A7015;
+
+      --color-secondary: #EDE5D4;
+      --color-secondary-foreground: #1C1510;
+
+      --color-muted: #EDE5D4;
+      --color-muted-foreground: #6B6050;
+
+      --color-accent: #EDE5D4;
+      --color-accent-foreground: #1C1510;
+
+      /* the app's own danger colour, established in approval-dialog.tsx */
+      --color-destructive: #E53935;
+      --color-destructive-foreground: #FFFFFF;
+      --color-destructive-solid-foreground: #FFFFFF;
+
+      /* No prior app precedent for info/success/warning — restrained
+         placeholders in the same muted key as the rest of the palette.
+         Revisit with real content once something actually uses them. */
+      --color-info: #5B7C99;
+      --color-info-foreground: #2F5570;
+      --color-info-solid-foreground: #1C1510;
+
+      --color-success: #4A7C59;
+      --color-success-foreground: #2F5038;
+      --color-success-solid-foreground: #1C1510;
+
+      --color-warning: #C17817;
+      --color-warning-foreground: #8A5610;
+      --color-warning-solid-foreground: #1C1510;
+
+      --color-border: rgba(28, 21, 16, 0.12);
+      --color-input: rgba(28, 21, 16, 0.12);
+      --color-ring: #B8861A;
+
+      --color-surface: #EDE5D4;
+      --color-surface-secondary: #EDE5D4;
+      --color-surface-tertiary: #C4B89A;
+      --color-skeleton: rgba(28, 21, 16, 0.08);
+
+      /* status fills: -soft = Alert (10%), -subtle = Badge (8%) */
+      --color-info-soft: rgba(91, 124, 153, 0.1);
+      --color-info-subtle: rgba(91, 124, 153, 0.08);
+      --color-success-soft: rgba(74, 124, 89, 0.1);
+      --color-success-subtle: rgba(74, 124, 89, 0.08);
+      --color-warning-soft: rgba(193, 120, 23, 0.1);
+      --color-warning-subtle: rgba(193, 120, 23, 0.08);
+      --color-destructive-soft: rgba(229, 57, 53, 0.1);
+      --color-destructive-subtle: rgba(229, 57, 53, 0.08);
+
+      /* syntax colours — PanelUI default, unchanged */
+      --color-code-keyword: #8250df;
+      --color-code-string: #0a7d55;
+      --color-code-number: #0550ae;
+      --color-code-comment: #8b949e;
+      --color-code-function: #6639ba;
+      --color-code-property: #953800;
+      --color-code-punctuation: #57606a;
+      --color-code-inserted: #0a7d55;
+      --color-code-deleted: #cf222e;
+
+      /* chart series — PanelUI default, unchanged */
+      --color-chart-1: #262626;
+      --color-chart-2: #3b82f6;
+      --color-chart-3: #10b981;
+      --color-chart-4: #f59e0b;
+      --color-chart-5: #8b5cf6;
+
+      /* Citadel Frame shape scale: square, always */
+      --radius-xs: 0px;
+      --radius-sm: 0px;
+      --radius-md: 0px;
+      --radius-lg: 0px;
+      --radius-xl: 0px;
+      --radius-2xl: 0px;
+      --radius-3xl: 0px;
+    }
+
+    /* ── Obsidian & Gold ──────────────────────────────────────────── */
+    @variant dark {
+      --color-background: #131313;
+      --color-foreground: #d0c5af;
+
+      --color-card: #1c1b1b;
+      --color-card-foreground: #d0c5af;
+
+      /*
+       * A step above `--color-card`, not the same colour as it.
+       *
+       * Both were #1c1b1b, so an open sheet and the cards behind it were
+       * identical — the only thing separating them was the scrim darkening
+       * the page, which meant the page had to visibly change shade for a
+       * sheet to read as forward at all, and change back when it left. One
+       * rung of its own (the ladder is background 19 / card 28 / popover 33 /
+       * muted 37) buys that separation from light instead, so the dim below
+       * can be gentle. Every forward surface moves with it — dialog, select,
+       * popover, toast — which is the point: they are all the same layer.
+       */
+      --color-popover: #212121;
+      --color-popover-foreground: #d0c5af;
+
+      --color-overlay: #252525;
+      --color-overlay-foreground: #d0c5af;
+      /* the sunken band under a card or dialog: black at 22% */
+      --color-inset: rgba(0, 0, 0, 0.22);
+      /*
+       * Overlay dim: `--color-background` itself at 60%, not black. Over the
+       * background it is a no-op by construction, so the largest area of the
+       * screen holds still while a sheet comes and goes; over a card it pulls
+       * #1c1b1b to about #161616, flattening the page into one plane rather
+       * than darkening it into another. The #1c1b1b sheet keeps the same step
+       * above that as it had over a black-dimmed page.
+       */
+      --color-scrim: rgba(19, 19, 19, 0.45);
+
+      --color-primary: #f2ca50;
+      --color-primary-foreground: #131313;
+      --color-primary-deep: #d4af37;
+
+      --color-secondary: #252525;
+      --color-secondary-foreground: #d0c5af;
+
+      --color-muted: #252525;
+      --color-muted-foreground: #8a8378;
+
+      --color-accent: #252525;
+      --color-accent-foreground: #d0c5af;
+
+      /* lightened from the light theme's #E53935 for dark-surface contrast,
+         the same move PanelUI's own default makes (#ef4444 → #f15757) */
+      --color-destructive: #F2564F;
+      --color-destructive-foreground: #FFFFFF;
+      --color-destructive-solid-foreground: #FFFFFF;
+
+      /* No prior app precedent for info/success/warning — see light block. */
+      --color-info: #8FB3CC;
+      --color-info-foreground: #BCD6E6;
+      --color-info-solid-foreground: #131313;
+
+      --color-success: #7FB88F;
+      --color-success-foreground: #A8D1B3;
+      --color-success-solid-foreground: #131313;
+
+      --color-warning: #E0A44A;
+      --color-warning-foreground: #EDC07D;
+      --color-warning-solid-foreground: #131313;
+
+      --color-border: rgba(208, 197, 175, 0.15);
+      --color-input: rgba(208, 197, 175, 0.15);
+      --color-ring: #f2ca50;
+
+      --color-surface: #252525;
+      --color-surface-secondary: #252525;
+      --color-surface-tertiary: #353534;
+      --color-skeleton: rgba(208, 197, 175, 0.1);
+
+      /* status fills: -soft = Alert (6%), -subtle = Badge (16%) */
+      --color-info-soft: rgba(143, 179, 204, 0.06);
+      --color-info-subtle: rgba(143, 179, 204, 0.16);
+      --color-success-soft: rgba(127, 184, 143, 0.06);
+      --color-success-subtle: rgba(127, 184, 143, 0.16);
+      --color-warning-soft: rgba(224, 164, 74, 0.06);
+      --color-warning-subtle: rgba(224, 164, 74, 0.16);
+      --color-destructive-soft: rgba(242, 86, 79, 0.06);
+      --color-destructive-subtle: rgba(242, 86, 79, 0.16);
+
+      /* syntax colours — PanelUI default, unchanged */
+      --color-code-keyword: #d2a8ff;
+      --color-code-string: #7ee787;
+      --color-code-number: #79c0ff;
+      --color-code-comment: #8b949e;
+      --color-code-function: #d2a8ff;
+      --color-code-property: #ffa657;
+      --color-code-punctuation: #8b949e;
+      --color-code-inserted: #7ee787;
+      --color-code-deleted: #ff7b72;
+
+      /* chart series — PanelUI default, unchanged */
+      --color-chart-1: #fafafa;
+      --color-chart-2: #60a5fa;
+      --color-chart-3: #34d399;
+      --color-chart-4: #fbbf24;
+      --color-chart-5: #a78bfa;
+
+      /* Citadel Frame shape scale: square, always */
+      --radius-xs: 0px;
+      --radius-sm: 0px;
+      --radius-md: 0px;
+      --radius-lg: 0px;
+      --radius-xl: 0px;
+      --radius-2xl: 0px;
+      --radius-3xl: 0px;
+    }
+  }
+}

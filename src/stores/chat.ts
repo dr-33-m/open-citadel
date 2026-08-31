@@ -8,11 +8,17 @@ import { buildJourneySnapshot } from '@/services/journey';
 import {
   APPROVAL_REQUIRED_TOOLS,
   executeToolCall,
-  formatSearchResultsForLLM,
-  type SearchResult,
+  ensureBookMarkers,
+  formatToolResultForLLM,
+  toolStatus,
+  type BookCandidate,
+  type ToolCallContext,
 } from '@/services/chat-tools';
 import { suggestChatTitle } from '@/services/chat-title';
 import { sendCloudChatTurn } from '@/services/cloud-chat';
+import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
+import { planReplay, type ReplayMessage } from '@/services/context-budget';
+import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import * as Inference from '@/services/inference';
 import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
@@ -49,6 +55,15 @@ interface ChatStore {
   streamingContent: string;
   thinkingContent: string;
   primedGeneration: number | null;
+  /** Why on-device Samwell had to stop, if he did. Set instead of attempting
+   * a native call we know would be unsafe: `context` when the turn no longer
+   * fits the engine's KV cache even after compaction, `memory` when the
+   * device itself is out of headroom. Both would otherwise surface as a hard
+   * native abort that no catch block can intercept, so the UI offers a way
+   * forward from here instead. */
+  deviceLimit: DeviceLimit | null;
+  /** A summary/re-title pass is running and the reader is waiting on it. */
+  titleRefreshing: boolean;
 
   loadSessions(): Promise<void>;
   createSession(opts: {
@@ -69,6 +84,9 @@ interface ChatStore {
   /** Called when the user leaves a bookless chat screen — re-titles from the
    * whole conversation if it's grown since the last title update. */
   refineSessionTitleOnExit(): Promise<void>;
+  /** Whether leaving now would run a summary pass worth waiting for. */
+  needsTitleRefine(): boolean;
+  clearDeviceLimit(): void;
 }
 
 // How many real (user/assistant) messages a session had the last time its
@@ -79,6 +97,21 @@ const titledMessageCounts = new Map<string, number>();
 
 function realMessageCount(messages: ChatMessage[]): number {
   return messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
+}
+
+/**
+ * Whether leaving the active session would trigger a re-title.
+ *
+ * Shared by the check and the work so the two cannot disagree: a caller that
+ * blocks on the summary needs to know in advance whether there is one coming,
+ * and answering that separately is how the two drift apart.
+ */
+function pendingTitleRefine(activeSession: ChatSession | null, messages: ChatMessage[]): boolean {
+  // Book-context sessions are named after the book and never re-titled.
+  if (!activeSession || activeSession.bookId) return false;
+  const count = realMessageCount(messages);
+  // Needs at least one full exchange beyond what the quick title covered.
+  return count >= 2 && count > (titledMessageCounts.get(activeSession.id) ?? 0);
 }
 
 // Base identity for sessions started without a book. The engine-level system
@@ -117,6 +150,60 @@ function now(): string {
   return new Date().toISOString();
 }
 
+/** Why on-device generation had to stop. See {@link ChatStore.deviceLimit}. */
+export type DeviceLimit = 'context' | 'memory';
+
+/**
+ * Free the engine's KV cache without losing the thread, by rebuilding the
+ * conversation around the session's context plus as much recent history as
+ * still fits.
+ *
+ * Serves both jobs the engine has, because they are the same operation:
+ * priming a conversation the engine has never seen (a session reopened after
+ * a restart, or after Samwell was woken again), and compacting one that has
+ * outgrown its KV cache. Priming used to send only the session's system
+ * message, so Samwell came back with the book context but no memory of the
+ * conversation still on screen — he could not answer a question about a book
+ * he had recommended a message earlier. Cloud never had this problem: it
+ * sends the whole history with every request.
+ *
+ * Silent by design: the recent exchange survives intact, so announcing it in
+ * the transcript would be noise. Only the case compaction cannot fix
+ * (`deviceLimit`) is ever surfaced to the reader.
+ */
+async function seedEngineWithSession(excludeMessageId?: string): Promise<void> {
+  const { messages } = useChatStore.getState();
+
+  const systemContext = messages.find((m) => m.role === 'system')?.content;
+  const history = messages
+    .filter(
+      (m) =>
+        (m.role === 'user' || m.role === 'assistant') &&
+        !isToolCallMessage(m.content) &&
+        // The turn being sent right now is already in `messages`; replaying it
+        // here would seed it into the conversation and then send it again.
+        m.id !== excludeMessageId,
+    )
+    .map((m) => ({ role: m.role === 'assistant' ? ('model' as const) : ('user' as const), content: m.content }));
+
+  const plan = planReplay(history, Inference.replayTokenBudget(), systemContext);
+
+  const seed: ReplayMessage[] = [];
+  // Replayed as a user turn to match how this session was primed originally;
+  // the engine-level system prompt is reapplied by the conversation itself.
+  if (systemContext) seed.push({ role: 'user', content: systemContext });
+  seed.push(...plan.messages);
+
+  const native = await Inference.compactConversation(seed);
+  console.log(
+    `[Chat] Seeded engine: replayed ${plan.messages.length} turn(s), dropped ${plan.dropped}` +
+      `${native ? '' : ' (fallback replay)'}`,
+  );
+
+  // The seed carries this session's context, so priming is satisfied.
+  useChatStore.setState({ primedGeneration: Inference.getGeneration() });
+}
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   sessions: [],
   activeSession: null,
@@ -128,6 +215,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   streamingContent: '',
   thinkingContent: '',
   primedGeneration: null,
+  deviceLimit: null,
+  titleRefreshing: false,
 
   async loadSessions() {
     const rows = db
@@ -339,16 +428,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const systemMsg = messages.find((m) => m.role === 'system');
     const cloudMode = useSettingsStore.getState().samwellMode === 'cloud';
     if (systemMsg && !cloudMode && Inference.isModelLoaded()) {
-      try {
-        console.log('[Chat] Priming engine with system context:', systemMsg.content.slice(0, 100) + '...');
-        await Inference.chat(
-          systemMsg.content + '\n\nAcknowledge this context with "OK".',
-          () => {},
-        );
-        set({ primedGeneration: Inference.getGeneration() });
-        console.log('[Chat] Context priming complete');
-      } catch (err) {
-        console.warn('[Chat] Context priming failed:', err);
+      if (!Inference.checkMemoryHeadroom().ok) {
+        set({ deviceLimit: 'memory' });
+      } else {
+        try {
+          await seedEngineWithSession();
+        } catch (err) {
+          console.warn('[Chat] Context priming failed:', err);
+        }
       }
     }
   },
@@ -388,6 +475,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       thinkingContent: '',
       isGenerating: true,
       isThinking: false, // Start with "Processing…"; SDK empty callback triggers "Thinking…"
+      deviceLimit: null,
     }));
 
     if (samwellMode === 'cloud') {
@@ -469,59 +557,87 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // current native engine (never primed, or the engine was rebuilt since
     // e.g. a WAKE UP reload), prime it with book context before the first message
     if (get().primedGeneration !== Inference.getGeneration()) {
-      const systemMsg = get().messages.find((m) => m.role === 'system');
-      if (systemMsg) {
-        try {
-          console.log('[Chat] Lazy-priming engine with system context');
-          await Inference.chat(
-            systemMsg.content + '\n\nAcknowledge this context with "OK".',
-            () => {},
-          );
-          set({ primedGeneration: Inference.getGeneration() });
-        } catch (err) {
-          console.warn('[Chat] Lazy context priming failed:', err);
-        }
-      } else {
+      try {
+        // Excludes the turn about to be sent — it is already in `messages`.
+        await seedEngineWithSession(userMsg.id);
+      } catch (err) {
+        console.warn('[Chat] Lazy context priming failed:', err);
         set({ primedGeneration: Inference.getGeneration() });
       }
     }
 
     const MAX_TOOL_ITERATIONS = 3;
     let finalContent = '';
+    // Set instead of attempting a native call we know is unsafe. Left
+    // `finalContent` empty deliberately so this falls through the same
+    // "nothing to save" path below as an aborted generation already does,
+    // rather than needing its own branch.
+    let limitReached: DeviceLimit | null = null;
+    // Books offered this turn, so a recommendation still renders as a card
+    // when the model names one without emitting its marker.
+    const suggestedBooks: BookCandidate[] = [];
 
     try {
+      // Turn boundary. The only point where compacting is safe: reseeding the
+      // conversation inside the tool loop below would strand a tool call the
+      // model is still waiting on a response for.
+      if (!Inference.checkMemoryHeadroom().ok) {
+        limitReached = 'memory';
+      } else {
+        const pressure = Inference.assessTurn(content);
+        if (pressure === 'full') {
+          limitReached = 'context';
+        } else if (pressure === 'compact') {
+          try {
+            await seedEngineWithSession(userMsg.id);
+          } catch (err) {
+            // Making room is the only thing standing between this turn and a
+            // native abort, so a failure here stops the turn rather than
+            // pressing on and hoping.
+            console.warn('[Chat] Context compaction failed:', err);
+            limitReached = 'context';
+          }
+        }
+      }
+
       // When tools are enabled, suppress first-pass display — the model may emit
       // "I can't find..." text before triggering tool calls (example app pattern).
       // When tools are off, stream normally.
-      let result = await Inference.chat(
-        content,
-        enableToolCalling
-          ? () => {} // suppress first-pass tokens; "Processing" indicator shows instead
-          : ({ content: c }) => {
-              if (c) {
-                set({ isThinking: false, streamingContent: c });
-              } else if (enableThinking) {
-                // Empty callback = model transitioned from prefill to thinking
-                set({ isThinking: true });
-              }
-            },
-      );
+      let result = limitReached
+        ? null
+        : await Inference.chat(
+            content,
+            enableToolCalling
+              ? () => {} // suppress first-pass tokens; "Processing" indicator shows instead
+              : ({ content: c }) => {
+                  if (c) {
+                    set({ isThinking: false, streamingContent: c });
+                  } else if (enableThinking) {
+                    // Empty callback = model transitioned from prefill to thinking
+                    set({ isThinking: true });
+                  }
+                },
+          );
 
       // If tools were suppressed but model answered without calling tools,
       // show the response text now
-      if (enableToolCalling && !result.toolCalls?.length) {
+      if (result && enableToolCalling && !result.toolCalls?.length) {
         set({ isThinking: false, streamingContent: result.text });
       }
 
-      for (let i = 0; i < MAX_TOOL_ITERATIONS && result.toolCalls?.length; i++) {
+      for (let i = 0; result && !limitReached && i < MAX_TOOL_ITERATIONS && result.toolCalls?.length; i++) {
+        if (!Inference.checkMemoryHeadroom().ok) {
+          limitReached = 'memory';
+          break;
+        }
         const toolNames = result.toolCalls.map((tc) => tc.name);
+        // Deletes block on the reader's approval before any work starts,
+        // which is a different state from the work itself. Everything else
+        // reads from the same table the executor uses, so the indicator can
+        // never name a tool other than the one running.
         const statusMsg = toolNames.some((n) => n.startsWith('delete_'))
           ? 'Waiting for delete approval…'
-          : toolNames.some((n) => n.startsWith('tag_'))
-            ? 'Organizing your tags…'
-            : toolNames.includes('search_thoughts')
-              ? 'Searching through your thoughts…'
-              : 'Searching through your highlights…';
+          : toolStatus(toolNames[0]);
         set({ isToolCalling: true, isThinking: false, streamingContent: '', toolCallStatus: statusMsg });
 
         // Store the assistant's tool-call message (hidden from UI)
@@ -529,13 +645,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           id: uuid(),
           sessionId: activeSession.id,
           role: 'assistant',
-          content: '\0TOOL_CALL\0' + JSON.stringify(result.toolCalls),
+          content: TOOL_CALL_PREFIX + JSON.stringify(result.toolCalls),
           createdAt: now(),
         };
         db.insert(chatMessages).values(toolCallMsg).run();
 
         // Execute each tool call and collect responses for the engine
-        const toolCallCtx = { sessionId: activeSession.id, bookId: activeSession.bookId };
+        const toolCallCtx: ToolCallContext = {
+          sessionId: activeSession.id,
+          bookId: activeSession.bookId,
+          runtime: 'device',
+        };
         const toolResponses: Inference.ToolResponse[] = [];
         for (const tc of result.toolCalls) {
           let args: Record<string, unknown> = {};
@@ -558,9 +678,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           } else {
             const { result: toolResult } = await executeToolCall(tc.name, args, toolCallCtx);
             // Format search results with reference markers for the LLM
-            toolContent = (tc.name === 'search_highlights' || tc.name === 'search_thoughts') && Array.isArray(toolResult)
-              ? formatSearchResultsForLLM(toolResult as SearchResult[])
-              : JSON.stringify(toolResult);
+            // Same prose formatting the cloud path already used. Offline was
+            // sending raw JSON, which costs more tokens and reads worse.
+            if (tc.name === 'suggest_next_book' && Array.isArray(toolResult)) {
+              suggestedBooks.push(...(toolResult as BookCandidate[]));
+            }
+            toolContent = formatToolResultForLLM(
+              tc.name,
+              toolResult,
+              TOOL_RESULT_TOKEN_BUDGET.device,
+            );
           }
 
           const toolMsg: ChatMessage = {
@@ -575,6 +702,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           toolResponses.push({ name: tc.name, responseJson: toolContent });
         }
 
+        // Feeding these back is what actually overflows the KV cache, and by
+        // here compaction is off the table — so stop instead. The tool ran and
+        // its result is saved; the UI explains why Samwell could not summarize it.
+        if (!Inference.fitsInContext(toolResponses.map((r) => r.name + r.responseJson).join(''))) {
+          limitReached = 'context';
+          break;
+        }
+
         // Send all tool responses back — engine continues the conversation
         set({ streamingContent: '' });
         result = await Inference.sendToolResponses(
@@ -585,21 +720,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         );
       }
 
-      finalContent = result.text.trim();
-      // Exhausted MAX_TOOL_ITERATIONS while the model was still mid-tool-call
-      // (not mid-answer) — result.text is typically empty here, which would
-      // otherwise silently show nothing at all.
-      if (!finalContent && result.toolCalls?.length) {
-        finalContent = "Samwell got stuck calling tools repeatedly and couldn't finish. Try rephrasing.";
-      }
-      // Capture thinking text from the final result (available after generation completes)
-      if (result.thinkingText) {
-        set({ thinkingContent: result.thinkingText });
+      if (result && !limitReached) {
+        finalContent = ensureBookMarkers(result.text.trim(), suggestedBooks);
+        // Exhausted MAX_TOOL_ITERATIONS while the model was still mid-tool-call
+        // (not mid-answer) — result.text is typically empty here, which would
+        // otherwise silently show nothing at all.
+        if (!finalContent && result.toolCalls?.length) {
+          finalContent = "Samwell got stuck calling tools repeatedly and couldn't finish. Try rephrasing.";
+        }
+        // Capture thinking text from the final result (available after generation completes)
+        if (result.thinkingText) {
+          set({ thinkingContent: result.thinkingText });
+        }
       }
     } catch (err) {
       console.error('[Samwell] Generation error:', err);
       // Aborted or error — use whatever streamed so far
       finalContent = get().streamingContent.trim();
+    }
+
+    if (limitReached) {
+      set({ deviceLimit: limitReached });
     }
 
     if (finalContent.length > 0) {
@@ -651,6 +792,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
+  clearDeviceLimit() {
+    set({ deviceLimit: null });
+  },
+
   async deleteSession(id) {
     db.delete(chatMessages).where(eq(chatMessages.sessionId, id)).run();
     db.delete(chatSuggestions).where(eq(chatSuggestions.sessionId, id)).run();
@@ -690,16 +835,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
+  needsTitleRefine() {
+    const { activeSession, messages, titleRefreshing } = get();
+    return !titleRefreshing && pendingTitleRefine(activeSession, messages);
+  },
+
   async refineSessionTitleOnExit() {
     const { activeSession, messages } = get();
-    if (!activeSession || activeSession.bookId) return;
+    if (!pendingTitleRefine(activeSession, messages) || !activeSession) return;
 
     const count = realMessageCount(messages);
-    const lastTitled = titledMessageCounts.get(activeSession.id) ?? 0;
-    // Needs at least one full exchange beyond what the quick title already
-    // covered, or there's nothing new to summarize.
-    if (count < 2 || count <= lastTitled) return;
-
+    set({ titleRefreshing: true });
     try {
       const conversation = messages
         .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -712,6 +858,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     } catch (err) {
       console.warn('[Chat] Could not refine session title:', err);
+    } finally {
+      set({ titleRefreshing: false });
     }
   },
 }));

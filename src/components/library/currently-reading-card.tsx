@@ -1,14 +1,15 @@
 import { Image } from 'expo-image';
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { Touchable } from '@/components/ui/touchable';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from "expo-router/react-navigation";
 
 import { ThemedText } from '@/components/themed-text';
-import { ProgressBar } from '@/components/ui/progress-bar';
-import { useColors } from '@/hooks/use-colors';
-import { elevation, fontFamily, motion, spacing } from '@/constants/theme';
+import { Card } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { fontFamily, motion } from '@/constants/theme';
 import type { books } from '@/db/schema';
 import { db } from '@/db/client';
 import { readingProgress } from '@/db/schema';
@@ -22,51 +23,22 @@ type CurrentlyReadingCardProps = {
   onLongPress?: () => void;
 };
 
-export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyReadingCardProps) {
-  const colors = useColors();
-  const [progress, setProgress] = useState(0);
+/** ThemedText/lucide icons take a literal color, not a className — resolve
+ * the semantic token once per render and fall back to `undefined` (which
+ * lets `ThemedText` apply its own default) if it hasn't resolved yet. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
 
-  const styles = React.useMemo(() => StyleSheet.create({
-    card: {
-      flexDirection: 'row',
-      backgroundColor: colors.surface.low,
-      padding: spacing[5],
-      gap: spacing[5],
-      ...elevation.soft,
-    },
-    cover: {
-      width: 90,
-      height: 130,
-      backgroundColor: colors.surface.mid,
-      alignItems: 'center',
-      justifyContent: 'center',
-      overflow: 'hidden',
-    },
-    initial: {
-      fontSize: 36,
-      fontFamily: fontFamily.serif,
-    },
-    coverTitle: {
-      position: 'absolute',
-      bottom: spacing[2],
-      paddingHorizontal: spacing[2],
-      textAlign: 'center',
-      fontSize: 9,
-    },
-    info: {
-      flex: 1,
-      gap: spacing[2],
-      justifyContent: 'center',
-    },
-    progressSection: {
-      marginTop: spacing[3],
-      gap: spacing[2],
-    },
-    progressLabels: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-    },
-  }), [colors]);
+const COVER_FILL = { width: '100%' as const, height: '100%' as const };
+
+export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyReadingCardProps) {
+  const [ghostInk, mutedForeground, primary] = useCSSVariable([
+    '--color-surface-tertiary',
+    '--color-muted-foreground',
+    '--color-primary',
+  ]);
+  const [progress, setProgress] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -81,49 +53,56 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
 
   return (
     <Touchable onPress={onPress} onLongPress={onLongPress}>
-      <View style={styles.card}>
-        {book.coverUrl ? (
-          <Image source={{ uri: book.coverUrl }} style={styles.cover} transition={motion.slow} />
-        ) : (
-          <View style={styles.cover}>
-            <ThemedText type="displayLg" color={colors.surface.highest} style={styles.initial}>
-              {book.title.charAt(0).toUpperCase()}
-            </ThemedText>
-            <ThemedText
-              type="labelSm"
-              color={colors.text.secondary}
-              style={styles.coverTitle}
-              numberOfLines={2}
-            >
-              {book.title}
-            </ThemedText>
-          </View>
-        )}
+      <Card className="flex-row gap-5 p-5">
+        <View className="aspect-[2/3] w-[90px] items-center justify-center overflow-hidden bg-muted">
+          {book.coverUrl ? (
+            <Image source={{ uri: book.coverUrl }} style={COVER_FILL} transition={motion.slow} />
+          ) : (
+            <>
+              <ThemedText
+                type="displayLg"
+                color={asColor(ghostInk)}
+                style={{ fontSize: 36, fontFamily: fontFamily.serif }}
+              >
+                {book.title.charAt(0).toUpperCase()}
+              </ThemedText>
+              <ThemedText
+                type="labelSm"
+                color={asColor(mutedForeground)}
+                className="absolute bottom-2 px-2"
+                style={{ textAlign: 'center', fontSize: 9 }}
+                numberOfLines={2}
+              >
+                {book.title}
+              </ThemedText>
+            </>
+          )}
+        </View>
 
-        <View style={styles.info}>
+        <View className="flex-1 justify-center gap-2">
           {book.category && (
-            <ThemedText type="labelSm" color={colors.primary.default}>
+            <ThemedText type="labelSm" color={asColor(primary)}>
               {book.category}
             </ThemedText>
           )}
           <ThemedText type="headlineMd" numberOfLines={2}>{book.title}</ThemedText>
-          <ThemedText type="bodySm" color={colors.text.secondary}>
+          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
             {book.author}
           </ThemedText>
 
-          <View style={styles.progressSection}>
-            <View style={styles.progressLabels}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
+          <View className="mt-3 gap-2">
+            <View className="flex-row justify-between">
+              <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                 PROGRESS
               </ThemedText>
-              <ThemedText type="labelSm" color={colors.primary.default}>
+              <ThemedText type="labelSm" color={asColor(primary)} style={{ fontVariant: ['tabular-nums'] }}>
                 {Math.round(progress * 100)}%
               </ThemedText>
             </View>
-            <ProgressBar progress={progress} />
+            <Progress value={progress} minValue={0} maxValue={1} size="sm" />
           </View>
         </View>
-      </View>
+      </Card>
     </Touchable>
   );
 }

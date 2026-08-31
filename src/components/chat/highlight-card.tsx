@@ -1,15 +1,16 @@
 import { BookOpen, Lightbulb } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { Touchable } from '@/components/ui/touchable';
 import { eq } from 'drizzle-orm';
 
 import { ThemedText } from '@/components/themed-text';
-import { elevation, spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
+import { elevation } from '@/constants/theme';
 import { db } from '@/db/client';
 import { books, highlights, thoughts } from '@/db/schema';
+import { asColor } from '@/utils/colors';
 
 interface HighlightCardProps {
   id: string;
@@ -23,7 +24,7 @@ interface CardData {
   bookTitle: string | null;
   bookId: string | null;
   locator: string | null;
-  color: string;
+  color: string | null;
   tags: string[];
 }
 
@@ -33,7 +34,9 @@ export const HighlightCard = React.memo(function HighlightCard({
   onNavigate,
   onNavigateToTimeline,
 }: HighlightCardProps) {
-  const colors = useColors();
+  // Literal colours for the lucide props, ThemedText's `color` prop, and the
+  // entry colour fallback in the left border.
+  const [primary, mutedForeground] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
   const [data, setData] = useState<CardData | null>(null);
 
   useEffect(() => {
@@ -58,7 +61,7 @@ export const HighlightCard = React.memo(function HighlightCard({
           bookTitle: row.bookTitle,
           bookId: row.bookId,
           locator: row.locator,
-          color: row.color || '#f2ca50',
+          color: row.color || null,
           tags: row.tags ? JSON.parse(row.tags) : [],
         });
       }
@@ -75,7 +78,7 @@ export const HighlightCard = React.memo(function HighlightCard({
           bookTitle: null,
           bookId: null,
           locator: null,
-          color: row.color || '#f2ca50',
+          color: row.color || null,
           tags: row.tags ? JSON.parse(row.tags) : [],
         });
       }
@@ -98,42 +101,32 @@ export const HighlightCard = React.memo(function HighlightCard({
 
   return (
     <Touchable
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface.highest,
-          borderLeftColor: data.color,
-        },
-      ]}
+      className="my-1 gap-1 border-l-[3px] bg-surface-tertiary px-3 py-2"
+      style={[elevation.soft, { borderLeftColor: data.color ?? asColor(primary) }]}
       onPress={handlePress}
       disabled={!canPress}
     >
-      <ThemedText
-        type="bodySm"
-        color={colors.text.primary}
-        numberOfLines={3}
-        style={styles.quoteText}
-      >
+      <ThemedText type="bodySm" italic numberOfLines={3}>
         {data.text}
       </ThemedText>
 
-      <View style={styles.sourceRow}>
+      <View className="flex-row items-center gap-1">
         {type === 'highlight' && data.bookTitle ? (
           <>
-            <BookOpen size={12} color={colors.text.secondary} />
+            <BookOpen size={12} color={asColor(mutedForeground)} />
             <ThemedText
               type="labelSm"
-              color={colors.text.secondary}
+              color={asColor(mutedForeground)}
               numberOfLines={1}
-              style={styles.sourceLabel}
+              className="flex-1"
             >
               {data.bookTitle}
             </ThemedText>
           </>
         ) : type === 'thought' ? (
           <>
-            <Lightbulb size={12} color={colors.text.secondary} />
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+            <Lightbulb size={12} color={asColor(mutedForeground)} />
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
               Thought
             </ThemedText>
           </>
@@ -141,13 +134,10 @@ export const HighlightCard = React.memo(function HighlightCard({
       </View>
 
       {data.tags.length > 0 && (
-        <View style={styles.tagsRow}>
+        <View className="flex-row flex-wrap gap-1">
           {data.tags.slice(0, 3).map((tag) => (
-            <View
-              key={tag}
-              style={[styles.tagPill, { backgroundColor: colors.surface.mid }]}
-            >
-              <ThemedText type="labelSm" color={colors.text.secondary}>
+            <View key={tag} className="bg-muted px-2 py-[1px]">
+              <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                 {tag}
               </ThemedText>
             </View>
@@ -156,35 +146,4 @@ export const HighlightCard = React.memo(function HighlightCard({
       )}
     </Touchable>
   );
-});
-
-const styles = StyleSheet.create({
-  card: {
-    borderLeftWidth: 3,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    marginVertical: spacing[1],
-    gap: spacing[1],
-    ...elevation.soft,
-  },
-  quoteText: {
-    fontStyle: 'italic',
-  },
-  sourceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-  },
-  sourceLabel: {
-    flex: 1,
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[1],
-  },
-  tagPill: {
-    paddingHorizontal: spacing[2],
-    paddingVertical: 1,
-  },
 });

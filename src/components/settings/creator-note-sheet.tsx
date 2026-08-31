@@ -1,14 +1,13 @@
 import { MessageCircleHeart } from 'lucide-react-native';
 import React from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { Linking, View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { InstagramIcon, TikTokIcon } from '@/components/ui/brand-icons';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
-import { spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
 
 const NOTE_PARAGRAPHS = [
   "Open Citadel started as a tool I needed myself. If you're using it, we're probably chasing the same thing: real growth and real execution.",
@@ -27,57 +26,31 @@ export function CreatorNoteSheet({
   visible: boolean;
   onClose: () => void;
 }) {
-  const colors = useColors();
-
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        panel: {
-          backgroundColor: colors.surface.low,
-          paddingHorizontal: spacing[6],
-          paddingTop: spacing[4],
-          paddingBottom: spacing[10],
-          gap: spacing[4],
-        },
-        header: { flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
-        paragraphs: { gap: spacing[3] },
-        socials: {
-          flexDirection: 'row',
-          justifyContent: 'center',
-          gap: spacing[4],
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.outline.variant,
-          paddingTop: spacing[5],
-        },
-        socialButton: {
-          width: 48,
-          height: 48,
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderWidth: 1,
-          borderColor: colors.outline.variant,
-        },
-      }),
-    [colors],
-  );
+  // ThemedText's `color` prop takes a literal, never a className.
+  const mutedForeground = useCSSVariable('--color-muted-foreground');
+  const paragraphColor = typeof mutedForeground === 'string' ? mutedForeground : undefined;
 
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <View style={styles.panel}>
-        <View style={styles.header}>
+      <View className="gap-6 px-6">
+        <View className="flex-row items-center gap-3">
           <PrefixIcon icon={MessageCircleHeart} size={36} />
           <ThemedText type="headlineSm">Note from Thamsanqa Dreem</ThemedText>
         </View>
-        <View style={styles.paragraphs}>
+        <View className="gap-3">
           {NOTE_PARAGRAPHS.map((paragraph) => (
-            <ThemedText key={paragraph} type="bodySm" color={colors.text.secondary}>
+            <ThemedText key={paragraph} type="bodySm" color={paragraphColor}>
               {paragraph}
             </ThemedText>
           ))}
         </View>
-        <View style={styles.socials}>
+        <View className="flex-row justify-center gap-3 border-t border-border pt-5">
           {SOCIALS.map(({ label, url, Icon }) => (
-            <Touchable key={label} style={styles.socialButton} onPress={() => Linking.openURL(url)}>
+            <Touchable
+              key={label}
+              className="h-12 w-12 items-center justify-center border border-border"
+              onPress={() => Linking.openURL(url)}
+            >
               <Icon size={24} />
             </Touchable>
           ))}

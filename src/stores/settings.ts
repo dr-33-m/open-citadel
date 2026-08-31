@@ -107,8 +107,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   setTheme: async (theme: AppTheme) => {
-    await saveSetting('theme', theme);
+    // State first, persist after. A theme flip is the direct response to a tap
+    // and must not wait on a SQLite write to land — the bridge in
+    // `app/_layout.tsx` reacts to this `set`, and a failed write only costs the
+    // choice its persistence across a restart, which is silent and recoverable.
     set({ theme });
+    void saveSetting('theme', theme);
   },
 
   setSamwellMode: async (mode: SamwellMode) => {

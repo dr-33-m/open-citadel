@@ -1,11 +1,6 @@
 import React from 'react';
-import { View } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
-import { Sheet } from '@/components/ui/sheet';
-import { Touchable } from '@/components/ui/touchable';
-import { spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
+import { ConfirmDialog, type DialogAction } from '@/components/ui/confirm-dialog';
 import { useApprovalStore, type PendingApproval } from '@/stores/approval';
 import { useChatStore } from '@/stores/chat';
 
@@ -91,7 +86,6 @@ function getApprovalCopy({ toolName, input }: PendingApproval): ApprovalCopy {
 }
 
 export function ApprovalDialog() {
-  const colors = useColors();
   const activeSessionId = useChatStore((s) => s.activeSession?.id);
   // Only ever show the approval that belongs to the session the user is
   // currently looking at — a tool call awaiting approval in a session they've
@@ -105,69 +99,45 @@ export function ApprovalDialog() {
     if (pending) respondRaw(pending.sessionId, approved, options);
   };
 
-  // The sheet's own tap-outside/drag-to-dismiss maps to decline (`respond(false)`)
-  // — the same as the old overlay tap did, so this isn't a new way to lose an
-  // approval by accident; it's the same safe direction the sheet already had.
+  // The dialog's own tap-outside-to-cancel / hardware-back maps to decline
+  // (`respond(false)`) — the same direction the old sheet's backdrop tap and
+  // drag-to-dismiss both resolved to, so this isn't a new way to lose an
+  // approval by accident.
   const copy = pending ? getApprovalCopy(pending) : null;
 
+  // Dialog has no separate slot for a secondary, non-decision action, so
+  // "allow for this session" rides along as a third, non-confirming entry in
+  // `actions` — Dialog already pulls only the confirm/destructive action to
+  // the right, so this still lands between CANCEL and the confirming button
+  // rather than competing with either. Only offered for non-destructive
+  // approvals, matching the original: a delete never gets a "remember this".
+  const actions: DialogAction[] = copy
+    ? [
+        { label: 'CANCEL', onPress: () => respond(false) },
+        ...(copy.destructive
+          ? []
+          : [
+              {
+                label: 'ALLOW FOR THIS SESSION',
+                onPress: () => respond(true, { rememberForSession: true }),
+              },
+            ]),
+        {
+          label: copy.confirmLabel,
+          onPress: () => respond(true),
+          confirm: true,
+          destructive: copy.destructive,
+        },
+      ]
+    : [];
+
   return (
-    <Sheet visible={pending != null} onClose={() => respond(false)}>
-      {copy && (
-        <View
-          style={{
-            backgroundColor: colors.surface.low,
-            paddingHorizontal: spacing[6],
-            paddingTop: spacing[4],
-            paddingBottom: spacing[10],
-            gap: spacing[4],
-          }}
-        >
-          <ThemedText type="headlineSm">{copy.title}</ThemedText>
-          <ThemedText type="bodySm" color={colors.text.secondary}>
-            {copy.body}
-          </ThemedText>
-          <View style={{ flexDirection: 'row', gap: spacing[3] }}>
-            <Touchable
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: spacing[2],
-                paddingHorizontal: spacing[3],
-                paddingVertical: spacing[2],
-                backgroundColor: colors.surface.mid,
-              }}
-              onPress={() => respond(false)}
-            >
-              <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-            </Touchable>
-            <Touchable
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: spacing[2],
-                paddingHorizontal: spacing[3],
-                paddingVertical: spacing[2],
-                backgroundColor: copy.destructive ? '#e53935' : colors.primary.default,
-              }}
-              onPress={() => respond(true)}
-            >
-              <ThemedText type="labelSm" color={copy.destructive ? '#fff' : colors.surface.base}>
-                {copy.confirmLabel}
-              </ThemedText>
-            </Touchable>
-          </View>
-          {!copy.destructive && (
-            <Touchable
-              style={{ alignItems: 'center', paddingVertical: spacing[2] }}
-              onPress={() => respond(true, { rememberForSession: true })}
-            >
-              <ThemedText type="labelSm" color={colors.primary.default}>
-                ALLOW FOR THIS SESSION
-              </ThemedText>
-            </Touchable>
-          )}
-        </View>
-      )}
-    </Sheet>
+    <ConfirmDialog
+      visible={pending != null}
+      title={copy?.title ?? ''}
+      message={copy?.body}
+      actions={actions}
+      onClose={() => respond(false)}
+    />
   );
 }

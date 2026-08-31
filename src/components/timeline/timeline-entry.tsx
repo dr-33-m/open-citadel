@@ -1,145 +1,70 @@
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import React, { useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/themed-text";
 import { Touchable } from "@/components/ui/touchable";
-import { easing, elevation, fontFamily, motion, spacing } from "@/constants/theme";
-import { useColors } from "@/hooks/use-colors";
+import { easing, elevation, fontFamily, motion } from "@/constants/theme";
+import { asColor } from "@/utils/colors";
 import type { TimelineItem } from "@/stores/timeline";
 
 type TimelineEntryProps = {
   entry: TimelineItem;
   isLast?: boolean;
   onPress?: () => void;
+  /** Opens the entry's action sheet — edit, chat, export, delete. */
   onLongPress?: () => void;
 };
 
 export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineEntryProps) {
-  const colors = useColors();
+  // Literal colours for the consumers a className can't reach: ThemedText's
+  // `color` prop and the lucide chevrons'.
+  const [mutedForeground, surfaceTertiary] = useCSSVariable([
+    "--color-muted-foreground",
+    "--color-surface-tertiary",
+  ]);
   const [noteIndex, setNoteIndex] = useState(0);
   const { noteTexts } = entry;
   const hasNotes = noteTexts.length > 0;
   const hasMultiple = noteTexts.length > 1;
 
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        container: {
-          paddingHorizontal: spacing[6],
-          paddingTop: spacing[8],
-        },
-        metaRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing[3],
-          marginBottom: spacing[4],
-        },
-        indicator: {
-          width: 10,
-          height: 10,
-        },
-        bookTitle: {
-          flex: 1,
-        },
-        quoteCard: {
-          backgroundColor: colors.surface.low,
-          padding: spacing[6],
-          paddingLeft: spacing[8],
-          paddingRight: spacing[5],
-          ...elevation.soft,
-        },
-        noteContainer: {
-          flexDirection: "row",
-          gap: spacing[2],
-          marginTop: spacing[4],
-          paddingLeft: spacing[4],
-        },
-        quoteIcon: {
-          fontSize: 20,
-          lineHeight: 24,
-        },
-        noteBody: {
-          flex: 1,
-          gap: spacing[2],
-        },
-        noteRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing[2],
-        },
-        arrow: {
-          padding: spacing[1],
-        },
-        noteText: {
-          flex: 1,
-        },
-        pageIndicator: {
-          textAlign: "right",
-        },
-        connector: {
-          width: 1,
-          height: spacing[10],
-          backgroundColor: colors.surface.highest,
-          marginLeft: 4,
-          marginTop: spacing[5],
-        },
-        tagRow: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: spacing[2],
-          marginTop: spacing[4],
-        },
-        tagChip: {
-          backgroundColor: colors.surface.low,
-          borderWidth: 1,
-          borderColor: colors.surface.highest,
-          paddingHorizontal: spacing[3],
-          paddingVertical: spacing[1],
-          borderRadius: 99,
-        },
-        tagChipText: {
-          fontSize: 11,
-        },
-      }),
-    [colors],
-  );
-
   const prev = () => setNoteIndex((i) => Math.max(0, i - 1));
   const next = () => setNoteIndex((i) => Math.min(noteTexts.length - 1, i + 1));
 
   return (
-    <View style={styles.container}>
+    <View className="px-6 pt-4">
       {/* Indicator + metadata row */}
-      <View style={styles.metaRow}>
+      <View className="mb-4 flex-row items-center gap-3">
         <View
-          style={[styles.indicator, { backgroundColor: entry.colorIndicator }]}
+          className="h-2.5 w-2.5"
+          style={{ backgroundColor: entry.colorIndicator }}
         />
         <ThemedText
           type="labelSm"
-          color={colors.text.secondary}
-          style={styles.bookTitle}
+          color={asColor(mutedForeground)}
+          className="flex-1"
         >
           {entry.bookTitle}
         </ThemedText>
         {entry.type === "thought" && !!entry.updatedAt && (
           <ThemedText
             type="labelSm"
-            color={colors.text.secondary}
+            color={asColor(mutedForeground)}
             style={{ fontStyle: "italic" }}
           >
             edited
           </ThemedText>
         )}
-        <ThemedText type="bodySm" color={colors.text.secondary}>
+        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
           {entry.timestamp}
         </ThemedText>
       </View>
 
       {/* Quote card */}
-      <Touchable onPress={onPress} onLongPress={onLongPress} delayLongPress={400}>
-        <View style={styles.quoteCard}>
+      <Touchable onPress={onPress} onLongPress={onLongPress}>
+        <View className="bg-card py-6 pl-8 pr-5" style={elevation.soft}>
           <ThemedText
             type="bodyLg"
             style={
@@ -152,14 +77,13 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
           </ThemedText>
 
           {entry.tags.length > 0 && (
-            <View style={styles.tagRow}>
+            <View className="mt-4 flex-row flex-wrap gap-2">
               {entry.tags.map((tag) => (
-                <View key={tag} style={styles.tagChip}>
-                  <ThemedText
-                    type="labelSm"
-                    color={colors.text.secondary}
-                    style={styles.tagChipText}
-                  >
+                <View
+                  key={tag}
+                  className="rounded-full border border-surface-tertiary bg-card px-3 py-1"
+                >
+                  <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                     {tag}
                   </ThemedText>
                 </View>
@@ -171,31 +95,31 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
 
       {/* Notes — single or carousel */}
       {hasNotes && (
-        <View style={styles.noteContainer}>
+        <View className="mt-4 flex-row gap-2 pl-4">
           <ThemedText
             type="bodySm"
-            color={colors.text.secondary}
-            style={styles.quoteIcon}
+            color={asColor(mutedForeground)}
+            style={{ fontSize: 20, lineHeight: 24 }}
           >
             ❝
           </ThemedText>
 
-          <View style={styles.noteBody}>
-            <View style={styles.noteRow}>
+          <View className="flex-1 gap-2">
+            <View className="flex-row items-center gap-2">
               {hasMultiple && (
                 <Touchable
                   onPress={prev}
                   disabled={noteIndex === 0}
                   haptic="tap"
                   hitSlop={8}
-                  style={styles.arrow}
+                  className="p-1"
                 >
                   <ChevronLeft
                     size={16}
                     color={
                       noteIndex === 0
-                        ? colors.surface.highest
-                        : colors.text.secondary
+                        ? asColor(surfaceTertiary)
+                        : asColor(mutedForeground)
                     }
                   />
                 </Touchable>
@@ -203,13 +127,14 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
 
               {/* Keyed on index: the outgoing note fades out while the next
                   one fades in, instead of the text swapping instantly. */}
+              {/* Reanimated `Animated.*` takes `style=`, not a className. */}
               <Animated.View
                 key={noteIndex}
                 entering={FadeIn.duration(motion.fast).easing(easing)}
                 exiting={FadeOut.duration(motion.fast).easing(easing)}
-                style={styles.noteText}
+                style={{ flex: 1 }}
               >
-                <ThemedText type="bodySm" color={colors.text.secondary}>
+                <ThemedText type="bodySm" color={asColor(mutedForeground)}>
                   {noteTexts[noteIndex]}
                 </ThemedText>
               </Animated.View>
@@ -220,14 +145,14 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
                   disabled={noteIndex === noteTexts.length - 1}
                   haptic="tap"
                   hitSlop={8}
-                  style={styles.arrow}
+                  className="p-1"
                 >
                   <ChevronRight
                     size={16}
                     color={
                       noteIndex === noteTexts.length - 1
-                        ? colors.surface.highest
-                        : colors.text.secondary
+                        ? asColor(surfaceTertiary)
+                        : asColor(mutedForeground)
                     }
                   />
                 </Touchable>
@@ -237,8 +162,8 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
             {hasMultiple && (
               <ThemedText
                 type="labelSm"
-                color={colors.text.secondary}
-                style={styles.pageIndicator}
+                color={asColor(mutedForeground)}
+                style={{ textAlign: "right" }}
               >
                 {noteIndex + 1} / {noteTexts.length}
               </ThemedText>
@@ -247,8 +172,11 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
         </View>
       )}
 
-      {/* Vertical connector */}
-      {!isLast && <View style={styles.connector} />}
+      {/* Vertical connector — the thread between two entries, so it has to
+          read as spanning the gap rather than floating in the middle of one.
+          It used to be 20 above + 40 of line + 32 of the next entry's top
+          padding: 92dp between cards, with a short rule stranded in it. */}
+      {!isLast && <View className="ml-1 mt-3 h-6 w-px bg-surface-tertiary" />}
     </View>
   );
 }

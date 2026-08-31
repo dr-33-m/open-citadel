@@ -1,30 +1,23 @@
-import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { ScrollView } from 'react-native-gesture-handler';
-import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Keyboard,
-  StyleSheet,
-  View,
-} from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Keyboard, View, type TextInput } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
+import { Chip } from '@/components/ui/chip';
+import { spacing } from '@/constants/theme';
+import { Input } from '@/components/ui/input';
 import { Sheet } from '@/components/ui/sheet';
+import { Spinner } from '@/components/ui/spinner';
 import { Touchable } from '@/components/ui/touchable';
-import { Check, Sparkles, X } from 'lucide-react-native';
+import { Check, Sparkles } from 'lucide-react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { ColorSwatch, ColorSwatchRow, HIGHLIGHT_COLORS } from '@/components/color-swatch';
 import { GoldButton } from '@/components/ui/gold-button';
-import { useColors } from '@/hooks/use-colors';
-import { fontFamily, spacing } from '@/constants/theme';
+import { cn } from '@/lib/cn';
+import { asColor } from '@/utils/colors';
+import { useSamwellWake } from '@/hooks/use-samwell-wake';
 import { suggestTags } from '@/services/tag-suggest';
-
-const COLORS = [
-  '#f2ca50', // gold
-  '#e05252', // red
-  '#52b788', // green
-  '#4a90d9', // blue
-  '#9b72cf', // purple
-];
 
 export type ThoughtEditData = {
   id: string;
@@ -48,27 +41,48 @@ export function NewThoughtSheet({
   onSave,
   onClose,
 }: NewThoughtSheetProps) {
-  const colors = useColors();
+  // Literal colours for the consumers a className can't reach: ThemedText's
+  // `color` prop and the lucide icons'.
+  const [mutedForeground, primary] = useCSSVariable([
+    '--color-muted-foreground',
+    '--color-primary',
+  ]);
   const isEditing = !!editData;
 
   const [text, setText] = useState('');
-  const [selectedColor, setSelectedColor] = useState(COLORS[0]);
+  const [selectedColor, setSelectedColor] = useState(HIGHLIGHT_COLORS[0]);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [suggesting, setSuggesting] = useState(false);
+  const { ensureAwake, wakeDialog } = useSamwellWake();
   const [suggestError, setSuggestError] = useState<string | null>(null);
+  /*
+   * The fields are uncontrolled: the text lives in the native buffer and
+   * React only mirrors it out (`onChangeText`), never back in. Every
+   * controlled commit re-sets the field from JS state, and a keystroke that
+   * lands while the JS thread is busy — these sheets re-render their colour
+   * rows, tag chips and suggestions on every letter — gets committed over
+   * by a stale string: the letter drops, or the IME re-inserts it and the
+   * word duplicates. Resets go through the refs (`clear()` empties the
+   * buffer where it actually lives); the one case that must *populate* the
+   * field (editing an existing thought) remounts it via `key` with
+   * `defaultValue`, which is why that key names the thought being edited.
+   */
+  const textFieldRef = useRef<TextInput>(null);
+  const tagFieldRef = useRef<TextInput>(null);
+  const [fieldEpoch, setFieldEpoch] = useState(0);
 
   // Populate fields when editing
   useEffect(() => {
     if (visible && editData) {
       setText(editData.text);
-      setSelectedColor(editData.color || COLORS[0]);
+      setSelectedColor(editData.color || HIGHLIGHT_COLORS[0]);
       setTags(editData.tags);
       setTagInput('');
     } else if (visible && !editData) {
       setText('');
-      setSelectedColor(COLORS[0]);
+      setSelectedColor(HIGHLIGHT_COLORS[0]);
       setTags([]);
       setTagInput('');
     }
@@ -77,84 +91,6 @@ export function NewThoughtSheet({
     setSuggestError(null);
   }, [visible, editData]);
 
-  const styles = React.useMemo(() => StyleSheet.create({
-    sheet: {
-      backgroundColor: colors.surface.low,
-      paddingHorizontal: spacing[6],
-      paddingTop: spacing[4],
-      paddingBottom: spacing[10],
-      gap: spacing[4],
-    },
-    textInput: {
-      backgroundColor: colors.surface.mid,
-      color: colors.text.primary,
-      fontFamily: fontFamily.sans,
-      fontSize: 16,
-      padding: spacing[4],
-      minHeight: 100,
-      textAlignVertical: 'top',
-    },
-    colorRow: { flexDirection: 'row', gap: spacing[3] },
-    swatch: { width: 28, height: 28, borderRadius: 14 },
-    swatchSelected: { borderWidth: 3, borderColor: colors.text.primary },
-    tagSection: { gap: spacing[2] },
-    tagChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] },
-    chip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[2],
-      backgroundColor: colors.surface.mid,
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[1],
-      borderRadius: 99,
-    },
-    chipText: { fontSize: 12 },
-    tagInputRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.surface.mid,
-    },
-    tagInputField: {
-      flex: 1,
-      color: colors.text.primary,
-      fontFamily: fontFamily.sans,
-      fontSize: 14,
-      paddingHorizontal: spacing[4],
-      paddingVertical: spacing[2],
-    },
-    tagInputBtn: { paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
-    tagInputBtnDisabled: { opacity: 0.4 },
-    suggestionsScroll: { marginTop: spacing[1] },
-    suggestionsContent: { gap: spacing[2] },
-    suggestionChip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[1],
-      backgroundColor: colors.surface.mid,
-      borderWidth: 1,
-      borderColor: colors.surface.highest,
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[1],
-      borderRadius: 99,
-    },
-    suggestionChipAdded: { opacity: 0.5 },
-    aiSuggestRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flexWrap: 'wrap',
-      gap: spacing[2],
-    },
-    aiSuggestBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[1],
-      paddingVertical: spacing[1],
-    },
-    aiSuggestionChip: { borderColor: colors.primary.default },
-    actions: { gap: spacing[3] },
-    cancel: { alignItems: 'center', paddingVertical: spacing[3] },
-  }), [colors]);
-
   const addTag = (tag: string) => {
     const trimmed = tag.trim();
     if (!trimmed) return;
@@ -162,9 +98,20 @@ export function NewThoughtSheet({
     setTags([...tags, trimmed]);
   };
 
-  const commitTag = () => {
-    addTag(tagInput.trim().replace(/,+$/, ''));
+  /*
+   * Commits from the *event* value, never the mirror: keystrokes can land
+   * faster than renders, so `tagInput` can lag the buffer — committing from
+   * it would clip the tag's tail ("history f" for "history fiction"). The
+   * ✓ button and the keyboard action fire long after the render settled, so
+   * the mirror is current there. `clear()` empties the native buffer; if an
+   * IME batch re-applies text across it, the re-applied value arrives as
+   * another `onChangeText` ending in a comma and commits (deduped) again,
+   * so the field always converges on empty.
+   */
+  const commitTag = (raw: string) => {
+    addTag(raw.trim().replace(/,+$/, ''));
     setTagInput('');
+    tagFieldRef.current?.clear();
   };
 
   const removeTag = (tag: string) => {
@@ -173,6 +120,9 @@ export function NewThoughtSheet({
 
   const handleSuggestTags = async () => {
     if (suggesting || !text.trim()) return;
+    // Offline Samwell has to be awake to answer. Ask before starting rather
+    // than failing afterwards with an instruction to go to Settings.
+    if (!(await ensureAwake())) return;
     setSuggesting(true);
     setSuggestError(null);
     try {
@@ -190,106 +140,150 @@ export function NewThoughtSheet({
     onSave(trimmed, selectedColor, tags);
     if (!isEditing) {
       setText('');
-      setSelectedColor(COLORS[0]);
+      setSelectedColor(HIGHLIGHT_COLORS[0]);
       setTags([]);
       setTagInput('');
+      textFieldRef.current?.clear();
+      tagFieldRef.current?.clear();
     }
   };
 
   const handleClose = () => {
     Keyboard.dismiss();
     setText('');
-    setSelectedColor(COLORS[0]);
+    setSelectedColor(HIGHLIGHT_COLORS[0]);
     setTags([]);
     setTagInput('');
+    setFieldEpoch((epoch) => epoch + 1);
     onClose();
   };
 
   return (
+    <>
+    {/* Dynamic sizing, same as the highlight menu — that one is stable with
+        the same growing-field pattern. A fixed-ratio sheet was tried here
+        instead and made things worse: it left dead space below short content
+        (the sheet forced to a height taller than what's in it) and, on
+        Android, fought with the keyboard badly enough to corrupt typed text.
+        Root cause of the *original* jitter was the text field itself growing
+        with `minHeight` — see the field below. `scrollable` because the
+        scroll region IS the sheet: it reports its own content height, which
+        is what the sheet sizes itself from, and the sheet lifts as a whole
+        for whichever field takes focus. */}
     <Sheet visible={visible} onClose={handleClose} scrollable>
-      <BottomSheetScrollView contentContainerStyle={styles.sheet} keyboardShouldPersistTaps="handled">
+      <Sheet.ScrollView
+        // `contentContainerStyle`, not `contentContainerClassName`: Uniwind
+        // auto-instruments React Native's own components, and this scroll
+        // region is the library's, so a class name on it has nothing to
+        // resolve it.
+        contentContainerStyle={{ gap: spacing[6], paddingHorizontal: spacing[6] }}
+        keyboardShouldPersistTaps="handled"
+      >
         <ThemedText type="headlineSm">
           {isEditing ? 'Edit Thought' : 'New Thought'}
         </ThemedText>
 
-        <BottomSheetTextInput
-          style={styles.textInput}
+        {/* Fixed, not `minHeight`: a growing box changes the sheet's own
+            measured content height on every line wrap, and a dynamically-
+            sized sheet re-measures and re-snaps in response — the jitter. A
+            constant height means the sheet measures once and never needs to
+            move again; the field scrolls internally past that, same as any
+            bounded multiline input. */}
+        <Input
+          ref={textFieldRef}
+          // The key remounts the field so its buffer matches what this open
+          // is for: empty for a new thought, the edited text otherwise. The
+          // buffer is native-owned, so a state reset alone cannot reach it.
+          key={`${fieldEpoch}-${editData?.id ?? 'new'}`}
+          style={{ height: 120, textAlignVertical: 'top' }}
           placeholder="What's on your mind…"
-          placeholderTextColor={colors.text.secondary}
-          value={text}
+          defaultValue={editData?.text ?? ''}
           onChangeText={setText}
           multiline
         />
 
-        {/* Color swatches */}
-        <View style={styles.colorRow}>
-          {COLORS.map((c) => (
-            <Touchable
-              key={c}
-              style={[
-                styles.swatch,
-                { backgroundColor: c },
-                selectedColor === c && styles.swatchSelected,
-              ]}
-              onPress={() => setSelectedColor(c)}
-            />
-          ))}
+        {/* Colour and tags are two facets of the thought, not one cluster.
+            Unlabelled and 24 below the field but only 12 above the tag box,
+            the swatches read as belonging to the tags — so each is now its
+            own labelled block on the sheet's 24 rhythm, 12 within. */}
+        <View className="gap-3">
+          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+            COLOUR
+          </ThemedText>
+          <ColorSwatchRow>
+            {HIGHLIGHT_COLORS.map((c) => (
+              <ColorSwatch
+                key={c}
+                color={c}
+                selected={selectedColor === c}
+                onPress={() => setSelectedColor(c)}
+                accessibilityLabel={`Colour ${c}`}
+              />
+            ))}
+          </ColorSwatchRow>
         </View>
 
-        {/* Tags */}
-        <View style={styles.tagSection}>
+        <View className="gap-3">
+          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+            TAGS
+          </ThemedText>
           {tags.length > 0 && (
-            <View style={styles.tagChips}>
+            <View className="flex-row flex-wrap gap-2">
               {tags.map((tag) => (
-                <View key={tag} style={styles.chip}>
-                  <ThemedText type="labelSm" color={colors.text.primary} style={styles.chipText}>
-                    {tag}
-                  </ThemedText>
-                  <Touchable onPress={() => removeTag(tag)} hitSlop={6}>
-                    <X size={11} color={colors.text.secondary} />
-                  </Touchable>
-                </View>
+                <Chip key={tag} size="sm" onClose={() => removeTag(tag)}>
+                  {tag}
+                </Chip>
               ))}
             </View>
           )}
-          <View style={styles.tagInputRow}>
-            <BottomSheetTextInput
-              style={styles.tagInputField}
-              placeholder="Add tag…"
-              placeholderTextColor={colors.text.secondary}
-              value={tagInput}
-              onChangeText={(v) => {
-                if (v.endsWith(',')) {
-                  commitTag();
-                } else {
-                  setTagInput(v);
-                }
-              }}
-              returnKeyType="done"
-              onSubmitEditing={commitTag}
-            />
-            <Touchable
-              style={[styles.tagInputBtn, !tagInput.trim() && styles.tagInputBtnDisabled]}
-              onPress={commitTag}
-              hitSlop={8}
-            >
-              <Check size={16} color={tagInput.trim() ? colors.primary.default : colors.text.secondary} />
-            </Touchable>
-          </View>
+          {/* The commit button is the field's own `endContent`, not a sibling
+              beside it. As a sibling it needed the field to give up width to
+              it — and `className` on `Input` styles the *field*, not the
+              container, so the `flex-1` never reached the box that had to
+              shrink: the field took the full row and pushed the button off
+              the right edge of the screen. Inside, it cannot overflow, and it
+              sits where a suffix belongs. */}
+          <Input
+            ref={tagFieldRef}
+            placeholder="Add tag…"
+            onChangeText={(v) => {
+              if (v.endsWith(',')) {
+                commitTag(v);
+              } else {
+                setTagInput(v);
+              }
+            }}
+            returnKeyType="done"
+            onSubmitEditing={() => commitTag(tagInput)}
+            endContent={
+              <Touchable
+                onPress={() => commitTag(tagInput)}
+                disabled={!tagInput.trim()}
+                hitSlop={8}
+                accessibilityLabel="Add tag"
+                className={cn(!tagInput.trim() && 'opacity-40')}
+              >
+                <Check
+                  size={18}
+                  color={tagInput.trim() ? asColor(primary) : asColor(mutedForeground)}
+                />
+              </Touchable>
+            }
+          />
 
-          <View style={styles.aiSuggestRow}>
+          <View className="flex-row flex-wrap items-center gap-2">
             <Touchable
-              style={styles.aiSuggestBtn}
+              className="flex-row items-center gap-1 py-1"
               onPress={handleSuggestTags}
               disabled={suggesting || !text.trim()}
               hitSlop={6}
             >
               {suggesting ? (
-                <ActivityIndicator size={14} color={colors.primary.default} />
+                <Spinner size="sm" className="h-3.5 w-3.5" />
               ) : (
-                <Sparkles size={14} color={colors.primary.default} />
+                <Sparkles size={14} color={asColor(primary)} />
               )}
-              <ThemedText type="labelSm" color={colors.primary.default}>
+              <ThemedText type="labelSm" color={asColor(primary)}>
                 {suggesting ? 'SUGGESTING…' : 'SUGGEST TAGS'}
               </ThemedText>
             </Touchable>
@@ -298,18 +292,17 @@ export function NewThoughtSheet({
               return (
                 <Touchable
                   key={tag}
-                  style={[
-                    styles.suggestionChip,
-                    styles.aiSuggestionChip,
-                    isAdded && styles.suggestionChipAdded,
-                  ]}
+                  className={cn(
+                    'flex-row items-center gap-1 rounded-full border border-primary bg-muted px-3 py-1',
+                    isAdded && 'opacity-50',
+                  )}
                   onPress={() => !isAdded && addTag(tag)}
                 >
-                  {isAdded && <Check size={11} color={colors.text.secondary} />}
+                  {isAdded && <Check size={11} color={asColor(mutedForeground)} />}
                   <ThemedText
                     type="labelSm"
-                    color={isAdded ? colors.text.secondary : colors.text.primary}
-                    style={styles.chipText}
+                    color={isAdded ? asColor(mutedForeground) : undefined}
+                    style={{ fontSize: 12 }}
                   >
                     {tag}
                   </ThemedText>
@@ -318,22 +311,23 @@ export function NewThoughtSheet({
             })}
           </View>
           {suggestError && (
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
               {suggestError}
             </ThemedText>
           )}
 
           {allTags.length > 0 && (
-            // RNGH's ScrollView, not RN's: the sheet wraps its scrollable in
-            // a GestureDetector, and a plain nested ScrollView loses the
-            // horizontal touch stream to it — the row rendered but never
-            // scrolled. The gesture-handler-aware component registers with
-            // the same system and coordinates correctly.
+            // RNGH's ScrollView, not RN's, and not `Sheet.ScrollView` either:
+            // the sheet wraps its scroll region in a native gesture, and a
+            // plain nested ScrollView loses the horizontal touch stream to it
+            // — the row rendered but never scrolled. `Sheet.ScrollView` is
+            // for the region the sheet drags against; this one is a sideways
+            // strip inside it and must stay out of that negotiation.
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={styles.suggestionsScroll}
-              contentContainerStyle={styles.suggestionsContent}
+              className="mt-1"
+              contentContainerClassName="gap-2"
               keyboardShouldPersistTaps="handled"
             >
               {allTags.map((tag) => {
@@ -341,14 +335,17 @@ export function NewThoughtSheet({
                 return (
                   <Touchable
                     key={tag}
-                    style={[styles.suggestionChip, isAdded && styles.suggestionChipAdded]}
+                    className={cn(
+                      'flex-row items-center gap-1 rounded-full border border-surface-tertiary bg-muted px-3 py-1',
+                      isAdded && 'opacity-50',
+                    )}
                     onPress={() => !isAdded && addTag(tag)}
                   >
-                    {isAdded && <Check size={11} color={colors.text.secondary} />}
+                    {isAdded && <Check size={11} color={asColor(mutedForeground)} />}
                     <ThemedText
                       type="labelSm"
-                      color={isAdded ? colors.text.secondary : colors.text.primary}
-                      style={styles.chipText}
+                      color={isAdded ? asColor(mutedForeground) : undefined}
+                      style={{ fontSize: 12 }}
                     >
                       {tag}
                     </ThemedText>
@@ -359,16 +356,21 @@ export function NewThoughtSheet({
           )}
         </View>
 
-        <View style={styles.actions}>
+        <View className="gap-3">
           <GoldButton
             label={isEditing ? 'SAVE CHANGES' : 'SAVE THOUGHT'}
             onPress={handleSave}
           />
-          <Touchable onPress={handleClose} style={styles.cancel}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
+          <Touchable onPress={handleClose} className="items-center py-3">
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>CANCEL</ThemedText>
           </Touchable>
         </View>
-      </BottomSheetScrollView>
+      </Sheet.ScrollView>
     </Sheet>
+
+    {/* A sibling of the sheet, not a child: it must not be laid out or
+        clipped by the sheet it is asking a question on behalf of. */}
+    {wakeDialog}
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 import type { CompassMorningAnalysis, CompassNightAnalysis, CompassSetupProposal } from 'samwell-shared';
 
 import { scoreColor } from '@/components/compass/format';
@@ -7,8 +8,7 @@ import { MissionStep } from '@/components/compass/mission-step';
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
 import { Touchable } from '@/components/ui/touchable';
-import { spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
+import { asColor } from '@/utils/colors';
 import { computeFocusScore, orderMissionSteps } from '@/services/compass-math';
 
 type ShellProps = {
@@ -21,39 +21,20 @@ type ShellProps = {
 };
 
 function DraftCardShell({ label, approveLabel, onApprove, onRefine, disabled, children }: ShellProps) {
-  const colors = useColors();
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        card: {
-          backgroundColor: colors.surface.low,
-          borderLeftWidth: 2,
-          borderLeftColor: colors.primary.default,
-          padding: spacing[4],
-          gap: spacing[3],
-        },
-        body: { gap: spacing[2] },
-        actions: { gap: spacing[2], marginTop: spacing[1] },
-        refine: {
-          borderWidth: 1,
-          borderColor: colors.outline.variant,
-          paddingVertical: spacing[3],
-          alignItems: 'center',
-        },
-      }),
-    [colors],
-  );
+  // Literal colours for consumers a className can't reach: ThemedText's
+  // `color` prop.
+  const [primary, mutedForeground] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
 
   return (
-    <View style={styles.card}>
-      <ThemedText type="labelSm" color={colors.primary.default}>
+    <View className="border-l-2 border-l-primary gap-3 bg-card p-4">
+      <ThemedText type="labelSm" color={asColor(primary)}>
         {label}
       </ThemedText>
-      <View style={styles.body}>{children}</View>
-      <View style={styles.actions}>
+      <View className="gap-2">{children}</View>
+      <View className="mt-1 gap-2">
         <GoldButton label={approveLabel} onPress={disabled ? undefined : onApprove} />
-        <Touchable style={styles.refine} onPress={disabled ? undefined : onRefine}>
-          <ThemedText type="labelMd" color={colors.text.secondary}>
+        <Touchable className="items-center border border-border py-3" onPress={disabled ? undefined : onRefine}>
+          <ThemedText type="labelMd" color={asColor(mutedForeground)}>
             REFINE
           </ThemedText>
         </Touchable>
@@ -73,7 +54,7 @@ export function SetupDraftCard({
   onRefine: () => void;
   disabled?: boolean;
 }) {
-  const colors = useColors();
+  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
   return (
     <DraftCardShell
       label="DRAFT · GOAL"
@@ -82,28 +63,28 @@ export function SetupDraftCard({
       onRefine={onRefine}
       disabled={disabled}
     >
-      <ThemedText type="labelSm" color={colors.text.secondary}>
+      <ThemedText type="labelSm" color={asColor(mutedForeground)}>
         GOAL
       </ThemedText>
       <ThemedText type="headlineSm">{proposal.goalTitle}</ThemedText>
-      <ThemedText type="bodySm" color={colors.text.secondary}>
+      <ThemedText type="bodySm" color={asColor(mutedForeground)}>
         {proposal.goalSummary}
       </ThemedText>
 
       {proposal.goalDurationDays != null && proposal.estimatedMilestones != null && (
-        <ThemedText type="labelSm" color={colors.text.secondary}>
+        <ThemedText type="labelSm" color={asColor(mutedForeground)}>
           ~{proposal.goalDurationDays} DAYS · ~{proposal.estimatedMilestones} MILESTONES
         </ThemedText>
       )}
 
-      <ThemedText type="labelSm" color={colors.text.secondary} style={{ marginTop: spacing[2] }}>
+      <ThemedText type="labelSm" color={asColor(mutedForeground)} className="mt-2">
         FIRST MILESTONE
       </ThemedText>
       <ThemedText type="bodyMd">{proposal.milestoneTitle}</ThemedText>
-      <ThemedText type="labelSm" color={colors.text.secondary}>
+      <ThemedText type="labelSm" color={asColor(mutedForeground)}>
         {proposal.estimatedEffortUnits} STEPS · ~{proposal.milestoneDurationDays} DAYS
       </ThemedText>
-      <ThemedText type="labelSm" color={colors.text.secondary}>
+      <ThemedText type="labelSm" color={asColor(mutedForeground)}>
         {proposal.effortUnitDefinition}
       </ThemedText>
     </DraftCardShell>
@@ -148,13 +129,9 @@ export function NightDraftCard({
   onRefine: () => void;
   disabled?: boolean;
 }) {
-  const colors = useColors();
+  const [primary, mutedForeground] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
   const focusScore = computeFocusScore(analysis.actions);
   const steps = Math.round(analysis.effortUnitsCompleted * 10) / 10;
-  const styles = React.useMemo(
-    () => StyleSheet.create({ row: { flexDirection: 'row', alignItems: 'baseline', gap: spacing[3] } }),
-    [],
-  );
   return (
     <DraftCardShell
       label="DRAFT · TONIGHT'S REVIEW"
@@ -164,11 +141,11 @@ export function NightDraftCard({
       disabled={disabled}
     >
       <ThemedText type="headlineSm">{analysis.headline}</ThemedText>
-      <View style={styles.row}>
-        <ThemedText type="displayMd" color={scoreColor(focusScore, colors.primary.default)}>
+      <View className="flex-row items-baseline gap-3">
+        <ThemedText type="displayMd" color={scoreColor(focusScore, asColor(primary) ?? '')}>
           {focusScore}%
         </ThemedText>
-        <ThemedText type="labelSm" color={colors.text.secondary}>
+        <ThemedText type="labelSm" color={asColor(mutedForeground)}>
           FOCUS · +{steps} STEPS
         </ThemedText>
       </View>

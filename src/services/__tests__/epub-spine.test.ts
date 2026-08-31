@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { epubBasename, parseSpine, resolveReadCutoff } from '../epub-spine';
+import {
+  epubBasename,
+  isFrontMatterHref,
+  parseGuideBodyStart,
+  parseLandmarksBodyStart,
+  parseSpine,
+  resolveBodyStart,
+  resolveReadCutoff,
+} from '../epub-spine';
 
 const OPF = `<?xml version="1.0"?>
 <package>
@@ -93,5 +101,83 @@ describe('resolveReadCutoff (the spoiler boundary)', () => {
 
   it('empty spine ⇒ nothing readable', () => {
     expect(resolveReadCutoff([], null)).toEqual({ cutoffIndex: -1, progression: 1 });
+  });
+});
+
+// ── Where the book actually begins ──────────────────────────────────────────
+
+const SPINE = [
+  'OEBPS/cover.xhtml',
+  'OEBPS/titlepage.xhtml',
+  'OEBPS/copyright.xhtml',
+  'OEBPS/text/chap1.xhtml',
+  'OEBPS/text/chap2.xhtml',
+];
+
+describe('isFrontMatterHref', () => {
+  it('recognises the usual jacket and apparatus pages', () => {
+    expect(isFrontMatterHref('OEBPS/cover.xhtml')).toBe(true);
+    expect(isFrontMatterHref('OEBPS/copyright.xhtml')).toBe(true);
+    expect(isFrontMatterHref('OEBPS/toc.xhtml')).toBe(true);
+  });
+
+  it('leaves chapters alone', () => {
+    expect(isFrontMatterHref('OEBPS/text/chap1.xhtml')).toBe(false);
+  });
+});
+
+describe('parseGuideBodyStart', () => {
+  it('takes the publisher’s own declaration of where the text starts', () => {
+    const opf = `<package><guide>
+      <reference type="cover" href="cover.xhtml"/>
+      <reference type="text" href="text/chap1.xhtml"/>
+    </guide></package>`;
+    expect(parseGuideBodyStart(opf, SPINE)).toBe(3);
+  });
+
+  it('reports absence rather than guessing', () => {
+    expect(parseGuideBodyStart('<package></package>', SPINE)).toBe(-1);
+  });
+});
+
+describe('parseLandmarksBodyStart', () => {
+  it('reads the EPUB 3 bodymatter landmark', () => {
+    const nav = `<nav epub:type="landmarks">
+      <ol>
+        <li><a epub:type="cover" href="cover.xhtml">Cover</a></li>
+        <li><a epub:type="bodymatter" href="text/chap1.xhtml">Start</a></li>
+      </ol>
+    </nav>`;
+    expect(parseLandmarksBodyStart(nav, SPINE)).toBe(3);
+  });
+
+  it('reports absence when there is no landmarks nav', () => {
+    expect(parseLandmarksBodyStart('<nav epub:type="toc"></nav>', SPINE)).toBe(-1);
+  });
+});
+
+describe('resolveBodyStart', () => {
+  it('prefers the guide over the filename heuristic', () => {
+    // The guide points past chap1, which the heuristic would have kept.
+    const opf = `<package><guide>
+      <reference type="text" href="text/chap2.xhtml"/>
+    </guide></package>`;
+    expect(resolveBodyStart(opf, SPINE)).toBe(4);
+  });
+
+  it('falls back to landmarks when there is no guide', () => {
+    const nav = `<nav epub:type="landmarks">
+      <li><a epub:type="bodymatter" href="text/chap1.xhtml">Start</a></li>
+    </nav>`;
+    expect(resolveBodyStart('<package></package>', SPINE, nav)).toBe(3);
+  });
+
+  it('falls back to skipping front-matter filenames', () => {
+    expect(resolveBodyStart('<package></package>', SPINE)).toBe(3);
+  });
+
+  it('keeps the whole book when every section looks like front matter', () => {
+    // Better to search jacket copy than to search nothing at all.
+    expect(resolveBodyStart('<package></package>', ['OEBPS/cover.xhtml'])).toBe(0);
   });
 });

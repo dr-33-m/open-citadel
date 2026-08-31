@@ -1,16 +1,13 @@
 import { like } from 'drizzle-orm';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
-import {
-  StyleSheet,
-  View,
-} from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
-import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
+import { cn } from '@/lib/cn';
 import { db } from '@/db/client';
 import { readingDays } from '@/db/schema';
 import { didReadOn, readingDotStrength } from '@/services/reading-day';
@@ -27,6 +24,13 @@ type CalendarPickerProps = {
   /** Latest selectable day (YYYY-MM-DD). */
   maxDate?: string;
 };
+
+/** ThemedText/lucide icons take a literal color, not a className — resolve the
+ * semantic token once per render and fall back to `undefined` (which lets
+ * `ThemedText` apply its own default) if it hasn't resolved yet. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
 
 function toDateString(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -52,7 +56,15 @@ export function CalendarPicker({
   minDate,
   maxDate,
 }: CalendarPickerProps) {
-  const colors = useColors();
+  const [foreground, mutedForeground, primary, primaryForeground, destructive, border] =
+    useCSSVariable([
+      '--color-foreground',
+      '--color-muted-foreground',
+      '--color-primary',
+      '--color-primary-foreground',
+      '--color-destructive',
+      '--color-border',
+    ]);
   const today = todayString();
 
   // "Legacy" (timeline) mode = no bounds passed: activity dots on, no future.
@@ -69,6 +81,23 @@ export function CalendarPicker({
     })();
   const [viewYear, setViewYear] = useState(initialMonth.year);
   const [viewMonth, setViewMonth] = useState(initialMonth.month);
+
+  /*
+   * `initialMonth` is recomputed every render but only ever read by `useState`
+   * on the first one, and this picker is mounted for the life of the screen
+   * with `visible` toggling — so every open after the first showed whatever
+   * month was last paged to, not the month of the date being edited. Re-sync
+   * on the way in, which is also the only moment it can be done without
+   * fighting the user's own paging.
+   */
+  const wasVisible = useRef(visible);
+  useEffect(() => {
+    if (visible && !wasVisible.current) {
+      setViewYear(initialMonth.year);
+      setViewMonth(initialMonth.month);
+    }
+    wasVisible.current = visible;
+  }, [visible, initialMonth.year, initialMonth.month]);
 
   // How much was actually read per day this month, as a fraction of a book:
   // { 'YYYY-MM-DD': 0.037 }. Summed across books, so an hour split between two
@@ -91,58 +120,6 @@ export function CalendarPicker({
       })
       .catch(() => {});
   }, [viewYear, viewMonth, legacyMode]);
-
-  const styles = React.useMemo(() => StyleSheet.create({
-    sheet: {
-      backgroundColor: colors.surface.low,
-      paddingHorizontal: spacing[6],
-      paddingTop: spacing[4],
-      paddingBottom: spacing[10],
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: spacing[4],
-    },
-    navBtn: {
-      width: 36,
-      height: 36,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    weekRow: {
-      flexDirection: 'row',
-      marginBottom: spacing[2],
-    },
-    weekCell: {
-      flex: 1,
-      alignItems: 'center',
-      paddingVertical: spacing[2],
-    },
-    gridRow: {
-      flexDirection: 'row',
-    },
-    dayCell: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: spacing[2],
-    },
-    daySelected: {
-      borderRadius: 20,
-    },
-    dayToday: {
-      borderWidth: 1,
-      borderRadius: 20,
-    },
-    activityDot: {
-      width: 3,
-      height: 3,
-      borderRadius: 2,
-      marginTop: 2,
-    },
-  }), [colors]);
 
   const monthName = new Date(viewYear, viewMonth).toLocaleDateString('en-US', {
     month: 'long',
@@ -171,10 +148,23 @@ export function CalendarPicker({
   const firstDayOfMonth = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
 
+  /*
+   * Always six rows, padded, never five.
+   *
+   * A month needs five or six depending on where its first day falls, and the
+   * sheet around this grid is auto-height — so paging between months, or
+   * reopening on a different one, changed the sheet's measured content height
+   * by a whole row and made it re-measure and re-snap mid-animation. A
+   * constant 42 cells means the sheet is the same height for every month and
+   * has nothing to re-snap to. The trailing blanks cost one row of empty
+   * space in the short months, which is what every calendar that does not
+   * jump does.
+   */
+  const GRID_CELLS = 42;
   const cells: (number | null)[] = [];
   for (let i = 0; i < firstDayOfMonth; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
+  while (cells.length < GRID_CELLS) cells.push(null);
 
   const rows: (number | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) {
@@ -183,22 +173,22 @@ export function CalendarPicker({
 
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <View style={styles.sheet}>
-        <View style={styles.header}>
-          <Touchable onPress={prevMonth} style={styles.navBtn}>
-            <ChevronLeft size={20} color={colors.text.primary} />
+      <View className="px-6">
+        <View className="mb-4 flex-row items-center justify-between">
+          <Touchable onPress={prevMonth} className="h-9 w-9 items-center justify-center" hitSlop={4}>
+            <ChevronLeft size={20} color={asColor(foreground)} />
           </Touchable>
           <ThemedText type="bodyMd">{monthName}</ThemedText>
-          <Touchable onPress={nextMonth} style={styles.navBtn}>
-            <ChevronRight size={20} color={colors.text.primary} />
+          <Touchable onPress={nextMonth} className="h-9 w-9 items-center justify-center" hitSlop={4}>
+            <ChevronRight size={20} color={asColor(foreground)} />
           </Touchable>
         </View>
 
         {/* Week header */}
-        <View style={styles.weekRow}>
+        <View className="mb-2 flex-row">
           {DAYS.map((d, i) => (
-            <View key={i} style={styles.weekCell}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
+            <View key={i} className="flex-1 items-center py-3">
+              <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                 {d}
               </ThemedText>
             </View>
@@ -207,10 +197,10 @@ export function CalendarPicker({
 
         {/* Calendar grid */}
         {rows.map((row, ri) => (
-          <View key={ri} style={styles.gridRow}>
+          <View key={ri} className="flex-row">
             {row.map((day, ci) => {
               if (day === null) {
-                return <View key={ci} style={styles.dayCell} />;
+                return <View key={ci} className="flex-1 items-center justify-center py-3" />;
               }
               const dateStr = toDateString(viewYear, viewMonth, day);
               const isSelected = dateStr === selectedDate;
@@ -222,22 +212,19 @@ export function CalendarPicker({
                 (legacyMode ? dateStr > today : false);
               const read = readingByDay[dateStr] ?? 0;
               const dotOpacity = readingDotStrength(read);
-              const dotColor = didReadOn(read) ? colors.primary.default : '#e53935';
+              const dotColor = didReadOn(read) ? primary : destructive;
 
               return (
                 <Touchable
                   key={ci}
-                  style={[
-                    styles.dayCell,
-                    isSelected && [
-                      styles.daySelected,
-                      { backgroundColor: colors.primary.default },
-                    ],
-                    isToday && !isSelected && [
-                      styles.dayToday,
-                      { borderColor: colors.primary.default },
-                    ],
-                  ]}
+                  className={cn(
+                    'flex-1 items-center justify-center py-3',
+                    // Literal `rounded-full`, not a themed radius step: this
+                    // circular selected/today mark is a deliberate exception
+                    // to the app's square-corner rule, same as before.
+                    isSelected && 'rounded-full bg-primary',
+                    isToday && !isSelected && 'rounded-full border border-primary',
+                  )}
                   onPress={() => {
                     if (!isDisabled) {
                       onSelectDate(dateStr);
@@ -250,20 +237,18 @@ export function CalendarPicker({
                     type="bodySm"
                     color={
                       isSelected
-                        ? colors.text.inverse
+                        ? asColor(primaryForeground)
                         : isDisabled
-                          ? colors.surface.highest
-                          : colors.text.primary
+                          ? asColor(border)
+                          : asColor(foreground)
                     }
                   >
                     {day}
                   </ThemedText>
                   {legacyMode && dateStr < today && (
                     <View
-                      style={[
-                        styles.activityDot,
-                        { backgroundColor: dotColor, opacity: dotOpacity },
-                      ]}
+                      className="mt-1 h-[3px] w-[3px] rounded-full"
+                      style={{ backgroundColor: asColor(dotColor), opacity: dotOpacity }}
                     />
                   )}
                 </Touchable>

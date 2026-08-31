@@ -1,12 +1,12 @@
 import { LibraryBig } from 'lucide-react-native';
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
-import Animated, { FadeInUp, ZoomIn } from 'react-native-reanimated';
+import { View } from 'react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
+import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
-import { useColors } from '@/hooks/use-colors';
-import { easing, motion, spacing } from '@/constants/theme';
+import { easing, motion, popIn } from '@/constants/theme';
 
 type DirectoryPromptProps = {
   onPress: () => void;
@@ -15,7 +15,7 @@ type DirectoryPromptProps = {
 // iOS brings books into an app-owned folder via the picker; Android references
 // EPUBs in place from a folder the user selects.
 const COPY =
-  Platform.OS === 'ios'
+  process.env.EXPO_OS === 'ios'
     ? {
         description:
           'Add your EPUB books and Open Citadel organizes them for you.',
@@ -27,43 +27,28 @@ const COPY =
         button: 'SELECT FOLDER',
       };
 
+/** ThemedText/lucide icons take a literal color, not a className. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
 export function DirectoryPrompt({ onPress }: DirectoryPromptProps) {
-  const colors = useColors();
-  const styles = React.useMemo(() => StyleSheet.create({
-    container: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: spacing[10],
-      gap: spacing[5],
-    },
-    iconContainer: {
-      marginBottom: spacing[4],
-    },
-    title: {
-      textAlign: 'center',
-    },
-    description: {
-      textAlign: 'center',
-      lineHeight: 24,
-    },
-    buttonContainer: {
-      marginTop: spacing[6],
-      alignSelf: 'stretch',
-    },
-  }), [colors]);
+  const [primary, mutedForeground] = useCSSVariable([
+    '--color-primary',
+    '--color-muted-foreground',
+  ]);
 
   return (
-    <View style={styles.container}>
+    <View className="flex-1 items-center justify-center gap-5 px-10">
       <Animated.View
-        entering={ZoomIn.duration(motion.slow).easing(easing)}
-        style={styles.iconContainer}
+        entering={popIn(motion.base)}
+        style={{ marginBottom: 16 }}
       >
-        <LibraryBig size={48} color={colors.primary.default} />
+        <LibraryBig size={48} color={asColor(primary)} />
       </Animated.View>
 
       <Animated.View entering={FadeInUp.duration(motion.base).easing(easing).delay(80)}>
-        <ThemedText type="headlineLg" style={styles.title}>
+        <ThemedText type="headlineLg" className="text-center">
           Build Your Library
         </ThemedText>
       </Animated.View>
@@ -71,8 +56,8 @@ export function DirectoryPrompt({ onPress }: DirectoryPromptProps) {
       <Animated.View entering={FadeInUp.duration(motion.base).easing(easing).delay(140)}>
         <ThemedText
           type="bodyMd"
-          color={colors.text.secondary}
-          style={styles.description}
+          color={asColor(mutedForeground)}
+          style={{ textAlign: 'center', lineHeight: 24 }}
         >
           {COPY.description}
         </ThemedText>
@@ -80,7 +65,7 @@ export function DirectoryPrompt({ onPress }: DirectoryPromptProps) {
 
       <Animated.View
         entering={FadeInUp.duration(motion.base).easing(easing).delay(200)}
-        style={styles.buttonContainer}
+        style={{ marginTop: 24, alignSelf: 'stretch' }}
       >
         <GoldButton label={COPY.button} onPress={onPress} />
       </Animated.View>

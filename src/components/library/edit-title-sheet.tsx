@@ -1,17 +1,15 @@
-import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
-import React, { useEffect, useState } from 'react';
-import {
-  StyleSheet,
-  View,
-} from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, type TextInput } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
+import { Input } from '@/components/ui/input';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
-import { useColors } from '@/hooks/use-colors';
-import { fontFamily, spacing } from '@/constants/theme';
 import type { books as booksTable } from '@/db/schema';
+
+import { asColor } from '@/utils/colors';
 
 type Book = typeof booksTable.$inferSelect;
 
@@ -28,40 +26,24 @@ export function EditTitleSheet({
   onClose,
   onSave,
 }: EditTitleSheetProps) {
-  const colors = useColors();
+  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
   const [title, setTitle] = useState('');
+  /*
+   * Uncontrolled field: the text lives in the native buffer and React only
+   * mirrors it out, never back in — a keystroke landing while JS is busy
+   * can no longer be committed over by a stale `value` (dropped letters,
+   * duplicated words). The field is keyed per open so the buffer starts
+   * from the book's actual title (`defaultValue`); the state mirror exists
+   * for `handleSave` and is fed by `onChangeText` alone.
+   */
+  const fieldRef = useRef<TextInput>(null);
+  const [openEpoch, setOpenEpoch] = useState(0);
 
   useEffect(() => {
     if (visible && book) {
       setTitle(book.title);
     }
   }, [visible, book]);
-
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        sheet: {
-          backgroundColor: colors.surface.low,
-          paddingHorizontal: spacing[6],
-          paddingTop: spacing[4],
-          paddingBottom: spacing[10],
-          gap: spacing[5],
-        },
-        input: {
-          backgroundColor: colors.surface.mid,
-          color: colors.text.primary,
-          fontFamily: fontFamily.sans,
-          fontSize: 16,
-          paddingHorizontal: spacing[4],
-          paddingVertical: spacing[4],
-        },
-        cancel: {
-          alignItems: 'center',
-          paddingVertical: spacing[3],
-        },
-      }),
-    [colors],
-  );
 
   const handleSave = () => {
     const trimmed = title.trim();
@@ -72,28 +54,33 @@ export function EditTitleSheet({
 
   const handleClose = () => {
     setTitle('');
+    setOpenEpoch((epoch) => epoch + 1);
     onClose();
   };
 
   return (
     <Sheet visible={visible} onClose={handleClose}>
-      <View style={styles.sheet}>
+      {/* No `flex-1`: a dynamically-sized sheet has no height for a child
+          to flex into — it takes its height FROM this column. */}
+      <View className="gap-6 px-6">
         <ThemedText type="headlineSm">Edit Title</ThemedText>
-        <BottomSheetTextInput
-          style={styles.input}
+        <Input
+          ref={fieldRef}
+          key={`${openEpoch}-${book?.id ?? 'none'}`}
           placeholder="Book title…"
-          placeholderTextColor={colors.text.secondary}
-          value={title}
+          defaultValue={book?.title ?? ''}
           onChangeText={setTitle}
           returnKeyType="done"
           onSubmitEditing={handleSave}
         />
-        <GoldButton label="SAVE" onPress={handleSave} />
-        <Touchable onPress={handleClose} style={styles.cancel}>
-          <ThemedText type="labelSm" color={colors.text.secondary}>
-            CANCEL
-          </ThemedText>
-        </Touchable>
+        <View className="gap-3">
+          <GoldButton label="SAVE" onPress={handleSave} />
+          <Touchable onPress={handleClose} className="items-center py-3">
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+              CANCEL
+            </ThemedText>
+          </Touchable>
+        </View>
       </View>
     </Sheet>
   );

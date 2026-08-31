@@ -1,18 +1,17 @@
-import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Check } from 'lucide-react-native';
-import React from 'react';
-import {
-  StyleSheet,
-  View,
-} from 'react-native';
+import { Fragment } from 'react';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
+import { spacing } from '@/constants/theme';
+import { Item } from '@/components/ui/item';
 import { Sheet } from '@/components/ui/sheet';
-import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
-import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
+import { cn } from '@/lib/cn';
 import type { CollectionWithCount } from '@/stores/collections';
+
+import { asColor } from '@/utils/colors';
 
 type CollectionPickerSheetProps = {
   visible: boolean;
@@ -29,85 +28,74 @@ export function CollectionPickerSheet({
   onToggle,
   onClose,
 }: CollectionPickerSheetProps) {
-  const colors = useColors();
-
-  const styles = React.useMemo(() => StyleSheet.create({
-    sheet: {
-      backgroundColor: colors.surface.low,
-      paddingHorizontal: spacing[6],
-      paddingTop: spacing[4],
-      paddingBottom: spacing[10],
-    },
-    title: { marginBottom: spacing[4] },
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: spacing[4],
-      borderBottomWidth: 1,
-      borderBottomColor: colors.surface.highest,
-    },
-    rowLeft: { flex: 1, gap: spacing[1] },
-    checkCircle: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    empty: { paddingVertical: spacing[6] },
-  }), [colors]);
-
+  const [mutedForeground, primaryForeground] = useCSSVariable([
+    '--color-muted-foreground',
+    '--color-primary-foreground',
+  ]);
   return (
+    // `maxHeightRatio` is the cap and the ONLY cap: the sheet measures the
+    // list and stops there, so the scroll region needs no `maxHeight` of its
+    // own — it used to carry one because the old shell could not bound it.
     <Sheet visible={visible} onClose={onClose} maxHeightRatio={0.6} scrollable>
-      <BottomSheetScrollView
-        contentContainerStyle={styles.sheet}
+      <Sheet.ScrollView
+        // `contentContainerStyle`, not `contentContainerClassName`: Uniwind
+        // auto-instruments React Native's own components, and this scroll
+        // region is the library's, so a class name on it has nothing to
+        // resolve it.
+        contentContainerStyle={{ gap: spacing[6], paddingHorizontal: spacing[6] }}
         showsVerticalScrollIndicator={false}
       >
-        <ThemedText type="headlineSm" style={styles.title}>
+        <ThemedText type="headlineSm">
           Add to Collection
         </ThemedText>
 
         {collections.length === 0 ? (
-          <ThemedText type="bodySm" color={colors.text.secondary} style={styles.empty}>
+          <ThemedText
+            type="bodySm"
+            color={asColor(mutedForeground)}
+            className="py-6"
+          >
             No collections yet. Create one first.
           </ThemedText>
         ) : (
           <>
-            {collections.map((col) => {
+            {collections.map((col, index) => {
               const isAdded = bookCollectionIds.includes(col.id);
               return (
-                <Touchable
-                  key={col.id}
-                  style={styles.row}
-                  onPress={() => onToggle(col.id, isAdded)}
-                >
-                  <View style={styles.rowLeft}>
-                    <ThemedText type="bodyMd" color={colors.text.primary}>
-                      {col.name}
-                    </ThemedText>
-                    <ThemedText type="labelSm" color={colors.text.secondary}>
-                      {col.count} {col.count === 1 ? 'book' : 'books'}
-                    </ThemedText>
-                  </View>
-                  <View
-                    style={[
-                      styles.checkCircle,
-                      {
-                        backgroundColor: isAdded
-                          ? colors.primary.default
-                          : colors.surface.mid,
-                      },
-                    ]}
-                  >
-                    {isAdded && <Check size={14} color={colors.text.inverse} />}
-                  </View>
-                </Touchable>
+                <Fragment key={col.id}>
+                  {/* Hairline between rows via Item's own separator, replacing
+                      the old per-row `border-b` (which doubled as the last
+                      row's bottom rule — the separator sits between rows
+                      only, so that trailing line is gone). */}
+                  {index > 0 && <Item.Separator />}
+                  {/* `px-0`: the horizontal inset comes from the ScrollView's
+                      `px-6` container, and Item's own `p-4` would double it. */}
+                  <Item className="px-0 py-4" onPress={() => onToggle(col.id, isAdded)}>
+                    <Item.Content className="gap-1">
+                      <Item.Title>{col.name}</Item.Title>
+                      <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+                        {col.count} {col.count === 1 ? 'book' : 'books'}
+                      </ThemedText>
+                    </Item.Content>
+                    <Item.Actions>
+                      <View
+                        className={cn(
+                          'h-6 w-6 items-center justify-center rounded-full',
+                          isAdded ? 'bg-primary' : 'bg-muted',
+                        )}
+                      >
+                        {isAdded && (
+                          <Check size={14} color={asColor(primaryForeground)} />
+                        )}
+                      </View>
+                    </Item.Actions>
+                  </Item>
+                </Fragment>
               );
             })}
           </>
         )}
-      </BottomSheetScrollView>
+      </Sheet.ScrollView>
     </Sheet>
   );
 }

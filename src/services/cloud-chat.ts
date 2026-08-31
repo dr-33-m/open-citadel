@@ -6,8 +6,10 @@ import {
   createCollectionTool,
   deleteHighlightTool,
   deleteThoughtTool,
+  listChaptersTool,
   listCollectionsTool,
   markAsFinishedTool,
+  readChapterTool,
   removeBookFromCollectionTool,
   removeFromCurrentlyReadingTool,
   removeFromQueueTool,
@@ -25,16 +27,17 @@ import {
 
 import {
   executeToolCall,
-  formatBookCandidatesForLLM,
-  formatCollectionsForLLM,
-  formatReadingForLLM,
-  formatSearchResultsForLLM,
+  formatToolResultForLLM,
+  toolStatus,
   type BookCandidate,
+  type ChapterListing,
   type CollectionSummary,
-  type ReadingSnippet,
+  type ReadingSearchResult,
   type SearchResult,
   type ToolCallContext,
 } from '@/services/chat-tools';
+import { isToolCallMessage } from '@/services/chat-transcript';
+import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useApprovalStore } from '@/stores/approval';
 
 type StoredChatMessage = {
@@ -63,7 +66,7 @@ export interface CloudChatTurnOptions {
 }
 
 function toUIMessage(message: StoredChatMessage): UIMessage | null {
-  if (message.role === 'tool' || message.content.startsWith('\0TOOL_CALL\0')) {
+  if (message.role === 'tool' || isToolCallMessage(message.content)) {
     return null;
   }
 
@@ -102,25 +105,15 @@ function latestAssistantText(messages: UIMessage[]): string {
   return '';
 }
 
+/**
+ * Cloud adds two states device does not have: approval gates that hold before
+ * the work starts. Everything else defers to the shared table, so the two
+ * runtimes cannot describe the same tool differently.
+ */
 function statusForTool(toolName: string): string {
   if (toolName.startsWith('delete_')) return 'Waiting for delete approval…';
   if (toolName.startsWith('tag_')) return 'Waiting for tag approval…';
-  if (toolName.startsWith('suggest_') && toolName !== 'suggest_next_book') return 'Noting that down…';
-  if (toolName === 'search_thoughts') return 'Searching through your thoughts…';
-  if (toolName === 'search_reading') return 'Checking your books…';
-  if (toolName === 'suggest_next_book') return 'Looking over your library…';
-  if (toolName === 'remove_from_currently_reading') return 'Updating your library…';
-  if (toolName === 'add_to_queue' || toolName === 'remove_from_queue' || toolName === 'reorder_queue') {
-    return 'Updating your queue…';
-  }
-  if (toolName === 'toggle_favorite') return 'Updating favorites…';
-  if (toolName === 'mark_as_finished') return 'Marking as finished…';
-  if (toolName === 'create_collection') return 'Creating collection…';
-  if (toolName === 'add_book_to_collection' || toolName === 'remove_book_from_collection') {
-    return 'Updating collection…';
-  }
-  if (toolName === 'list_collections') return 'Looking over your collections…';
-  return 'Searching through your highlights…';
+  return toolStatus(toolName);
 }
 
 function createSamwellClientTools(ctx: ToolCallContext) {
@@ -130,7 +123,7 @@ function createSamwellClientTools(ctx: ToolCallContext) {
       const results = Array.isArray(result) ? (result as SearchResult[]) : [];
       return {
         results,
-        formatted: formatSearchResultsForLLM(results),
+        formatted: formatToolResultForLLM('search_highlights', results, TOOL_RESULT_TOKEN_BUDGET.cloud),
       };
     }),
     searchThoughtsTool.client(async (input) => {
@@ -138,15 +131,29 @@ function createSamwellClientTools(ctx: ToolCallContext) {
       const results = Array.isArray(result) ? (result as SearchResult[]) : [];
       return {
         results,
-        formatted: formatSearchResultsForLLM(results),
+        formatted: formatToolResultForLLM('search_thoughts', results, TOOL_RESULT_TOKEN_BUDGET.cloud),
       };
     }),
     searchReadingTool.client(async (input) => {
       const { result } = await executeToolCall('search_reading', input, ctx);
-      const results = Array.isArray(result) ? (result as ReadingSnippet[]) : [];
+      const reading = (result ?? { snippets: [], chapters: [] }) as ReadingSearchResult;
       return {
-        results,
-        formatted: formatReadingForLLM(results),
+        results: reading.snippets,
+        formatted: formatToolResultForLLM('search_reading', reading, TOOL_RESULT_TOKEN_BUDGET.cloud),
+      };
+    }),
+    listChaptersTool.client(async (input) => {
+      const { result } = await executeToolCall('list_chapters', input, ctx);
+      const listing = result as ChapterListing | { error: string };
+      return {
+        chapters: 'error' in listing ? [] : listing.chapters,
+        formatted: formatToolResultForLLM('list_chapters', listing, TOOL_RESULT_TOKEN_BUDGET.cloud),
+      };
+    }),
+    readChapterTool.client(async (input) => {
+      const { result } = await executeToolCall('read_chapter', input, ctx);
+      return {
+        formatted: formatToolResultForLLM('read_chapter', result, TOOL_RESULT_TOKEN_BUDGET.cloud),
       };
     }),
     suggestNextBookTool.client(async (input) => {
@@ -154,7 +161,7 @@ function createSamwellClientTools(ctx: ToolCallContext) {
       const candidates = Array.isArray(result) ? (result as BookCandidate[]) : [];
       return {
         candidates,
-        formatted: formatBookCandidatesForLLM(candidates),
+        formatted: formatToolResultForLLM('suggest_next_book', candidates, TOOL_RESULT_TOKEN_BUDGET.cloud),
       };
     }),
     tagHighlightTool.client(async (input) => {
@@ -270,7 +277,7 @@ function createSamwellClientTools(ctx: ToolCallContext) {
       const collectionList = Array.isArray(result) ? (result as CollectionSummary[]) : [];
       return {
         collections: collectionList,
-        formatted: formatCollectionsForLLM(collectionList),
+        formatted: formatToolResultForLLM('list_collections', collectionList, TOOL_RESULT_TOKEN_BUDGET.cloud),
       };
     }),
   );
@@ -366,7 +373,7 @@ export async function sendCloudChatTurn({
       headers: { 'x-samwell-device-id': deviceId },
     }),
     forwardedProps: { modelId },
-    tools: createSamwellClientTools({ sessionId, bookId }),
+    tools: createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
     onChunk: (chunk) => {
       const approval = collectApproval(chunk);
       if (approval) approvals.push(approval);

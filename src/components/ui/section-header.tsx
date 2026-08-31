@@ -1,11 +1,11 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { Touchable } from '@/components/ui/touchable';
+import { MaxContentWidth } from '@/constants/theme';
 
 import { ThemedText } from '@/components/themed-text';
-import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
 
 type SectionHeaderProps = {
   label?: string;
@@ -28,52 +28,42 @@ export function SectionHeader({
   rightIcon,
   count,
 }: SectionHeaderProps) {
-  const colors = useColors();
-  const styles = React.useMemo(() => StyleSheet.create({
-    container: {
-      gap: spacing[2],
-      paddingHorizontal: spacing[6],
-    },
-    titleRow: {
-      flexDirection: 'row',
-      alignItems: 'baseline',
-      gap: spacing[3],
-    },
-    title: {
-      flex: 1,
-    },
-    iconButton: {
-      width: 28,
-      height: 28,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-  }), [colors]);
+  // ThemedText's `color` prop takes a literal, never a className — both
+  // tokens below feed that prop, the same way as everywhere else in this file.
+  const primary = useCSSVariable('--color-primary');
+  const mutedForeground = useCSSVariable('--color-muted-foreground');
+  const primaryColor = typeof primary === 'string' ? primary : undefined;
+  const secondaryColor = typeof mutedForeground === 'string' ? mutedForeground : undefined;
 
   return (
-    <View style={styles.container}>
+    // Capped to the shared content column: never bites at phone widths,
+    // centres the header over the capped content on wide screens.
+    <View
+      className="gap-2 px-6"
+      style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+    >
       {label && (
-        <ThemedText type="labelSm" color={colors.primary.default}>
+        <ThemedText type="labelSm" color={primaryColor}>
           {label}
         </ThemedText>
       )}
-      <View style={styles.titleRow}>
-        <ThemedText type="headlineSm" style={styles.title}>
+      <View className="flex-row items-baseline gap-3">
+        <ThemedText type="headlineSm" className="flex-1">
           {title}
         </ThemedText>
         {count && (
-          <ThemedText type="labelSm" color={colors.text.secondary}>
+          <ThemedText type="labelSm" color={secondaryColor}>
             {count}
           </ThemedText>
         )}
         {rightIcon && (
-          <Touchable onPress={rightIcon.onPress} style={styles.iconButton}>
+          <Touchable onPress={rightIcon.onPress} className="h-7 w-7 items-center justify-center">
             {rightIcon.icon}
           </Touchable>
         )}
         {rightAction && (
           <Touchable onPress={rightAction.onPress}>
-            <ThemedText type="labelSm" color={colors.primary.default}>
+            <ThemedText type="labelSm" color={primaryColor}>
               {rightAction.text}
             </ThemedText>
           </Touchable>

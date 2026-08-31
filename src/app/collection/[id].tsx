@@ -1,28 +1,26 @@
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Plus, Search, Trash2, X } from "lucide-react-native";
+import { ArrowLeft, Plus, Search, Trash2, X } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
-import {
-  Dimensions,
-  Image,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from "react-native";
+import { TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
+import { TransitionFlatList } from "@/components/navigation/transition-scroll";
+import { DeferredBody } from "@/components/navigation/deferred-body";
+import { useScreenSettled } from "@/navigation/use-screen-settled";
 
 import { Touchable } from "@/components/ui/touchable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCSSVariable } from "uniwind";
 
 import { AddBooksSheet } from "@/components/library/add-books-sheet";
 import { BookActionSheet } from "@/components/library/book-action-sheet";
+import { BookGridCard } from "@/components/library/book-grid-card";
 import { DeleteBookSheet } from "@/components/library/delete-book-sheet";
 import { EditTitleSheet } from "@/components/library/edit-title-sheet";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { elevation, fontFamily, spacing } from "@/constants/theme";
+import { fontFamily, spacing, MaxContentWidth } from "@/constants/theme";
 import type { books as booksTable } from "@/db/schema";
-import { useColors } from "@/hooks/use-colors";
+import { asColor } from "@/utils/colors";
 import { useAllBooks, useBooksStore } from "@/stores/books";
 import { useCollectionsStore } from "@/stores/collections";
 
@@ -31,15 +29,57 @@ type Book = typeof booksTable.$inferSelect;
 const COLUMNS = 2;
 const ITEM_GAP = spacing[4];
 const SIDE_PAD = spacing[6];
-const ITEM_WIDTH =
-  (Dimensions.get("window").width - SIDE_PAD * 2 - ITEM_GAP) / 2;
+// Item width derives from the live window width (useWindowDimensions in the
+// component, so it tracks rotation/foldables) and is bounded by what fits two
+// columns inside the content column cap — without the bound, capping the grid
+// container to `MaxContentWidth` on a wide screen would leave fixed-width
+// items overflowing it. On phones the bound never bites (window < 800), so
+// the value is unchanged.
+
+// The content column: centred and capped on wide screens, pixel-identical on
+// phones (the cap never bites below 800).
+const contentColumn: ViewStyle = {
+  maxWidth: MaxContentWidth,
+  width: "100%",
+  alignSelf: "center",
+};
+
+// See the section screen — same explicit list render budget so the grid's
+// first commit doesn't fight the drawer transition for the JS thread.
+const GRID_INITIAL_RENDER = 6;
+const GRID_MAX_PER_BATCH = 6;
+const GRID_WINDOW_SIZE = 9;
+const GRID_BATCH_PERIOD = 50;
+
+const keyExtractor = (item: Book) => item.id;
 
 export default function CollectionScreen() {
-  const colors = useColors();
-  const styles = useCollectionStyles(colors);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+
+  // Half the live width minus one gap and both side pads, bounded by the
+  // content column cap (see note above). Memoized to feed `BookGridCard`'s
+  // memo a stable value across search keystrokes.
+  const itemWidth = useMemo(
+    () =>
+      Math.min(
+        (windowWidth - SIDE_PAD * 2 - ITEM_GAP) / 2,
+        (MaxContentWidth - SIDE_PAD * 2 - ITEM_GAP) / 2,
+      ),
+    [windowWidth],
+  );
+
+  const settled = useScreenSettled();
+
+  const [primary, mutedForeground, foreground, surfaceTertiary] =
+    useCSSVariable([
+      "--color-primary",
+      "--color-muted-foreground",
+      "--color-foreground",
+      "--color-surface-tertiary",
+    ]);
 
   const {
     collections,
@@ -87,18 +127,36 @@ export default function CollectionScreen() {
     );
   }, [books, query]);
 
-  const padded = useMemo(() => {
-    const remainder = filtered.length % COLUMNS;
-    if (remainder === 0) return filtered;
-    return [
-      ...filtered,
-      ...Array(COLUMNS - remainder).fill(null),
-    ] as (Book | null)[];
-  }, [filtered]);
+  const openReader = useCallback(
+    (bookId: string) => {
+      router.push(`/reader/${bookId}` as any);
+    },
+    [router],
+  );
 
-  const openReader = (bookId: string) => {
-    router.push(`/reader/${bookId}` as any);
-  };
+  // Stable, memoized row (Expensify list pattern). `numColumns` handles the
+  // ragged last row itself, so the old manual `padded` null-cell array is gone.
+  const renderBook = useCallback(
+    ({ item }: { item: Book }) => (
+      <BookGridCard
+        book={item}
+        width={itemWidth}
+        mutedForeground={asColor(mutedForeground)}
+        surfaceTertiary={asColor(surfaceTertiary)}
+        onPress={openReader}
+        onLongPress={setActionBook}
+      />
+    ),
+    [itemWidth, mutedForeground, surfaceTertiary, openReader],
+  );
+  const gridExtraData = useMemo(
+    () => [mutedForeground, surfaceTertiary],
+    [mutedForeground, surfaceTertiary],
+  );
+  const gridContentStyle = useMemo(
+    () => ({ paddingBottom: insets.bottom + spacing[8] }),
+    [insets.bottom],
+  );
 
   const handleDeleteCollection = async () => {
     if (!id) return;
@@ -126,248 +184,142 @@ export default function CollectionScreen() {
   };
 
   return (
-    <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
+    <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
       {/* Header */}
-      <View style={styles.header}>
-        <Touchable onPress={() => router.back()} style={styles.headerBtn}>
-          <ThemedText type="bodyMd" color={colors.primary.default}>
-            ←
-          </ThemedText>
+      <View
+        className="flex-row items-center gap-3 px-4 py-4"
+        style={contentColumn}
+      >
+        <Touchable
+          onPress={() => router.back()}
+          className="h-9 w-9 items-center justify-center"
+        >
+          <ArrowLeft size={22} color={asColor(primary)} />
         </Touchable>
-        <ThemedText type="headlineSm" style={styles.headerTitle}>
+        <ThemedText type="headlineSm" className="flex-1">
           {collection?.name ?? "Collection"}
         </ThemedText>
-        <ThemedText type="labelSm" color={colors.text.secondary}>
+        <ThemedText type="labelSm" color={asColor(mutedForeground)}>
           {books.length}
         </ThemedText>
         <Touchable
           onPress={() => setShowAddBooks(true)}
-          style={styles.headerBtn}
+          className="h-9 w-9 items-center justify-center"
           hitSlop={8}
         >
-          <Plus size={18} color={colors.text.primary} />
+          <Plus size={18} color={asColor(foreground)} />
         </Touchable>
         <Touchable
           onPress={handleDeleteCollection}
-          style={styles.headerBtn}
+          className="h-9 w-9 items-center justify-center"
           hitSlop={8}
         >
-          <Trash2 size={16} color={colors.text.secondary} />
+          <Trash2 size={16} color={asColor(mutedForeground)} />
         </Touchable>
       </View>
 
-      {/* Search */}
-      <View style={styles.searchRow}>
-        <Search size={16} color={colors.text.secondary} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by title or author…"
-          placeholderTextColor={colors.text.secondary}
-          value={query}
-          onChangeText={setQuery}
-          autoCorrect={false}
-        />
-        {query.length > 0 && (
-          <Touchable onPress={() => setQuery("")}>
-            <X size={16} color={colors.text.secondary} />
-          </Touchable>
-        )}
+      {/* Search — wrapped in the content column because its own `mx-6` margin
+          must stay inside the cap (a width + margin on one element would
+          overflow the column). */}
+      <View style={contentColumn}>
+        <View className="mx-6 mb-5 flex-row items-center gap-3 border border-surface-tertiary bg-card px-4 py-3">
+          <Search size={16} color={asColor(mutedForeground)} />
+          <TextInput
+            className="flex-1 p-0 text-[14px] text-foreground"
+            style={{ fontFamily: fontFamily.sans }}
+            placeholder="Search by title or author…"
+            placeholderTextColor={asColor(mutedForeground)}
+            value={query}
+            onChangeText={setQuery}
+            autoCorrect={false}
+          />
+          {query.length > 0 && (
+            <Touchable onPress={() => setQuery("")}>
+              <X size={16} color={asColor(mutedForeground)} />
+            </Touchable>
+          )}
+        </View>
       </View>
 
-      {/* Grid */}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.grid,
-          { paddingBottom: insets.bottom + spacing[8] },
-        ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {filtered.length === 0 ? (
-          <View style={styles.empty}>
-            <ThemedText type="bodySm" color={colors.text.secondary}>
-              {query ? "No results." : "No books in this collection yet."}
-            </ThemedText>
-          </View>
-        ) : (
-          <View style={styles.row}>
-            {padded.map((book, i) =>
-              book ? (
-                <Touchable
-                  key={book.id}
-                  style={styles.bookItem}
-                  onPress={() => openReader(book.id)}
-                  onLongPress={() => setActionBook(book)}
-                >
-                  <View style={styles.coverShadow}>
-                  <View style={styles.cover}>
-                    {book.coverUrl ? (
-                      <Image
-                        source={{ uri: book.coverUrl }}
-                        style={styles.coverImage}
-                      />
-                    ) : (
-                      <View style={styles.coverPlaceholder}>
-                        <ThemedText
-                          type="headlineSm"
-                          color={colors.surface.highest}
-                          style={styles.initial}
-                        >
-                          {book.title.charAt(0).toUpperCase()}
-                        </ThemedText>
-                        <ThemedText
-                          type="labelSm"
-                          color={colors.text.secondary}
-                          style={styles.coverTitle}
-                          numberOfLines={2}
-                        >
-                          {book.title}
-                        </ThemedText>
-                      </View>
-                    )}
-                  </View>
-                  </View>
-                  <ThemedText
-                    type="bodySm"
-                    numberOfLines={2}
-                    style={styles.bookTitle}
-                  >
-                    {book.title}
-                  </ThemedText>
-                  <ThemedText
-                    type="labelSm"
-                    color={colors.text.secondary}
-                    numberOfLines={1}
-                  >
-                    {book.author}
-                  </ThemedText>
-                </Touchable>
-              ) : (
-                <View key={`pad-${i}`} style={styles.bookItem} />
-              ),
-            )}
-          </View>
-        )}
-      </ScrollView>
+      {/* Grid — deferred one frame past the shell so the drawer rise keeps a
+          clear JS thread (see `DeferredBody`). */}
+      <DeferredBody>
+        <TransitionFlatList
+          data={filtered}
+          extraData={gridExtraData}
+          keyExtractor={keyExtractor}
+          numColumns={COLUMNS}
+          className="flex-1"
+          style={contentColumn}
+          contentContainerClassName="px-6"
+          contentContainerStyle={gridContentStyle}
+          columnWrapperClassName="mb-4 gap-4"
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          initialNumToRender={GRID_INITIAL_RENDER}
+          maxToRenderPerBatch={GRID_MAX_PER_BATCH}
+          windowSize={GRID_WINDOW_SIZE}
+          updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
+          ListEmptyComponent={
+            <View className="w-full items-center pt-16">
+              <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+                {query ? "No results." : "No books in this collection yet."}
+              </ThemedText>
+            </View>
+          }
+          renderItem={renderBook}
+        />
+      </DeferredBody>
 
-      <BookActionSheet
-        visible={actionBook !== null}
-        book={actionBook}
-        onClose={() => setActionBook(null)}
-        onOpen={openReader}
-        onToggleFavorite={toggleFavorite}
-        onSetStatus={updateBookStatus}
-        onDelete={(bookId) => {
-          const book = allBooks.find((b) => b.id === bookId) ?? null;
-          setDeleteConfirmBook(book);
-        }}
-        onEditTitle={(bookId) => {
-          const book = allBooks.find((b) => b.id === bookId) ?? null;
-          setEditTitleBook(book);
-        }}
-      />
+      {settled && (
+        <>
+          <BookActionSheet
+            visible={actionBook !== null}
+            book={actionBook}
+            onClose={() => setActionBook(null)}
+            onOpen={openReader}
+            onToggleFavorite={toggleFavorite}
+            onSetStatus={updateBookStatus}
+            onDelete={(bookId) => {
+              const book = allBooks.find((b) => b.id === bookId) ?? null;
+              setDeleteConfirmBook(book);
+            }}
+            onEditTitle={(bookId) => {
+              const book = allBooks.find((b) => b.id === bookId) ?? null;
+              setEditTitleBook(book);
+            }}
+          />
 
-      <AddBooksSheet
-        visible={showAddBooks}
-        allBooks={allBooks}
-        existingBookIds={books.map((b) => b.id)}
-        onConfirm={handleAddBooksConfirm}
-        onClose={() => setShowAddBooks(false)}
-      />
+          <AddBooksSheet
+            visible={showAddBooks}
+            allBooks={allBooks}
+            existingBookIds={books.map((b) => b.id)}
+            onConfirm={handleAddBooksConfirm}
+            onClose={() => setShowAddBooks(false)}
+          />
 
-      <DeleteBookSheet
-        visible={deleteConfirmBook !== null}
-        book={deleteConfirmBook}
-        onClose={() => setDeleteConfirmBook(null)}
-        onConfirm={async (bookId) => {
-          await deleteBook(bookId);
-          setDeleteConfirmBook(null);
-          await loadCollectionBooks();
-        }}
-      />
+          <DeleteBookSheet
+            visible={deleteConfirmBook !== null}
+            book={deleteConfirmBook}
+            onClose={() => setDeleteConfirmBook(null)}
+            onConfirm={async (bookId) => {
+              await deleteBook(bookId);
+              setDeleteConfirmBook(null);
+              await loadCollectionBooks();
+            }}
+          />
 
-      <EditTitleSheet
-        visible={editTitleBook !== null}
-        book={editTitleBook}
-        onClose={() => setEditTitleBook(null)}
-        onSave={async (bookId, title) => {
-          await updateBookTitle(bookId, title);
-          setEditTitleBook(null);
-        }}
-      />
+          <EditTitleSheet
+            visible={editTitleBook !== null}
+            book={editTitleBook}
+            onClose={() => setEditTitleBook(null)}
+            onSave={async (bookId, title) => {
+              await updateBookTitle(bookId, title);
+              setEditTitleBook(null);
+            }}
+          />
+        </>
+      )}
     </ThemedView>
-  );
-}
-
-function useCollectionStyles(colors: ReturnType<typeof useColors>) {
-  return useMemo(
-    () =>
-      StyleSheet.create({
-        container: { flex: 1 },
-        header: {
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: spacing[4],
-          paddingVertical: spacing[4],
-          gap: spacing[3],
-        },
-        headerBtn: {
-          width: 36,
-          height: 36,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        headerTitle: { flex: 1 },
-        searchRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing[3],
-          marginHorizontal: spacing[6],
-          marginBottom: spacing[5],
-          paddingHorizontal: spacing[4],
-          paddingVertical: spacing[3],
-          backgroundColor: colors.surface.low,
-          borderWidth: 1,
-          borderColor: colors.surface.highest,
-        },
-        searchInput: {
-          flex: 1,
-          fontFamily: fontFamily.sans,
-          fontSize: 14,
-          color: colors.text.primary,
-          padding: 0,
-        },
-        scroll: { flex: 1 },
-        grid: { paddingHorizontal: SIDE_PAD },
-        row: { flexDirection: "row", flexWrap: "wrap", gap: ITEM_GAP },
-        bookItem: { width: ITEM_WIDTH, gap: spacing[2] },
-        // The shadow lives on a wrapper because `cover` clips its contents,
-        // and a clipping node clips its own shadow away too.
-        coverShadow: { ...elevation.soft },
-        cover: {
-          aspectRatio: 2 / 3,
-          backgroundColor: colors.surface.low,
-          overflow: "hidden",
-        },
-        coverImage: { width: "100%", height: "100%" },
-        coverPlaceholder: {
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: colors.surface.mid,
-        },
-        initial: { fontSize: 28, fontFamily: fontFamily.serif },
-        coverTitle: {
-          position: "absolute",
-          bottom: spacing[2],
-          paddingHorizontal: spacing[2],
-          textAlign: "center",
-          fontSize: 9,
-        },
-        bookTitle: { lineHeight: 18 },
-        empty: { paddingTop: spacing[16], alignItems: "center", width: "100%" },
-      }),
-    [colors],
   );
 }

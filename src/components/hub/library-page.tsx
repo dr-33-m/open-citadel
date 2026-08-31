@@ -1,0 +1,550 @@
+import { useFocusEffect } from "expo-router/react-navigation";
+import { useRouter } from "expo-router";
+import { ChartNoAxesGantt, Plus, Sparkles } from "lucide-react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AppState,
+  ScrollView,
+  useWindowDimensions,
+  View,
+  type ViewStyle,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCSSVariable } from "uniwind";
+
+import { ArchivedCards } from "@/components/library/archived-card";
+import { BookActionSheet } from "@/components/library/book-action-sheet";
+import { BookQueue } from "@/components/library/book-queue";
+import { DeleteBookSheet } from "@/components/library/delete-book-sheet";
+import { EditTitleSheet } from "@/components/library/edit-title-sheet";
+import { CollectionGrid } from "@/components/library/collection-grid";
+import { CollectionPickerSheet } from "@/components/library/collection-picker-sheet";
+import { CurrentlyReadingCard } from "@/components/library/currently-reading-card";
+import { DirectoryPrompt } from "@/components/library/directory-prompt";
+import { Favorites } from "@/components/library/favorites";
+import { NewCollectionPrompt } from "@/components/library/new-collection-prompt";
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { Fab, fabClearance } from "@/components/ui/fab";
+import { ScreenHeader } from "@/components/ui/screen-header";
+import { SectionHeader } from "@/components/ui/section-header";
+import { Spinner } from "@/components/ui/spinner";
+import { iconSize, layout, MaxContentWidth } from "@/constants/theme";
+import type { books as booksTable } from "@/db/schema";
+import { cn } from "@/lib/cn";
+import { asColor } from "@/utils/colors";
+import { HUB, useHubStore } from "@/stores/hub";
+import { pickBooksDirectory } from "@/services/book-sync";
+import {
+  useAllBooks,
+  useArchivedBooks,
+  useBooksStore,
+  useCurrentlyReading,
+  useFavoriteBooks,
+  useQueuedBooks,
+  useSyncState,
+} from "@/stores/books";
+import { useCollectionsStore } from "@/stores/collections";
+
+type Book = typeof booksTable.$inferSelect;
+
+// The content column: centred and capped on wide screens, pixel-identical on
+// phones (the cap never bites below 800). NOT applied to the vertical scroll
+// container as a whole — the currently-reading pager below pages full-window
+// width and must keep its full-width viewport; the cap goes inside each page
+// and around the sections that don't page.
+const contentColumn: ViewStyle = {
+  maxWidth: MaxContentWidth,
+  width: "100%",
+  alignSelf: "center",
+};
+
+/**
+ * The hub's header, and the map of the app: the screen to the left of the
+ * Library on one side, the screen to its right on the other. The same two
+ * moves the swipe gesture makes, spelled out for anyone who never tries the
+ * swipe — and drawn with the destinations' own icons rather than chevrons,
+ * because what matters here is where you land, not which way you travel.
+ *
+ * Rendered in all three of this screen's states (booting, empty, loaded) so
+ * the way out of the Library never depends on whether it has any books in it.
+ */
+function LibraryHeader({
+  onOpenTimeline,
+  onOpenSamwell,
+}: {
+  onOpenTimeline: () => void;
+  onOpenSamwell: () => void;
+}) {
+  const foreground = useCSSVariable("--color-foreground");
+  return (
+    <ScreenHeader
+      title="Library"
+      leftIcon={
+        <ChartNoAxesGantt size={iconSize.default} color={asColor(foreground)} />
+      }
+      leftLabel="Timeline"
+      onLeftPress={onOpenTimeline}
+      rightIcon={<Sparkles size={iconSize.default} color={asColor(foreground)} />}
+      rightLabel="Samwell"
+      onRightPress={onOpenSamwell}
+    />
+  );
+}
+
+export function LibraryPage() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  // The pager's page width, its scrollTo math and its index math all derive
+  // from this one reactive value — a stale snapshot desyncs scrollTo.
+  const { width: windowWidth } = useWindowDimensions();
+  const mutedForeground = useCSSVariable("--color-muted-foreground");
+
+  const {
+    booksDirectoryUri,
+    isLoading,
+    loadBooks,
+    loadDirectoryUri,
+    setDirectoryUri,
+    initLibrary,
+    importBooks,
+    syncBooks,
+    hydrateSyncState,
+    updateBookStatus,
+    toggleFavorite,
+    deleteBook,
+    updateBookTitle,
+  } = useBooksStore();
+
+  const sync = useSyncState();
+
+  const [currentReadingIndex, setCurrentReadingIndex] = useState(0);
+  const [actionBook, setActionBook] = useState<Book | null>(null);
+  const [showNewCollection, setShowNewCollection] = useState(false);
+  const [deleteConfirmBook, setDeleteConfirmBook] = useState<Book | null>(null);
+  const [editTitleBook, setEditTitleBook] = useState<Book | null>(null);
+  const [collectionPickerBook, setCollectionPickerBook] = useState<
+    string | null
+  >(null);
+  const [bookCollectionIds, setBookCollectionIds] = useState<string[]>([]);
+  // The store starts empty (no directory, no books) — until the boot sequence
+  // below has loaded it, "no data yet" must not be rendered as "not set up".
+  const [booted, setBooted] = useState(false);
+  const readingScrollRef = useRef<ScrollView>(null);
+
+  const { collections, loadCollections, createCollection } =
+    useCollectionsStore();
+
+  const currentlyReading = useCurrentlyReading();
+  const queuedBooks = useQueuedBooks();
+  const archivedBooks = useArchivedBooks();
+  const favoriteBooks = useFavoriteBooks();
+  const allBooks = useAllBooks();
+
+  // Auto-scroll back when a currently-reading book is removed. Also re-scrubs
+  // the scroll target when the window width changes (rotation/foldables), so
+  // the offset stays synced to the same width the pages are laid out with.
+  useEffect(() => {
+    if (currentlyReading.length === 0) {
+      setCurrentReadingIndex(0);
+      return;
+    }
+    if (currentReadingIndex >= currentlyReading.length) {
+      const next = currentlyReading.length - 1;
+      setCurrentReadingIndex(next);
+      readingScrollRef.current?.scrollTo({
+        x: next * windowWidth,
+        animated: true,
+      });
+    }
+  }, [currentlyReading.length, windowWidth]);
+
+  useEffect(() => {
+    const boot = async () => {
+      try {
+        // iOS: ensure the owned library folder exists and is the scan root.
+        if (process.env.EXPO_OS === "ios") await initLibrary();
+        await loadDirectoryUri();
+        await loadBooks();
+        await hydrateSyncState();
+        // Enough state has loaded to decide empty vs configured — hand off
+        // before the iOS cold-start scan, which flips sync.status to running
+        // and shows its own indicator.
+        setBooted(true);
+        // iOS: cold-start scan so anything dropped in via the Files app is imported.
+        if (process.env.EXPO_OS === "ios") await syncBooks();
+      } catch (err) {
+        console.error("Library boot failed:", err);
+        // Never strand the user on the spinner — the empty state's own
+        // gating still applies on top of booted.
+        setBooted(true);
+      }
+    };
+    boot();
+  }, []);
+
+  // iOS: re-scan the owned folder when the app returns to the foreground so
+  // EPUBs dropped in via the Files app get imported. Idempotent — unchanged
+  // files are skipped, and syncBooks() no-ops while a sync is already running.
+  useEffect(() => {
+    if (process.env.EXPO_OS !== "ios") return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") syncBooks();
+    });
+    return () => sub.remove();
+  }, [syncBooks]);
+
+  // Reload books when tab is focused so status changes made in the reader
+  // (e.g. a book moving to "currently reading") are reflected immediately.
+  useFocusEffect(
+    useCallback(() => {
+      loadBooks();
+      loadCollections();
+    }, [loadBooks, loadCollections]),
+  );
+
+  const handleSelectDirectory = async () => {
+    const uri = await pickBooksDirectory();
+    if (uri) {
+      await setDirectoryUri(uri);
+    }
+  };
+
+  // iOS: pick EPUBs via the document picker and copy them into the owned folder.
+  const handleGetStarted = async () => {
+    await importBooks();
+  };
+
+  // The two screens either side of the hub. Stable identities so the swipe
+  // gesture they back doesn't rebuild on every render.
+  // Peers, not destinations: the header buttons move the pager rather than
+  // navigating, so they land on exactly the page a swipe would have.
+  const goTo = useHubStore((s) => s.goTo);
+  const openTimeline = useCallback(() => goTo(HUB.timeline), [goTo]);
+  const openSamwell = useCallback(() => goTo(HUB.samwell), [goTo]);
+
+  const openReader = (bookId: string) => {
+    const book = allBooks.find((b) => b.id === bookId);
+    if (!book?.filePath) return; // still being copied in Phase 2
+    router.push(`/reader/${bookId}` as any);
+  };
+
+  const isIOS = process.env.EXPO_OS === "ios";
+  // iOS always has an owned folder set, so gate on whether any books exist.
+  // Android gates on whether a folder has been picked (unchanged behavior).
+  // Both require boot to have finished — the store's initial empty state is
+  // "not loaded yet", not "not configured".
+  const showEmptyState = !booted
+    ? false
+    : isIOS
+      ? allBooks.length === 0 && sync.status !== "running" && !isLoading
+      : !booksDirectoryUri && !isLoading;
+
+  // Boot-in-progress: a neutral spinner instead of either branch, so neither
+  // the setup prompt nor an empty library scaffold can flash.
+  if (!booted) {
+    return (
+        <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
+          <LibraryHeader onOpenTimeline={openTimeline} onOpenSamwell={openSamwell} />
+          <View className="flex-1 items-center justify-center">
+            <Spinner size="sm" />
+          </View>
+        </ThemedView>
+    );
+  }
+
+  if (showEmptyState) {
+    return (
+        <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
+          <LibraryHeader onOpenTimeline={openTimeline} onOpenSamwell={openSamwell} />
+          <DirectoryPrompt
+            onPress={isIOS ? handleGetStarted : handleSelectDirectory}
+          />
+        </ThemedView>
+    );
+  }
+
+  return (
+      <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
+        <LibraryHeader onOpenTimeline={openTimeline} onOpenSamwell={openSamwell} />
+
+        {sync.status === "running" && (
+          <View className="flex-row items-center justify-center gap-3 py-2">
+            <Spinner size="sm" />
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+              {sync.phase === "scanning"
+                ? sync.total > 0
+                  ? `SCANNING ${sync.done}/${sync.total}`
+                  : "SCANNING..."
+                : sync.phase === "importing"
+                  ? sync.total > 0
+                    ? `IMPORTING ${sync.done}/${sync.total}`
+                    : "IMPORTING..."
+                  : sync.phase === "preparing"
+                    ? sync.total > 0
+                      ? `PREPARING ${sync.done}/${sync.total}`
+                      : "PREPARING..."
+                    : sync.phase === "finalizing"
+                      ? "FINALIZING..."
+                      : "SYNCING BOOKS..."}
+            </ThemedText>
+          </View>
+        )}
+
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="pt-6"
+          contentContainerStyle={{
+            paddingBottom:
+              layout.scrollBottom +
+              (isIOS ? fabClearance(insets.bottom) : insets.bottom),
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Currently Reading */}
+          {currentlyReading.length > 0 && (
+            <View className="gap-4 mb-8">
+              <SectionHeader
+                title="Currently Reading"
+                rightAction={{
+                  text: "VIEW ALL",
+                  onPress: () => router.push("/section/reading" as any),
+                }}
+              />
+              <ScrollView
+                ref={readingScrollRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                /* On momentum end, not on scroll. The index only feeds the
+                   dot indicator below, which has nothing to say until a page
+                   has actually settled — but `onScroll` ran a full React
+                   render of this screen on every frame of every swipe, on the
+                   one screen that is also hosting the hub's own gesture. One
+                   render per page turn instead of sixty per second. */
+                onMomentumScrollEnd={(e) => {
+                  const index = Math.round(
+                    e.nativeEvent.contentOffset.x / windowWidth,
+                  );
+                  setCurrentReadingIndex(index);
+                }}
+              >
+                {currentlyReading.map((book) => (
+                  <View
+                    key={book.id}
+                    className="px-6"
+                    style={{ width: windowWidth }}
+                  >
+                    {/* The pager's page math owns the full-window width; the
+                        card inside is what gets capped to the content column. */}
+                    <View style={contentColumn}>
+                      <CurrentlyReadingCard
+                        book={book}
+                        onPress={() => openReader(book.id)}
+                        onLongPress={() => setActionBook(book)}
+                      />
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+
+              {currentlyReading.length > 1 && (
+                <View className="flex-row justify-center gap-2 pt-2">
+                  {currentlyReading.map((_, i) => (
+                    <View
+                      key={i}
+                      className={cn(
+                        "h-1.5 w-1.5 rounded-full bg-surface-tertiary",
+                        i === currentReadingIndex && "w-4 bg-primary",
+                      )}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Queue, Favorites, Have Read, Collections, All Books — no paging
+              math here, so they all sit inside the content column. */}
+          <View style={contentColumn}>
+            {/* Queue */}
+            {queuedBooks.length > 0 && (
+              <View className="gap-4 mb-8">
+                <SectionHeader
+                  title="Queue"
+                  rightAction={{
+                    text: "VIEW ALL",
+                    onPress: () => router.push("/section/queue" as any),
+                  }}
+                />
+                <BookQueue
+                  books={queuedBooks}
+                  onBookPress={openReader}
+                  onBookLongPress={setActionBook}
+                />
+              </View>
+            )}
+
+            {/* Favorites */}
+            {favoriteBooks.length > 0 && (
+              <View className="gap-4 mb-8">
+                <SectionHeader
+                  title="Favorites"
+                  rightAction={{
+                    text: "VIEW ALL",
+                    onPress: () => router.push("/section/favorites" as any),
+                  }}
+                />
+                <Favorites
+                  books={favoriteBooks}
+                  onBookPress={openReader}
+                  onBookLongPress={setActionBook}
+                />
+              </View>
+            )}
+
+            {/* Have Read */}
+            {archivedBooks.length > 0 && (
+              <View className="gap-4 mb-8">
+                <SectionHeader
+                  title="Have Read"
+                  rightAction={{
+                    text: "VIEW ALL",
+                    onPress: () => router.push("/section/archived" as any),
+                  }}
+                />
+                <ArchivedCards
+                  books={archivedBooks}
+                  onBookPress={openReader}
+                  onBookLongPress={setActionBook}
+                />
+              </View>
+            )}
+
+            {/* Collections */}
+            <View className="gap-4 mb-8">
+              <SectionHeader
+                title="Collections"
+                rightAction={{
+                  text: "VIEW ALL",
+                  onPress: () => router.push("/section/collections" as any),
+                }}
+              />
+              <CollectionGrid
+                collections={collections}
+                onPress={(colId) => router.push(`/collection/${colId}` as any)}
+                onCreateCollection={() => setShowNewCollection(true)}
+              />
+            </View>
+
+            {/* All Books */}
+            {allBooks.length > 0 && (
+              <View className="gap-4 mb-8">
+                <SectionHeader
+                  title="All Books"
+                  rightAction={{
+                    text: "VIEW ALL",
+                    onPress: () => router.push("/section/all" as any),
+                  }}
+                />
+                <BookQueue
+                  books={allBooks.slice(0, 20)}
+                  onBookPress={openReader}
+                  onBookLongPress={setActionBook}
+                />
+              </View>
+            )}
+          </View>
+        </ScrollView>
+
+        {/* Adding books moved off the header when both of its sides became
+            navigation. It is this screen's one creative action, so it gets the
+            same floating button the Timeline gives its own. iOS only, matching
+            the header button it replaces — on Android books arrive through the
+            picked folder, not a document picker. */}
+        {isIOS && (
+          <Fab
+            icon={Plus}
+            accessibilityLabel="Add books"
+            bottomOffset={insets.bottom}
+            onPress={handleGetStarted}
+          />
+        )}
+
+        <BookActionSheet
+          visible={actionBook !== null}
+          book={actionBook}
+          onClose={() => setActionBook(null)}
+          onOpen={openReader}
+          onToggleFavorite={toggleFavorite}
+          onSetStatus={updateBookStatus}
+          onAddToCollection={async (bookId) => {
+            const ids = await useCollectionsStore
+              .getState()
+              .getBookCollectionIds(bookId);
+            setBookCollectionIds(ids);
+            setCollectionPickerBook(bookId);
+          }}
+          onDelete={(bookId) => {
+            const book = allBooks.find((b) => b.id === bookId) ?? null;
+            setDeleteConfirmBook(book);
+          }}
+          onEditTitle={(bookId) => {
+            const book = allBooks.find((b) => b.id === bookId) ?? null;
+            setEditTitleBook(book);
+          }}
+        />
+
+        <NewCollectionPrompt
+          visible={showNewCollection}
+          onClose={() => setShowNewCollection(false)}
+          onCreate={async (name) => {
+            await createCollection(name);
+            setShowNewCollection(false);
+          }}
+        />
+
+        <CollectionPickerSheet
+          visible={collectionPickerBook !== null}
+          collections={collections}
+          bookCollectionIds={bookCollectionIds}
+          onToggle={async (collectionId, isAdded) => {
+            if (isAdded) {
+              await useCollectionsStore
+                .getState()
+                .removeBookFromCollection(collectionPickerBook!, collectionId);
+            } else {
+              await useCollectionsStore
+                .getState()
+                .addBookToCollection(collectionPickerBook!, collectionId);
+            }
+            const ids = await useCollectionsStore
+              .getState()
+              .getBookCollectionIds(collectionPickerBook!);
+            setBookCollectionIds(ids);
+          }}
+          onClose={() => setCollectionPickerBook(null)}
+        />
+
+        <DeleteBookSheet
+          visible={deleteConfirmBook !== null}
+          book={deleteConfirmBook}
+          onClose={() => setDeleteConfirmBook(null)}
+          onConfirm={async (bookId) => {
+            await deleteBook(bookId);
+            setDeleteConfirmBook(null);
+          }}
+        />
+
+        <EditTitleSheet
+          visible={editTitleBook !== null}
+          book={editTitleBook}
+          onClose={() => setEditTitleBook(null)}
+          onSave={async (bookId, title) => {
+            await updateBookTitle(bookId, title);
+            setEditTitleBook(null);
+          }}
+        />
+      </ThemedView>
+  );
+}

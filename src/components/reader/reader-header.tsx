@@ -1,12 +1,12 @@
-import { AudioLines, Bookmark, BookmarkCheck, List } from 'lucide-react-native';
+import { ArrowLeft, AudioLines, Bookmark, BookmarkCheck, List } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { useColors } from '@/hooks/use-colors';
 import { spacing } from '@/constants/theme';
 
 type ReaderHeaderProps = {
@@ -21,6 +21,29 @@ type ReaderHeaderProps = {
   onToggle?: () => void;
 };
 
+/** ThemedText/lucide icons take a literal color, not a className — resolve the
+ * semantic token once per render and fall back to `undefined` (which lets
+ * `ThemedText` apply its own default) if it hasn't resolved yet. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** The `h-9` control row this header is built from. */
+const CONTROL_SIZE = 36;
+
+/**
+ * The header's own height, below the status bar — its two paddings plus the
+ * control row between them.
+ *
+ * Exported because the reader has to reserve exactly this much space above
+ * the ReadiumView: the header is an absolutely-positioned overlay, so
+ * anything the reading area doesn't reserve, the header draws on top of. The
+ * reader used to hard-code 10 here, which left the header covering the first
+ * ~46dp of every page — the first line of text on a page that begins with
+ * one. Derived rather than repeated so the two cannot drift again.
+ */
+export const READER_HEADER_HEIGHT = spacing[2] + CONTROL_SIZE + spacing[3];
+
 export function ReaderHeader({
   title,
   progress,
@@ -32,71 +55,50 @@ export function ReaderHeader({
   onTTSToggle,
   onToggle,
 }: ReaderHeaderProps) {
-  const colors = useColors();
+  const [primary, foreground, mutedForeground] = useCSSVariable([
+    '--color-primary',
+    '--color-foreground',
+    '--color-muted-foreground',
+  ]);
   const insets = useSafeAreaInsets();
 
-  const styles = React.useMemo(() => StyleSheet.create({
-    container: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: spacing[4],
-      paddingBottom: spacing[3],
-      backgroundColor: colors.surface.base,
-      gap: spacing[2],
-    },
-    title: {
-      flex: 1,
-      textAlign: 'center',
-    },
-    right: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[1],
-    },
-    iconButton: {
-      width: 36,
-      height: 36,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-  }), [colors]);
-
   return (
-    <Touchable style={[styles.container, { paddingTop: insets.top + spacing[2] }]} onPress={onToggle}>
-      <Touchable onPress={onBack} style={styles.iconButton}>
-        <ThemedText type="bodyMd" color={colors.primary.default}>
-          ←
-        </ThemedText>
+    <Touchable
+      className="flex-row items-center gap-2 bg-background px-4 pb-3"
+      // Only the safe-area-dependent top inset stays inline — it's a runtime
+      // measurement, not a static utility.
+      style={{ paddingTop: insets.top + spacing[2] }}
+      onPress={onToggle}
+    >
+      <Touchable onPress={onBack} className="h-9 w-9 items-center justify-center">
+        <ArrowLeft size={22} color={asColor(primary)} />
       </Touchable>
 
       <ThemedText
         type="bodySm"
-        color={colors.text.secondary}
+        color={asColor(mutedForeground)}
         numberOfLines={1}
-        style={styles.title}
+        className="flex-1 text-center"
       >
         {title}
       </ThemedText>
 
-      <View style={styles.right}>
-        <Touchable onPress={onBookmarkToggle} style={styles.iconButton}>
+      <View className="flex-row items-center gap-1">
+        <Touchable onPress={onBookmarkToggle} className="h-9 w-9 items-center justify-center">
           {isBookmarked ? (
-            <BookmarkCheck size={20} color={colors.primary.default} />
+            <BookmarkCheck size={20} color={asColor(primary)} />
           ) : (
-            <Bookmark size={20} color={colors.text.primary} />
+            <Bookmark size={20} color={asColor(foreground)} />
           )}
         </Touchable>
-        <Touchable onPress={onContents} style={styles.iconButton}>
-          <List size={20} color={colors.text.primary} />
+        <Touchable onPress={onContents} className="h-9 w-9 items-center justify-center">
+          <List size={20} color={asColor(foreground)} />
         </Touchable>
-        <Touchable onPress={onTTSToggle} style={styles.iconButton}>
-          <AudioLines
-            size={20}
-            color={isTTSActive ? colors.primary.default : colors.text.primary}
-          />
+        <Touchable onPress={onTTSToggle} className="h-9 w-9 items-center justify-center">
+          <AudioLines size={20} color={isTTSActive ? asColor(primary) : asColor(foreground)} />
         </Touchable>
         {progress !== undefined && (
-          <ThemedText type="labelSm" color={colors.text.secondary}>
+          <ThemedText type="labelSm" color={asColor(mutedForeground)} style={{ fontVariant: ['tabular-nums'] }}>
             {Math.round(progress * 100)}%
           </ThemedText>
         )}

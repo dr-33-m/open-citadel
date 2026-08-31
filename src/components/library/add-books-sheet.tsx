@@ -1,19 +1,15 @@
-import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Check } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
-import {
-  Image,
-  StyleSheet,
-  View,
-} from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { Image, View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
 import { Sheet } from "@/components/ui/sheet";
 import { Touchable } from "@/components/ui/touchable";
 
 import { ThemedText } from "@/components/themed-text";
 import { GoldButton } from "@/components/ui/gold-button";
-import { fontFamily, spacing } from "@/constants/theme";
-import { useColors } from "@/hooks/use-colors";
+import { cn } from "@/lib/cn";
+import { fontFamily } from "@/constants/theme";
 
 type Book = {
   id: string;
@@ -30,6 +26,88 @@ type AddBooksSheetProps = {
   onClose: () => void;
 };
 
+/** ThemedText/lucide icons take a literal color, not a className. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+const COVER_FILL = { width: '100%' as const, height: '100%' as const };
+
+/** Hoisted: a fresh style object per render re-lays the scroll region out. */
+const FILL = { flex: 1 } as const;
+
+/**
+ * One row, memoized: a toggle only re-renders the row whose selection
+ * flipped — not every mounted cell — and only the visible window exists
+ * at all, so a 400-book library mounts the same dozen rows as a 4-book one.
+ */
+const AddBookRow = React.memo(function AddBookRow({
+  book,
+  isSelected,
+  ghostInk,
+  mutedForeground,
+  primaryForeground,
+  onToggle,
+}: {
+  book: Book;
+  isSelected: boolean;
+  ghostInk?: string;
+  mutedForeground?: string;
+  primaryForeground?: string;
+  onToggle: (bookId: string) => void;
+}) {
+  return (
+    <Touchable
+      className="flex-row items-center gap-4 px-6 py-3"
+      onPress={() => onToggle(book.id)}
+    >
+      <View className="h-[54px] w-9 overflow-hidden bg-muted">
+        {book.coverUrl ? (
+          <Image
+            source={{ uri: book.coverUrl }}
+            style={COVER_FILL}
+          />
+        ) : (
+          <View className="flex-1 items-center justify-center">
+            <ThemedText
+              type="bodySm"
+              color={ghostInk}
+              style={{ fontSize: 16, fontFamily: fontFamily.serif }}
+            >
+              {book.title.charAt(0).toUpperCase()}
+            </ThemedText>
+          </View>
+        )}
+      </View>
+      <View className="flex-1 gap-1">
+        <ThemedText
+          type="bodySm"
+          numberOfLines={1}
+        >
+          {book.title}
+        </ThemedText>
+        <ThemedText
+          type="labelSm"
+          color={mutedForeground}
+          numberOfLines={1}
+        >
+          {book.author}
+        </ThemedText>
+      </View>
+      <View
+        className={cn(
+          'h-6 w-6 items-center justify-center rounded-full',
+          isSelected ? 'bg-primary' : 'bg-muted',
+        )}
+      >
+        {isSelected && (
+          <Check size={14} color={primaryForeground} />
+        )}
+      </View>
+    </Touchable>
+  );
+});
+
 export function AddBooksSheet({
   visible,
   allBooks,
@@ -37,7 +115,11 @@ export function AddBooksSheet({
   onConfirm,
   onClose,
 }: AddBooksSheetProps) {
-  const colors = useColors();
+  const [ghostInk, mutedForeground, primaryForeground] = useCSSVariable([
+    '--color-surface-tertiary',
+    '--color-muted-foreground',
+    '--color-primary-foreground',
+  ]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -46,64 +128,7 @@ export function AddBooksSheet({
     }
   }, [visible, existingBookIds]);
 
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        sheet: {
-          flex: 1,
-          backgroundColor: colors.surface.low,
-          paddingTop: spacing[4],
-          paddingBottom: spacing[10],
-        },
-        header: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: spacing[6],
-          marginBottom: spacing[4],
-        },
-        scroll: { flex: 1 },
-        row: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing[4],
-          paddingHorizontal: spacing[6],
-          paddingVertical: spacing[3],
-        },
-        cover: {
-          width: 36,
-          height: 54,
-          backgroundColor: colors.surface.mid,
-          overflow: "hidden",
-        },
-        coverImage: { width: "100%", height: "100%" },
-        coverPlaceholder: {
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        initial: { fontSize: 16, fontFamily: fontFamily.serif },
-        bookInfo: { flex: 1, gap: spacing[1] },
-        checkCircle: {
-          width: 24,
-          height: 24,
-          borderRadius: 12,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        footer: {
-          paddingHorizontal: spacing[6],
-          paddingTop: spacing[4],
-        },
-        cancel: {
-          alignItems: "center",
-          paddingVertical: spacing[3],
-        },
-      }),
-    [colors],
-  );
-
-  const toggle = (bookId: string) => {
+  const toggle = useCallback((bookId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(bookId)) {
@@ -113,7 +138,25 @@ export function AddBooksSheet({
       }
       return next;
     });
-  };
+  }, []);
+
+  const ghost = asColor(ghostInk);
+  const muted = asColor(mutedForeground);
+  const onPrimary = asColor(primaryForeground);
+
+  const renderItem = useCallback(
+    ({ item }: { item: Book }) => (
+      <AddBookRow
+        book={item}
+        isSelected={selectedIds.has(item.id)}
+        ghostInk={ghost}
+        mutedForeground={muted}
+        primaryForeground={onPrimary}
+        onToggle={toggle}
+      />
+    ),
+    [selectedIds, ghost, muted, onPrimary, toggle],
+  );
 
   const newlySelected = [...selectedIds].filter(
     (id) => !existingBookIds.includes(id),
@@ -125,81 +168,24 @@ export function AddBooksSheet({
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} fixedHeightRatio={0.65} scrollable>
-      <View style={styles.sheet}>
-        <View style={styles.header}>
+    <Sheet visible={visible} onClose={onClose} fixedHeightRatio={0.65}>
+      <View className="flex-1">
+        <View className="mb-4 flex-row items-center justify-between px-6">
           <ThemedText type="headlineSm">Add Books</ThemedText>
-          <ThemedText type="labelSm" color={colors.text.secondary}>
+          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
             {selectedIds.size} selected
           </ThemedText>
         </View>
 
-        <BottomSheetScrollView
-          style={styles.scroll}
+        <Sheet.FlatList
+          style={FILL}
+          data={allBooks}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
           showsVerticalScrollIndicator={false}
-        >
-          {allBooks.map((book) => {
-            const isSelected = selectedIds.has(book.id);
-            return (
-              <Touchable
-                key={book.id}
-                style={styles.row}
-                onPress={() => toggle(book.id)}
-              >
-                <View style={styles.cover}>
-                  {book.coverUrl ? (
-                    <Image
-                      source={{ uri: book.coverUrl }}
-                      style={styles.coverImage}
-                    />
-                  ) : (
-                    <View style={styles.coverPlaceholder}>
-                      <ThemedText
-                        type="bodySm"
-                        color={colors.surface.highest}
-                        style={styles.initial}
-                      >
-                        {book.title.charAt(0).toUpperCase()}
-                      </ThemedText>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.bookInfo}>
-                  <ThemedText
-                    type="bodySm"
-                    color={colors.text.primary}
-                    numberOfLines={1}
-                  >
-                    {book.title}
-                  </ThemedText>
-                  <ThemedText
-                    type="labelSm"
-                    color={colors.text.secondary}
-                    numberOfLines={1}
-                  >
-                    {book.author}
-                  </ThemedText>
-                </View>
-                <View
-                  style={[
-                    styles.checkCircle,
-                    {
-                      backgroundColor: isSelected
-                        ? colors.primary.default
-                        : colors.surface.mid,
-                    },
-                  ]}
-                >
-                  {isSelected && (
-                    <Check size={14} color={colors.text.inverse} />
-                  )}
-                </View>
-              </Touchable>
-            );
-          })}
-        </BottomSheetScrollView>
+        />
 
-        <View style={styles.footer}>
+        <View className="px-6 pt-4">
           <GoldButton
             label={
               newlySelected.length > 0
@@ -208,8 +194,8 @@ export function AddBooksSheet({
             }
             onPress={handleConfirm}
           />
-          <Touchable onPress={onClose} style={styles.cancel}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+          <Touchable onPress={onClose} className="items-center py-3">
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
               CANCEL
             </ThemedText>
           </Touchable>

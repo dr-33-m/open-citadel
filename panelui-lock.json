@@ -1,0 +1,657 @@
+{
+  "version": 2,
+  "files": {
+    "src/components/ui/panel-ui-provider.tsx": {
+      "item": "panel-ui-provider",
+      "digest": "sha256:049a65ce93af8724402692abdf3bc321518122ee58364b0c4ecde8912eb9357b"
+    },
+    "src/lib/cn.ts": {
+      "item": "cn",
+      "digest": "sha256:9304a861c8673bee09e0f12de31773abbde503b02e59dfd74763ddec2e37cf05"
+    },
+    "src/components/ui/portal.tsx": {
+      "item": "portal",
+      "digest": "sha256:3f77c536fdc107ee1e2993f849b53440b051170378c9467d73b41f9ff6ec1614"
+    },
+    "src/components/ui/focus-restoration-store.ts": {
+      "item": "focus-restoration-store",
+      "digest": "sha256:cd47b2ec6b440f1073e831912037677aaca12330f33a8aea335d67a46980a7a9"
+    },
+    "src/components/ui/modal-isolation-store.ts": {
+      "item": "modal-isolation-store",
+      "digest": "sha256:346301f0da15175f23a8918834d0c6e9bbdb096e3c130fa92bc9640dc3500c70"
+    },
+    "src/components/ui/toast.tsx": {
+      "item": "toast",
+      "digest": "sha256:9db0a732afe98dc8a0ad0033c8fce362b8d9ac5c6f9110c4fec44baea5c587fc"
+    },
+    "src/components/ui/toast-store.ts": {
+      "item": "toast",
+      "digest": "sha256:3a74ab7c74e9aae50664bd5e7fd1204b267b45e20a1e89821911ceee4fc3d63f"
+    },
+    "src/components/ui/button.tsx": {
+      "item": "button",
+      "digest": "sha256:bf89fea5e22977f2d035b3f3585f4b76eaeb5a74fa94255a0807a2ccddf16ce8"
+    },
+    "src/components/ui/animated-pressable.tsx": {
+      "item": "animated-pressable",
+      "digest": "sha256:1b36a4a54b2b7e58ebb087370f867b8f8641d7e620045d97e931abad6356d150"
+    },
+    "src/components/ui/icons.tsx": {
+      "item": "icons",
+      "digest": "sha256:44f6428950652d9d81ac325fc64d1cb8884074b5a9dbb9095e1e1a483f43ea10"
+    },
+    "src/hooks/use-direction.ts": {
+      "item": "use-direction",
+      "digest": "sha256:9202d8550abaed8720af42d0320acf51e227fbf23f649b5636fd26475b849867"
+    },
+    "src/lib/native.ts": {
+      "item": "native",
+      "digest": "sha256:4100721470e08265f0013499cc4b2c16cf5e4aa6b2e0113cd030de7a37e83d44"
+    },
+    "src/components/ui/spinner.tsx": {
+      "item": "spinner",
+      "digest": "sha256:bb64b6e48da6dc9b0f92c356562bd561a974afa966bf06120594a508d92d3436"
+    },
+    "src/components/ui/text.tsx": {
+      "item": "text",
+      "digest": "sha256:7d2ac97b2f276c5ff03f524b21cde8616cfe9217a0a0c49d39eeba620bf462de"
+    },
+    "src/lib/haptics.ts": {
+      "item": "haptics",
+      "digest": "sha256:aad3c62bb6b9039ef5db86da4f161e415f3f459e25b192a192ae325997733e41"
+    },
+    "src/components/ui/scrim.tsx": {
+      "item": "scrim",
+      "digest": "sha256:76e113e0f699505d878ec6ac1c2384ca6dfaea2f0235f9050b52cce045c4fad6"
+    },
+    "src/hooks/use-back-handler.ts": {
+      "item": "use-back-handler",
+      "digest": "sha256:7c45197c64beb13d8ab1f386758e07e2d83bdb6d02e5d83e27153afbdfa686e1"
+    },
+    "src/components/ui/input.tsx": {
+      "item": "input",
+      "digest": "sha256:87172d5ff72dedb6377023178a561d8715fd53006af282f9c95c4a6aeb86b16f"
+    },
+    "src/components/ui/input-content-padding.ts": {
+      "item": "input",
+      "digest": "sha256:3b948993b1bd50d9dfe012ce17aaa3a062fee261ce04b183a27a7bbdf5d985cf"
+    },
+    "src/components/ui/keyboard-avoider.tsx": {
+      "item": "keyboard-avoider",
+      "digest": "sha256:cb4d5ced10468236a3d8a3b0fe991a701a55d89e26c9ebd3dfa4dff5618c52f8"
+    },
+    "src/hooks/use-keyboard-avoidance.ts": {
+      "item": "use-keyboard-avoidance",
+      "digest": "sha256:abe0ba4dc1ef057c9f9951a885f0c7a217926db7e3d0119055602ba2834a0557"
+    },
+    "src/components/ui/label.tsx": {
+      "item": "label",
+      "digest": "sha256:cc3ffbca72ea9a42087d0caa47c8d5d502924975a3ff8b44ab1cf1c5adb27dfb"
+    },
+    "src/components/ui/card.tsx": {
+      "item": "card",
+      "digest": "sha256:dec55b77a9b17dffd9a4529b58e066f0d869173991d63b10c036ff2d030a49df"
+    },
+    "src/components/ui/item.tsx": {
+      "item": "item",
+      "digest": "sha256:3c1a67d1d6234e778c8c95338f6dff45995c1779cc28ed1a2c0faa61e5fa9aee"
+    },
+    "src/components/ui/progress.tsx": {
+      "item": "progress",
+      "digest": "sha256:e3dbb7ca724b8d58e923c6ad7f42a7f2daf965711fed67728d74e9863ddf8471"
+    },
+    "src/components/ui/badge.tsx": {
+      "item": "badge",
+      "digest": "sha256:df65ff359917366b7bdca516e72b97bb744e2976157e8782d349dc8983837b7e"
+    },
+    "src/components/ui/tabs.tsx": {
+      "item": "tabs",
+      "digest": "sha256:59b596d83521c38350dd3de4335e2c00111817fcbdfeb93a0cad5fa7b9406156"
+    },
+    "src/components/ui/message.tsx": {
+      "item": "message",
+      "digest": "sha256:f7a123688d83cd243be453e66bace113a2216638292715a2827f28e04f7e1b3e"
+    },
+    "src/components/ui/avatar-group.ts": {
+      "item": "avatar",
+      "digest": "sha256:9cab4776348235db66b883cc0696ed93b2230e1bd21ed74bdf8ef39d1f5059ed"
+    },
+    "src/components/ui/avatar-source.ts": {
+      "item": "avatar",
+      "digest": "sha256:c40e0901a74d1f31baa29e6d9b180016d43fe95eeb92c542eaf1f4e7d73b1dcd"
+    },
+    "src/components/ui/avatar.tsx": {
+      "item": "avatar",
+      "digest": "sha256:599028c994f70df3eb246bfa5441c6b2d1702bd01ffdd9e4bf07bd1fadbaf1c2"
+    },
+    "src/components/ui/alert.tsx": {
+      "item": "alert",
+      "digest": "sha256:5ce2adadf8fd6b6192c401b17dea8f23b60c879e3f00f1a3ab0eadda5bc6d131"
+    },
+    "src/components/ui/ai-input-growth.ts": {
+      "item": "ai-input",
+      "digest": "sha256:45c169833bceb5296d2019f579d5f8c2493241055b5aed48f7eae7b666f017b3"
+    },
+    "src/components/ui/ai-input.tsx": {
+      "item": "ai-input",
+      "digest": "sha256:6666ec13034ea31d3841b4154949f5d98e9cea6a31ae4635cb903899f484b478"
+    },
+    "src/components/ui/glass.tsx": {
+      "item": "glass",
+      "digest": "sha256:103d8e3fa272237dd484aa323767c7f421491b922a869c6de409f19d380ef4c7"
+    },
+    "src/components/ui/soundwave.tsx": {
+      "item": "soundwave",
+      "digest": "sha256:24dd5dca35fdad335505445b2dff40222d0201325373cf20f79e7b9072c0e3ea"
+    },
+    "src/components/ui/switch.tsx": {
+      "item": "switch",
+      "digest": "sha256:4c53341bbcf1950f72fe83618cb72883e5e734f3898dea1505499c708eec1213"
+    },
+    "src/components/ui/field.tsx": {
+      "item": "field",
+      "digest": "sha256:8ec8d83ff28ae0c5a0cb5cb874d7b8d361bd6bc82cd259b0a4142a3306320b7d"
+    },
+    "src/components/ui/separator.tsx": {
+      "item": "separator",
+      "digest": "sha256:073b3af3adad8ddf382bf533f269dcd23bdf3d1ad1ef1075d31c200aacd0477d"
+    },
+    "src/components/ui/reasoning.tsx": {
+      "item": "reasoning",
+      "digest": "sha256:1b19a6b8bd9c06d6802fa444a54dd65f28f2d286746d847456a4ff678e7d12ed"
+    },
+    "src/components/ui/collapse.tsx": {
+      "item": "collapse",
+      "digest": "sha256:9c4e764b836d376c920cfa62f215b37b751bd54c05cbf38689ae74626cc89f75"
+    },
+    "src/components/ui/shimmer.tsx": {
+      "item": "shimmer",
+      "digest": "sha256:1ce2e7ca8ae6027c7e3582a3a95f7ec810f18f3e77b82485f5a5ef1b7e6836df"
+    },
+    "src/components/ui/sources.tsx": {
+      "item": "sources",
+      "digest": "sha256:b2fd031945444f4a692748fee6db2b5a15570e2250a7f2882342427998c385fc"
+    },
+    "src/components/ui/select.tsx": {
+      "item": "select",
+      "digest": "sha256:dad9005c0a7fd027d3dcf63f5bff21e539d51a42c20e7cfbf347be1f14320160"
+    },
+    "src/components/ui/native-select-contract.ts": {
+      "item": "select",
+      "digest": "sha256:c04f9fb7c2a3595fe5e5eb2471cd09c9e2d3ffa86eb70dbf4326ea9185f8e9c9"
+    },
+    "src/components/ui/input-group.tsx": {
+      "item": "input-group",
+      "digest": "sha256:fc204a1987a4fe1759c272981920cc6bc71bf8d149e5992a665cdd3bf79f95eb"
+    },
+    "src/components/ui/input-group-measurements.ts": {
+      "item": "input-group",
+      "digest": "sha256:4cb3a9b85ad33fe1f42e6b1a3236fd1bc1a78aac321c78cb15ad2daf03a58389"
+    },
+    "src/components/ui/empty-state.tsx": {
+      "item": "empty-state",
+      "digest": "sha256:6790310281a63d07dd6a9438a98a724375176a468a99f500f0b5504b53aac075"
+    },
+    "src/components/ui/skeleton.tsx": {
+      "item": "skeleton",
+      "digest": "sha256:7be80e7053e30c210e8bf7e14dabcc4248f5d89fa2937218ddee5bf7132f49ba"
+    },
+    "src/components/ui/loader.tsx": {
+      "item": "loader",
+      "digest": "sha256:92eb16f54112e666fc5877c11a6daf6bb1f64c0c2d8397ea037a2ad1fb00749b"
+    },
+    "src/components/ui/frame.tsx": {
+      "item": "frame",
+      "digest": "sha256:547a1c6877039cdc1977499e71f6c935e3b47a5bcd23ce24dfa28c4a9b5ccf44"
+    },
+    "src/components/ui/checkbox.tsx": {
+      "item": "checkbox",
+      "digest": "sha256:15411bcf4c803f251ba17b33ca8444802ed8ea44babb2b5cd2502dbce937b1d3"
+    },
+    "src/components/ui/radio-group.tsx": {
+      "item": "radio-group",
+      "digest": "sha256:b83faffbc4686be9da413cf285f33f7aeb3fc527577565f7ebe5f6da4bfdef76"
+    },
+    "src/components/ui/radio-group-value.ts": {
+      "item": "radio-group",
+      "digest": "sha256:46228fa2d15d5d045b20a9a6e4fdc35f7abdc2f1c53392be2bdceff252c01da7"
+    },
+    "components/ui/search-bar.tsx": {
+      "item": "search-bar",
+      "digest": "sha256:9fc5985c9f82381d0b6cac8ec9e105828de9e4814f4f10ff0ec9fa6104ff706e"
+    },
+    "components/ui/search-bar-debounce.ts": {
+      "item": "search-bar",
+      "digest": "sha256:14601f75b7da630eacd7003a8c4c91b05044ad4cb98a638cc291e812e696721e"
+    },
+    "components/ui/animated-pressable.tsx": {
+      "item": "animated-pressable",
+      "digest": "sha256:1b36a4a54b2b7e58ebb087370f867b8f8641d7e620045d97e931abad6356d150"
+    },
+    "components/ui/icons.tsx": {
+      "item": "icons",
+      "digest": "sha256:e383acec2fe3d33f10e22ab04ac6519615652c68ee157050c1f4dc1a8209331f"
+    },
+    "hooks/use-direction.ts": {
+      "item": "use-direction",
+      "digest": "sha256:9202d8550abaed8720af42d0320acf51e227fbf23f649b5636fd26475b849867"
+    },
+    "components/ui/input.tsx": {
+      "item": "input",
+      "digest": "sha256:87172d5ff72dedb6377023178a561d8715fd53006af282f9c95c4a6aeb86b16f"
+    },
+    "components/ui/input-content-padding.ts": {
+      "item": "input",
+      "digest": "sha256:3b948993b1bd50d9dfe012ce17aaa3a062fee261ce04b183a27a7bbdf5d985cf"
+    },
+    "components/ui/keyboard-avoider.tsx": {
+      "item": "keyboard-avoider",
+      "digest": "sha256:cb4d5ced10468236a3d8a3b0fe991a701a55d89e26c9ebd3dfa4dff5618c52f8"
+    },
+    "components/ui/text.tsx": {
+      "item": "text",
+      "digest": "sha256:7d2ac97b2f276c5ff03f524b21cde8616cfe9217a0a0c49d39eeba620bf462de"
+    },
+    "hooks/use-keyboard-avoidance.ts": {
+      "item": "use-keyboard-avoidance",
+      "digest": "sha256:abe0ba4dc1ef057c9f9951a885f0c7a217926db7e3d0119055602ba2834a0557"
+    },
+    "components/ui/label.tsx": {
+      "item": "label",
+      "digest": "sha256:cc3ffbca72ea9a42087d0caa47c8d5d502924975a3ff8b44ab1cf1c5adb27dfb"
+    },
+    "components/ui/spinner.tsx": {
+      "item": "spinner",
+      "digest": "sha256:bb64b6e48da6dc9b0f92c356562bd561a974afa966bf06120594a508d92d3436"
+    },
+    "components/ui/calendar.tsx": {
+      "item": "calendar",
+      "digest": "sha256:75792ce7861dec98490973c423aeaef9f87fa6ed676cbce3709eb30347fd43da"
+    },
+    "lib/cn.ts": {
+      "item": "cn",
+      "digest": "sha256:9304a861c8673bee09e0f12de31773abbde503b02e59dfd74763ddec2e37cf05"
+    },
+    "lib/date.ts": {
+      "item": "date",
+      "digest": "sha256:f61a21bf7c712781f4e7e5fc9239b1e3cff04399c9fef7ea083b0e5d5a8b14f5"
+    },
+    "components/ui/popover.tsx": {
+      "item": "popover",
+      "digest": "sha256:f62bf42d27181b43c55d11f79da11b2218f7b80d79b591dee7519bf62a20a04a"
+    },
+    "components/ui/bottom-sheet.tsx": {
+      "item": "bottom-sheet",
+      "digest": "sha256:3ef26c1dde7065c7fe765b6045c7ebed1da74ada7d8d0789bdcbf9feffbb2e54"
+    },
+    "lib/haptics.ts": {
+      "item": "haptics",
+      "digest": "sha256:aad3c62bb6b9039ef5db86da4f161e415f3f459e25b192a192ae325997733e41"
+    },
+    "lib/native.ts": {
+      "item": "native",
+      "digest": "sha256:8597ae8286dcb79976782c4e93c2f2591def77deb174fb84d43aa44187171193"
+    },
+    "components/ui/portal.tsx": {
+      "item": "portal",
+      "digest": "sha256:3f77c536fdc107ee1e2993f849b53440b051170378c9467d73b41f9ff6ec1614"
+    },
+    "components/ui/focus-restoration-store.ts": {
+      "item": "focus-restoration-store",
+      "digest": "sha256:cd47b2ec6b440f1073e831912037677aaca12330f33a8aea335d67a46980a7a9"
+    },
+    "components/ui/modal-isolation-store.ts": {
+      "item": "modal-isolation-store",
+      "digest": "sha256:346301f0da15175f23a8918834d0c6e9bbdb096e3c130fa92bc9640dc3500c70"
+    },
+    "components/ui/scrim.tsx": {
+      "item": "scrim",
+      "digest": "sha256:76e113e0f699505d878ec6ac1c2384ca6dfaea2f0235f9050b52cce045c4fad6"
+    },
+    "hooks/use-back-handler.ts": {
+      "item": "use-back-handler",
+      "digest": "sha256:7c45197c64beb13d8ab1f386758e07e2d83bdb6d02e5d83e27153afbdfa686e1"
+    },
+    "components/ui/date-picker.tsx": {
+      "item": "date-picker",
+      "digest": "sha256:98ec54f6216d80630439d2fdd4234a91367a51d4abe01f97377d30482239488b"
+    },
+    "components/ui/button.tsx": {
+      "item": "button",
+      "digest": "sha256:bf89fea5e22977f2d035b3f3585f4b76eaeb5a74fa94255a0807a2ccddf16ce8"
+    },
+    "components/ui/accessibility.ts": {
+      "item": "time-picker",
+      "digest": "sha256:c72e1453d70b6aa31791b5937b10b4ef36f60871b3fc8486b0945f7dbfab7b72"
+    },
+    "components/ui/time-picker.tsx": {
+      "item": "time-picker",
+      "digest": "sha256:80824e31cde0481f1ad49adfb5d5c13fa3eeb876fa6d8bdbcb458649112256c5"
+    },
+    "components/ui/ruler-window.ts": {
+      "item": "time-picker",
+      "digest": "sha256:12a559e51d54818c98404fa60b642ef98f617f0fb670dfb2047f8cb8c7284091"
+    },
+    "components/ui/dialog.tsx": {
+      "item": "dialog",
+      "digest": "sha256:4c788e0b535ebc1c59cf892f51a5c8c7286aec2f06ee9e88ae3dc8b6f7e04679"
+    },
+    "lib/time.ts": {
+      "item": "time",
+      "digest": "sha256:5852ab78d7c53e3184b65efad0f4bc690ca3addf163a45fe4b0471d4ca7763e2"
+    },
+    "components/ui/chip.tsx": {
+      "item": "chip",
+      "digest": "sha256:e2dc7dee54f0f3cd91f69d356d819405ec8c18ed23908769affbff99ec285ca0"
+    },
+    "components/ui/swipe.tsx": {
+      "item": "swipe",
+      "digest": "sha256:ef22da948cd9554a05ac6bad703e32b34c0148dedeefbe0843f31c4ee073baa3"
+    }
+  },
+  "roots": {
+    "panel-ui-provider": [
+      "panel-ui-provider",
+      "cn",
+      "portal",
+      "focus-restoration-store",
+      "modal-isolation-store",
+      "toast",
+      "button",
+      "animated-pressable",
+      "icons",
+      "use-direction",
+      "native",
+      "spinner",
+      "text"
+    ],
+    "bottom-sheet": [
+      "bottom-sheet",
+      "cn",
+      "haptics",
+      "icons",
+      "use-direction",
+      "native",
+      "portal",
+      "focus-restoration-store",
+      "modal-isolation-store",
+      "scrim",
+      "text",
+      "use-back-handler"
+    ],
+    "input": [
+      "input",
+      "icons",
+      "use-direction",
+      "keyboard-avoider",
+      "text",
+      "use-keyboard-avoidance",
+      "label"
+    ],
+    "card": [
+      "card",
+      "cn",
+      "text",
+      "use-direction"
+    ],
+    "item": [
+      "item",
+      "animated-pressable",
+      "cn",
+      "text",
+      "use-direction"
+    ],
+    "progress": [
+      "progress",
+      "cn",
+      "text",
+      "use-direction"
+    ],
+    "badge": [
+      "badge",
+      "text",
+      "use-direction"
+    ],
+    "tabs": [
+      "tabs",
+      "cn",
+      "text",
+      "use-direction"
+    ],
+    "message": [
+      "message",
+      "animated-pressable",
+      "cn",
+      "icons",
+      "use-direction",
+      "text"
+    ],
+    "avatar": [
+      "avatar",
+      "cn",
+      "text",
+      "use-direction"
+    ],
+    "alert": [
+      "alert",
+      "cn",
+      "icons",
+      "use-direction",
+      "text"
+    ],
+    "ai-input": [
+      "ai-input",
+      "animated-pressable",
+      "bottom-sheet",
+      "cn",
+      "haptics",
+      "icons",
+      "use-direction",
+      "native",
+      "portal",
+      "focus-restoration-store",
+      "modal-isolation-store",
+      "scrim",
+      "text",
+      "use-back-handler",
+      "button",
+      "spinner",
+      "glass",
+      "keyboard-avoider",
+      "use-keyboard-avoidance",
+      "soundwave",
+      "switch",
+      "field",
+      "label",
+      "separator"
+    ],
+    "reasoning": [
+      "reasoning",
+      "cn",
+      "collapse",
+      "icons",
+      "use-direction",
+      "shimmer",
+      "text"
+    ],
+    "sources": [
+      "sources",
+      "cn",
+      "collapse",
+      "icons",
+      "use-direction",
+      "text"
+    ],
+    "switch": [
+      "switch",
+      "field",
+      "label",
+      "text",
+      "use-direction",
+      "separator",
+      "cn",
+      "haptics",
+      "native"
+    ],
+    "select": [
+      "select",
+      "bottom-sheet",
+      "cn",
+      "haptics",
+      "icons",
+      "use-direction",
+      "native",
+      "portal",
+      "focus-restoration-store",
+      "modal-isolation-store",
+      "scrim",
+      "text",
+      "use-back-handler",
+      "input-group",
+      "input",
+      "keyboard-avoider",
+      "use-keyboard-avoidance",
+      "label"
+    ],
+    "empty-state": [
+      "empty-state",
+      "text",
+      "use-direction"
+    ],
+    "skeleton": [
+      "skeleton",
+      "cn"
+    ],
+    "loader": [
+      "loader",
+      "cn",
+      "icons",
+      "use-direction"
+    ],
+    "separator": [
+      "separator",
+      "cn",
+      "text",
+      "use-direction"
+    ],
+    "frame": [
+      "frame",
+      "cn",
+      "icons",
+      "use-direction",
+      "text"
+    ],
+    "field": [
+      "field",
+      "label",
+      "text",
+      "use-direction",
+      "separator",
+      "cn"
+    ],
+    "checkbox": [
+      "checkbox",
+      "icons",
+      "use-direction",
+      "text"
+    ],
+    "radio-group": [
+      "radio-group",
+      "cn",
+      "text",
+      "use-direction"
+    ],
+    "search-bar": [
+      "search-bar",
+      "animated-pressable",
+      "icons",
+      "use-direction",
+      "input",
+      "keyboard-avoider",
+      "text",
+      "use-keyboard-avoidance",
+      "label",
+      "spinner"
+    ],
+    "calendar": [
+      "calendar",
+      "cn",
+      "date",
+      "icons",
+      "use-direction",
+      "popover",
+      "bottom-sheet",
+      "haptics",
+      "native",
+      "portal",
+      "focus-restoration-store",
+      "modal-isolation-store",
+      "scrim",
+      "text",
+      "use-back-handler"
+    ],
+    "date-picker": [
+      "date-picker",
+      "button",
+      "animated-pressable",
+      "cn",
+      "icons",
+      "use-direction",
+      "native",
+      "spinner",
+      "text",
+      "calendar",
+      "date",
+      "popover",
+      "bottom-sheet",
+      "haptics",
+      "portal",
+      "focus-restoration-store",
+      "modal-isolation-store",
+      "scrim",
+      "use-back-handler"
+    ],
+    "time-picker": [
+      "time-picker",
+      "button",
+      "animated-pressable",
+      "cn",
+      "icons",
+      "use-direction",
+      "native",
+      "spinner",
+      "text",
+      "dialog",
+      "portal",
+      "focus-restoration-store",
+      "modal-isolation-store",
+      "scrim",
+      "use-back-handler",
+      "haptics",
+      "popover",
+      "bottom-sheet",
+      "time"
+    ],
+    "chip": [
+      "chip",
+      "animated-pressable",
+      "cn",
+      "haptics",
+      "icons",
+      "use-direction",
+      "text"
+    ],
+    "swipe": [
+      "swipe",
+      "animated-pressable",
+      "cn",
+      "haptics",
+      "icons",
+      "use-direction",
+      "text"
+    ]
+  },
+  "legacyFiles": [],
+  "registry": "https://panelui.dev/r"
+}

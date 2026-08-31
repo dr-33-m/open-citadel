@@ -1,13 +1,12 @@
 import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, Pencil, RotateCcw, Star, StarOff, Trash2, XCircle } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { Sheet } from '@/components/ui/sheet';
-import { Touchable } from '@/components/ui/touchable';
+import { Item } from '@/components/ui/item';
 
 import { ThemedText } from '@/components/themed-text';
-import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
 import type { BookStatus } from '@/stores/books';
 import type { books as booksTable } from '@/db/schema';
 
@@ -25,6 +24,11 @@ type BookActionSheetProps = {
   onEditTitle?: (bookId: string) => void;
 };
 
+/** ThemedText/lucide icons take a literal color, not a className. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
 export function BookActionSheet({
   visible,
   book,
@@ -36,30 +40,19 @@ export function BookActionSheet({
   onDelete,
   onEditTitle,
 }: BookActionSheetProps) {
-  const colors = useColors();
-  const styles = React.useMemo(() => StyleSheet.create({
-    sheet: {
-      backgroundColor: colors.surface.low,
-      paddingHorizontal: spacing[6],
-      paddingTop: spacing[4],
-      paddingBottom: spacing[10],
-    },
-    bookTitle: {
-      marginBottom: spacing[2],
-    },
-    separator: {
-      height: 1,
-      backgroundColor: colors.surface.highest,
-    },
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[4],
-      paddingVertical: spacing[4],
-    },
-  }), [colors]);
+  const [foreground, primary, mutedForeground, destructive] = useCSSVariable([
+    '--color-foreground',
+    '--color-primary',
+    '--color-muted-foreground',
+    '--color-destructive',
+  ]);
 
-  if (!book) return null;
+  // Deliberately NOT an early `return null`: that unmounts the sheet the
+  // instant the parent clears the book, which is the same commit that closes
+  // it — so the sheet vanishes with no exit animation at all. The shell holds
+  // the last content through the close (see components/ui/sheet), so all this
+  // has to do is render nothing once there is nothing to render.
+  if (!book) return <Sheet visible={visible} onClose={onClose}>{null}</Sheet>;
 
   const isArchived = book.status === 'archived';
   const isQueued = book.status === 'queued';
@@ -113,141 +106,198 @@ export function BookActionSheet({
 
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <View style={styles.sheet}>
+      {/* Menu density: the sheet shell hands over the whole gutter (see
+          components/ui/sheet.tsx), so the rows own it — `Item`'s own `p-4`,
+          which is `layout.gutterCompact` on both axes and a 52dp row. It is
+          left to the variant rather than overridden per row because Uniwind
+          resolves `p-*` over `px-*`/`py-*` whatever the class order, so the
+          `p-0 px-4 py-3` these rows used to carry silently collapsed to no
+          padding at all: a 20dp tap target, and icons flush against the
+          sheet's edge. The hairlines between rows stay full-bleed, which is
+          what makes a run of them read as a menu rather than a list. */}
+      <View className="gap-4">
         <ThemedText
           type="bodySm"
-          color={colors.text.secondary}
+          color={asColor(mutedForeground)}
           numberOfLines={1}
-          style={styles.bookTitle}
+          className="px-4"
         >
           {book.title}
         </ThemedText>
 
-        {/* Open */}
-        <Touchable style={styles.row} onPress={handleOpen}>
-          <BookOpen size={20} color={colors.text.primary} />
-          <ThemedText type="bodyMd" color={colors.text.primary}>
-            Open
-          </ThemedText>
-        </Touchable>
+        {/* Divider-menu list: Item rows with plain hairline Views between
+            them (self-stretch — no percentage width to resolve, so the
+            hairline is exactly as wide as the rows above and below it). */}
+        <Item.Group>
+          {/* Open */}
+          <Item className="gap-4" onPress={handleOpen}>
+            <Item.Media>
+              <BookOpen size={20} color={asColor(foreground)} />
+            </Item.Media>
+            <Item.Content>
+              <ThemedText type="bodyMd">
+                Open
+              </ThemedText>
+            </Item.Content>
+          </Item>
 
-        <View style={styles.separator} />
+          <View className="h-px self-stretch bg-border" />
 
-        {/* Favorite toggle */}
-        <Touchable style={styles.row} onPress={handleToggleFavorite}>
-          {isFav ? (
-            <StarOff size={20} color={colors.text.primary} />
-          ) : (
-            <Star size={20} color={colors.text.primary} />
+          {/* Favorite toggle */}
+          <Item className="gap-4" onPress={handleToggleFavorite}>
+            <Item.Media>
+              {isFav ? (
+                <StarOff size={20} color={asColor(foreground)} />
+              ) : (
+                <Star size={20} color={asColor(foreground)} />
+              )}
+            </Item.Media>
+            <Item.Content>
+              <ThemedText type="bodyMd">
+                {isFav ? 'Remove from Favorites' : 'Add to Favorites'}
+              </ThemedText>
+            </Item.Content>
+          </Item>
+
+          {/* Add to Collection */}
+          {onAddToCollection && (
+            <>
+              <View className="h-px self-stretch bg-border" />
+              <Item
+                className="gap-4"
+                onPress={() => { onAddToCollection(book.id); onClose(); }}
+              >
+                <Item.Media>
+                  <FolderPlus size={20} color={asColor(foreground)} />
+                </Item.Media>
+                <Item.Content>
+                  <ThemedText type="bodyMd">
+                    Add to Collection
+                  </ThemedText>
+                </Item.Content>
+              </Item>
+            </>
           )}
-          <ThemedText type="bodyMd" color={colors.text.primary}>
-            {isFav ? 'Remove from Favorites' : 'Add to Favorites'}
-          </ThemedText>
-        </Touchable>
 
-        {/* Add to Collection */}
-        {onAddToCollection && (
-          <>
-            <View style={styles.separator} />
-            <Touchable style={styles.row} onPress={() => { onAddToCollection(book.id); onClose(); }}>
-              <FolderPlus size={20} color={colors.text.primary} />
-              <ThemedText type="bodyMd" color={colors.text.primary}>
-                Add to Collection
-              </ThemedText>
-            </Touchable>
-          </>
-        )}
+          {/* Remove from Currently Reading — only if currently reading */}
+          {isReading && (
+            <>
+              <View className="h-px self-stretch bg-border" />
+              <Item className="gap-4" onPress={handleRemoveFromCurrentlyReading}>
+                <Item.Media>
+                  <XCircle size={20} color={asColor(foreground)} />
+                </Item.Media>
+                <Item.Content>
+                  <ThemedText type="bodyMd">
+                    Remove from Currently Reading
+                  </ThemedText>
+                </Item.Content>
+              </Item>
+            </>
+          )}
 
-        {/* Remove from Currently Reading — only if currently reading */}
-        {isReading && (
-          <>
-            <View style={styles.separator} />
-            <Touchable style={styles.row} onPress={handleRemoveFromCurrentlyReading}>
-              <XCircle size={20} color={colors.text.primary} />
-              <ThemedText type="bodyMd" color={colors.text.primary}>
-                Remove from Currently Reading
-              </ThemedText>
-            </Touchable>
-          </>
-        )}
+          {/* Add to Queue — only if not already queued or archived */}
+          {!isQueued && !isArchived && (
+            <>
+              <View className="h-px self-stretch bg-border" />
+              <Item className="gap-4" onPress={handleQueue}>
+                <Item.Media>
+                  <Clock size={20} color={asColor(foreground)} />
+                </Item.Media>
+                <Item.Content>
+                  <ThemedText type="bodyMd">
+                    Add to Queue
+                  </ThemedText>
+                </Item.Content>
+              </Item>
+            </>
+          )}
 
-        {/* Add to Queue — only if not already queued or archived */}
-        {!isQueued && !isArchived && (
-          <>
-            <View style={styles.separator} />
-            <Touchable style={styles.row} onPress={handleQueue}>
-              <Clock size={20} color={colors.text.primary} />
-              <ThemedText type="bodyMd" color={colors.text.primary}>
-                Add to Queue
-              </ThemedText>
-            </Touchable>
-          </>
-        )}
+          {/* Remove from Queue — only if currently queued */}
+          {isQueued && (
+            <>
+              <View className="h-px self-stretch bg-border" />
+              <Item className="gap-4" onPress={handleRemoveFromQueue}>
+                <Item.Media>
+                  <MinusCircle size={20} color={asColor(foreground)} />
+                </Item.Media>
+                <Item.Content>
+                  <ThemedText type="bodyMd">
+                    Remove from Queue
+                  </ThemedText>
+                </Item.Content>
+              </Item>
+            </>
+          )}
 
-        {/* Remove from Queue — only if currently queued */}
-        {isQueued && (
-          <>
-            <View style={styles.separator} />
-            <Touchable style={styles.row} onPress={handleRemoveFromQueue}>
-              <MinusCircle size={20} color={colors.text.primary} />
-              <ThemedText type="bodyMd" color={colors.text.primary}>
-                Remove from Queue
-              </ThemedText>
-            </Touchable>
-          </>
-        )}
+          {/* Mark as Finished — only if not already archived */}
+          {!isArchived && (
+            <>
+              <View className="h-px self-stretch bg-border" />
+              <Item className="gap-4" onPress={handleFinish}>
+                <Item.Media>
+                  <CheckCircle size={20} color={asColor(primary)} />
+                </Item.Media>
+                <Item.Content>
+                  <ThemedText type="bodyMd" color={asColor(primary)}>
+                    Mark as Finished
+                  </ThemedText>
+                </Item.Content>
+              </Item>
+            </>
+          )}
 
-        {/* Mark as Finished — only if not already archived */}
-        {!isArchived && (
-          <>
-            <View style={styles.separator} />
-            <Touchable style={styles.row} onPress={handleFinish}>
-              <CheckCircle size={20} color={colors.primary.default} />
-              <ThemedText type="bodyMd" color={colors.primary.default}>
-                Mark as Finished
-              </ThemedText>
-            </Touchable>
-          </>
-        )}
+          {/* Mark as Unfinished — only if already archived */}
+          {isArchived && (
+            <>
+              <View className="h-px self-stretch bg-border" />
+              <Item className="gap-4" onPress={handleUnfinish}>
+                <Item.Media>
+                  <RotateCcw size={20} color={asColor(mutedForeground)} />
+                </Item.Media>
+                <Item.Content>
+                  <ThemedText type="bodyMd" color={asColor(mutedForeground)}>
+                    Mark as Unfinished
+                  </ThemedText>
+                </Item.Content>
+              </Item>
+            </>
+          )}
 
-        {/* Mark as Unfinished — only if already archived */}
-        {isArchived && (
-          <>
-            <View style={styles.separator} />
-            <Touchable style={styles.row} onPress={handleUnfinish}>
-              <RotateCcw size={20} color={colors.text.secondary} />
-              <ThemedText type="bodyMd" color={colors.text.secondary}>
-                Mark as Unfinished
-              </ThemedText>
-            </Touchable>
-          </>
-        )}
+          {/* Edit Title */}
+          {onEditTitle && (
+            <>
+              <View className="h-px self-stretch bg-border" />
+              <Item className="gap-4" onPress={handleEditTitle}>
+                <Item.Media>
+                  <Pencil size={20} color={asColor(foreground)} />
+                </Item.Media>
+                <Item.Content>
+                  <ThemedText type="bodyMd">
+                    Edit Title
+                  </ThemedText>
+                </Item.Content>
+              </Item>
+            </>
+          )}
 
-        {/* Edit Title */}
-        {onEditTitle && (
-          <>
-            <View style={styles.separator} />
-            <Touchable style={styles.row} onPress={handleEditTitle}>
-              <Pencil size={20} color={colors.text.primary} />
-              <ThemedText type="bodyMd" color={colors.text.primary}>
-                Edit Title
-              </ThemedText>
-            </Touchable>
-          </>
-        )}
-
-        {/* Delete */}
-        {onDelete && (
-          <>
-            <View style={styles.separator} />
-            <Touchable style={styles.row} onPress={handleDelete}>
-              <Trash2 size={20} color="#e05252" />
-              <ThemedText type="bodyMd" color="#e05252">
-                Delete Book
-              </ThemedText>
-            </Touchable>
-          </>
-        )}
+          {/* Delete */}
+          {onDelete && (
+            <>
+              <View className="h-px self-stretch bg-border" />
+              <Item className="gap-4" onPress={handleDelete}>
+                <Item.Media>
+                  <Trash2 size={20} color={asColor(destructive)} />
+                </Item.Media>
+                <Item.Content>
+                  <ThemedText type="bodyMd" color={asColor(destructive)}>
+                    Delete Book
+                  </ThemedText>
+                </Item.Content>
+              </Item>
+            </>
+          )}
+        </Item.Group>
       </View>
     </Sheet>
   );

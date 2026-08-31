@@ -1,5 +1,4 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
 
 /**
  * Local daily check-in reminders. Entirely on-device — the pit wall calls the
@@ -44,7 +43,7 @@ export async function syncCompassReminders(args: {
     if (!args.hasActiveGoal) return;
     if (!(await ensurePermission())) return;
 
-    if (Platform.OS === 'android') {
+    if (process.env.EXPO_OS === 'android') {
       await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
         name: 'Compass check-ins',
         importance: Notifications.AndroidImportance.DEFAULT,

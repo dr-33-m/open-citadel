@@ -1,53 +1,11 @@
-import { Easing } from 'react-native-reanimated';
+import { Easing, ReduceMotion, withDelay, withTiming } from 'react-native-reanimated';
 
-// ── Colors: Obsidian & Gold (dark) ───────────────────────────────────
-export const darkColors = {
-  surface: {
-    base: '#131313',
-    low: '#1c1b1b',
-    mid: '#252525',
-    highest: '#353534',
-  },
-  primary: {
-    default: '#f2ca50',
-    container: '#d4af37',
-  },
-  text: {
-    primary: '#d0c5af',
-    secondary: '#8a8378',
-    inverse: '#131313',
-  },
-  outline: {
-    variant: 'rgba(208, 197, 175, 0.15)',
-  },
-} as const;
-
-// ── Colors: Parchment & Gold (light) ─────────────────────────────────
-export const lightColors = {
-  surface: {
-    base: '#F5EEE0',
-    low: '#FDFAF4',
-    mid: '#EDE5D4',
-    highest: '#C4B89A',
-  },
-  primary: {
-    default: '#B8861A',
-    container: '#9A7015',
-  },
-  text: {
-    primary: '#1C1510',
-    secondary: '#6B6050',
-    inverse: '#F5EEE0',
-  },
-  outline: {
-    variant: 'rgba(28, 21, 16, 0.12)',
-  },
-} as const;
-
-export type AppColors = typeof darkColors;
-
-// Default export kept for non-component usage (always dark)
-export const colors = darkColors;
+/*
+ * The JS colour palette that used to live here was retired in the PanelUI
+ * migration: every colour is now a semantic token in `src/theme.css`, read
+ * through Uniwind classes or `useCSSVariable`. This module keeps only the
+ * non-colour design tokens — type, spacing, depth, motion, layout.
+ */
 
 // ── Typography: Font families ────────────────────────────────────────
 // These match the keys loaded via useFonts in _layout.tsx
@@ -183,11 +141,18 @@ export const iconSize = {
   hero: 28,
 } as const;
 
-/** Slow and elegant, no spring physics. Pair with an ease-out curve. */
+/** Slow and elegant, no spring physics. Pair with an ease-out curve.
+ *
+ * Tiers, mapped to their moments: `fast` is press/state feedback and the
+ * pulse loops (100–150ms budget), `base` is row and bubble entrances and
+ * list reflow (150–200ms), `slow` is content reveals and cross-fades —
+ * including a deferred screen body bridging the settle of a screen
+ * transition (200–250ms). Group entrances step by `stagger`. */
 export const motion = {
   fast: 120,
   base: 180,
   slow: 250,
+  stagger: 40,
 } as const;
 
 /** The one curve every animation in the app uses — decelerating into rest,
@@ -207,5 +172,153 @@ export const easing = Easing.out(Easing.cubic);
  * difference from a custom bezier isn't perceptible. */
 export const easingCss = 'ease-out';
 
+/**
+ * The app's grow-in and shrink-out, for something small that appears in place:
+ * an icon swapping for another, a control arriving on a screen already built.
+ *
+ * They exist because Reanimated's `ZoomIn`/`ZoomOut` travel all the way to and
+ * from `scale(0)`, and nothing in the physical world appears out of, or
+ * vanishes into, nothing — an element that does reads as conjured rather than
+ * as arriving. Starting a hair under full size and carrying opacity does the
+ * same job and reads as a real object entering the frame. The exit is quicker
+ * than the entrance: leaving is the system responding, not the user deciding.
+ *
+ * Custom entering builders bypass the reduce-motion handling the presets get
+ * for free, so each animation opts back into it explicitly. Under the setting
+ * both resolve in a single frame, which is what "no movement" means here.
+ *
+ * ```tsx
+ * <Animated.View entering={popIn()} exiting={popOut()} />
+ * ```
+ */
+const POP_SCALE = 0.92;
+
+export function popIn(duration: number = motion.fast) {
+  return () => {
+    'worklet';
+    const config = { duration, easing, reduceMotion: ReduceMotion.System };
+    return {
+      initialValues: { opacity: 0, transform: [{ scale: POP_SCALE }] },
+      animations: {
+        opacity: withTiming(1, config),
+        transform: [{ scale: withTiming(1, config) }],
+      },
+    };
+  };
+}
+
+/**
+ * A section arriving as part of a screen filling in: it rises a little and
+ * fades up, a beat behind the one above it.
+ *
+ * This is what a screen shows instead of placeholder blocks. A skeleton is a
+ * drawing of content that has not arrived, and it is worth its ugliness only
+ * when the wait is real and long enough to need explaining. When the content
+ * is a render away — which is the case on every screen in this app, because
+ * the data is local — a grey outline of it is a picture of a problem the app
+ * does not have. Revealing the real sections in sequence fills the same
+ * moment with the thing the user came for, and reads as the screen composing
+ * itself rather than as the screen waiting.
+ *
+ * The cascade is capped: past a handful of steps the delay stops being rhythm
+ * and starts being a queue, and anything that far down the screen is below the
+ * fold anyway. `withDelay` defaults to honouring the system reduce-motion
+ * setting, which drops the delay along with the movement — under that setting
+ * the whole screen simply appears, which is the point of it.
+ *
+ * ```tsx
+ * <Animated.View entering={revealIn(0)}>…</Animated.View>
+ * ```
+ */
+const REVEAL_RISE = 10;
+const REVEAL_MAX_STEPS = 6;
+
+export function revealIn(index: number = 0) {
+  return () => {
+    'worklet';
+    const delay = Math.min(index, REVEAL_MAX_STEPS) * motion.stagger;
+    const config = { duration: motion.base, easing, reduceMotion: ReduceMotion.System };
+    return {
+      initialValues: { opacity: 0, transform: [{ translateY: REVEAL_RISE }] },
+      animations: {
+        opacity: withDelay(delay, withTiming(1, config)),
+        transform: [{ translateY: withDelay(delay, withTiming(0, config)) }],
+      },
+    };
+  };
+}
+
+export function popOut(duration: number = motion.fast) {
+  return () => {
+    'worklet';
+    const config = { duration, easing, reduceMotion: ReduceMotion.System };
+    return {
+      initialValues: { opacity: 1, transform: [{ scale: 1 }] },
+      animations: {
+        opacity: withTiming(0, config),
+        transform: [{ scale: withTiming(POP_SCALE, config) }],
+      },
+    };
+  };
+}
+
 // ── Layout ───────────────────────────────────────────────────────────
 export const MaxContentWidth = 800;
+
+/**
+ * The spacing system. `spacing` above is the *scale* (which numbers exist);
+ * this is the *system* (which number to reach for). Before this existed the
+ * app had five different screen gutters and section gaps ranging from 16 to
+ * 80, which is what "no design system" looks like from the outside.
+ *
+ * Two rules cover almost every decision:
+ *
+ *  1. Horizontal position is the gutter, and there is one gutter per surface
+ *     kind. Everything at the same depth lines up on the same vertical, so a
+ *     screen reads as one column rather than a stack of unrelated slabs.
+ *  2. Vertical distance encodes relationship. Further apart means less
+ *     related, and the steps are 8 / 16 / 32 — one doubling apart, so the
+ *     hierarchy is legible without measuring. Nothing gets a gap that isn't
+ *     on this ladder.
+ *
+ * The class equivalents are in the comments: prefer the Uniwind class in
+ * `className`, and these numbers only where a runtime style is unavoidable
+ * (safe-area maths, measured heights, animated styles).
+ */
+export const layout = {
+  /** Screen gutter — every screen's content, header and section headers. `px-6` */
+  gutter: spacing[6],
+  /**
+   * Gutter for surfaces whose *rows* are the interactive target: menu sheets,
+   * message lists, transcript rows. Denser on purpose — a row that fills more
+   * of its surface reads as a control, where a narrow column of them reads as
+   * a page with dead sides. `px-4`
+   */
+  gutterCompact: spacing[4],
+  /** Padding inside a card, between its border and its content. `p-4` */
+  cardPadding: spacing[4],
+
+  /** Between two unrelated sections of a screen. `gap-8` */
+  sectionGap: spacing[8],
+  /** Between a section's header and its body, and between peers inside it. `gap-4` */
+  blockGap: spacing[4],
+  /** Between the parts of one thing — icon and label, title and subtitle. `gap-2` */
+  itemGap: spacing[2],
+
+  /** A screen's scroll content, from the header down to its first section. `pt-6` */
+  screenTop: spacing[6],
+  /**
+   * Trailing scroll clearance, added to whatever chrome floats over the
+   * bottom (tab bar, composer) so the last row is never stuck under it.
+   */
+  scrollBottom: spacing[8],
+
+  /**
+   * Sheet content, from the sheet's own chrome down to the first row. The
+   * sheet shell owns this — see `components/ui/sheet.tsx`. Sheets do NOT get
+   * bottom padding here: the shell already pays `max(insets.bottom, 16)`,
+   * and the `pb-10` call sites used to add on top of it is where "huge
+   * margin at the bottom of every sheet" came from.
+   */
+  sheetTop: spacing[5],
+} as const;

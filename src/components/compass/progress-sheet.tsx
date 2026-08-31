@@ -1,14 +1,13 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 import type { CompassScheduleStatus, CompassTelemetry } from 'samwell-shared';
 
-import { formatCompassDate, paceVerdict, SCORE_RED } from '@/components/compass/format';
+import { formatCompassDate, paceVerdict } from '@/components/compass/format';
 import { ThemedText } from '@/components/themed-text';
-import { ProgressBar } from '@/components/ui/progress-bar';
+import { Progress } from '@/components/ui/progress';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
-import { spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
 import {
   computeProgress,
   isGoalComplete,
@@ -37,51 +36,23 @@ export function ProgressSheet({
   onAdjustDates,
   onArchiveGoal,
 }: ProgressSheetProps) {
-  const colors = useColors();
   const [confirmArchive, setConfirmArchive] = React.useState(false);
+
+  // ThemedText's `color` prop needs a literal value, not a className —
+  // resolve the tokens this screen uses once, up front.
+  const mutedForegroundVar = useCSSVariable('--color-muted-foreground');
+  const primaryVar = useCSSVariable('--color-primary');
+  const successVar = useCSSVariable('--color-success');
+  const destructiveVar = useCSSVariable('--color-destructive');
+  const mutedForeground = typeof mutedForegroundVar === 'string' ? mutedForegroundVar : undefined;
+  const primary = typeof primaryVar === 'string' ? primaryVar : undefined;
+  const success = typeof successVar === 'string' ? successVar : undefined;
+  const destructive = typeof destructiveVar === 'string' ? destructiveVar : undefined;
 
   // Reset the two-tap confirm whenever the sheet is dismissed.
   React.useEffect(() => {
     if (!visible) setConfirmArchive(false);
   }, [visible]);
-
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        panel: {
-          backgroundColor: colors.surface.low,
-          paddingHorizontal: spacing[6],
-          paddingTop: spacing[4],
-          paddingBottom: spacing[10],
-          gap: spacing[6],
-        },
-        section: { gap: spacing[2] },
-        progressNumbers: {
-          flexDirection: 'row',
-          alignItems: 'baseline',
-          gap: spacing[3],
-        },
-        pace: {
-          gap: spacing[2],
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.outline.variant,
-          paddingTop: spacing[5],
-        },
-        sectionHead: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: spacing[3],
-        },
-        archive: {
-          gap: spacing[2],
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.outline.variant,
-          paddingTop: spacing[5],
-        },
-      }),
-    [colors],
-  );
 
   const progress = computeProgress(
     milestone.completedEffortUnits,
@@ -92,14 +63,11 @@ export function ProgressSheet({
 
   const status = telemetry?.scheduleStatus ?? 'unknown';
   const variance = telemetry?.varianceDays ?? null;
+  // Same pace-colour psychology as before (behind=red, ahead=green,
+  // unknown=muted, on-track=gold) — only the literal hexes moved to the
+  // theme's own semantic tokens.
   const paceTint = (s: CompassScheduleStatus) =>
-    s === 'behind'
-      ? '#e53935'
-      : s === 'ahead'
-        ? '#4caf50'
-        : s === 'unknown'
-          ? colors.text.secondary
-          : colors.primary.default;
+    s === 'behind' ? destructive : s === 'ahead' ? success : s === 'unknown' ? mutedForeground : primary;
   const paceColor = paceTint(status);
   const goalTrack = telemetry?.goalTrack ?? null;
   // Count the active milestone when its steps are all logged: archiving will
@@ -113,21 +81,21 @@ export function ProgressSheet({
 
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <View style={styles.panel}>
-        <View style={styles.section}>
-          <View style={styles.sectionHead}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+      <View className="gap-6 px-6">
+        <View className="gap-2">
+          <View className="flex-row items-center justify-between gap-3">
+            <ThemedText type="labelSm" color={mutedForeground}>
               GOAL
             </ThemedText>
             {goalTrack && goalActive && (
-              <Touchable onPress={() => onAdjustDates('goal')}>
-                <ThemedText type="labelSm" color={colors.primary.default}>
+              <Touchable onPress={() => onAdjustDates('goal')} hitSlop={12}>
+                <ThemedText type="labelSm" color={primary}>
                   ADJUST DATE
                 </ThemedText>
               </Touchable>
             )}
           </View>
-          <ThemedText type="bodyMd" color={colors.text.secondary}>
+          <ThemedText type="bodyMd" color={mutedForeground}>
             {goalTitle}
           </ThemedText>
           {goalTrack && (
@@ -135,7 +103,7 @@ export function ProgressSheet({
               <ThemedText type="bodySm" color={paceTint(goalTrack.scheduleStatus)}>
                 {paceVerdict(goalTrack.scheduleStatus, goalTrack.varianceDays)}
               </ThemedText>
-              <ThemedText type="bodySm" color={colors.text.secondary}>
+              <ThemedText type="bodySm" color={mutedForeground} style={{ fontVariant: ['tabular-nums'] }}>
                 {Math.round(goalTrack.milestonesDone * 10) / 10} of{' '}
                 {goalTrack.estimatedMilestones} milestones · target{' '}
                 {formatCompassDate(goalTrack.targetDate)}
@@ -147,14 +115,14 @@ export function ProgressSheet({
           )}
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHead}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+        <View className="gap-2">
+          <View className="flex-row items-center justify-between gap-3">
+            <ThemedText type="labelSm" color={mutedForeground}>
               MILESTONE
             </ThemedText>
             {milestone.status === 'active' && (
-              <Touchable onPress={() => onAdjustDates('milestone')}>
-                <ThemedText type="labelSm" color={colors.primary.default}>
+              <Touchable onPress={() => onAdjustDates('milestone')} hitSlop={12}>
+                <ThemedText type="labelSm" color={primary}>
                   ADJUST DATE
                 </ThemedText>
               </Touchable>
@@ -163,25 +131,25 @@ export function ProgressSheet({
           <ThemedText type="headlineMd">{milestone.title}</ThemedText>
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.progressNumbers}>
-            <ThemedText type="displayMd">{percent}%</ThemedText>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+        <View className="gap-2">
+          <View className="flex-row items-baseline gap-3">
+            <ThemedText type="displayMd" style={{ fontVariant: ['tabular-nums'] }}>{percent}%</ThemedText>
+            <ThemedText type="labelSm" color={mutedForeground} style={{ fontVariant: ['tabular-nums'] }}>
               {completed} of {milestone.estimatedEffortUnits} steps
             </ThemedText>
           </View>
-          <ProgressBar progress={progress} />
+          <Progress value={progress} minValue={0} maxValue={1} size="sm" />
         </View>
 
-        <View style={styles.pace}>
-          <ThemedText type="labelSm" color={colors.text.secondary}>
+        <View className="gap-2 border-t border-border pt-5">
+          <ThemedText type="labelSm" color={mutedForeground}>
             PACE
           </ThemedText>
           <ThemedText type="headlineSm" color={paceColor}>
             {paceVerdict(status, variance)}
           </ThemedText>
           {telemetry && (
-            <ThemedText type="bodySm" color={colors.text.secondary}>
+            <ThemedText type="bodySm" color={mutedForeground}>
               Target {formatCompassDate(telemetry.targetDate)}
               {telemetry.currentProjectedDate
                 ? `, now projected ${formatCompassDate(telemetry.currentProjectedDate)}`
@@ -190,11 +158,12 @@ export function ProgressSheet({
           )}
         </View>
 
-        <View style={styles.archive}>
+        <View className="gap-2 border-t border-border pt-5">
           <Touchable
             onPress={() => (confirmArchive ? onArchiveGoal() : setConfirmArchive(true))}
+            hitSlop={12}
           >
-            <ThemedText type="labelSm" color={confirmArchive ? SCORE_RED : colors.text.secondary}>
+            <ThemedText type="labelSm" color={confirmArchive ? destructive : mutedForeground}>
               {confirmArchive
                 ? 'TAP AGAIN TO ARCHIVE'
                 : goalComplete
@@ -203,7 +172,7 @@ export function ProgressSheet({
             </ThemedText>
           </Touchable>
           {confirmArchive && (
-            <ThemedText type="bodySm" color={colors.text.secondary}>
+            <ThemedText type="bodySm" color={mutedForeground}>
               {goalComplete
                 ? 'Your check-in history is kept, and this counts toward your rank.'
                 : "Your check-in history is kept, but this goal hasn't reached its planned scope, so it won't earn a rank."}

@@ -1,18 +1,19 @@
 import { BookOpen, Check, Lightbulb, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import { useCSSVariable } from 'uniwind';
 
 import { eq } from 'drizzle-orm';
 
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { easing, elevation, motion, spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
 import { db } from '@/db/client';
 import { chatSuggestions } from '@/db/schema';
 import { useReaderStore } from '@/stores/reader';
 import { useTimelineStore } from '@/stores/timeline';
+import { asColor } from '@/utils/colors';
 
 interface SuggestionCardProps {
   id: string;
@@ -34,7 +35,13 @@ interface SuggestionData {
  * tapped here — this card, not a blocking dialog, owns that decision.
  */
 export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: SuggestionCardProps) {
-  const colors = useColors();
+  // Literal colours for the Reanimated card shell, the lucide props, and
+  // ThemedText's `color` prop; everything on a plain View moves to classes.
+  const [surfaceTertiary, primary, mutedForeground] = useCSSVariable([
+    '--color-surface-tertiary',
+    '--color-primary',
+    '--color-muted-foreground',
+  ]);
   const [data, setData] = useState<SuggestionData | null>(null);
 
   useEffect(() => {
@@ -83,17 +90,28 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
   return (
     <Animated.View
       layout={LinearTransition.duration(motion.base).easing(easing)}
-      style={[styles.card, { backgroundColor: colors.surface.highest, borderLeftColor: colors.primary.default }]}
+      style={[
+        elevation.soft,
+        {
+          gap: spacing[2],
+          marginVertical: spacing[1],
+          paddingHorizontal: spacing[3],
+          paddingVertical: spacing[2],
+          borderLeftWidth: 3,
+          borderLeftColor: asColor(primary),
+          backgroundColor: asColor(surfaceTertiary),
+        },
+      ]}
     >
-      <ThemedText type="bodySm" color={colors.text.primary} numberOfLines={4} style={styles.quoteText}>
+      <ThemedText type="bodySm" italic numberOfLines={4}>
         {data.text}
       </ThemedText>
 
       {data.tags.length > 0 && (
-        <View style={styles.tagsRow}>
+        <View className="flex-row flex-wrap gap-1">
           {data.tags.slice(0, 3).map((tag) => (
-            <View key={tag} style={[styles.tagPill, { backgroundColor: colors.surface.mid }]}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
+            <View key={tag} className="bg-muted px-2 py-[1px]">
+              <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                 {tag}
               </ThemedText>
             </View>
@@ -102,21 +120,29 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
       )}
 
       {data.status === 'pending' && (
-        <Animated.View exiting={FadeOut.duration(motion.fast).easing(easing)} style={styles.actionsRow}>
-          <View style={styles.sourceRow}>
-            <Icon size={12} color={colors.text.secondary} />
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+        <Animated.View
+          exiting={FadeOut.duration(motion.fast).easing(easing)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: spacing[2],
+          }}
+        >
+          <View className="flex-row items-center gap-1">
+            <Icon size={12} color={asColor(mutedForeground)} />
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
               {kind === 'highlight' ? 'Save as highlight?' : 'Save this thought?'}
             </ThemedText>
           </View>
-          <View style={styles.buttonsRow}>
-            <Touchable style={styles.actionBtn} haptic="warn" onPress={handleReject}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
+          <View className="flex-row gap-4">
+            <Touchable className="py-1" haptic="warn" onPress={handleReject}>
+              <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                 REJECT
               </ThemedText>
             </Touchable>
-            <Touchable style={styles.actionBtn} haptic="commit" onPress={() => void handleApprove()}>
-              <ThemedText type="labelSm" color={colors.primary.default}>
+            <Touchable className="py-1" haptic="commit" onPress={() => void handleApprove()}>
+              <ThemedText type="labelSm" color={asColor(primary)}>
                 APPROVE
               </ThemedText>
             </Touchable>
@@ -127,10 +153,10 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
       {data.status === 'approved' && (
         <Animated.View
           entering={FadeIn.duration(motion.base).easing(easing)}
-          style={styles.sourceRow}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[1] }}
         >
-          <Check size={12} color={colors.primary.default} />
-          <ThemedText type="labelSm" color={colors.primary.default}>
+          <Check size={12} color={asColor(primary)} />
+          <ThemedText type="labelSm" color={asColor(primary)}>
             Saved
           </ThemedText>
         </Animated.View>
@@ -139,55 +165,14 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
       {data.status === 'rejected' && (
         <Animated.View
           entering={FadeIn.duration(motion.base).easing(easing)}
-          style={styles.sourceRow}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[1] }}
         >
-          <X size={12} color={colors.text.secondary} />
-          <ThemedText type="labelSm" color={colors.text.secondary}>
+          <X size={12} color={asColor(mutedForeground)} />
+          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
             Dismissed
           </ThemedText>
         </Animated.View>
       )}
     </Animated.View>
   );
-});
-
-const styles = StyleSheet.create({
-  card: {
-    borderLeftWidth: 3,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    marginVertical: spacing[1],
-    gap: spacing[2],
-    ...elevation.soft,
-  },
-  quoteText: {
-    fontStyle: 'italic',
-  },
-  sourceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[1],
-  },
-  tagPill: {
-    paddingHorizontal: spacing[2],
-    paddingVertical: 1,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[2],
-  },
-  buttonsRow: {
-    flexDirection: 'row',
-    gap: spacing[4],
-  },
-  actionBtn: {
-    paddingVertical: spacing[1],
-  },
 });

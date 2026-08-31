@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { Platform } from "react-native";
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 
@@ -168,7 +167,7 @@ export const useBooksStore = create<BooksState>((set, get) => ({
   initLibrary: async () => {
     // iOS-only: Android references EPUBs in place via SAF and never uses an
     // owned folder. On iOS we ensure the folder exists and make it the scan root.
-    if (Platform.OS !== "ios") return;
+    if (process.env.EXPO_OS !== "ios") return;
     await ensureOwnedDir();
     await db
       .insert(appSettings)

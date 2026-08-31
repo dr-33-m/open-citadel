@@ -1,10 +1,12 @@
 import React from 'react';
-import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
+import { withUniwind } from 'uniwind';
 
+import { AnimatedPressable, type AnimatedPressableProps } from '@/components/ui/animated-pressable';
 import { haptics } from '@/utils/haptics';
 
-interface TouchableProps extends Omit<PressableProps, 'style'> {
-  style?: StyleProp<ViewStyle> | ((state: { pressed: boolean }) => StyleProp<ViewStyle>);
+interface TouchableProps extends Omit<AnimatedPressableProps, 'style' | 'pressScale' | 'pressOpacity'> {
+  style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
   /** Fires when the press commits, not on touch-down. Off by default —
    * reserved for moments that actually change something, not every tap. */
@@ -18,18 +20,15 @@ interface TouchableProps extends Omit<PressableProps, 'style'> {
 }
 
 /**
- * The app's universal press primitive.
- *
- * Deliberately a plain `Pressable` with a style function: press feedback is a
- * two-state toggle, which is the one case that must NOT become a worklet. An
- * earlier pass wrapped this in `createAnimatedComponent(Pressable)` with a
- * `useSharedValue`/`useAnimatedStyle` pair — that broke the touch responder
- * across re-renders (taps stopped registering until pressed repeatedly) and
- * put a worklet on every tappable surface in the app, which made the whole UI
- * sluggish. Feedback here stays instant and free; the app's animation budget
- * is spent on entrances and state changes instead.
+ * The app's universal press primitive, built on PanelUI's `AnimatedPressable`
+ * — a UI-thread scale/opacity spring on press, confirmed on-device to not
+ * reproduce the touch-responder regression an earlier hand-rolled attempt at
+ * this same idea had (see git history: `createAnimatedComponent(Pressable)`
+ * + `useSharedValue`/`useAnimatedStyle` once dropped taps across re-renders
+ * under rapid input). `pressOpacity={0.6}` keeps the house dim the whole app
+ * already reads as "pressed"; the scale is AnimatedPressable's own default.
  */
-export function Touchable({
+function TouchableBase({
   style,
   children,
   haptic = false,
@@ -38,10 +37,22 @@ export function Touchable({
   onLongPress,
   ...props
 }: TouchableProps) {
+  // Pressable fires `onPress` on release regardless of whether `onLongPress`
+  // already fired for the same touch — without this, a long-press action
+  // (e.g. clearing something) is immediately followed by the tap action
+  // (e.g. opening it back up) on the same gesture.
+  const longPressFired = React.useRef(false);
+
   return (
-    <Pressable
+    <AnimatedPressable
       {...props}
+      pressOpacity={0.6}
+      style={style}
       onPress={(event) => {
+        if (longPressFired.current) {
+          longPressFired.current = false;
+          return;
+        }
         if (haptic) haptics[haptic]();
         onPress?.(event);
       }}
@@ -51,16 +62,24 @@ export function Touchable({
       onLongPress={
         onLongPress &&
         ((event) => {
+          longPressFired.current = true;
           if (longPressHaptic) haptics[longPressHaptic]();
           onLongPress(event);
         })
       }
-      style={({ pressed }) => {
-        const base = typeof style === 'function' ? style({ pressed }) : style;
-        return [base, pressed && { opacity: 0.6 }];
-      }}
     >
       {children}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
+
+/**
+ * `className` does not work on a custom component just because it wraps a
+ * host primitive — Uniwind only auto-instruments React Native's own built-ins
+ * (View, Text, Pressable, ...), not third-party or app components. `Touchable`
+ * wraps AnimatedPressable, which wraps a Reanimated-animated Pressable, two
+ * layers removed from anything Uniwind recognizes on its own. `withUniwind`
+ * retrofits that support once, here, so every call site can use `className`
+ * directly instead of resolving tokens by hand at each one.
+ */
+export const Touchable = withUniwind(TouchableBase);

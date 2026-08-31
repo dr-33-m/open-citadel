@@ -1,9 +1,9 @@
 import React, { Fragment } from 'react';
 import { View } from 'react-native';
 import { useMarkdown } from 'react-native-marked';
+import { useCSSVariable } from 'uniwind';
 
 import { fontFamily, spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
 
 type SamwellMarkdownProps = {
   content: string;
@@ -11,6 +11,16 @@ type SamwellMarkdownProps = {
   lineHeight?: number;
   color?: string;
 };
+
+/**
+ * These tokens are always declared in `theme.css`, so the CSS-variable
+ * lookup never actually resolves to `undefined` here — the cast only
+ * satisfies react-native-marked's `ColorsPropType`, whose fields are typed
+ * as required `ColorValue`, not `string | undefined`.
+ */
+function asColor(value: string | number | undefined): string {
+  return value as string;
+}
 
 /**
  * Renders one of Grand Maester Samwell's messages as markdown, in his serif
@@ -23,8 +33,10 @@ export function SamwellMarkdown({
   lineHeight = 24,
   color,
 }: SamwellMarkdownProps) {
-  const colors = useColors();
-  const textColor = color ?? colors.text.primary;
+  const foregroundVar = useCSSVariable('--color-foreground');
+  const primaryVar = useCSSVariable('--color-primary');
+  const surfaceTertiaryVar = useCSSVariable('--color-surface-tertiary');
+  const textColor = color ?? asColor(foregroundVar);
 
   const elements = useMarkdown(content, {
     styles: {
@@ -44,9 +56,9 @@ export function SamwellMarkdown({
     theme: {
       colors: {
         text: textColor,
-        link: colors.primary.default,
-        code: colors.surface.highest,
-        border: colors.surface.highest,
+        link: asColor(primaryVar),
+        code: asColor(surfaceTertiaryVar),
+        border: asColor(surfaceTertiaryVar),
       },
     },
   });

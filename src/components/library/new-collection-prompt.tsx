@@ -1,17 +1,14 @@
-import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
-import React, { useState } from 'react';
-import {
-  StyleSheet,
-  View,
-} from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, type TextInput } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
+import { Input } from '@/components/ui/input';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
-import { useColors } from '@/hooks/use-colors';
-import { fontFamily, spacing } from '@/constants/theme';
+import { asColor } from '@/utils/colors';
 
 type NewCollectionPromptProps = {
   visible: boolean;
@@ -24,60 +21,48 @@ export function NewCollectionPrompt({
   onClose,
   onCreate,
 }: NewCollectionPromptProps) {
-  const colors = useColors();
+  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
   const [name, setName] = useState('');
-
-  const styles = React.useMemo(() => StyleSheet.create({
-    sheet: {
-      backgroundColor: colors.surface.low,
-      paddingHorizontal: spacing[6],
-      paddingTop: spacing[4],
-      paddingBottom: spacing[10],
-      gap: spacing[5],
-    },
-    input: {
-      backgroundColor: colors.surface.mid,
-      color: colors.text.primary,
-      fontFamily: fontFamily.sans,
-      fontSize: 16,
-      paddingHorizontal: spacing[4],
-      paddingVertical: spacing[4],
-    },
-    cancel: {
-      alignItems: 'center',
-      paddingVertical: spacing[3],
-    },
-  }), [colors]);
+  /*
+   * Uncontrolled field: the text lives in the native buffer and React only
+   * mirrors it out, never back in — a keystroke landing while JS is busy
+   * can no longer be committed over by a stale `value` (dropped letters,
+   * duplicated words). Resets go through the ref's `clear()`, which empties
+   * the buffer where it actually lives.
+   */
+  const fieldRef = useRef<TextInput>(null);
 
   const handleCreate = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
     onCreate(trimmed);
     setName('');
+    fieldRef.current?.clear();
   };
 
   const handleClose = () => {
     setName('');
+    fieldRef.current?.clear();
     onClose();
   };
 
   return (
     <Sheet visible={visible} onClose={handleClose}>
-      <View style={styles.sheet}>
+      <View className="gap-6 px-6">
         <ThemedText type="headlineSm">New Collection</ThemedText>
-        <BottomSheetTextInput
-          style={styles.input}
+        <Input
+          ref={fieldRef}
           placeholder="Collection name…"
-          placeholderTextColor={colors.text.secondary}
-          value={name}
           onChangeText={setName}
           returnKeyType="done"
           onSubmitEditing={handleCreate}
         />
-        <GoldButton label="CREATE" onPress={handleCreate} />
-        <Touchable onPress={handleClose} style={styles.cancel}>
-          <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-        </Touchable>
+        <View className="gap-3">
+          <GoldButton label="CREATE" onPress={handleCreate} />
+          <Touchable onPress={handleClose} className="items-center py-3">
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>CANCEL</ThemedText>
+          </Touchable>
+        </View>
       </View>
     </Sheet>
   );

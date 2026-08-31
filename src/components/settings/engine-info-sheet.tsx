@@ -1,10 +1,9 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
-import { spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
 
 export type EngineMode = 'offline' | 'cloud';
 
@@ -39,49 +38,29 @@ const CONTENT: Record<EngineMode, EngineInfo> = {
 };
 
 export function EngineInfoSheet({ mode, onClose }: { mode: EngineMode | null; onClose: () => void }) {
-  const colors = useColors();
-
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        panel: {
-          backgroundColor: colors.surface.low,
-          paddingHorizontal: spacing[6],
-          paddingTop: spacing[4],
-          paddingBottom: spacing[10],
-          gap: spacing[4],
-        },
-        header: { gap: spacing[1] },
-        points: { gap: spacing[3] },
-        point: { flexDirection: 'row', gap: spacing[3] },
-        dot: {
-          width: 4,
-          height: 4,
-          marginTop: 7,
-          backgroundColor: colors.primary.default,
-        },
-        pointText: { flex: 1 },
-      }),
-    [colors],
-  );
+  // ThemedText's `color` prop takes a literal, never a className.
+  const primary = useCSSVariable('--color-primary');
+  const mutedForeground = useCSSVariable('--color-muted-foreground');
+  const labelColor = typeof primary === 'string' ? primary : undefined;
+  const pointColor = typeof mutedForeground === 'string' ? mutedForeground : undefined;
 
   const info = mode ? CONTENT[mode] : null;
 
   return (
     <Sheet visible={mode !== null} onClose={onClose}>
       {info && (
-        <View style={styles.panel}>
-          <View style={styles.header}>
-            <ThemedText type="labelSm" color={colors.primary.default}>
+        <View className="gap-6 px-6">
+          <View className="gap-1">
+            <ThemedText type="labelSm" color={labelColor}>
               {info.label}
             </ThemedText>
             <ThemedText type="headlineSm">{info.persona}</ThemedText>
           </View>
-          <View style={styles.points}>
+          <View className="gap-3">
             {info.points.map((point) => (
-              <View key={point} style={styles.point}>
-                <View style={styles.dot} />
-                <ThemedText type="bodySm" color={colors.text.secondary} style={styles.pointText}>
+              <View key={point} className="flex-row gap-3">
+                <View className="h-1 w-1 bg-primary" style={{ marginTop: 8 }} />
+                <ThemedText type="bodySm" color={pointColor} className="flex-1">
                   {point}
                 </ThemedText>
               </View>

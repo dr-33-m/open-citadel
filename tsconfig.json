@@ -8,6 +8,21 @@
       ],
       "@/assets/*": [
         "./assets/*"
+      ],
+      // Expo's base config sets `customConditions: ["react-native"]`, which
+      // resolves this package to its raw TypeScript source — and that source
+      // does not type-check cleanly under `strict`, so its errors land in our
+      // build. Pointing TypeScript (and only TypeScript — Metro still uses the
+      // package's own export conditions) at the shipped declarations puts it
+      // back under `skipLibCheck` where a dependency belongs.
+      "react-native-screen-transitions": [
+        "./node_modules/react-native-screen-transitions/lib/typescript/index.d.ts"
+      ],
+      "react-native-screen-transitions/expo-router": [
+        "./node_modules/react-native-screen-transitions/lib/typescript/navigators/expo-router/index.d.ts"
+      ],
+      "react-native-screen-transitions/react-navigation": [
+        "./node_modules/react-native-screen-transitions/lib/typescript/navigators/react-navigation/index.d.ts"
       ]
     }
   },

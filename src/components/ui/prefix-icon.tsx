@@ -1,8 +1,8 @@
 import type { LucideIcon } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
-import { useColors } from '@/hooks/use-colors';
 import { iconSize } from '@/constants/theme';
 
 type PrefixIconProps = {
@@ -17,25 +17,21 @@ type PrefixIconProps = {
  * about" going forward, in place of bare rows or ad-hoc icon treatments.
  */
 export function PrefixIcon({ icon: Icon, size = 40, color }: PrefixIconProps) {
-  const colors = useColors();
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        badge: {
-          width: size,
-          height: size,
-          borderWidth: 1,
-          borderColor: colors.outline.variant,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-      }),
-    [colors, size],
-  );
+  // The icon glyph is drawn by react-native-svg, which reads `color` as a
+  // literal — a className can't reach it, so the foreground token is resolved
+  // here in JS the same way the border reaches it via `border-border`.
+  const foreground = useCSSVariable('--color-foreground');
 
   return (
-    <View style={styles.badge}>
-      <Icon size={iconSize.default} color={color ?? colors.text.primary} strokeWidth={2} />
+    <View
+      className="items-center justify-center border border-border"
+      style={{ width: size, height: size }}
+    >
+      <Icon
+        size={iconSize.default}
+        color={color ?? (typeof foreground === 'string' ? foreground : undefined)}
+        strokeWidth={2}
+      />
     </View>
   );
 }

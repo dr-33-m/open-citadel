@@ -16,6 +16,7 @@ import { db } from "@/db/client";
 import { appSettings, localModels } from "@/db/schema";
 import { createLLM, type Backend } from "@dr33m/react-native-litert-lm";
 import * as Inference from "@/services/inference";
+import { formatBytes } from "@/utils/format";
 import { checkModelMemory, type MemoryEstimate } from "@/utils/memory-estimator";
 
 export interface InferenceSettings {
@@ -140,12 +141,6 @@ function modelsDir(): string {
 
 function modelFilePath(filename: string): string {
   return modelsDir() + filename;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
 }
 
 async function ensureModelsDir() {
