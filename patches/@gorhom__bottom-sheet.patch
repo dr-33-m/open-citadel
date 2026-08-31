@@ -1,0 +1,94 @@
+diff --git a/src/components/bottomSheet/BottomSheetContent.tsx b/src/components/bottomSheet/BottomSheetContent.tsx
+index 4a69a6892ff553836b72216b598451c56f6284cc..dc24def5343fc796fecee5bb59e13079e3d71553 100644
+--- a/src/components/bottomSheet/BottomSheetContent.tsx
++++ b/src/components/bottomSheet/BottomSheetContent.tsx
+@@ -1,5 +1,6 @@
+ import React, { memo, useMemo } from 'react';
+ import type { ViewProps, ViewStyle } from 'react-native';
++import { State } from 'react-native-gesture-handler';
+ import Animated, {
+   type AnimatedStyle,
+   useAnimatedStyle,
+@@ -50,6 +51,8 @@ function BottomSheetContentComponent({
+     animatedDetentsState,
+     animatedSheetHeight,
+     animatedKeyboardState,
++    animatedContentGestureState,
++    animatedHandleGestureState,
+     isInTemporaryPosition,
+   } = useBottomSheetInternal();
+   //#endregion
+@@ -199,6 +202,33 @@ function BottomSheetContentComponent({
+     const paddingBottom = detached ? 0 : animatedPaddingBottom.get();
+     const height = animatedContentHeightMax.get() + paddingBottom;
+ 
++    /**
++     * While a pan gesture is in progress, the mask has to track the gesture
++     * 1:1. `animatedPaddingBottom` derives from `animatedPosition`, which
++     * changes every frame of the drag; wrapping it in `animate()` starts a
++     * new animation each frame that never catches up, so the mask desyncs
++     * from the body's `translateY` and the content visually breaks away from
++     * the handle (up to clipping away entirely on a fast pan down). With a
++     * gesture active we set both values directly - the numbers are already
++     * correct, they just must not be animated while their target moves.
++     *
++     * @see https://github.com/gorhom/react-native-bottom-sheet/issues/2702
++     */
++    const contentGestureState = animatedContentGestureState.get();
++    const handleGestureState = animatedHandleGestureState.get();
++    const isGestureActive =
++      contentGestureState === State.BEGAN ||
++      contentGestureState === State.ACTIVE ||
++      handleGestureState === State.BEGAN ||
++      handleGestureState === State.ACTIVE;
++
++    if (isGestureActive) {
++      return {
++        paddingBottom,
++        height,
++      };
++    }
++
+     return {
+       paddingBottom: animate({
+         point: paddingBottom,
+@@ -219,7 +249,9 @@ function BottomSheetContentComponent({
+     overrideReduceMotion,
+     animatedLayoutState,
+     animatedContentHeightMax,
+-    animatedLayoutState,
++    animatedContentGestureState,
++    animatedHandleGestureState,
++    animatedPaddingBottom,
+   ]);
+   const contentContainerStyle = useMemo(
+     () => [
+diff --git a/src/utilities/animate.ts b/src/utilities/animate.ts
+index b1f6fb4318092152c14fb9d2925037bd3a44bc75..c02ade51475cb9c6acbda3bd3aacba0d478d2db9 100644
+--- a/src/utilities/animate.ts
++++ b/src/utilities/animate.ts
+@@ -38,11 +38,20 @@ export const animate = ({
+     configs.reduceMotion = overrideReduceMotion;
+   }
+ 
+-  // detect animation type
++  // detect animation type.
++  // A spring config may legally carry `duration` (it caps the settle time,
++  // e.g. useBottomSheetSpringConfigs({ duration, dampingRatio })), so the
++  // original `duration in configs` check misrouted such configs to
++  // withTiming — discarding the spring physics and the drag velocity on
++  // dismiss. Spring-only keys win over the timing keys.
+   const type =
+-    'duration' in configs || 'easing' in configs
+-      ? ANIMATION_METHOD.TIMING
+-      : ANIMATION_METHOD.SPRING;
++    'dampingRatio' in configs ||
++    'stiffness' in configs ||
++    'mass' in configs
++      ? ANIMATION_METHOD.SPRING
++      : 'duration' in configs || 'easing' in configs
++        ? ANIMATION_METHOD.TIMING
++        : ANIMATION_METHOD.SPRING;
+ 
+   if (type === ANIMATION_METHOD.TIMING) {
+     return withTiming(point, configs as WithTimingConfig, onComplete);

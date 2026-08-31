@@ -1,0 +1,32 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 65219be94626c118bbf861e81a260fe35dd21e53..1f6bce2940c095321a2f773e26e75dbe1b0d8af6 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -29,7 +29,26 @@ android {
+         }
+         
+         ndk {
+-            abiFilters 'arm64-v8a'
++            // LiteRT-LM's Maven artifact ships both arm64-v8a and x86_64, so
++            // follow the app's `reactNativeArchitectures` instead of pinning
++            // arm64. Pinning it broke x86_64 emulator builds: this module still
++            // configured an arm64-v8a build while the rest of the app (and so
++            // the NitroModules prefab it links against) was built x86_64 only,
++            // and LiteRTLM failed to link with undefined
++            // `margelo::nitro::JHybridObject::*` vtable symbols.
++            def supportedAbis = ['arm64-v8a', 'x86_64']
++            def requestedAbis = (project.findProperty('reactNativeArchitectures')
++                    ?: rootProject.findProperty('reactNativeArchitectures')
++                    ?: supportedAbis.join(','))
++                .toString()
++                .split(',')
++                .collect { it.trim() }
++            def selectedAbis = requestedAbis.findAll { supportedAbis.contains(it) }
++            if (selectedAbis.isEmpty()) {
++                selectedAbis = supportedAbis
++            }
++            abiFilters.clear()
++            abiFilters.addAll(selectedAbis)
+         }
+     }
+     
