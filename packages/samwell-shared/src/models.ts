@@ -6,6 +6,33 @@ export interface CloudModelOption {
   provider: string;
   description: string;
   capabilities: CloudModelCapability[];
+  /**
+   * The model's context window in tokens, or null when it is not known yet.
+   *
+   * Filled from OpenRouter's own model metadata rather than hardcoded here —
+   * providers widen these over time and the catalogue below would rot. The
+   * values in the catalogue are a conservative floor used before the first
+   * refresh lands, and on a device that has never reached the server.
+   *
+   * Null means "assume the floor": see `resolveContextTokens`.
+   */
+  contextTokens: number | null;
+}
+
+/**
+ * What to assume when a model's real window is unknown.
+ *
+ * Deliberately small. Every model in the catalogue is far larger than this, so
+ * guessing low costs an unnecessary compaction on a very long chat, while
+ * guessing high costs a failed request — and the failure is the one the reader
+ * sees.
+ */
+export const FALLBACK_CONTEXT_TOKENS = 32_000;
+
+export function resolveContextTokens(model: Pick<CloudModelOption, 'contextTokens'>): number {
+  return model.contextTokens && model.contextTokens > 0
+    ? model.contextTokens
+    : FALLBACK_CONTEXT_TOKENS;
 }
 
 export const CLOUD_MODEL_CATALOG: CloudModelOption[] = [
@@ -15,6 +42,7 @@ export const CLOUD_MODEL_CATALOG: CloudModelOption[] = [
     provider: 'OpenAI',
     description: 'Fast default model for everyday Samwell conversations.',
     capabilities: ['text', 'vision', 'tools'],
+    contextTokens: 128_000,
   },
   {
     id: 'anthropic/claude-sonnet-4.5',
@@ -22,6 +50,7 @@ export const CLOUD_MODEL_CATALOG: CloudModelOption[] = [
     provider: 'Anthropic',
     description: 'Strong long-form reasoning and literary analysis.',
     capabilities: ['text', 'vision', 'tools'],
+    contextTokens: 200_000,
   },
   {
     id: 'google/gemini-2.5-flash',
@@ -29,6 +58,7 @@ export const CLOUD_MODEL_CATALOG: CloudModelOption[] = [
     provider: 'Google',
     description: 'Low-latency fallback for quick answers.',
     capabilities: ['text', 'vision', 'audio', 'tools'],
+    contextTokens: 1_000_000,
   },
 ];
 

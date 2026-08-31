@@ -48,11 +48,21 @@ export async function initDb(): Promise<void> {
         capabilities TEXT NOT NULL,
         sort_order INTEGER NOT NULL,
         created_at_ms INTEGER NOT NULL,
-        updated_at_ms INTEGER NOT NULL
+        updated_at_ms INTEGER NOT NULL,
+        context_tokens INTEGER
       )`,
     ],
     'write',
   );
+
+  // Nullable with no default: null means "not refreshed from OpenRouter yet",
+  // which `resolveContextTokens` reads as the conservative floor rather than
+  // as a real window.
+  const modelInfo = await db.execute('PRAGMA table_info(cloud_models)');
+  const modelColumns = new Set(modelInfo.rows.map((row) => String(row.name)));
+  if (!modelColumns.has('context_tokens')) {
+    await db.execute('ALTER TABLE cloud_models ADD context_tokens INTEGER');
+  }
 
   const info = await db.execute('PRAGMA table_info(usage_events)');
   const columns = new Set(info.rows.map((row) => String(row.name)));
@@ -75,9 +85,9 @@ export async function initDb(): Promise<void> {
     await db.batch(
       CLOUD_MODEL_CATALOG.map((model, index) => ({
         sql: `INSERT INTO cloud_models (
-            id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms
+            id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms, context_tokens
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           model.id,
           model.label,
@@ -87,6 +97,7 @@ export async function initDb(): Promise<void> {
           index,
           now,
           now,
+          model.contextTokens,
         ],
       })),
       'write',
@@ -159,7 +170,24 @@ function rowToCloudModel(row: Record<string, unknown>): CloudModelOption {
     provider: String(row.provider),
     description: String(row.description),
     capabilities: JSON.parse(String(row.capabilities)) as CloudModelCapability[],
+    contextTokens: row.context_tokens == null ? null : Number(row.context_tokens),
   };
+}
+
+/**
+ * Record what OpenRouter says a model's context window is.
+ *
+ * Called by the refresh below rather than by request handling, so a slow or
+ * failing provider never sits in front of a chat turn.
+ */
+export async function setCloudModelContextTokens(
+  modelId: string,
+  contextTokens: number | null,
+): Promise<void> {
+  await db.execute({
+    sql: 'UPDATE cloud_models SET context_tokens = ?, updated_at_ms = ? WHERE id = ?',
+    args: [contextTokens, Date.now(), modelId],
+  });
 }
 
 export async function listCloudModels(): Promise<CloudModelOption[]> {
@@ -174,15 +202,18 @@ export async function upsertCloudModel(model: CloudModelOption): Promise<void> {
 
   await db.execute({
     sql: `INSERT INTO cloud_models (
-        id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms
+        id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms, context_tokens
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         label = excluded.label,
         provider = excluded.provider,
         description = excluded.description,
         capabilities = excluded.capabilities,
-        updated_at_ms = excluded.updated_at_ms`,
+        updated_at_ms = excluded.updated_at_ms,
+        -- Never overwrite a refreshed window with a catalogue floor: the
+        -- refresh knows the real number, an upsert from the catalogue does not.
+        context_tokens = COALESCE(excluded.context_tokens, cloud_models.context_tokens)`,
     args: [
       model.id,
       model.label,
@@ -192,6 +223,7 @@ export async function upsertCloudModel(model: CloudModelOption): Promise<void> {
       nextOrder,
       now,
       now,
+      model.contextTokens,
     ],
   });
 }
