@@ -8,15 +8,14 @@ import React, {
   useState,
 } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Animated,
-  Platform,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import { Touchable } from "@/components/ui/touchable";
 import type {
   DecorationActivatedEvent,
@@ -32,19 +31,21 @@ import type {
 } from "@dr33m/react-native-readium";
 import { ReadiumView } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCSSVariable } from "uniwind";
 
 import { HighlightMenu } from "@/components/reader/highlight-menu";
-import { ReaderHeader } from "@/components/reader/reader-header";
+import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
 import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
 import { spacing } from "@/constants/theme";
-import { useColors } from "@/hooks/use-colors";
+import { asColor } from "@/utils/colors";
 import { useBooksStore } from "@/stores/books";
 import { useChatStore } from "@/stores/chat";
 import { useReaderStore } from "@/stores/reader";
 import { useSettingsStore } from "@/stores/settings";
+import { useScreenSettled } from "@/navigation/use-screen-settled";
 import { extractChapterTextToLocator } from "@/services/book-context";
 import { suggestTags } from "@/services/tag-suggest";
 import {
@@ -52,17 +53,74 @@ import {
   stopMediaSession,
 } from "@/services/tts-media-session";
 
-// Height of the header content below the status bar
-const HEADER_CONTENT_HEIGHT = 10;
+// Height of the header content below the status bar. Read from the header
+// itself rather than guessed: this number is what the reading area reserves
+// for it, and an under-guess is invisible in code and very visible on a page.
+const HEADER_CONTENT_HEIGHT = READER_HEADER_HEIGHT;
 
 // Reserved space above the bottom safe area for the floating TTS controls /
 // page indicator, so paginated text never renders underneath them
 const FOOTER_CONTROLS_HEIGHT = spacing[16];
 
+const isAndroid = process.env.EXPO_OS === "android";
+
+/**
+ * The reading area's placeholder: full-measure serif lines in the reader's own
+ * gutters, ending mid-line the way a page does.
+ *
+ * Shared by the two waits this screen has — the book decoding, and the gap
+ * between the screen arriving and Readium's first paint — so they read as one
+ * continuous load instead of a skeleton that hands over to a black rectangle.
+ * `label` belongs on whichever copy stands for the region; a second labelled
+ * copy would announce the wait twice.
+ */
+/**
+ * The placeholder's line rhythm: mostly full measure, with a short line where
+ * a paragraph ends. Enough entries to overrun the tallest phone — the block
+ * is clipped to the reading area, so the text runs to the bottom of the page
+ * the way a real one does instead of stopping halfway down and leaving the
+ * lower half of the screen empty.
+ *
+ * Whole class strings rather than an interpolated width: the styling compiler
+ * only sees classes written out in full.
+ */
+const READING_SKELETON_LINES = [
+  "h-4 w-full", "h-4 w-[92%]", "h-4 w-[97%]", "h-4 w-[88%]",
+  "h-4 w-[95%]", "h-4 w-[58%]", "h-4 w-[94%]", "h-4 w-full",
+  "h-4 w-[85%]", "h-4 w-[96%]", "h-4 w-[90%]", "h-4 w-[66%]",
+  "h-4 w-[93%]", "h-4 w-full", "h-4 w-[89%]", "h-4 w-[97%]",
+  "h-4 w-[91%]", "h-4 w-[52%]", "h-4 w-[96%]", "h-4 w-[87%]",
+  "h-4 w-full", "h-4 w-[94%]", "h-4 w-[90%]", "h-4 w-[71%]",
+  "h-4 w-[95%]", "h-4 w-full", "h-4 w-[88%]", "h-4 w-[93%]",
+  "h-4 w-[86%]", "h-4 w-[61%]", "h-4 w-[97%]", "h-4 w-[92%]",
+  "h-4 w-full", "h-4 w-[89%]", "h-4 w-[94%]", "h-4 w-[68%]",
+];
+
+function ReadingSkeleton({ label }: { label?: string }) {
+  return (
+    <View
+      className="flex-1 gap-3 px-6"
+      style={{ marginTop: spacing[8], overflow: "hidden" }}
+    >
+      {READING_SKELETON_LINES.map((line, index) => (
+        <Skeleton
+          key={`${line}-${index}`}
+          className={line}
+          label={index === 0 ? label : undefined}
+        />
+      ))}
+    </View>
+  );
+}
+
 export default function ReaderScreen() {
-  const colors = useColors();
   const appTheme = useSettingsStore((s) => s.theme);
-  const styles = useReaderStyles(colors);
+  const [background, foreground, primary, mutedForeground] = useCSSVariable([
+    "--color-background",
+    "--color-foreground",
+    "--color-primary",
+    "--color-muted-foreground",
+  ]);
   const { id, locator: locatorParam } = useLocalSearchParams<{
     id: string;
     locator?: string;
@@ -109,6 +167,11 @@ export default function ReaderScreen() {
     chatSessionId: string | null;
     locator: Locator | null;
   } | null>(null);
+  // Open/closed is its own flag rather than `menuHighlight !== null`: the
+  // sheet needs its content for the length of its exit animation, and
+  // clearing the highlight to close would unmount the sheet mid-slide.
+  // The stale highlight costs nothing — a closed sheet renders no content.
+  const [menuOpen, setMenuOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
@@ -167,6 +230,26 @@ export default function ReaderScreen() {
       showHeader();
     }
   }, [showHeader, hideHeader]);
+
+  // Readium is the heaviest mount in the app — a WebView plus fragment
+  // inflation, all on the main thread — and mounting it in the same frames as
+  // this screen's entry transition is what starves that transition's native
+  // commit (measured: 48-82 dropped frames right after the WebView is created,
+  // and a screen left painting at a stale transform while every JS-side value
+  // says it has arrived). Waiting for the transition to settle takes the two
+  // apart; `ReadingSkeleton` below covers the wait, so nothing is gained by
+  // racing it.
+  //
+  // Latched, not live: `useScreenSettled` goes false again on blur, and letting
+  // that unmount `ReadiumView` would tear the book down and reload it every
+  // time the reader is covered by a chat or a section screen. Mount once the
+  // entrance has landed, and stay mounted.
+  // Adjusted during render rather than in an effect (the same escape hatch
+  // `components/ui/sheet` uses): the latch is derived from `settled`, and an
+  // effect would cost an extra commit before the reader could mount.
+  const settled = useScreenSettled();
+  const [readerMounted, setReaderMounted] = useState(false);
+  if (settled && !readerMounted) setReaderMounted(true);
 
   // Show header on mount
   useEffect(() => {
@@ -288,6 +371,7 @@ export default function ReaderScreen() {
           chatSessionId: highlightData.chatSessionId ?? null,
           locator: highlightData.locator ? JSON.parse(highlightData.locator) as Locator : null,
         });
+        setMenuOpen(true);
       }
     },
     [highlights],
@@ -360,7 +444,7 @@ export default function ReaderScreen() {
   ) => {
     // Navigate to existing chat session if one is already linked
     if (existingChatSessionId) {
-      setMenuHighlight(null);
+      setMenuOpen(false);
       router.push({ pathname: '/chat/[id]', params: { id: existingChatSessionId } });
       return;
     }
@@ -384,7 +468,7 @@ export default function ReaderScreen() {
     });
     await updateHighlight(highlightId, { chatSessionId: sessionId });
     setChatLoading(false);
-    setMenuHighlight(null);
+    setMenuOpen(false);
     router.push({ pathname: '/chat/[id]', params: { id: sessionId } });
   }, [currentBook, chatLoading, createChatSession, updateHighlight, router]);
 
@@ -636,11 +720,11 @@ export default function ReaderScreen() {
           locator: JSON.parse(h.locator!) as Locator,
           style: {
             type: "highlight",
-            tint: h.color || colors.primary.default,
+            tint: h.color || asColor(primary),
           },
         })),
     },
-  ], [highlights, colors]);
+  ], [highlights, primary]);
 
   // iOS: onSelectionChange never fires, so selection is handled via the native
   // menu. These become the menu items (Readium replaces the default iOS actions
@@ -649,7 +733,7 @@ export default function ReaderScreen() {
   // Must be present before the book loads on iOS.
   const selectionActions: SelectionAction[] = useMemo(
     () =>
-      Platform.OS === "ios"
+      process.env.EXPO_OS === "ios"
         ? [
             { id: "highlight", label: "Highlight" },
             { id: "copy", label: "Copy" },
@@ -675,16 +759,84 @@ export default function ReaderScreen() {
   // completely unaffected — swipes and text selection work normally.
   const headerZoneHeight = insets.top + HEADER_CONTENT_HEIGHT;
 
+  // Where the reading area's top edge sits.
+  //
+  // Readium's Android navigator pads its own reading area before it lays out
+  // a single line: the display-cutout safe inset, plus a fixed 40dp of
+  // vertical breathing room, top and bottom (`R2EpubPageFragment` and
+  // `readium_navigator_epub_vertical_padding` in the navigator's resources).
+  // None of that is visible from here, and it stacks on top of whatever this
+  // screen reserves — which is how the first line of every page ended up
+  // ~150dp down the screen while the last lines ran off the bottom edge.
+  //
+  // So the frame is placed to absorb that padding rather than sit under it:
+  // on Android its top edge is pulled up by exactly `insets.top`, which the
+  // cutout half of Readium's padding then pushes straight back down. What is
+  // left over is the 40dp, which is the gap the page actually shows — and it
+  // matches the 40dp Readium leaves at the bottom, so the text block sits
+  // evenly between the header and the screen edge. The overlap costs nothing:
+  // the band the frame gains is inside Readium's own blank padding, so no
+  // text ever renders under the header.
+  const readerTop = isAndroid ? HEADER_CONTENT_HEIGHT : headerZoneHeight;
+
   // Reserved space below the reading area, covering the home indicator safe
-  // area and room for the floating TTS controls. The controls are centered
-  // within the FULL zone (not just the portion above the safe area) so the
-  // gap above them (to the text) matches the gap below them (to the screen edge).
-  const footerZoneHeight = insets.bottom + FOOTER_CONTROLS_HEIGHT;
+  // area and — while TTS is running — room for the floating controls, which
+  // are centered within the FULL zone so the gap above them (to the text)
+  // matches the gap below them (to the screen edge).
+  //
+  // Only while TTS is running. Held open unconditionally it cost every silent
+  // reading page ~64dp of blank below the last line, for controls that were
+  // not on screen. Reading takes that space back and TTS borrows it, at the
+  // cost of one repagination when TTS starts, which is a mode change the
+  // reader is already asking for. The transient banners below still float
+  // over the text rather than reserving against it: they are dismissible and
+  // short-lived, and repaginating the page under the reader to announce one
+  // would be a far bigger interruption than the two lines they cover.
+  //
+  // Silent Android reading reserves nothing at all: Readium's own 40dp of
+  // bottom padding is already there, and it is what the gap under the header
+  // is balanced against. iOS keeps its own — the navigator there pads far
+  // less.
+  // Constant, whatever TTS is doing.
+  //
+  // This used to add `FOOTER_CONTROLS_HEIGHT` while TTS was active, which
+  // changed the reading area's height and so the WebView's. Readium
+  // repaginates on a viewport change, so the same chapter split into a
+  // different number of pages: the position moved under the reader, the
+  // passage visibly shrank, and stopping TTS repaginated back and landed
+  // several pages from where the voice had reached.
+  //
+  // The controls never needed the text to make room — they are an absolutely
+  // positioned overlay (below), like the banners. This is the same call the
+  // note above already makes for those: floating over two lines is a far
+  // smaller interruption than repaginating the page under the reader.
+  const footerZoneHeight = insets.bottom + (isAndroid ? 0 : spacing[6]);
+
+  // The overlay's own height, which is free to change because nothing lays
+  // out against it.
+  const ttsControlsZoneHeight = insets.bottom + FOOTER_CONTROLS_HEIGHT;
 
   if (isLoading || !currentBook || !currentBook.filePath) {
+    // Skeleton, not a spinner: the reader's chrome shape is known before the
+    // book decodes (header bar over a block of serif lines), so the
+    // placeholder mirrors it and the real layout settles in place instead of
+    // swapping out of a centered spinner. Readium wiring is untouched — this
+    // is only the loading branch.
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator color={colors.primary.default} size="large" />
+      <View className="flex-1 bg-background">
+        {/* Header bar: back control, title line, trailing icon cluster. */}
+        <View
+          className="flex-row items-center gap-2 px-4"
+          style={{ paddingTop: insets.top + spacing[2], paddingBottom: spacing[3] }}
+        >
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <Skeleton className="h-4 flex-1" />
+          <Skeleton className="h-9 w-9 rounded-full" />
+        </View>
+        {/* Text block: full-measure paragraphs that end mid-line, in the
+            reader's own side gutters. One skeleton carries the region's
+            screen-reader label. */}
+        <ReadingSkeleton label="Loading book" />
       </View>
     );
   }
@@ -692,55 +844,90 @@ export default function ReaderScreen() {
   const progress = currentLocator?.locations?.totalProgression;
 
   return (
-    <View style={styles.container}>
-      {/* Transparent tap zone — same height as the header.
-          Tapping here toggles the header. ReadiumView is below this,
-          so all reading interactions (swipe, selection) are untouched. */}
+    <View className="flex-1 bg-background">
+      {/* Holds the reading area's top edge. */}
+      <View pointerEvents="none" style={{ height: readerTop }} />
+
+      {/* The reading area. ReadiumView fills it absolutely rather than
+          flexing: the native view resolves `flex: 1` against the full screen
+          instead of the space its siblings leave, which sized it a whole
+          header taller than its own frame and ran the last lines of every
+          page off the bottom edge. A plain RN parent flexes correctly, and an
+          absolute fill inside one cannot get its height wrong.
+
+          Empty while leaving so the native SurfaceView doesn't flash white
+          during the slide animation, and not mounted until the entrance has
+          settled — see the note on `readerMounted`. */}
+      <View className="flex-1" style={{ marginBottom: footerZoneHeight }}>
+        {leaving || !readerMounted ? null : (
+          <ReadiumView
+            ref={readerRef}
+            style={StyleSheet.absoluteFill}
+            file={{
+              url: currentBook.filePath!,
+              initialLocation,
+            }}
+            preferences={{
+              theme: appTheme === "light" ? "light" : "dark",
+              backgroundColor: asColor(background),
+              textColor: asColor(foreground),
+              fontFamily: "serif",
+              pageMargins: 1.5,
+              lineHeight: 1.6,
+            }}
+            decorations={decorations}
+            selectionActions={selectionActions}
+            suppressNativeSelectionMenu={true}
+            onLocationChange={handleLocationChange}
+            onPublicationReady={handlePublicationReady}
+            onSelectionChange={handleSelectionChange}
+            onSelectionAction={handleSelectionAction}
+            onDecorationActivated={handleDecorationActivated}
+            onTTSStateChange={handleTTSStateChange}
+            onTTSUtterance={handleTTSUtterance}
+            onTTSError={handleTTSError}
+          />
+        )}
+
+        {/* Covers the reading area until Readium has actually painted a page.
+            Two gaps close here, and they used to look like two different
+            things: the deferred mount above, and Readium's own decode after it
+            mounts — which draws nothing, so the area was a black rectangle
+            sitting under the header. Same placeholder as the loading branch,
+            so arriving at a book is one continuous wait. `pointerEvents=none`
+            keeps the page-turn taps reaching the reader underneath the moment
+            it is live. */}
+        {!publicationReady && (
+          <View
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+            className="bg-background"
+          >
+            <ReadingSkeleton />
+          </View>
+        )}
+      </View>
+
+      {/* Transparent tap zone over the header. Sits above the reading area so
+          a tap on the bar's own background toggles the header rather than
+          reaching the page underneath. */}
       <Touchable
-        style={[styles.headerTapZone, { height: headerZoneHeight }]}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: headerZoneHeight,
+        }}
         onPress={toggleHeader}
       />
-
-      {/* ReadiumView — replaced with a dark placeholder while leaving so the
-          native SurfaceView doesn't flash white during the slide animation */}
-      {leaving ? (
-        <View style={[styles.reader, { marginBottom: footerZoneHeight }]} />
-      ) : (
-        <ReadiumView
-          ref={readerRef}
-          style={[styles.reader, { marginBottom: footerZoneHeight }]}
-          file={{
-            url: currentBook.filePath!,
-            initialLocation,
-          }}
-          preferences={{
-            theme: appTheme === "light" ? "light" : "dark",
-            backgroundColor: colors.surface.base,
-            textColor: colors.text.primary,
-            fontFamily: "serif",
-            pageMargins: 1.5,
-            lineHeight: 1.6,
-          }}
-          decorations={decorations}
-          selectionActions={selectionActions}
-          suppressNativeSelectionMenu={true}
-          onLocationChange={handleLocationChange}
-          onPublicationReady={handlePublicationReady}
-          onSelectionChange={handleSelectionChange}
-          onSelectionAction={handleSelectionAction}
-          onDecorationActivated={handleDecorationActivated}
-          onTTSStateChange={handleTTSStateChange}
-          onTTSUtterance={handleTTSUtterance}
-          onTTSError={handleTTSError}
-        />
-      )}
 
       {/* Animated header — absolutely positioned, overlays the tap zone.
           pointerEvents="box-none": container passes touches through,
           buttons (children) intercept their own taps. */}
       <Animated.View
         style={[
-          styles.headerOverlay,
+          { position: "absolute", top: 0, left: 0, right: 0 },
           {
             opacity: headerAnim,
             transform: [
@@ -781,11 +968,17 @@ export default function ReaderScreen() {
       {isTTSActive && (
         <Animated.View
           style={[
-            styles.bottomFloating,
+            {
+              position: "absolute",
+              left: 0,
+              right: 0,
+              alignItems: "center",
+              justifyContent: "center",
+            },
             {
               opacity: headerAnim,
               bottom: 0,
-              height: footerZoneHeight,
+              height: ttsControlsZoneHeight,
               transform: [
                 {
                   translateY: headerAnim.interpolate({
@@ -810,7 +1003,8 @@ export default function ReaderScreen() {
       {/* Selection bar — appears when user selects text, positioned just below the header */}
       {selectionEvent && (
         <View
-          style={[styles.topFloating, { top: headerZoneHeight + spacing[2] }]}
+          className="absolute left-0 right-0 items-center"
+          style={{ top: headerZoneHeight + spacing[2] }}
           pointerEvents="box-none"
         >
           <SelectionBar
@@ -832,7 +1026,7 @@ export default function ReaderScreen() {
       {/* Highlight menu */}
       {menuHighlight && (
         <HighlightMenu
-          visible
+          visible={menuOpen}
           highlightId={menuHighlight.id}
           highlightText={menuHighlight.text}
           currentColor={menuHighlight.color}
@@ -887,26 +1081,27 @@ export default function ReaderScreen() {
               existingTags: allTags,
             });
           }}
-          onClose={() => setMenuHighlight(null)}
+          onClose={() => setMenuOpen(false)}
         />
       )}
 
       {/* Return to progress banner — hidden when TTS is active to avoid conflicting banners */}
       {preJumpLocator && publicationReady && !isTTSActive && (
         <View
-          style={[styles.returnBanner, { bottom: insets.bottom + spacing[4] }]}
+          className="absolute left-6 right-6 flex-row items-center border border-surface-tertiary bg-card px-4 py-3"
+          style={{ bottom: insets.bottom + spacing[4] }}
         >
-          <Touchable style={styles.returnBtn} onPress={handleReturnToProgress}>
-            <ThemedText type="labelSm" color={colors.primary.default}>
+          <Touchable className="flex-1" onPress={handleReturnToProgress}>
+            <ThemedText type="labelSm" color={asColor(primary)}>
               ← RETURN TO PROGRESS
             </ThemedText>
           </Touchable>
           <Touchable
-            style={styles.returnDismiss}
+            className="pl-4"
             onPress={handleDismissReturn}
             hitSlop={8}
           >
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
               ✕
             </ThemedText>
           </Touchable>
@@ -916,24 +1111,22 @@ export default function ReaderScreen() {
       {/* TTS page-mismatch banner — shown when TTS is paused and user navigates away */}
       {ttsMismatch && isTTSActive && (
         <View
-          style={[
-            styles.returnBanner,
-            { bottom: insets.bottom + spacing[4] + 60 },
-          ]}
+          className="absolute left-6 right-6 flex-row items-center border border-surface-tertiary bg-card px-4 py-3"
+          style={{ bottom: insets.bottom + spacing[4] + 60 }}
         >
           <Touchable
-            style={styles.returnBtn}
+            className="flex-1"
             onPress={handleTTSResumeFromPaused}
           >
-            <ThemedText type="labelSm" color={colors.primary.default}>
+            <ThemedText type="labelSm" color={asColor(primary)}>
               ← RESUME FROM PAUSED
             </ThemedText>
           </Touchable>
           <Touchable
-            style={styles.returnBtn}
+            className="flex-1"
             onPress={handleTTSContinueFromHere}
           >
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
               READ FROM HERE
             </ThemedText>
           </Touchable>
@@ -970,7 +1163,6 @@ export default function ReaderScreen() {
             setBookmarkNotePrompt(null);
           }}
           onSkip={() => setBookmarkNotePrompt(null)}
-          colors={colors}
           top={headerZoneHeight}
         />
       )}
@@ -984,52 +1176,33 @@ function BookmarkNotePrompt({
   onNoteChange,
   onSave,
   onSkip,
-  colors,
   top,
 }: {
   note: string;
   onNoteChange: (text: string) => void;
   onSave: () => void;
   onSkip: () => void;
-  colors: ReturnType<typeof useColors>;
   top: number;
 }) {
+  const [primary, mutedForeground] = useCSSVariable([
+    "--color-primary",
+    "--color-muted-foreground",
+  ]);
   return (
     <View
-      style={[
-        {
-          position: "absolute",
-          left: spacing[6],
-          right: spacing[6],
-          top: top + spacing[3],
-          backgroundColor: colors.surface.low,
-          borderWidth: 1,
-          borderColor: colors.surface.highest,
-          padding: spacing[4],
-          gap: spacing[3],
-        },
-      ]}
+      className="absolute left-6 right-6 gap-3 border border-surface-tertiary bg-card p-4"
+      style={{ top: top + spacing[3] }}
     >
-      <ThemedText type="labelSm" color={colors.text.secondary}>
+      <ThemedText type="labelSm" color={asColor(mutedForeground)}>
         ADD A NOTE TO THIS BOOKMARK
       </ThemedText>
-      <View
-        style={{
-          backgroundColor: colors.surface.mid,
-          paddingHorizontal: spacing[3],
-          paddingVertical: spacing[2],
-        }}
-      >
+      <View className="bg-muted px-3 py-2">
         <TextInput
           value={note}
           onChangeText={onNoteChange}
           placeholder="What caught your attention here?"
-          placeholderTextColor={colors.text.secondary}
-          style={{
-            color: colors.text.primary,
-            fontSize: 14,
-            minHeight: 40,
-          }}
+          placeholderTextColor={asColor(mutedForeground)}
+          className="min-h-[40px] text-[14px] text-foreground"
           multiline
           autoFocus
           returnKeyType="done"
@@ -1037,70 +1210,18 @@ function BookmarkNotePrompt({
           onSubmitEditing={onSave}
         />
       </View>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "flex-end",
-          gap: spacing[4],
-        }}
-      >
+      <View className="flex-row justify-end gap-4">
         <Touchable onPress={onSkip} hitSlop={8}>
-          <ThemedText type="labelSm" color={colors.text.secondary}>
+          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
             SKIP
           </ThemedText>
         </Touchable>
         <Touchable onPress={onSave} hitSlop={8}>
-          <ThemedText type="labelSm" color={colors.primary.default}>
+          <ThemedText type="labelSm" color={asColor(primary)}>
             SAVE
           </ThemedText>
         </Touchable>
       </View>
     </View>
-  );
-}
-
-function useReaderStyles(colors: ReturnType<typeof useColors>) {
-  return useMemo(
-    () =>
-      StyleSheet.create({
-        container: { flex: 1, backgroundColor: colors.surface.base },
-        headerTapZone: { width: "100%" },
-        reader: { flex: 1 },
-        loading: {
-          flex: 1,
-          backgroundColor: colors.surface.base,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        headerOverlay: { position: "absolute", top: 0, left: 0, right: 0 },
-        bottomFloating: {
-          position: "absolute",
-          left: 0,
-          right: 0,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        topFloating: {
-          position: "absolute",
-          left: 0,
-          right: 0,
-          alignItems: "center",
-        },
-        returnBanner: {
-          position: "absolute",
-          left: spacing[6],
-          right: spacing[6],
-          flexDirection: "row",
-          alignItems: "center",
-          backgroundColor: colors.surface.low,
-          borderWidth: 1,
-          borderColor: colors.surface.highest,
-          paddingHorizontal: spacing[4],
-          paddingVertical: spacing[3],
-        },
-        returnBtn: { flex: 1 },
-        returnDismiss: { paddingLeft: spacing[4] },
-      }),
-    [colors],
   );
 }
