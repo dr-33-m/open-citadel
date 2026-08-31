@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCSSVariable } from 'uniwind';
 
 import { MaxContentWidth } from '@/constants/theme';
+import { Handover } from '@/components/navigation/handover';
 import { useBackHandler } from '@/hooks/use-back-handler';
 import { asColor } from '@/utils/colors';
 
@@ -36,6 +37,17 @@ type SheetProps = {
    * `maxHeightRatio`, which still shrinks to fit short content.
    */
   fixedHeightRatio?: number;
+  /**
+   * Several detents, as fractions of the window, smallest first. The sheet
+   * opens at the first and can be dragged up to the others.
+   *
+   * For a long list the reader may want to browse rather than glance at: it
+   * opens at a height that keeps the screen behind it in view, and grows to
+   * full height if they commit to it. Takes precedence over
+   * `fixedHeightRatio`, and like it, turns off dynamic sizing — the detents
+   * are the height, so there is nothing to measure.
+   */
+  snapRatios?: number[];
   /**
    * Set when `children` supply their own `Sheet.ScrollView` / `Sheet.FlatList`.
    *
@@ -94,6 +106,12 @@ type SheetProps = {
  * so no call site ever writes a bottom inset by hand.
  */
 const SheetBottomInsetContext = React.createContext(0);
+
+/**
+ * Whether the sheet has reached a snap point. `Sheet.Deferred` reads it to hold
+ * its body back until the rise is over — see the note on `settled` in `Sheet`.
+ */
+const SheetSettledContext = React.createContext(false);
 
 /*
  * The library exports its scrollables but not their prop types, so this is
@@ -183,6 +201,7 @@ export function Sheet({
   children,
   maxHeightRatio,
   fixedHeightRatio,
+  snapRatios,
   scrollable = false,
   keyboardBehavior = 'interactive',
   contentPanning = true,
@@ -249,7 +268,24 @@ export function Sheet({
   // site's `onClose` does not flip it, the render-phase latch above simply
   // mounts the modal again on the next render — one wasted render rather than
   // a sheet that reopens itself.
+  /**
+   * True once the sheet has arrived at a snap point.
+   *
+   * `Sheet.Deferred` mounts its body on this rather than a frame after the
+   * shell, because a commit landing mid-rise competes with the spring for the
+   * UI thread and stalls it partway up — the sheet stops, then jumps the rest
+   * of the way. Waiting costs the body a couple of hundred milliseconds behind
+   * a placeholder that is already on screen, and buys an entrance that runs
+   * through in one movement.
+   */
+  const [settled, setSettled] = React.useState(false);
+
+  const handleChange = React.useCallback((index: number) => {
+    setSettled(index >= 0);
+  }, []);
+
   const handleDismiss = React.useCallback(() => {
+    setSettled(false);
     hasPresented.current = false;
     onClose();
     setMounted(false);
@@ -281,9 +317,9 @@ export function Sheet({
 
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (
-      // The library's defaults assume several detents (the backdrop only
-      // appears past index 1); our sheets are a single detent, so index 0 IS
-      // open. `--color-scrim` carries its own alpha — the theme tuned that
+      // The library's defaults assume several detents and only show the
+      // backdrop past index 1. Whether a sheet here has one detent or
+      // several, index 0 is already open and already wants dimming. `--color-scrim` carries its own alpha — the theme tuned that
       // number per mode — so the backdrop is drawn at full opacity and the
       // colour does the dimming.
       <BottomSheetBackdrop
@@ -308,10 +344,15 @@ export function Sheet({
    */
   const sideInset = Math.max(0, (screenWidth - MaxContentWidth) / 2);
 
-  const snapPoints = React.useMemo(
-    () => (fixedHeightRatio != null ? [`${Math.round(fixedHeightRatio * 100)}%`] : undefined),
-    [fixedHeightRatio],
-  );
+  const snapPoints = React.useMemo(() => {
+    if (snapRatios && snapRatios.length > 0) {
+      return snapRatios.map((ratio) => `${Math.round(ratio * 100)}%`);
+    }
+    return fixedHeightRatio != null ? [`${Math.round(fixedHeightRatio * 100)}%`] : undefined;
+  }, [snapRatios, fixedHeightRatio]);
+
+  /** True when the sheet's height comes from detents rather than its content. */
+  const hasDetents = snapPoints != null;
 
   /** Rule 3 of the spacing contract. */
   const bottomInset = bare ? 0 : Math.max(insets.bottom, 16);
@@ -373,10 +414,17 @@ export function Sheet({
 
   let body: React.ReactNode;
   let contentOwesBottomInset = 0;
-  if (fixedHeightRatio != null) {
-    // The shell owns the box, so it pays the inset here and the content —
-    // scroll region, pinned footer, whatever the caller composed — flexes
-    // inside what is left.
+  if (hasDetents) {
+    // Any sheet whose height comes from detents — one `fixedHeightRatio` or
+    // several `snapRatios` — is in this case: the shell owns the box, so it
+    // pays the inset here and the content — scroll region, pinned footer,
+    // whatever the caller composed — flexes inside what is left.
+    //
+    // A detented sheet must never fall through to the `BottomSheetView`
+    // branch below. That wrapper registers itself as "content does not
+    // scroll" and is absolutely positioned with no height, so a list inside
+    // one is handed no scroll gesture and no box to scroll within: it renders
+    // and then refuses to move.
     body = <View style={styles.fill}>{heldChildren}</View>;
   } else if (scrollable) {
     // A dynamically-sized scrollable reports its own content height to the
@@ -397,7 +445,7 @@ export function Sheet({
       ref={ref}
       // Never under the status bar, whatever the content measures to.
       topInset={insets.top}
-      enableDynamicSizing={fixedHeightRatio == null}
+      enableDynamicSizing={!hasDetents}
       snapPoints={snapPoints}
       maxDynamicContentSize={
         maxHeightRatio != null ? screenHeight * maxHeightRatio : undefined
@@ -422,12 +470,51 @@ export function Sheet({
       handleComponent={bare ? null : undefined}
       handleStyle={styles.handle}
       handleIndicatorStyle={styles.handleIndicator}
+      onChange={handleChange}
       onDismiss={handleDismiss}
     >
       <SheetBottomInsetContext.Provider value={contentOwesBottomInset}>
-        {body}
+        <SheetSettledContext.Provider value={settled}>{body}</SheetSettledContext.Provider>
       </SheetBottomInsetContext.Provider>
     </BottomSheetModal>
+  );
+}
+
+/**
+ * A sheet's expensive region, held behind a placeholder until it has painted.
+ *
+ * `present()` is called from a layout effect, but the render that schedules it
+ * is the same render that mounts the sheet's children — so on a heavy body the
+ * open animation cannot start until every row, and every gesture and shared
+ * value it registers, has mounted and committed. That is the "tap, dead air,
+ * sheet arrives already full" the data-heavy drawers had: the sheet was not
+ * slow to animate, it was waiting for its contents.
+ *
+ * Wrap only the expensive part — the list, not the title above it or the
+ * search field beside it. Deferring the whole body would hold back chrome that
+ * costs nothing to render, and the shift as it arrived would read as exactly
+ * the pop this exists to remove.
+ *
+ * Only sound inside a sheet whose height is fixed. A dynamically-sized sheet
+ * derives its height by measuring its content, so it would open to the
+ * placeholder's height and then jump when the real body arrived.
+ *
+ * See `Handover` for why the placeholder outlives the content's mount rather
+ * than being swapped out on the same commit.
+ */
+function SheetDeferred({
+  skeleton,
+  children,
+}: {
+  skeleton: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const settled = React.useContext(SheetSettledContext);
+
+  return (
+    <Handover skeleton={skeleton} surface="popover" ready={settled}>
+      {children}
+    </Handover>
   );
 }
 
@@ -477,6 +564,23 @@ function SheetScrollView({ contentContainerStyle, ...props }: SheetScrollViewPro
  * never "omit and fall back". The app's lists already render that way (see
  * the recycling notes in samwell-compass-timeline and chat-history-sheet).
  */
+/**
+ * How far past the viewport FlashList keeps cells mounted, in px.
+ *
+ * The library's default is 250, and it splits that buffer by travel direction
+ * — 0.7 ahead, 0.3 behind — so a downward scroll only has ~175px of lookahead.
+ * These sheets have ~150px rows, which is barely one row: a hard fling moves
+ * further than that in a couple of frames, so it outruns the window and you
+ * watch recycled cells sit blank until they are re-bound. That is the
+ * "items disappear and come back" people report, and it is the render window
+ * rather than any re-measuring.
+ *
+ * ~700px of lookahead instead, about four rows. Sheet rows are cheap — text
+ * and a chip — so the extra mounted cells cost far less than the blanking did.
+ * Before the spread, so a list with heavier rows can still lower it.
+ */
+const SHEET_DRAW_DISTANCE = 1000;
+
 function SheetFlatList<ItemT>({
   contentContainerStyle,
   ...props
@@ -485,6 +589,7 @@ function SheetFlatList<ItemT>({
   const renderScrollComponent = useBottomSheetScrollableCreator();
   return (
     <FlashList<ItemT>
+      drawDistance={SHEET_DRAW_DISTANCE}
       {...props}
       renderScrollComponent={renderScrollComponent}
       scrollEventThrottle={16}
@@ -499,5 +604,6 @@ function SheetFlatList<ItemT>({
 
 Sheet.ScrollView = SheetScrollView;
 Sheet.FlatList = SheetFlatList;
+Sheet.Deferred = SheetDeferred;
 
 export { SheetFlatList, SheetScrollView };

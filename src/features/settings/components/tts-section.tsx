@@ -1,14 +1,19 @@
 import React from 'react';
-import { Modal, SectionList, View } from 'react-native';
+import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 import { AudioLines, ChevronUp, Volume2 } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useVoicePicker, type VoiceItem } from '@/features/settings/hooks/use-voice-picker';
+import {
+  useVoicePicker,
+  type VoiceItem,
+  type VoiceListRow,
+} from '@/features/settings/hooks/use-voice-picker';
 import { SettingsSection } from '@/features/settings/components/settings-section';
 import { ThemedText } from '@/components/themed-text';
+import { VoiceListSkeleton } from '@/components/skeletons/voice-list-skeleton';
+import { PageFade } from '@/components/scroll-fades';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
-import { Spinner } from '@/components/ui/spinner';
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { elevation } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
@@ -33,7 +38,7 @@ export function TtsSection() {
   const picker = useVoicePicker(ttsVoice);
 
   return (
-    <SettingsSection index={5} label="TEXT TO SPEECH">
+    <SettingsSection label="TEXT TO SPEECH">
       <ThemedText type="labelSm" color={asColor(mutedForeground)}>READING SPEED</ThemedText>
       <View className="flex-row flex-wrap gap-2">
         {TTS_RATES.map((r) => {
@@ -151,7 +156,6 @@ function VoicePickerModal({
     '--color-primary',
     '--color-muted-foreground',
   ]);
-  const insets = useSafeAreaInsets();
 
   /*
    * `onSelect` arrives as an inline arrow from the call site, so it cannot
@@ -169,17 +173,27 @@ function VoicePickerModal({
     [],
   );
 
-  const renderItem = React.useCallback(
-    ({ item }: { item: VoiceItem }) => {
-      const isSelected = item.identifier
-        ? currentVoice === item.identifier
+
+  const renderRow = React.useCallback(
+    ({ item }: { item: VoiceListRow }) => {
+      if (item.kind === 'header') {
+        return (
+          <View className="bg-popover px-6 py-2">
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+              {item.title}
+            </ThemedText>
+          </View>
+        );
+      }
+      const { voice } = item;
+      const isSelected = voice.identifier
+        ? currentVoice === voice.identifier
         : currentVoice === null;
-      const isPreviewing = picker.previewing === item.identifier;
       return (
         <VoiceRow
-          voice={item}
+          voice={voice}
           isSelected={isSelected}
-          isPreviewing={isPreviewing}
+          isPreviewing={picker.previewing === voice.identifier}
           primary={asColor(primary)}
           mutedForeground={asColor(mutedForeground)}
           onSelect={handleSelect}
@@ -190,40 +204,39 @@ function VoicePickerModal({
     [currentVoice, picker.previewing, picker.preview, primary, mutedForeground, handleSelect],
   );
 
-  const renderSectionHeader = React.useCallback(
-    ({ section }: { section: { title: string } }) => (
-      <View className="bg-background px-6 py-2">
-        <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-          {section.title}
-        </ThemedText>
-      </View>
-    ),
-    [mutedForeground],
-  );
-
   return (
-    <Modal visible={picker.visible} animationType="slide" onRequestClose={picker.close}>
-      <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
-        <View className="flex-row items-center justify-between border-b border-surface-tertiary px-6 py-5">
-          <ThemedText type="headlineMd">Select Voice</ThemedText>
-          <Touchable onPress={picker.close} hitSlop={12}>
-            <ThemedText type="bodyMd" color={asColor(primary)}>Done</ThemedText>
-          </Touchable>
-        </View>
-
-        {picker.loading ? (
-          <View className="flex-1 items-center justify-center">
-            <Spinner size="sm" />
-          </View>
-        ) : (
-          <SectionList
-            sections={picker.sections}
-            keyExtractor={(item) => item.identifier || '__default__'}
-            renderSectionHeader={renderSectionHeader}
-            renderItem={renderItem}
-          />
-        )}
+    /*
+     * Two detents rather than a full-screen modal: the list is long enough to
+     * browse, so it opens at half height — the settings row you came from
+     * stays visible behind it — and grows to full only if you commit to
+     * hunting through it. The old `Modal` could only be all or nothing.
+     */
+    <Sheet visible={picker.visible} onClose={picker.close} snapRatios={[0.5, 1]}>
+      <View className="flex-row items-center justify-between px-6 pb-3">
+        <ThemedText type="headlineSm">Select voice</ThemedText>
       </View>
-    </Modal>
+
+      {/* Two waits, one placeholder. `Sheet.Deferred` covers the frames while
+          the list mounts, and the same skeleton covers the device's voice
+          query — so the sheet goes skeleton to voices with nothing in
+          between, rather than a spinner that swaps for a list. */}
+      <Sheet.Deferred skeleton={<VoiceListSkeleton />}>
+        {picker.loading ? (
+          <VoiceListSkeleton />
+        ) : (
+          <PageFade edges="both" surface="popover">
+            <Sheet.FlatList
+              data={picker.rows}
+              keyExtractor={(item: VoiceListRow) => item.key}
+              // Headings and voices recycle in separate pools; without this a
+              // heading cell would be re-bound to a voice and keep its styling.
+              getItemType={(item: VoiceListRow) => item.kind}
+              extraData={picker.previewing}
+              renderItem={renderRow}
+            />
+          </PageFade>
+        )}
+      </Sheet.Deferred>
+    </Sheet>
   );
 }

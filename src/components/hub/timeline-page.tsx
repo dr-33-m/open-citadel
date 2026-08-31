@@ -7,6 +7,7 @@ import { useCSSVariable } from 'uniwind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from "expo-router/react-navigation";
 
+import { PageFade } from '@/components/scroll-fades';
 import { DeferredBody } from '@/components/navigation/deferred-body';
 import { Reveal } from '@/components/navigation/reveal';
 import { CalendarPicker } from '@/components/timeline/calendar-picker';
@@ -22,7 +23,7 @@ import { Fab, fabClearance } from '@/components/ui/fab';
 import { Item } from '@/components/ui/item';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { Sheet } from '@/components/ui/sheet';
-import { iconSize, layout, MaxContentWidth } from '@/constants/theme';
+import { MaxContentWidth, iconSize, layout } from '@/constants/theme';
 import { db } from '@/db/client';
 import { highlights, thoughts } from '@/db/schema';
 import { fetchAllTags } from '@/stores/reader';
@@ -212,48 +213,51 @@ export function TimelinePage() {
           The date and the entries below reveal in sequence as it lands. */}
       <DeferredBody>
         <>
-        <ScrollView
-        className="flex-1"
-        // The content column: centred and capped on wide screens, pixel-
-        // identical on phones (the cap never bites below 800). The children
-        // keep their own `px-6` gutters inside the column.
-        style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
-        contentContainerStyle={{
-          paddingBottom: layout.scrollBottom + fabClearance(insets.bottom),
-        }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Date section — first in the cascade; the entries below carry on
-            the same rhythm with their own stagger. */}
-        <Reveal index={0} className="gap-3 px-6 pt-6">
-          <ThemedText type="headlineSm" color={asColor(mutedForeground)}>
-            {dateDisplay}
-          </ThemedText>
-        </Reveal>
+        {/* Replaces the header's bottom rule — see library-page. */}
+        <PageFade>
+          <ScrollView
+          className="flex-1"
+          // The content column: centred and capped on wide screens, pixel-
+          // identical on phones (the cap never bites below 800). The children
+          // keep their own `px-6` gutters inside the column.
+          style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+          contentContainerStyle={{
+            paddingBottom: layout.scrollBottom + fabClearance(insets.bottom),
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Date section — first in the cascade; the entries below carry on
+              the same rhythm with their own stagger. */}
+          <Reveal index={0} className="gap-3 px-6 pt-6">
+            <ThemedText type="headlineSm" color={asColor(mutedForeground)}>
+              {dateDisplay}
+            </ThemedText>
+          </Reveal>
 
-        {!hasEntries && (
-          <EmptyState size="lg" className="pb-0">
-            <EmptyState.Description>No activity on this day.</EmptyState.Description>
-          </EmptyState>
-        )}
+          {!hasEntries && (
+            <EmptyState size="lg" className="pb-0">
+              <EmptyState.Description>No activity on this day.</EmptyState.Description>
+            </EmptyState>
+          )}
 
-        {/* Timeline entries for the selected day, continuing the cascade the
-            date label above started — `+ 1` so the first entry lands a beat
-            after it rather than alongside it. `Reveal` caps the delay itself,
-            so a busy day does not turn into a queue. Actions live behind a
-            long-press action sheet (Swipe stays for inline list rows). */}
-        {hasEntries &&
-          groups[0].entries.map((entry, index) => (
-            <Reveal key={entry.id} index={index + 1}>
-              <TimelineEntry
-                entry={entry}
-                isLast={index === groups[0].entries.length - 1}
-                onPress={() => handleEntryPress(entry)}
-                onLongPress={() => setLongPressEntry(entry)}
-              />
-            </Reveal>
-          ))}
-      </ScrollView>
+          {/* Timeline entries for the selected day, continuing the cascade the
+              date label above started — `+ 1` so the first entry lands a beat
+              after it rather than alongside it. `Reveal` caps the delay itself,
+              so a busy day does not turn into a queue. Actions live behind a
+              long-press action sheet (Swipe stays for inline list rows). */}
+          {hasEntries &&
+            groups[0].entries.map((entry, index) => (
+              <Reveal key={entry.id} index={index + 1}>
+                <TimelineEntry
+                  entry={entry}
+                  isLast={index === groups[0].entries.length - 1}
+                  onPress={() => handleEntryPress(entry)}
+                  onLongPress={() => setLongPressEntry(entry)}
+                />
+              </Reveal>
+            ))}
+        </ScrollView>
+        </PageFade>
 
       <Fab
         accessibilityLabel="New thought"
@@ -302,21 +306,28 @@ export function TimelinePage() {
           </ThemedText>
 
           {longPressEntry?.type === 'thought' && (
-            <Item
-              className="gap-4"
-              onPress={() => {
-                const entry = longPressEntry;
-                setLongPressEntry(null);
-                if (entry) handleEditEntry(entry);
-              }}
-            >
-              <Item.Media>
-                <Pencil size={20} color={asColor(primary)} />
-              </Item.Media>
-              <Item.Content>
-                <Item.Title>Edit</Item.Title>
-              </Item.Content>
-            </Item>
+            // The rule rides with the row: a highlight has no Edit action, and
+            // a hairline left behind would open the menu with a line under
+            // nothing.
+            <>
+              <Item
+                className="gap-4"
+                onPress={() => {
+                  const entry = longPressEntry;
+                  setLongPressEntry(null);
+                  if (entry) handleEditEntry(entry);
+                }}
+              >
+                <Item.Media>
+                  <Pencil size={20} color={asColor(primary)} />
+                </Item.Media>
+                <Item.Content>
+                  <Item.Title>Edit</Item.Title>
+                </Item.Content>
+              </Item>
+
+              <View className="h-px self-stretch bg-border" />
+            </>
           )}
 
           <Item
@@ -337,6 +348,8 @@ export function TimelinePage() {
               <Item.Title>{longPressEntry?.chatSessionId ? 'View Chat' : 'Start Chat'}</Item.Title>
             </Item.Content>
           </Item>
+
+          <View className="h-px self-stretch bg-border" />
 
           <Item
             className="gap-4"

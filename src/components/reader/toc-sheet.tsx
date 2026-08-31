@@ -7,10 +7,14 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
+import { PageFade } from "@/components/scroll-fades";
 import { Input } from "@/components/ui/input";
 import { SearchBar } from "@/components/ui/search-bar";
 import { Item } from "@/components/ui/item";
 import { Sheet } from "@/components/ui/sheet";
+import { TocBookmarksSkeleton } from "@/components/skeletons/toc-bookmarks-skeleton";
+import { TocChaptersSkeleton } from "@/components/skeletons/toc-chapters-skeleton";
+import { TocHighlightsSkeleton } from "@/components/skeletons/toc-highlights-skeleton";
 import { Touchable } from "@/components/ui/touchable";
 import type { Link, Locator } from "@dr33m/react-native-readium";
 
@@ -205,14 +209,16 @@ function TocList({
   }
 
   return (
-    <Sheet.FlatList
-      style={FILL}
-      data={rows}
-      keyExtractor={(item) => item.id}
-      renderItem={renderItem}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-    />
+    <PageFade edges="both" surface="popover">
+      <Sheet.FlatList
+        style={FILL}
+        data={rows}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      />
+    </PageFade>
   );
 }
 
@@ -404,21 +410,23 @@ function HighlightsList({
   }
 
   return (
-    <Sheet.FlatList
-      style={FILL}
-      data={rows}
-      keyExtractor={(item) => item.id}
-      renderItem={renderItem}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-      ListHeaderComponent={
-        <HighlightsHeader
-          activeColor={activeColor}
-          onSelectColor={setActiveColor}
-          onSearch={setSearch}
-        />
-      }
-    />
+    <PageFade edges="both" surface="popover">
+      <Sheet.FlatList
+        style={FILL}
+        data={rows}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          <HighlightsHeader
+            activeColor={activeColor}
+            onSelectColor={setActiveColor}
+            onSearch={setSearch}
+          />
+        }
+      />
+    </PageFade>
   );
 }
 
@@ -611,14 +619,16 @@ function BookmarksList({
   }
 
   return (
-    <Sheet.FlatList
-      style={FILL}
-      data={rows}
-      keyExtractor={(item) => item.id}
-      renderItem={renderItem}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-    />
+    <PageFade edges="both" surface="popover">
+      <Sheet.FlatList
+        style={FILL}
+        data={rows}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      />
+    </PageFade>
   );
 }
 
@@ -687,6 +697,23 @@ export function TocSheet({
 
       <View className="h-px bg-surface-tertiary" />
 
+      {/* The tab strip above renders with the sheet; only the lists wait a
+          frame. A real book's chapter list runs to hundreds of rows, and all
+          three tabs' data is read on mount. */}
+      {/* The placeholder follows the tab: chapters, highlights and bookmarks
+          are three different row shapes, and a stand-in borrowed from the
+          wrong one is just a differently-shaped pop. */}
+      <Sheet.Deferred
+        skeleton={
+          activeTab === "toc" ? (
+            <TocChaptersSkeleton />
+          ) : activeTab === "highlights" ? (
+            <TocHighlightsSkeleton />
+          ) : (
+            <TocBookmarksSkeleton />
+          )
+        }
+      >
       {activeTab === "toc" && (
         <TocList
           toc={toc}
@@ -712,6 +739,7 @@ export function TocSheet({
           colors={colors}
         />
       )}
+      </Sheet.Deferred>
     </Sheet>
   );
 }

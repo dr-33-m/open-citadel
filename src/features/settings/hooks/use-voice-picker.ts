@@ -10,6 +10,11 @@ export type VoiceItem = {
 
 const PREVIEW_PHRASE = 'Hello, this is a preview of this voice.';
 
+/** One row of the picker: a language heading, or a voice under it. */
+export type VoiceListRow =
+  | { kind: 'header'; key: string; title: string }
+  | { kind: 'voice'; key: string; voice: VoiceItem };
+
 /**
  * Everything the TTS voice picker needs: loading the device's voices on
  * open, grouping them for a SectionList, previewing one, and naming the
@@ -90,10 +95,29 @@ export function useVoicePicker(currentVoice: string | null) {
     ];
   }, [voices]);
 
+  /*
+   * The same grouping, flattened for a recycling list.
+   *
+   * `Sheet.FlatList` is FlashList, which has no sections — so the headers
+   * become rows of their own and `getItemType` keeps the two shapes in
+   * separate recycling pools. Cheaper than the `SectionList` this replaced,
+   * and it is the only list type the sheet hands its scroll gesture to.
+   */
+  const rows = React.useMemo(() => {
+    const out: VoiceListRow[] = [];
+    for (const section of sections) {
+      out.push({ kind: 'header', key: `header:${section.title}`, title: section.title });
+      for (const voice of section.data) {
+        out.push({ kind: 'voice', key: voice.identifier || '__default__', voice });
+      }
+    }
+    return out;
+  }, [sections]);
+
   const currentName = React.useMemo(() => {
     if (!currentVoice) return 'System default';
     return voices.find((v) => v.identifier === currentVoice)?.name ?? currentVoice;
   }, [currentVoice, voices]);
 
-  return { visible, loading, sections, previewing, currentName, open, close, select, preview };
+  return { visible, loading, rows, previewing, currentName, open, close, select, preview };
 }

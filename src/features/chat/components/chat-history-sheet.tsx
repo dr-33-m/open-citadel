@@ -4,9 +4,11 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
+import { PageFade } from '@/components/scroll-fades';
 import { Item } from '@/components/ui/item';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Sheet } from '@/components/ui/sheet';
+import { ChatHistorySkeleton } from '@/components/skeletons/chat-history-skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Swipe, useSwipeGroup } from '@/components/ui/swipe';
 import { asColor } from '@/utils/colors';
@@ -63,9 +65,10 @@ export function ChatHistorySheet({
   onNewChat: () => void;
   onClose: () => void;
 }) {
-  const [primary, mutedForeground] = useCSSVariable([
+  const [primary, mutedForeground, foreground] = useCSSVariable([
     '--color-primary',
     '--color-muted-foreground',
+    '--color-foreground',
   ]);
 
   return (
@@ -101,6 +104,12 @@ export function ChatHistorySheet({
           its title and the New chat row over empty space. The group is the
           sheet body's fill child, so flexing it hands the remaining height
           down to the list. */}
+      {/* Every row here is a `Swipe` — a pan gesture and three animated styles
+          apiece — so mounting the list is what the sheet's open used to wait
+          on. The title and the New chat row above cost nothing and stay put. */}
+      <Sheet.Deferred
+        skeleton={<ChatHistorySkeleton />}
+      >
       <Swipe.Group className="flex-1">
         <SessionList
           sessions={sessions}
@@ -109,8 +118,10 @@ export function ChatHistorySheet({
           onRequestDelete={onRequestDelete}
           primary={asColor(primary) ?? ''}
           muted={asColor(mutedForeground) ?? ''}
+          ink={asColor(foreground) ?? ''}
         />
       </Swipe.Group>
+      </Sheet.Deferred>
     </Sheet>
   );
 }
@@ -126,6 +137,7 @@ function SessionList({
   onRequestDelete,
   primary,
   muted,
+  ink,
 }: {
   sessions: ChatSession[];
   switching: 'new' | string | null;
@@ -133,6 +145,7 @@ function SessionList({
   onRequestDelete: (session: ChatSession) => void;
   primary: string;
   muted: string;
+  ink: string;
 }) {
   const { closeAll } = useSwipeGroup();
 
@@ -148,27 +161,32 @@ function SessionList({
         onRequestDelete={onRequestDelete}
         primary={primary}
         muted={muted}
+        ink={ink}
       />
     ),
-    [switching, onSelect, onRequestDelete, primary, muted],
+    [switching, onSelect, onRequestDelete, primary, muted, ink],
   );
 
   return (
-    <Sheet.FlatList
-      style={FILL}
-      data={sessions}
-      keyExtractor={(item) => item.id}
-      // `switching` is read inside renderItem but lives outside the
-      // data, so rows would keep their old dimming without this.
-      extraData={switching}
-      // Rows dragged aside are put back the moment a scroll begins — the
-      // group's documented recipe for a list that scrolls, and half of
-      // recycling safety: a row left open must never ride along into a
-      // reused cell.
-      onScrollBeginDrag={closeAll}
-      ItemSeparatorComponent={RowSeparator}
-      renderItem={renderItem}
-    />
+    // `popover`: the fade has to resolve to the sheet's own ground, not the
+    // page behind it, or it draws a band of the wrong shade along the edge.
+    <PageFade edges="both" surface="popover">
+      <Sheet.FlatList
+        style={FILL}
+        data={sessions}
+        keyExtractor={(item) => item.id}
+        // `switching` is read inside renderItem but lives outside the
+        // data, so rows would keep their old dimming without this.
+        extraData={switching}
+        // Rows dragged aside are put back the moment a scroll begins — the
+        // group's documented recipe for a list that scrolls, and half of
+        // recycling safety: a row left open must never ride along into a
+        // reused cell.
+        onScrollBeginDrag={closeAll}
+        ItemSeparatorComponent={RowSeparator}
+        renderItem={renderItem}
+      />
+    </PageFade>
   );
 }
 
@@ -179,6 +197,7 @@ const SessionRow = React.memo(function SessionRow({
   onRequestDelete,
   primary,
   muted,
+  ink,
 }: {
   item: ChatSession;
   switching: 'new' | string | null;
@@ -186,14 +205,25 @@ const SessionRow = React.memo(function SessionRow({
   onRequestDelete: (session: ChatSession) => void;
   primary: string;
   muted: string;
+  /** The app's ink — the same colour a chat title is drawn in. */
+  ink: string;
 }) {
   return (
     <Swipe haptics>
       <Swipe.End>
+        {/* Red tile, drawn on in the app's own ink — the colour a chat title
+            uses — rather than the variant's white. The fill already carries
+            the warning, so the marks on top only have to read against it, and
+            white on red shouts twice.
+
+            `color` on the icon survives: `sizeIcon` injects a size and nothing
+            else, and lucide takes its colour from the prop rather than from
+            the tile's IconColorProvider. */}
         <Swipe.Action
-          icon={<Trash2 />}
+          icon={<Trash2 color={ink} />}
           label="Delete"
           color="destructive"
+          labelClassName="text-foreground"
           onPress={() => onRequestDelete(item)}
         />
       </Swipe.End>

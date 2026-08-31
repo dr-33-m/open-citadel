@@ -11,8 +11,10 @@ import { useCSSVariable } from 'uniwind';
 import { ChevronRight } from 'lucide-react-native';
 import { Image } from 'expo-image';
 
+import { PageFade } from '@/components/scroll-fades';
 import { Item } from '@/components/ui/item';
 import { SearchBar } from '@/components/ui/search-bar';
+import { BookListSkeleton } from '@/components/skeletons/book-list-skeleton';
 import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
 import { fontFamily, motion } from '@/constants/theme';
@@ -126,16 +128,18 @@ const BookList = React.memo(function BookList({
   );
 
   return (
-    <Sheet.FlatList
-      style={FILL}
-      data={books}
-      keyExtractor={(item) => item.id}
-      ItemSeparatorComponent={RowSeparator}
-      // A row tapped while the search keyboard is still up must select
-      // the book, not just dismiss the keyboard and lose the tap.
-      keyboardShouldPersistTaps="handled"
-      renderItem={renderItem}
-    />
+    <PageFade edges="both" surface="popover">
+      <Sheet.FlatList
+        style={FILL}
+        data={books}
+        keyExtractor={(item) => item.id}
+        ItemSeparatorComponent={RowSeparator}
+        // A row tapped while the search keyboard is still up must select
+        // the book, not just dismiss the keyboard and lose the tap.
+        keyboardShouldPersistTaps="handled"
+        renderItem={renderItem}
+      />
+    </PageFade>
   );
 });
 
@@ -245,20 +249,28 @@ export function BookPickerSheet({
         />
       </View>
 
-      {filtered.length === 0 ? (
-        <View className="flex-1 items-center p-4">
-          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            No books found
-          </ThemedText>
-        </View>
-      ) : (
-        <BookList
-          books={filtered}
-          surfaceTertiary={asColor(surfaceTertiary)}
-          mutedForeground={asColor(mutedForeground)}
-          onSelect={handleSelect}
-        />
-      )}
+      {/* The title and search field above are cheap and render with the sheet;
+          only the list waits a frame. Rows carry a cover image each, so on a
+          slow device mounting them is what used to hold the sheet at the
+          bottom of the screen. */}
+      <Sheet.Deferred
+        skeleton={<BookListSkeleton />}
+      >
+        {filtered.length === 0 ? (
+          <View className="flex-1 items-center p-4">
+            <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+              No books found
+            </ThemedText>
+          </View>
+        ) : (
+          <BookList
+            books={filtered}
+            surfaceTertiary={asColor(surfaceTertiary)}
+            mutedForeground={asColor(mutedForeground)}
+            onSelect={handleSelect}
+          />
+        )}
+      </Sheet.Deferred>
     </Sheet>
   );
 }

@@ -9,6 +9,8 @@ import { Swipe } from '@/components/ui/swipe';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { useModelStore } from '@/stores/model';
+import { useCSSVariable } from 'uniwind';
+
 import { asColor } from '@/utils/colors';
 import { formatBytes, formatCount } from '@/utils/format';
 import { Search, Trash2 } from 'lucide-react-native';
@@ -35,6 +37,8 @@ export function ModelPickerSheet({
   /** Swipe-delete asks the card's confirm sheet; deletion itself stays there. */
   onDeleteRequest: (id: string) => void;
 }) {
+  // The colour a chat title is drawn in — see the delete tile below.
+  const foreground = useCSSVariable('--color-foreground');
   const models = useModelStore((s) => s.models);
   const activeModelId = useModelStore((s) => s.activeModelId);
   const modelsHydrated = useModelStore((s) => s.modelsHydrated);
@@ -74,10 +78,13 @@ export function ModelPickerSheet({
               {models.map((m) => (
                 <Swipe key={m.id}>
                   <Swipe.End>
+                    {/* Red tile, app ink on top — see the note on the chat
+                        history rows. */}
                     <Swipe.Action
-                      icon={<Trash2 />}
+                      icon={<Trash2 color={asColor(foreground)} />}
                       label="Delete"
                       color="destructive"
+                      labelClassName="text-foreground"
                       onPress={() => onDeleteRequest(m.id)}
                     />
                   </Swipe.End>

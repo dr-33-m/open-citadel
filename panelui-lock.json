@@ -348,6 +348,14 @@
     "components/ui/swipe.tsx": {
       "item": "swipe",
       "digest": "sha256:ef22da948cd9554a05ac6bad703e32b34c0148dedeefbe0843f31c4ee073baa3"
+    },
+    "src/components/ui/thinking-orb.tsx": {
+      "item": "thinking-orb",
+      "digest": "sha256:742556cc5ed4bfbcdc6b8283c4ba6c242cabc8c54873c391e41fd83f753b2663"
+    },
+    "src/components/ui/scroll-fade.tsx": {
+      "item": "scroll-fade",
+      "digest": "sha256:6cdbb05928f04c978775d07e7c303b744cec87bea052da5796a8bba17b86171d"
     }
   },
   "roots": {
@@ -650,6 +658,13 @@
       "icons",
       "use-direction",
       "text"
+    ],
+    "thinking-orb": [
+      "thinking-orb",
+      "cn"
+    ],
+    "scroll-fade": [
+      "scroll-fade"
     ]
   },
   "legacyFiles": [],

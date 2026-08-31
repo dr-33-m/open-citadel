@@ -51,12 +51,12 @@ import {
 import { View, type LayoutChangeEvent, type ViewProps } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   type SharedValue,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useCSSVariable } from 'uniwind';
 import { tv, type VariantProps } from 'tailwind-variants';
 import { useDirectionSign } from '@/hooks/use-direction';
@@ -75,8 +75,22 @@ const SPRING = { damping: 22, stiffness: 220, mass: 0.7 } as const;
  */
 const OVERSHOOT_FRICTION = 8;
 
-/** How far past the panel a drag has to reach before a release fires an action. */
-const FULL_SWIPE_RATIO = 1.6;
+/**
+ * How far past the panel a drag has to reach before a release fires an action.
+ *
+ * Measured against the *damped* offset, not the finger. Past the panel the
+ * drag is divided by `OVERSHOOT_FRICTION`, so arming actually needs
+ * `1 + FRICTION * (RATIO - 1)` times the tile width of real travel. Upstream's
+ * 1.6 therefore asks for 5.8x — 464dp for the 80dp minimum tile, on a 393dp
+ * screen. Full swipe could not fire at all here, and the row barely moved as
+ * you pushed, so there was no sign you were getting closer: the tile tap was
+ * the only way through.
+ *
+ * 1.2 puts it at 2.6x — around 210-260dp — which is a deliberate drag rather
+ * than a flick, and reachable. Retune this rather than the friction: the
+ * friction is what makes the overshoot feel like rubber.
+ */
+const FULL_SWIPE_RATIO = 1.2;
 
 /** Fraction of the panel a release has to clear for the row to stay open. */
 const OPEN_RATIO = 0.5;
@@ -674,7 +688,7 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
             const reached = Math.abs(offset.value) > limit * FULL_SWIPE_RATIO;
             if (reached !== armed.value) {
               armed.value = reached;
-              if (reached && haptics) runOnJS(tick)();
+              if (reached && haptics) scheduleOnRN(tick);
             }
           })
           .onEnd((event) => {
@@ -691,8 +705,8 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
             if (fullSwipe && armed.value) {
               armed.value = false;
               offset.value = withSpring(0, SPRING);
-              runOnJS(fire)(side);
-              runOnJS(reportOpen)(null);
+              scheduleOnRN(fire, side);
+              scheduleOnRN(reportOpen, null);
               return;
             }
 
@@ -704,10 +718,10 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
 
             if (projected > limit * OPEN_RATIO) {
               offset.value = withSpring(toStart ? limit : -limit, SPRING);
-              runOnJS(announce)(side);
+              scheduleOnRN(announce, side);
             } else {
               offset.value = withSpring(0, SPRING);
-              runOnJS(reportOpen)(null);
+              scheduleOnRN(reportOpen, null);
             }
           }),
       [

@@ -1,6 +1,6 @@
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
-import { ChartNoAxesGantt, Plus, Sparkles } from "lucide-react-native";
+import { ChartNoAxesGantt, Plus, ZodiacPisces } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
+import { PageFade, RowFade } from "@/components/scroll-fades";
 import { ArchivedCards } from "@/components/library/archived-card";
 import { BookActionSheet } from "@/components/library/book-action-sheet";
 import { BookQueue } from "@/components/library/book-queue";
@@ -29,7 +30,7 @@ import { Fab, fabClearance } from "@/components/ui/fab";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SectionHeader } from "@/components/ui/section-header";
 import { Spinner } from "@/components/ui/spinner";
-import { iconSize, layout, MaxContentWidth } from "@/constants/theme";
+import { MaxContentWidth, iconSize, layout } from "@/constants/theme";
 import type { books as booksTable } from "@/db/schema";
 import { cn } from "@/lib/cn";
 import { asColor } from "@/utils/colors";
@@ -85,7 +86,7 @@ function LibraryHeader({
       }
       leftLabel="Timeline"
       onLeftPress={onOpenTimeline}
-      rightIcon={<Sparkles size={iconSize.default} color={asColor(foreground)} />}
+      rightIcon={<ZodiacPisces size={iconSize.default} color={asColor(foreground)} />}
       rightLabel="Samwell"
       onRightPress={onOpenSamwell}
     />
@@ -291,171 +292,177 @@ export function LibraryPage() {
           </View>
         )}
 
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="pt-6"
-          contentContainerStyle={{
-            paddingBottom:
-              layout.scrollBottom +
-              (isIOS ? fabClearance(insets.bottom) : insets.bottom),
-          }}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Currently Reading */}
-          {currentlyReading.length > 0 && (
-            <View className="gap-4 mb-8">
-              <SectionHeader
-                title="Currently Reading"
-                rightAction={{
-                  text: "VIEW ALL",
-                  onPress: () => router.push("/section/reading" as any),
-                }}
-              />
-              <ScrollView
-                ref={readingScrollRef}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                /* On momentum end, not on scroll. The index only feeds the
-                   dot indicator below, which has nothing to say until a page
-                   has actually settled — but `onScroll` ran a full React
-                   render of this screen on every frame of every swipe, on the
-                   one screen that is also hosting the hub's own gesture. One
-                   render per page turn instead of sixty per second. */
-                onMomentumScrollEnd={(e) => {
-                  const index = Math.round(
-                    e.nativeEvent.contentOffset.x / windowWidth,
-                  );
-                  setCurrentReadingIndex(index);
-                }}
-              >
-                {currentlyReading.map((book) => (
-                  <View
-                    key={book.id}
-                    className="px-6"
-                    style={{ width: windowWidth }}
+        {/* Replaces the header's bottom rule: content passes under the
+            bar and fades, rather than being cut off by a hard line. */}
+        <PageFade>
+          <ScrollView
+            className="flex-1"
+            contentContainerClassName="pt-6"
+            contentContainerStyle={{
+              paddingBottom:
+                layout.scrollBottom +
+                (isIOS ? fabClearance(insets.bottom) : insets.bottom),
+            }}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Currently Reading */}
+            {currentlyReading.length > 0 && (
+              <View className="gap-4 mb-8">
+                <SectionHeader
+                  title="Currently Reading"
+                  rightAction={{
+                    text: "VIEW ALL",
+                    onPress: () => router.push("/section/reading" as any),
+                  }}
+                />
+                <RowFade>
+                  <ScrollView
+                    ref={readingScrollRef}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    /* On momentum end, not on scroll. The index only feeds the
+                       dot indicator below, which has nothing to say until a page
+                       has actually settled — but `onScroll` ran a full React
+                       render of this screen on every frame of every swipe, on the
+                       one screen that is also hosting the hub's own gesture. One
+                       render per page turn instead of sixty per second. */
+                    onMomentumScrollEnd={(e) => {
+                      const index = Math.round(
+                        e.nativeEvent.contentOffset.x / windowWidth,
+                      );
+                      setCurrentReadingIndex(index);
+                    }}
                   >
-                    {/* The pager's page math owns the full-window width; the
-                        card inside is what gets capped to the content column. */}
-                    <View style={contentColumn}>
-                      <CurrentlyReadingCard
-                        book={book}
-                        onPress={() => openReader(book.id)}
-                        onLongPress={() => setActionBook(book)}
-                      />
-                    </View>
-                  </View>
-                ))}
-              </ScrollView>
+                    {currentlyReading.map((book) => (
+                      <View
+                        key={book.id}
+                        className="px-6"
+                        style={{ width: windowWidth }}
+                      >
+                        {/* The pager's page math owns the full-window width; the
+                            card inside is what gets capped to the content column. */}
+                        <View style={contentColumn}>
+                          <CurrentlyReadingCard
+                            book={book}
+                            onPress={() => openReader(book.id)}
+                            onLongPress={() => setActionBook(book)}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </RowFade>
 
-              {currentlyReading.length > 1 && (
-                <View className="flex-row justify-center gap-2 pt-2">
-                  {currentlyReading.map((_, i) => (
-                    <View
-                      key={i}
-                      className={cn(
-                        "h-1.5 w-1.5 rounded-full bg-surface-tertiary",
-                        i === currentReadingIndex && "w-4 bg-primary",
-                      )}
-                    />
-                  ))}
+                {currentlyReading.length > 1 && (
+                  <View className="flex-row justify-center gap-2 pt-2">
+                    {currentlyReading.map((_, i) => (
+                      <View
+                        key={i}
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full bg-surface-tertiary",
+                          i === currentReadingIndex && "w-4 bg-primary",
+                        )}
+                      />
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Queue, Favorites, Have Read, Collections, All Books — no paging
+                math here, so they all sit inside the content column. */}
+            <View style={contentColumn}>
+              {/* Queue */}
+              {queuedBooks.length > 0 && (
+                <View className="gap-4 mb-8">
+                  <SectionHeader
+                    title="Queue"
+                    rightAction={{
+                      text: "VIEW ALL",
+                      onPress: () => router.push("/section/queue" as any),
+                    }}
+                  />
+                  <BookQueue
+                    books={queuedBooks}
+                    onBookPress={openReader}
+                    onBookLongPress={setActionBook}
+                  />
+                </View>
+              )}
+
+              {/* Favorites */}
+              {favoriteBooks.length > 0 && (
+                <View className="gap-4 mb-8">
+                  <SectionHeader
+                    title="Favorites"
+                    rightAction={{
+                      text: "VIEW ALL",
+                      onPress: () => router.push("/section/favorites" as any),
+                    }}
+                  />
+                  <Favorites
+                    books={favoriteBooks}
+                    onBookPress={openReader}
+                    onBookLongPress={setActionBook}
+                  />
+                </View>
+              )}
+
+              {/* Have Read */}
+              {archivedBooks.length > 0 && (
+                <View className="gap-4 mb-8">
+                  <SectionHeader
+                    title="Have Read"
+                    rightAction={{
+                      text: "VIEW ALL",
+                      onPress: () => router.push("/section/archived" as any),
+                    }}
+                  />
+                  <ArchivedCards
+                    books={archivedBooks}
+                    onBookPress={openReader}
+                    onBookLongPress={setActionBook}
+                  />
+                </View>
+              )}
+
+              {/* Collections */}
+              <View className="gap-4 mb-8">
+                <SectionHeader
+                  title="Collections"
+                  rightAction={{
+                    text: "VIEW ALL",
+                    onPress: () => router.push("/section/collections" as any),
+                  }}
+                />
+                <CollectionGrid
+                  collections={collections}
+                  onPress={(colId) => router.push(`/collection/${colId}` as any)}
+                  onCreateCollection={() => setShowNewCollection(true)}
+                />
+              </View>
+
+              {/* All Books */}
+              {allBooks.length > 0 && (
+                <View className="gap-4 mb-8">
+                  <SectionHeader
+                    title="All Books"
+                    rightAction={{
+                      text: "VIEW ALL",
+                      onPress: () => router.push("/section/all" as any),
+                    }}
+                  />
+                  <BookQueue
+                    books={allBooks.slice(0, 20)}
+                    onBookPress={openReader}
+                    onBookLongPress={setActionBook}
+                  />
                 </View>
               )}
             </View>
-          )}
-
-          {/* Queue, Favorites, Have Read, Collections, All Books — no paging
-              math here, so they all sit inside the content column. */}
-          <View style={contentColumn}>
-            {/* Queue */}
-            {queuedBooks.length > 0 && (
-              <View className="gap-4 mb-8">
-                <SectionHeader
-                  title="Queue"
-                  rightAction={{
-                    text: "VIEW ALL",
-                    onPress: () => router.push("/section/queue" as any),
-                  }}
-                />
-                <BookQueue
-                  books={queuedBooks}
-                  onBookPress={openReader}
-                  onBookLongPress={setActionBook}
-                />
-              </View>
-            )}
-
-            {/* Favorites */}
-            {favoriteBooks.length > 0 && (
-              <View className="gap-4 mb-8">
-                <SectionHeader
-                  title="Favorites"
-                  rightAction={{
-                    text: "VIEW ALL",
-                    onPress: () => router.push("/section/favorites" as any),
-                  }}
-                />
-                <Favorites
-                  books={favoriteBooks}
-                  onBookPress={openReader}
-                  onBookLongPress={setActionBook}
-                />
-              </View>
-            )}
-
-            {/* Have Read */}
-            {archivedBooks.length > 0 && (
-              <View className="gap-4 mb-8">
-                <SectionHeader
-                  title="Have Read"
-                  rightAction={{
-                    text: "VIEW ALL",
-                    onPress: () => router.push("/section/archived" as any),
-                  }}
-                />
-                <ArchivedCards
-                  books={archivedBooks}
-                  onBookPress={openReader}
-                  onBookLongPress={setActionBook}
-                />
-              </View>
-            )}
-
-            {/* Collections */}
-            <View className="gap-4 mb-8">
-              <SectionHeader
-                title="Collections"
-                rightAction={{
-                  text: "VIEW ALL",
-                  onPress: () => router.push("/section/collections" as any),
-                }}
-              />
-              <CollectionGrid
-                collections={collections}
-                onPress={(colId) => router.push(`/collection/${colId}` as any)}
-                onCreateCollection={() => setShowNewCollection(true)}
-              />
-            </View>
-
-            {/* All Books */}
-            {allBooks.length > 0 && (
-              <View className="gap-4 mb-8">
-                <SectionHeader
-                  title="All Books"
-                  rightAction={{
-                    text: "VIEW ALL",
-                    onPress: () => router.push("/section/all" as any),
-                  }}
-                />
-                <BookQueue
-                  books={allBooks.slice(0, 20)}
-                  onBookPress={openReader}
-                  onBookLongPress={setActionBook}
-                />
-              </View>
-            )}
-          </View>
-        </ScrollView>
+          </ScrollView>
+        </PageFade>
 
         {/* Adding books moved off the header when both of its sides became
             navigation. It is this screen's one creative action, so it gets the
