@@ -1,0 +1,17 @@
+diff --git a/android/src/main/cpp/worklets/WorkletJSCallInvoker.cpp b/android/src/main/cpp/worklets/WorkletJSCallInvoker.cpp
+index a2d707ce76ceb35456eb075d06473ac98ad8b5eb..1f72461c80f4fe8df8307a55b7531b9cbeea444f 100644
+--- a/android/src/main/cpp/worklets/WorkletJSCallInvoker.cpp
++++ b/android/src/main/cpp/worklets/WorkletJSCallInvoker.cpp
+@@ -24,7 +24,11 @@ namespace expo {
+       return;
+     }
+ 
+-    workletRuntime->executeSync([func = std::move(func)](jsi::Runtime &rt) -> jsi::Value {
++    // `executeSync` was removed in react-native-worklets 0.12; in 0.10 it was
++    // defined as `return runSync(job);` and both skip the microtask
++    // checkpoint, so this is the same call under its surviving name. The rest
++    // of this package already calls `runSync` directly (see Worklet.cpp).
++    workletRuntime->runSync([func = std::move(func)](jsi::Runtime &rt) -> jsi::Value {
+       func(rt);
+       return jsi::Value::undefined();
+     });

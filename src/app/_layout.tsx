@@ -1,4 +1,7 @@
 import '@/global.css';
+// Side-effect import: collapses a library-sourced Reanimated warning that
+// would otherwise bury the dev console. See the module for why.
+import '@/lib/quiet-reanimated-deps-warning';
 
 import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
 import { useFonts } from 'expo-font';

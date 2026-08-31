@@ -34,7 +34,6 @@ import Animated, {
   FadeOut,
   Keyframe,
   interpolate,
-  runOnJS,
   useAnimatedStyle,
   useDerivedValue,
   useReducedMotion,
@@ -44,6 +43,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tv, type VariantProps } from 'tailwind-variants';
 import { useCSSVariable } from 'uniwind';
@@ -393,7 +393,7 @@ function ToastSlot({
               ? [0, Number.POSITIVE_INFINITY]
               : [Number.NEGATIVE_INFINITY, 0],
         });
-        runOnJS(hide)();
+        scheduleOnRN(hide);
       } else {
         translateY.value = withSpring(0, SPRING);
       }

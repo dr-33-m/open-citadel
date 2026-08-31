@@ -27,12 +27,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { View, type LayoutChangeEvent, type ViewProps } from 'react-native';
 import Animated, {
-  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { cn } from '@/lib/cn';
 
 /** Long enough to read as the panel opening, short enough not to be waited on. */
@@ -74,7 +74,7 @@ export function Collapse({
     }
     setAnimating(true);
     progress.value = withTiming(open ? 1 : 0, { duration }, (finished) => {
-      if (finished) runOnJS(setAnimating)(false);
+      if (finished) scheduleOnRN(setAnimating, false);
     });
   }, [open, reducedMotion, duration, progress]);
 

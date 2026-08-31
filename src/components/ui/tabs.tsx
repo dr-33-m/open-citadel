@@ -60,13 +60,13 @@ import Animated, {
   Extrapolation,
   FadeIn,
   interpolate,
-  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { tv } from 'tailwind-variants';
 import { useDirectionSign } from '@/hooks/use-direction';
 import { Text, textChildren } from '@/components/ui/text';
@@ -624,7 +624,7 @@ function TabsPager({
           if (target > last) target = last;
 
           position.value = withSpring(target, { ...ENTER_SPRING, velocity: speed });
-          if (target !== from) runOnJS(commit)(target);
+          if (target !== from) scheduleOnRN(commit, target);
         })
         .onFinalize((_event, success) => {
           // A cancelled gesture never reaches `onEnd`, and would otherwise

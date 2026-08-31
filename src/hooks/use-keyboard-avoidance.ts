@@ -53,7 +53,6 @@ import {
 } from 'react-native';
 import {
   measure,
-  runOnJS,
   useAnimatedKeyboard,
   useAnimatedReaction,
   useAnimatedRef,
@@ -64,6 +63,7 @@ import {
   type AnimatedRef,
   type SharedValue,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 
 /** How long a lifted element takes to settle back after it stops being active. */
 const SETTLE_DURATION = 200;
@@ -214,7 +214,7 @@ export function useKeyboardAvoidance({
     () => isActive.value && Math.abs(rawHeight.value) > 0,
     (shouldTrack, wasTracking) => {
       if (shouldTrack === wasTracking) return;
-      runOnJS(setTracking)(shouldTrack);
+      scheduleOnRN(setTracking, shouldTrack);
 
       // Moving straight from one field to another never closes the keyboard,
       // so the field being left has nothing to follow back down — it is sent

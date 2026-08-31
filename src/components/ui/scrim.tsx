@@ -17,7 +17,11 @@
  */
 import { useEffect, useState, type ComponentType } from 'react';
 import { AccessibilityInfo, StyleSheet, View, type ViewProps } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeOut,
+  type EntryOrExitLayoutType,
+} from 'react-native-reanimated';
 
 type BlurTint = 'light' | 'dark' | 'default' | 'systemMaterial';
 
@@ -179,6 +183,13 @@ export interface ScrimProps extends Omit<ViewProps, 'children'> {
   animate?: boolean;
 }
 
+/** The prop surface `Scrim` drives its layer through — `View`'s own props
+ * plus the two entrance/exit slots only the animated branch receives. */
+type LayerProps = ViewProps & {
+  entering?: EntryOrExitLayoutType;
+  exiting?: EntryOrExitLayoutType;
+};
+
 export function Scrim({
   blur = false,
   intensity = 24,
@@ -194,7 +205,10 @@ export function Scrim({
   // animations left off. An exiting animation is what strands this view on
   // screen after its parent has gone (see `animate`), and only a component
   // that never declares one cannot do that.
-  const Layer = animate ? Animated.View : View;
+  // Reanimated 4.6 types `Animated.View` so that a bare union with `View`
+  // has no call signature; the cast picks the one prop surface both
+  // branches are actually used through.
+  const Layer = (animate ? Animated.View : View) as ComponentType<LayerProps>;
   const fade = animate
     ? { entering: FadeIn.duration(180), exiting: FadeOut.duration(150) }
     : {};
