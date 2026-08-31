@@ -52,6 +52,9 @@ interface ChatStore {
   isThinking: boolean;
   isToolCalling: boolean;
   toolCallStatus: string | null;
+  /** The tool actually running, so the indicator can pick a truthful shape
+   *  rather than showing one generic "busy" glyph for every tool. */
+  toolCallName: string | null;
   streamingContent: string;
   thinkingContent: string;
   primedGeneration: number | null;
@@ -211,7 +214,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isGenerating: false,
   isThinking: false,
   isToolCalling: false,
-  toolCallStatus: null,
+  toolCallStatus: null, toolCallName: null,
   streamingContent: '',
   thinkingContent: '',
   primedGeneration: null,
@@ -401,6 +404,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // "Allow for this session" must not leak into the next chat thread.
     useApprovalStore.getState().resetSessionAllowed();
 
+    // Opening a conversation while a reply is still arriving used to leave
+    // that reply in flight. Two things went wrong with it. The generation
+    // flags carried over, so the chat you opened showed a disabled composer
+    // and an activity line describing work being done for the chat you just
+    // left. And when the reply finally landed it appended to whatever
+    // `messages` was current by then — the answer to a question asked in one
+    // chat was pushed into a different chat's transcript, and stayed there
+    // until that chat was reopened from the database.
+    //
+    // The reply was never going to survive this call regardless:
+    // `resetConversation` below throws away the engine state it was being
+    // generated from. So stopping it is not a new policy, only an honest one.
+    // It runs before `activeSession` moves because `stopGeneration` cancels
+    // the pending approval for whichever session the store currently names,
+    // which has to still be the one being left.
+    if (get().isGenerating) {
+      get().stopGeneration();
+    }
+
     const session = get().sessions.find((s) => s.id === id) ?? null;
     const rows = db
       .select()
@@ -417,7 +439,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       createdAt: r.createdAt,
     }));
 
-    set({ activeSession: session, messages, streamingContent: '', thinkingContent: '', primedGeneration: null });
+    set({
+      activeSession: session,
+      messages,
+      streamingContent: '',
+      thinkingContent: '',
+      primedGeneration: null,
+      // Cleared with the transcript, not left over from the previous chat.
+      isGenerating: false,
+      isThinking: false,
+      isToolCalling: false,
+      toolCallStatus: null,
+      toolCallName: null,
+    });
 
     // Reset stateful conversation in the engine
     Inference.resetConversation();
@@ -495,14 +529,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             set({
               isThinking: false,
               isToolCalling: false,
-              toolCallStatus: null,
+              toolCallStatus: null, toolCallName: null,
               streamingContent: streamed,
             });
           },
-          onToolStatus: (status) => {
+          onToolStatus: (status, name) => {
             set({
               isToolCalling: status !== null,
               toolCallStatus: status,
+              toolCallName: name,
               isThinking: false,
             });
           },
@@ -536,11 +571,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           streamingContent: '',
           isThinking: false,
           isToolCalling: false,
-          toolCallStatus: null,
+          toolCallStatus: null, toolCallName: null,
           isGenerating: false,
         }));
       } else {
-        set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, isGenerating: false });
+        set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, toolCallName: null, isGenerating: false });
       }
 
       if (isFirstRealMessage) {
@@ -638,7 +673,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const statusMsg = toolNames.some((n) => n.startsWith('delete_'))
           ? 'Waiting for delete approval…'
           : toolStatus(toolNames[0]);
-        set({ isToolCalling: true, isThinking: false, streamingContent: '', toolCallStatus: statusMsg });
+        set({
+          isToolCalling: true,
+          isThinking: false,
+          streamingContent: '',
+          toolCallStatus: statusMsg,
+          toolCallName: toolNames[0] ?? null,
+        });
 
         // Store the assistant's tool-call message (hidden from UI)
         const toolCallMsg: ChatMessage = {
@@ -715,7 +756,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         result = await Inference.sendToolResponses(
           toolResponses,
           ({ content: c }) => {
-            set({ isToolCalling: false, toolCallStatus: null, streamingContent: c });
+            set({ isToolCalling: false, toolCallStatus: null, toolCallName: null, streamingContent: c });
           },
         );
       }
@@ -763,7 +804,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         streamingContent: '',
         isThinking: false,
         isToolCalling: false,
-        toolCallStatus: null,
+        toolCallStatus: null, toolCallName: null,
       }));
 
       if (isFirstRealMessage) {
@@ -775,7 +816,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       set({ isGenerating: false });
     } else {
-      set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, isGenerating: false });
+      set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, toolCallName: null, isGenerating: false });
     }
 
     await get().loadSessions();

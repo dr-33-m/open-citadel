@@ -24,8 +24,17 @@ type ScreenHeaderProps = {
    * relative to each other. 'left' is the standalone treatment — a
    * left-aligned title and subtitle — for screens that are a destination
    * rather than a stop on the hub.
+   *
+   * 'start' is 'center' with the title block pushed to the leading edge,
+   * keeping both icon boxes. It exists for titles that are *content* rather
+   * than a place: a chat is named after whatever it turned out to be about,
+   * so it runs long and gets truncated, and a centred string that grows from
+   * the middle and clips at both ends is unreadable and never lines up with
+   * the messages underneath. Centring is kept for the case where the title is
+   * a fixed word — see the chat header, which centres 'Samwell' until a
+   * conversation has a name of its own.
    */
-  align?: 'left' | 'center';
+  align?: 'left' | 'center' | 'start';
   /**
    * A status line under a centered title: what the screen is currently
    * showing, when the title alone doesn't say it (the model's state and the
@@ -89,7 +98,7 @@ export function ScreenHeader({
       // (identical rendering), on a wide screen the header centres with the
       // content below it instead of stretching edge-to-edge.
       <View
-        className="flex-row items-center justify-between border-b border-border px-6 py-4"
+        className="flex-row items-center justify-between px-6 py-4"
         style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
       >
         <View>
@@ -116,10 +125,45 @@ export function ScreenHeader({
     );
   }
 
+  if (align === 'start') {
+    return (
+      // Same bar as `center` — same height, same cap, same 40dp boxes — so
+      // switching between them changes only where the title sits, not the
+      // shape of the header.
+      <View
+        className="flex-row items-center gap-3 px-6 py-4"
+        style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+      >
+        {leftIcon != null ? (
+          <HeaderButton icon={leftIcon} onPress={onLeftPress} label={leftLabel} />
+        ) : null}
+
+        <View className="flex-1 items-start gap-[2px]">
+          <ThemedText
+            type="headlineSm"
+            numberOfLines={1}
+            style={titleItalic ? { fontFamily: fontFamily.serifItalic } : undefined}
+          >
+            {title}
+          </ThemedText>
+          {children}
+        </View>
+
+        {rightIcon != null ? (
+          <HeaderButton icon={rightIcon} onPress={onRightPress} label={rightLabel} />
+        ) : (
+          // Held even when empty: without it a title that fills the row would
+          // slide under the notch edge the moment the button went away.
+          <View className="h-10 w-10" />
+        )}
+      </View>
+    );
+  }
+
   return (
     // Same content-column cap as the `left` variant above.
     <View
-      className="flex-row items-center gap-3 border-b border-border px-6 py-4"
+      className="flex-row items-center gap-3 px-6 py-4"
       style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
     >
       {/* An empty side still holds its 40dp, so the title is centred on the

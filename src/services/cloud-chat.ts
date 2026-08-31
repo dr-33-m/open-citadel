@@ -62,7 +62,9 @@ export interface CloudChatTurnOptions {
   history: StoredChatMessage[];
   content: string;
   onStreamingContent: (content: string) => void;
-  onToolStatus: (status: string | null) => void;
+  /** `name` is the tool the status describes, so the caller can pick a
+   *  matching indicator; both are null when the run ends. */
+  onToolStatus: (status: string | null, name: string | null) => void;
 }
 
 function toUIMessage(message: StoredChatMessage): UIMessage | null {
@@ -379,13 +381,13 @@ export async function sendCloudChatTurn({
       if (approval) approvals.push(approval);
 
       const toolName = readToolName(chunk);
-      if (toolName) onToolStatus(statusForTool(toolName));
-      if (chunk.type === 'TOOL_CALL_RESULT') onToolStatus(null);
+      if (toolName) onToolStatus(statusForTool(toolName), toolName);
+      if (chunk.type === 'TOOL_CALL_RESULT') onToolStatus(null, null);
     },
     onMessagesChange: (messages) => {
       const text = latestAssistantText(messages);
       if (text) {
-        onToolStatus(null);
+        onToolStatus(null, null);
         onStreamingContent(text);
       }
     },

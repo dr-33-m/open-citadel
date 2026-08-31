@@ -23,7 +23,8 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
     '--color-muted-foreground',
   ]);
   const { models, activeModelId, isLoaded, isLoading, loadError } = useModelStore();
-  const { samwellMode, cloudBaseUrl } = useSettingsStore();
+  const samwellMode = useSettingsStore((s) => s.samwellMode);
+  const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
 
   const activeModel = models.find((m) => m.id === activeModelId);
 
