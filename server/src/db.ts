@@ -1,6 +1,6 @@
 import { createClient } from '@libsql/client';
 
-import { CLOUD_LIMITS, CLOUD_MODEL_CATALOG, type CloudModelCapability, type CloudModelOption, type CloudUsageState } from 'samwell-shared';
+import { CLOUD_LIMITS, CLOUD_MODEL_CATALOG, DEFAULT_CLOUD_MODEL_ID, type CloudModelCapability, type CloudModelOption, type CloudUsageState } from 'samwell-shared';
 
 const dbUrl = process.env.DATABASE_URL ?? 'file:./samwell-cloud.sqlite';
 
@@ -51,6 +51,10 @@ export async function initDb(): Promise<void> {
         updated_at_ms INTEGER NOT NULL,
         context_tokens INTEGER
       )`,
+      `CREATE TABLE IF NOT EXISTS server_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
     ],
     'write',
   );
@@ -79,64 +83,24 @@ export async function initDb(): Promise<void> {
     );
   }
 
+  /*
+   * The database owns the catalog; the catalog in samwell-shared only seeds a
+   * fresh one. Re-syncing on every boot (the old behavior) meant a deploy
+   * re-pinned sort order, re-labeled rows, and sank anything added at runtime
+   * — which made hot-swapping a model impossible: it un-swapped itself on the
+   * next deploy. Existing rows are now never rewritten by code; model changes
+   * go through the admin API, which pulls live metadata from OpenRouter.
+   */
   const modelCount = await db.execute('SELECT COUNT(*) as count FROM cloud_models');
   if (Number(modelCount.rows[0]?.count ?? 0) === 0) {
     const now = Date.now();
     await db.batch(
-      CLOUD_MODEL_CATALOG.map((model, index) => ({
-        sql: `INSERT INTO cloud_models (
-            id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms, context_tokens
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          model.id,
-          model.label,
-          model.provider,
-          model.description,
-          JSON.stringify(model.capabilities),
-          index,
-          now,
-          now,
-          model.contextTokens,
-        ],
-      })),
-      'write',
-    );
-  } else {
-    // Catalog drift: rows seeded from an older catalog can outlive their model.
-    // A model ID OpenRouter no longer routes ("No endpoints found") fails
-    // every request that lands on it, so on boot the table is re-synced:
-    // catalog rows take their catalog sort order (the first is the default),
-    // admin-added models keep their relative order but sink below the
-    // catalog, and explicitly retired IDs are removed.
-    const now = Date.now();
-    const catalogIds = CLOUD_MODEL_CATALOG.map((model) => model.id);
-    const existing = await db.execute('SELECT id FROM cloud_models');
-    const existingIds = new Set(existing.rows.map((row) => String(row.id)));
-
-    await db.batch(
       [
-        {
-          // Push non-catalog rows past the catalog's range so their sort order
-          // never ties with a catalog index. The guard keeps it idempotent.
-          sql: `UPDATE cloud_models
-                SET sort_order = ? + sort_order
-                WHERE sort_order < ?
-                  AND id NOT IN (${catalogIds.map(() => '?').join(', ')})`,
-          args: [catalogIds.length, catalogIds.length, ...catalogIds],
-        },
         ...CLOUD_MODEL_CATALOG.map((model, index) => ({
           sql: `INSERT INTO cloud_models (
-              id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms
+              id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms, context_tokens
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-              label = excluded.label,
-              provider = excluded.provider,
-              description = excluded.description,
-              capabilities = excluded.capabilities,
-              sort_order = excluded.sort_order,
-              updated_at_ms = excluded.updated_at_ms`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [
             model.id,
             model.label,
@@ -146,15 +110,28 @@ export async function initDb(): Promise<void> {
             index,
             now,
             now,
+            model.contextTokens,
           ],
         })),
-        // Requests still naming a retired ID fall back to the default via
-        // resolveModelId, so removing the row heals clients too.
-        ...RETIRED_CLOUD_MODEL_IDS.filter((id) => existingIds.has(id)).map((id) => ({
-          sql: 'DELETE FROM cloud_models WHERE id = ?',
-          args: [id],
-        })),
+        {
+          sql: `INSERT INTO server_settings (key, value) VALUES ('default_model_id', ?)
+                ON CONFLICT(key) DO NOTHING`,
+          args: [CLOUD_MODEL_CATALOG[0].id],
+        },
       ],
+      'write',
+    );
+  }
+
+  // Emergency kill switch only: an ID listed here is pruned on boot, and
+  // requests still naming it fall back to the default via resolveModelId.
+  // Day-to-day retirement is DELETE /admin/models/:id, not this array.
+  if (RETIRED_CLOUD_MODEL_IDS.length > 0) {
+    await db.batch(
+      RETIRED_CLOUD_MODEL_IDS.map((id) => ({
+        sql: 'DELETE FROM cloud_models WHERE id = ?',
+        args: [id],
+      })),
       'write',
     );
   }
@@ -195,7 +172,68 @@ export async function listCloudModels(): Promise<CloudModelOption[]> {
   return result.rows.map((row) => rowToCloudModel(row as unknown as Record<string, unknown>));
 }
 
-export async function upsertCloudModel(model: CloudModelOption): Promise<void> {
+async function readServerSetting(key: string): Promise<string | null> {
+  const result = await db.execute({
+    sql: 'SELECT value FROM server_settings WHERE key = ?',
+    args: [key],
+  });
+  return result.rows[0] ? String(result.rows[0].value) : null;
+}
+
+export async function getDefaultModelId(): Promise<string> {
+  const stored = await readServerSetting('default_model_id');
+  return stored ?? DEFAULT_CLOUD_MODEL_ID;
+}
+
+export async function setDefaultModelId(modelId: string): Promise<void> {
+  await db.execute({
+    sql: `INSERT INTO server_settings (key, value) VALUES ('default_model_id', ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    args: [modelId],
+  });
+}
+
+/**
+ * Make a model the default and move it to the front of the picker order, so
+ * the stored default and what clients see first never disagree.
+ */
+export async function setDefaultModelToFront(modelId: string): Promise<void> {
+  await db.batch(
+    [
+      {
+        sql: `UPDATE cloud_models
+              SET sort_order = (SELECT MIN(sort_order) FROM cloud_models) - 1
+              WHERE id = ?`,
+        args: [modelId],
+      },
+      {
+        sql: `INSERT INTO server_settings (key, value) VALUES ('default_model_id', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        args: [modelId],
+      },
+    ],
+    'write',
+  );
+}
+
+/**
+ * The one place that decides which model serves a request.
+ *
+ * The default lives in server_settings, so hot-swapping it is a data write,
+ * not a deploy. The first-row fallback is the old derived default; it only
+ * matters if the setting row is somehow missing or stale, and it keeps this
+ * total: a request always resolves to a known model ID.
+ */
+export function resolveModelId(
+  requested: string | null | undefined,
+  knownModelIds: string[],
+): string {
+  if (requested && knownModelIds.includes(requested)) return requested;
+  return knownModelIds[0] ?? DEFAULT_CLOUD_MODEL_ID;
+}
+
+/** Append a model at the end of the picker order. The row must not exist. */
+export async function insertCloudModel(model: CloudModelOption): Promise<void> {
   const now = Date.now();
   const maxOrder = await db.execute('SELECT MAX(sort_order) as maxOrder FROM cloud_models');
   const nextOrder = Number(maxOrder.rows[0]?.maxOrder ?? -1) + 1;
@@ -204,16 +242,7 @@ export async function upsertCloudModel(model: CloudModelOption): Promise<void> {
     sql: `INSERT INTO cloud_models (
         id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms, context_tokens
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        label = excluded.label,
-        provider = excluded.provider,
-        description = excluded.description,
-        capabilities = excluded.capabilities,
-        updated_at_ms = excluded.updated_at_ms,
-        -- Never overwrite a refreshed window with a catalogue floor: the
-        -- refresh knows the real number, an upsert from the catalogue does not.
-        context_tokens = COALESCE(excluded.context_tokens, cloud_models.context_tokens)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       model.id,
       model.label,
@@ -226,6 +255,54 @@ export async function upsertCloudModel(model: CloudModelOption): Promise<void> {
       model.contextTokens,
     ],
   });
+}
+
+/** Overwrite the mutable fields of an existing row, keeping its sort order. */
+export async function updateCloudModel(model: CloudModelOption): Promise<void> {
+  await db.execute({
+    sql: `UPDATE cloud_models SET
+        label = ?,
+        provider = ?,
+        description = ?,
+        capabilities = ?,
+        context_tokens = ?,
+        updated_at_ms = ?
+      WHERE id = ?`,
+    args: [
+      model.label,
+      model.provider,
+      model.description,
+      JSON.stringify(model.capabilities),
+      model.contextTokens,
+      Date.now(),
+      model.id,
+    ],
+  });
+}
+
+/**
+ * Remove a model. If it was the default, the next model by sort order is
+ * promoted, so the server can never be left defaultless through the API.
+ * Devices still holding the removed ID heal on their next /models fetch.
+ */
+export async function deleteCloudModel(modelId: string): Promise<void> {
+  await db.execute({
+    sql: 'DELETE FROM cloud_models WHERE id = ?',
+    args: [modelId],
+  });
+
+  const stored = await readServerSetting('default_model_id');
+  if (stored !== modelId) return;
+
+  const remaining = await db.execute('SELECT id FROM cloud_models ORDER BY sort_order ASC');
+  const next = remaining.rows[0] ? String(remaining.rows[0].id) : null;
+  if (next) {
+    await setDefaultModelId(next);
+  } else {
+    // Table is empty; fall back to the seed catalog's first entry so a
+    // subsequent seed-on-boot (or admin add) has a sane anchor.
+    await setDefaultModelId(DEFAULT_CLOUD_MODEL_ID);
+  }
 }
 
 function resetTime(events: { created_at_ms: number }[], windowMs: number): string | null {

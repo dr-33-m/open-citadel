@@ -91,3 +91,17 @@ SAMWELL_CLOUD_URL=https://your-coolify-domain.example pnpm start
 
 `POST /chat/http` returns TanStack AI's newline-delimited AG-UI event stream for
 `xhrHttpStream()`.
+
+Admin routes, all guarded by `x-admin-key` against `ADMIN_API_KEY`. Model
+changes take effect immediately, need no deploy, and survive restarts: the
+catalog lives in the database, code only seeds a fresh one. Labels, providers,
+context windows, and capabilities are pulled from OpenRouter's model metadata,
+so the admin sends only an identifier.
+
+- `POST /admin/models` with `{"id": "z-ai/glm-5.3-flash", "makeDefault": true}`
+- `PATCH /admin/models/:id` re-pulls a stored model's metadata
+- `DELETE /admin/models/:id` retires a model (the default auto-promotes)
+- `PUT /admin/models/default` with `{"id": "..."}` switches the default
+
+A model ID OpenRouter does not know is rejected, so a typo can never enter
+the request fallback chain.

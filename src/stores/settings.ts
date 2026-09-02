@@ -152,7 +152,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   loadCloudModels: async () => {
-    const { cloudBaseUrl } = get();
+    const { cloudBaseUrl, cloudModelId } = get();
     if (!cloudBaseUrl) return;
 
     try {
@@ -161,6 +161,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const data = (await res.json()) as { models: CloudModelOption[]; defaultModelId: string };
       if (Array.isArray(data.models) && data.models.length > 0) {
         set({ cloudModels: data.models, cloudModelsError: null });
+
+        // A model retired on the server must not keep being requested by a
+        // device that still holds its ID: fall back to what the server now
+        // considers the default, and persist the healing so it sticks.
+        if (!data.models.some((m) => m.id === cloudModelId)) {
+          await get().setCloudModelId(data.defaultModelId);
+        }
       }
     } catch (err) {
       set({

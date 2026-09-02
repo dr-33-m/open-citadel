@@ -13,7 +13,6 @@ import {
   CompassPlanTurnModelSchema,
   CompassPlanTurnRequestSchema,
   CompassPlanTurnSchema,
-  DEFAULT_CLOUD_MODEL_ID,
   normalizeCompassCheckinTurn,
   normalizeCompassPlanTurn,
 } from 'samwell-shared';
@@ -22,6 +21,7 @@ import { z } from 'zod';
 import {
   listCloudModels,
   reserveUsageEvent,
+  resolveModelId,
   updateUsageEvent,
 } from './db.js';
 import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
@@ -32,11 +32,6 @@ type CapturedUsage = {
   totalTokens?: number;
   cost?: number;
 };
-
-function resolveModelId(requested: string | undefined, knownModelIds: string[]): string {
-  const modelId = requested ?? DEFAULT_CLOUD_MODEL_ID;
-  return knownModelIds.includes(modelId) ? modelId : (knownModelIds[0] ?? DEFAULT_CLOUD_MODEL_ID);
-}
 
 export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
   modelId: string;

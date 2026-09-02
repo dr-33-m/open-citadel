@@ -8,11 +8,9 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import {
-  DEFAULT_CLOUD_MODEL_ID,
   SAMWELL_CLIENT_TOOL_DEFINITIONS,
   SAMWELL_SYSTEM_PROMPT,
   resolveContextTokens,
-  type CloudModelCapability,
   type CloudModelOption,
 } from 'samwell-shared';
 import { z } from 'zod';
@@ -26,15 +24,20 @@ import {
   withCompaction,
 } from './compaction.js';
 import { compassRoutes, runStructuredAnalysis } from './compass.js';
-import { startModelContextRefresh } from './model-context.js';
+import { fetchOpenRouterModel, startModelContextRefresh } from './model-context.js';
 import { tagsRoutes } from './tags.js';
 import {
+  deleteCloudModel,
+  getDefaultModelId,
   getUsageState,
   initDb,
+  insertCloudModel,
   listCloudModels,
+  resolveModelId,
   reserveUsageEvent,
+  setDefaultModelToFront,
+  updateCloudModel,
   updateUsageEvent,
-  upsertCloudModel,
 } from './db.js';
 import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
 
@@ -58,28 +61,9 @@ function requireAdminKey(c: Context): void {
   }
 }
 
-const AdminModelSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  provider: z.string().min(1),
-  description: z.string().min(1),
-  capabilities: z.array(z.enum(['text', 'vision', 'audio', 'tools'])).min(1),
-  /**
-   * Optional override. Normally left out: the background refresh reads the
-   * real window from OpenRouter, and `null` means "not known yet", which
-   * `resolveContextTokens` reads as the conservative floor. Set it by hand
-   * only for a model OpenRouter does not list.
-   */
-  contextTokens: z.number().int().positive().nullable().optional(),
-});
-
 function readModelId(body: RunAgentInput, knownModelIds: string[]): string {
-  const raw =
-    body.forwardedProps?.modelId ??
-    body.data?.modelId ??
-    DEFAULT_CLOUD_MODEL_ID;
-  const modelId = typeof raw === 'string' ? raw : DEFAULT_CLOUD_MODEL_ID;
-  return knownModelIds.includes(modelId) ? modelId : (knownModelIds[0] ?? DEFAULT_CLOUD_MODEL_ID);
+  const raw = body.forwardedProps?.modelId ?? body.data?.modelId;
+  return resolveModelId(typeof raw === 'string' ? raw : undefined, knownModelIds);
 }
 
 function isCountableUserTurn(messages: unknown[]): boolean {
@@ -198,31 +182,114 @@ app.get('/models', async (c) => {
   const models = await listCloudModels();
   return c.json({
     models,
-    defaultModelId: models[0]?.id ?? DEFAULT_CLOUD_MODEL_ID,
+    defaultModelId: await getDefaultModelId(),
   });
 });
+
+/** The single response shape every admin mutation returns, so one curl always
+ * ends with the new full state in hand. */
+async function adminModelState(c: Context) {
+  return c.json({
+    models: await listCloudModels(),
+    defaultModelId: await getDefaultModelId(),
+  });
+}
+
+/*
+ * Model management at runtime.
+ *
+ * The admin sends only an identifier; label, provider, context window, and
+ * capabilities are pulled from OpenRouter's model metadata (the same source
+ * the background context refresh reads), so there is no second place where a
+ * model's facts are written down and no deploy needed to swap one. A model ID
+ * OpenRouter does not know is rejected before it can enter the fallback chain,
+ * and OpenRouter being unreachable fails the mutation rather than storing a
+ * half-known row.
+ */
+const AddModelSchema = z.object({
+  id: z.string().min(1),
+  makeDefault: z.boolean().optional(),
+});
+
+async function requireFetchedModel(id: string): Promise<{ model: CloudModelOption; canonicalId: string }> {
+  const result = await fetchOpenRouterModel(id);
+  if (result.kind === 'unknown_id') {
+    throw new HTTPException(400, { message: `OpenRouter has no model with id '${id}'.` });
+  }
+  if (result.kind === 'unreachable') {
+    throw new HTTPException(502, { message: 'Could not reach OpenRouter to verify the model.' });
+  }
+  return { model: result.model, canonicalId: result.canonicalId };
+}
 
 app.post('/admin/models', async (c) => {
   requireAdminKey(c);
 
   const body = await c.req.json();
-  const parsed = AdminModelSchema.safeParse(body);
+  const parsed = AddModelSchema.safeParse(body);
   if (!parsed.success) {
     throw new HTTPException(400, { message: parsed.error.message });
   }
 
-  const model: CloudModelOption = {
-    ...parsed.data,
-    capabilities: parsed.data.capabilities as CloudModelCapability[],
-    contextTokens: parsed.data.contextTokens ?? null,
-  };
-  await upsertCloudModel(model);
+  const { model, canonicalId } = await requireFetchedModel(parsed.data.id);
+  const existing = await listCloudModels();
+  if (existing.some((m) => m.id === canonicalId)) {
+    // Idempotent: adding an existing ID refreshes its metadata in place,
+    // which is also how a stale row gets re-pulled.
+    await updateCloudModel(model);
+  } else {
+    await insertCloudModel(model);
+  }
+  if (parsed.data.makeDefault) {
+    await setDefaultModelToFront(canonicalId);
+  }
+  return adminModelState(c);
+});
 
-  const models = await listCloudModels();
-  return c.json({
-    models,
-    defaultModelId: models[0]?.id ?? DEFAULT_CLOUD_MODEL_ID,
-  });
+/** Re-pull a stored model's metadata from OpenRouter. */
+app.patch('/admin/models/:id', async (c) => {
+  requireAdminKey(c);
+
+  const id = c.req.param('id');
+  const known = await listCloudModels();
+  if (!known.some((m) => m.id === id)) {
+    throw new HTTPException(404, { message: `Model '${id}' is not in the catalog.` });
+  }
+
+  const { model } = await requireFetchedModel(id);
+  await updateCloudModel(model);
+  return adminModelState(c);
+});
+
+app.delete('/admin/models/:id', async (c) => {
+  requireAdminKey(c);
+
+  const id = c.req.param('id');
+  const known = await listCloudModels();
+  if (!known.some((m) => m.id === id)) {
+    throw new HTTPException(404, { message: `Model '${id}' is not in the catalog.` });
+  }
+
+  await deleteCloudModel(id);
+  return adminModelState(c);
+});
+
+app.put('/admin/models/default', async (c) => {
+  requireAdminKey(c);
+
+  const body = await c.req.json();
+  const parsed = z.object({ id: z.string().min(1) }).safeParse(body);
+  if (!parsed.success) {
+    throw new HTTPException(400, { message: parsed.error.message });
+  }
+
+  const known = await listCloudModels();
+  if (!known.some((m) => m.id === parsed.data.id)) {
+    throw new HTTPException(404, { message: `Model '${parsed.data.id}' is not in the catalog.` });
+  }
+
+  await setDefaultModelToFront(parsed.data.id);
+  return adminModelState(c);
 });
 
 app.get('/usage', async (c) => {

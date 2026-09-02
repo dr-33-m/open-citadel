@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
-  DEFAULT_CLOUD_MODEL_ID,
   normalizeChatTitle,
   SUGGEST_CHAT_TITLE_PROMPT,
   SuggestChatTitleModelSchema,
@@ -10,13 +9,8 @@ import {
 } from 'samwell-shared';
 
 import { runStructuredAnalysis } from './compass.js';
-import { listCloudModels, reserveUsageEvent } from './db.js';
+import { listCloudModels, reserveUsageEvent, resolveModelId } from './db.js';
 import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
-
-function resolveModelId(requested: string | undefined, knownModelIds: string[]): string {
-  const modelId = requested ?? DEFAULT_CLOUD_MODEL_ID;
-  return knownModelIds.includes(modelId) ? modelId : (knownModelIds[0] ?? DEFAULT_CLOUD_MODEL_ID);
-}
 
 export const chatTitleRoutes = new Hono();
 
