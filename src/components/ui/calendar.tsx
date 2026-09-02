@@ -37,6 +37,7 @@
  */
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
@@ -154,6 +155,21 @@ const dayVariants = tv({
     today: { true: { disc: 'border border-primary', label: 'text-primary' } },
     outside: { true: { label: 'text-muted-foreground/40' } },
     disabled: { true: { label: 'text-muted-foreground/30' } },
+    /*
+     * LOCAL EDIT (Open Citadel): room under the number for a day's own mark.
+     *
+     * The cell is 40 and the disc 36, so there are two points of slack below
+     * the number and nothing can be drawn there. 48 leaves six, which is a
+     * 3pt dot with a 3pt gap under the disc.
+     *
+     * Set for every day of a calendar that has accessories at all, never for
+     * the days that happen to carry one. Fixed heights in a flex row are
+     * top-aligned, so a 48 cell beside a 40 cell centres its number 4pt lower
+     * — a month where only some days had a mark came out with its numbers on
+     * two different lines. A calendar with no accessories keeps upstream's
+     * height exactly. Re-apply after `panelui-cli update`.
+     */
+    accessory: { true: { cell: 'h-12' } },
     /** A ruled-out day inside a range still sits on it, but faintly. */
     fadedBand: { true: { band: 'opacity-40' } },
   },
@@ -304,6 +320,19 @@ export interface CalendarProps<Mode extends CalendarMode = 'single'>
    * something that draws one, which is what `DatePicker` does.
    */
   bordered?: boolean;
+  /**
+   * LOCAL EDIT (Open Citadel): a mark of the caller's own under each day.
+   *
+   * Upstream has no per-day slot at all — `CalendarProps` omits `children` and
+   * `CalendarDay` is private — so the timeline picker could not show what was
+   * read on a day without keeping a second, hand-rolled calendar beside this
+   * one. Two calendars in one app is what this edit exists to avoid.
+   *
+   * Return `null` for a day with nothing to say. Every cell grows to make room
+   * as soon as this is passed, so the rows stay level whether or not a
+   * particular day has a mark. Re-apply after `panelui-cli update`.
+   */
+  renderDayAccessory?: (date: Date) => ReactNode;
   /** BCP 47 tag for the month and weekday names. The device's own by default. */
   locale?: DateLocale;
   /**
@@ -337,6 +366,7 @@ function CalendarRoot<Mode extends CalendarMode = 'single'>({
   showOutsideDays = true,
   selectOutsideDays = false,
   bordered = true,
+  renderDayAccessory,
   locale,
   calendar = 'gregory',
   ...props
@@ -516,6 +546,7 @@ function CalendarRoot<Mode extends CalendarMode = 'single'>({
               selectOutsideDays={selectOutsideDays}
               locale={locale}
               system={system}
+              renderDayAccessory={renderDayAccessory}
             />
           </View>
         ))}
@@ -882,6 +913,8 @@ interface GridProps {
   selectOutsideDays?: boolean;
   locale: DateLocale;
   system: 'gregory' | 'islamic';
+  /** LOCAL EDIT (Open Citadel): see `CalendarProps.renderDayAccessory`. */
+  renderDayAccessory?: (date: Date) => ReactNode;
 }
 
 function CalendarGrid({
@@ -897,6 +930,7 @@ function CalendarGrid({
   selectOutsideDays = false,
   locale,
   system,
+  renderDayAccessory,
 }: GridProps) {
   /*
    * Six rows of consecutive days, anchored on the first of *this* calendar's
@@ -910,6 +944,9 @@ function CalendarGrid({
   );
   const headings = useMemo(() => weekdayNames(locale, weekStartsOn), [locale, weekStartsOn]);
   const today = useToday();
+
+  /* LOCAL EDIT (Open Citadel): whether every cell reserves room for a mark. */
+  const accessoryRoom = renderDayAccessory != null;
 
   const range = mode === 'range' ? (value as DateRange | undefined) : undefined;
   const multiple = mode === 'multiple' ? ((value as Date[] | undefined) ?? []) : [];
@@ -933,8 +970,15 @@ function CalendarGrid({
             const outside = !isSameCalendarMonth(date, month, system, locale);
             if (outside && !showOutsideDays) {
               // A spacer, not nothing: the row has to stay seven wide or the
-              // columns stop lining up with their headings.
-              return <View key={dayIndex} className="h-10 flex-1" />;
+              // columns stop lining up with their headings. LOCAL EDIT: its
+              // height follows the cell's, or a row of blanks comes out
+              // shorter than the rows around it.
+              return (
+                <View
+                  key={dayIndex}
+                  className={cn('flex-1', accessoryRoom ? 'h-12' : 'h-10')}
+                />
+              );
             }
 
             const isStart = mode === 'range' && isSameDay(date, range?.from);
@@ -986,6 +1030,8 @@ function CalendarGrid({
                 locale={locale}
                 system={system}
                 onPress={() => onSelect(date)}
+                accessory={renderDayAccessory?.(date)}
+                accessoryRoom={accessoryRoom}
               />
             );
           })}
@@ -1012,6 +1058,13 @@ interface DayProps {
   locale: DateLocale;
   system: 'gregory' | 'islamic';
   onPress: () => void;
+  /** LOCAL EDIT (Open Citadel): the caller's mark for this day, if any. */
+  accessory?: ReactNode;
+  /**
+   * LOCAL EDIT (Open Citadel): whether the grid reserves room under every day.
+   * A property of the calendar, not of this day — see `dayVariants.accessory`.
+   */
+  accessoryRoom?: boolean;
 }
 
 function CalendarDay({
@@ -1028,6 +1081,8 @@ function CalendarDay({
   locale,
   system,
   onPress,
+  accessory,
+  accessoryRoom = false,
 }: DayProps) {
   const styles = dayVariants({
     selected,
@@ -1035,6 +1090,7 @@ function CalendarDay({
     outside,
     disabled,
     fadedBand: disabled && inRange,
+    accessory: accessoryRoom,
   });
 
   /*
@@ -1071,6 +1127,10 @@ function CalendarDay({
           {calendarDayNumber(date, system, locale)}
         </Text>
       </View>
+      {/* LOCAL EDIT (Open Citadel): absolute, so a day carrying a mark and a
+          day without it are the same height and the numbers stay on one
+          line. */}
+      {accessory ? <View className="absolute bottom-0.5">{accessory}</View> : null}
     </Pressable>
   );
 }

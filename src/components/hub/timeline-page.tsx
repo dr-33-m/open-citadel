@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { useRouter } from 'expo-router';
-import { ArrowRight, Calendar, MessageSquare, Pencil, Share, Trash2 } from 'lucide-react-native';
+import { ArrowRight, Calendar, MessageSquare, Pencil, Share, Trash2 } from '@/components/icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
@@ -59,6 +59,19 @@ export function TimelinePage() {
   const deleteHighlight = useTimelineStore((s) => s.deleteHighlight);
   const createChatSession = useChatStore((s) => s.createSession);
   const [showCalendar, setShowCalendar] = useState(false);
+  /*
+   * Stable, so the `memo` on `CalendarPicker` actually holds. Inline arrows
+   * here handed it new props on every render of this screen, and it rebuilt a
+   * month of cells each time — for a sheet that is closed almost always.
+   */
+  const closeCalendar = useCallback(() => setShowCalendar(false), []);
+  const pickDate = useCallback(
+    (date: string) => {
+      setSelectedDate(date);
+      setShowCalendar(false);
+    },
+    [setSelectedDate],
+  );
   const [showThoughtSheet, setShowThoughtSheet] = useState(false);
   const [editingThought, setEditingThought] = useState<ThoughtEditData | null>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
@@ -284,11 +297,8 @@ export function TimelinePage() {
       <CalendarPicker
         visible={showCalendar}
         selectedDate={selectedDate}
-        onSelectDate={(date) => {
-          setSelectedDate(date);
-          setShowCalendar(false);
-        }}
-        onClose={() => setShowCalendar(false)}
+        onSelectDate={pickDate}
+        onClose={closeCalendar}
       />
 
       {/* Entry action sheet — opened by long-press on a row. Same four
