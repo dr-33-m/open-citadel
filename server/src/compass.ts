@@ -167,6 +167,8 @@ async function streamAttempt(args: {
   let sent = '';
   let replyClosed = false;
   let object: unknown;
+  let runError: string | undefined;
+  let finishReason: string | undefined;
 
   const stream = (await chat({
     adapter: openRouterText(args.modelId as any, {
@@ -225,11 +227,35 @@ async function streamAttempt(args: {
       }
     } else if (chunk.type === 'CUSTOM' && chunk.name === 'structured-output.complete') {
       object = chunk.value?.object;
+    } else if (chunk.type === 'RUN_ERROR') {
+      // The real reason, which used to be swallowed: without this every
+      // upstream failure came out as "structured output never completed",
+      // which says only that we noticed.
+      runError = (chunk as { message?: string }).message ?? 'run error';
+    } else if (chunk.type === 'RUN_FINISHED') {
+      finishReason = (chunk as { finishReason?: string }).finishReason;
     }
   }
 
   if (object === undefined) {
-    throw new Error('structured output never completed');
+    /*
+     * The terminal event never came, but the document might still be whole:
+     * the run can end without the library emitting `structured-output.complete`
+     * while the JSON it was accumulating is perfectly parseable. Salvaging it
+     * here turns a failed turn into a good one, and costs a parse of a string
+     * we already hold.
+     */
+    try {
+      const salvaged: unknown = JSON.parse(raw);
+      if (salvaged && typeof salvaged === 'object') return { object: salvaged, reply: sent };
+    } catch {
+      // Genuinely incomplete. Fall through and say why.
+    }
+    throw new Error(
+      runError ??
+        `structured output never completed (finishReason=${finishReason ?? 'none'}, ` +
+          `chars=${raw.length}, replyClosed=${replyClosed})`,
+    );
   }
   return { object, reply: sent };
 }
