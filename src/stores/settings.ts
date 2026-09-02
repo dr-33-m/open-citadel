@@ -106,6 +106,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setSamwellMode: async (mode: SamwellMode) => {
     await saveSetting('samwell.mode', mode);
     set({ samwellMode: mode });
+    /*
+     * Switching to cloud is the moment the server's model list starts to
+     * matter, and the moment a device is most likely to be holding a stale
+     * one. Fire and forget: the list already has a value, so a failed refresh
+     * leaves the picker on what it had rather than emptying it.
+     */
+    if (mode === 'cloud') void get().loadCloudModels();
   },
 
   setCloudModelId: async (modelId: string) => {

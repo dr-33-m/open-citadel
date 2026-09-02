@@ -26,8 +26,26 @@ export function CloudPanel() {
   const cloudUsageError = useSettingsStore((s) => s.cloudUsageError);
   const setCloudModelId = useSettingsStore((s) => s.setCloudModelId);
   const loadCloudUsage = useSettingsStore((s) => s.loadCloudUsage);
+  const loadCloudModels = useSettingsStore((s) => s.loadCloudModels);
   const [pickerVisible, setPickerVisible] = React.useState(false);
   const activeModel = cloudModels.find((m) => m.id === cloudModelId);
+
+  /*
+   * Ask the server what it offers now.
+   *
+   * `cloudModels` starts as `CLOUD_MODEL_CATALOG`, a constant compiled into
+   * the app, so without this the picker shows whatever was true on the day the
+   * build was made. Models can be added, retired and re-defaulted on the
+   * server without a deploy, and none of that reached a device: the loader was
+   * written and never called.
+   *
+   * Fire and forget, and the list is only replaced on success, so a server
+   * that cannot be reached leaves the picker on the built-in catalogue rather
+   * than on nothing.
+   */
+  React.useEffect(() => {
+    void loadCloudModels();
+  }, [loadCloudModels]);
 
   return (
     <>
