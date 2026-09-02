@@ -6,8 +6,8 @@ import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-grou
  * Stand-in for the Settings body, section by section.
  *
  * Deliberately not a loop over identical rows: these four groups do not share a
- * shape. Profile is a field with a trailing rank badge, Appearance is a card
- * with a switch, Books is an icon beside a wrapped paragraph, and Samwell is a
+ * shape. Profile is a field sunk into a card, Appearance is a card with a
+ * switch, Books is an icon beside a wrapped paragraph, and Samwell is a
  * label-and-subtitle over two side-by-side mode cards with a panel under them.
  * A placeholder that drew them all as one row would be describing a screen this
  * app does not have, and the mismatch shows at exactly the moment it dissolves.
@@ -16,6 +16,14 @@ import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-grou
  * settle and were never part of the first paint, so standing in for them would
  * invent a wait that does not happen.
  */
+
+/**
+ * What every settings group is drawn on: the same `Card` surface the real
+ * sections use. The placeholder had `muted` under Profile and `card` under the
+ * other three, which is a shade the screen never shows and an unevenness that
+ * only appears at the moment the placeholder dissolves into the real thing.
+ */
+const CARD = 'border border-border bg-card';
 
 /** The gold letter-spaced group heading. */
 function GroupLabel({ width = 'w-24' }: { width?: string }) {
@@ -29,7 +37,7 @@ function Divider() {
 /** One of the two Samwell mode cards: icon and title, then a wrapped blurb. */
 function ModeCardSkeleton() {
   return (
-    <View className="flex-1 gap-2 border border-surface-tertiary bg-card p-4">
+    <View className={`${CARD} flex-1 gap-2 p-4`}>
       <View className="flex-row items-center gap-3">
         <SkeletonBar className="h-9 w-9 rounded" />
         <SkeletonBar className="h-3.5 w-14" />
@@ -46,10 +54,13 @@ export function SettingsSkeleton() {
       {/* PROFILE — name field with the rank badge at its end. */}
       <View className="mt-6 gap-4">
         <GroupLabel />
-        <View className="flex-row items-center gap-3 bg-muted px-4 py-4">
-          <SkeletonBar className="h-6 w-6 rounded" />
-          <SkeletonBar className="h-3.5 flex-1" />
-          <SkeletonBar className="h-7 w-7" />
+        <View className={`${CARD} p-4`}>
+          {/* `inset`, like the real field: a well sunk into the card rather
+              than a second block sitting on it. */}
+          <View className="flex-row items-center gap-3 bg-inset px-4 py-1.5">
+            <SkeletonBar className="h-9 w-9 rounded" />
+            <SkeletonBar className="h-3.5 flex-1" />
+          </View>
         </View>
       </View>
 
@@ -57,7 +68,7 @@ export function SettingsSkeleton() {
       <Divider />
       <View className="mt-8 gap-4">
         <GroupLabel width="w-28" />
-        <View className="flex-row items-center justify-between bg-card p-4">
+        <View className={`${CARD} flex-row items-center justify-between p-4`}>
           <View className="flex-row items-center gap-3">
             <SkeletonBar className="h-9 w-9 rounded" />
             <SkeletonBar className="h-3.5 w-24" />
@@ -70,7 +81,7 @@ export function SettingsSkeleton() {
       <Divider />
       <View className="mt-8 gap-4">
         <GroupLabel width="w-16" />
-        <View className="flex-row items-start gap-3 bg-card p-4">
+        <View className={`${CARD} flex-row items-start gap-3 p-4`}>
           <SkeletonBar className="h-9 w-9 rounded" />
           <View className="flex-1 gap-2">
             <SkeletonBar className="h-3 w-full" />
@@ -92,7 +103,7 @@ export function SettingsSkeleton() {
           <ModeCardSkeleton />
           <ModeCardSkeleton />
         </View>
-        <View className="gap-3 bg-card p-4">
+        <View className={`${CARD} gap-3 p-4`}>
           <View className="flex-row items-start justify-between gap-3">
             <View className="flex-1 gap-1">
               <SkeletonBar className="h-3.5 w-2/3" />

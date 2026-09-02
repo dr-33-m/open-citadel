@@ -114,6 +114,21 @@
   --color-surface: unset;
   --color-surface-secondary: unset;
   --color-surface-tertiary: unset;
+  /*
+   * The ground a piece of artwork sits on — the panel under a book cover.
+   *
+   * Neither `--color-muted` nor `--color-card` can do this job, because the
+   * two themes want opposite things from it. On parchment the panel has to be
+   * *darker* than the page so the cover reads as sitting on something, which
+   * is `muted`. In the dark theme `muted` is the top rung of the ladder (37),
+   * so the same move lands two steps off the page and a shelf of covers turns
+   * into a row of grey slabs; there it wants the `card` rung (28), the one
+   * every other tile on the screen is already on.
+   *
+   * One notch off the page in both themes. That the notch points down on
+   * parchment and up in obsidian is the whole reason this is a token.
+   */
+  --color-tile: unset;
   --color-skeleton: unset;
 
   /*
@@ -271,6 +286,8 @@
       --color-surface: #EDE5D4;
       --color-surface-secondary: #EDE5D4;
       --color-surface-tertiary: #C4B89A;
+      /* one notch below the page; unchanged from the `muted` it used to be */
+      --color-tile: #EDE5D4;
       --color-skeleton: rgba(28, 21, 16, 0.08);
 
       /* status fills: -soft = Alert (10%), -subtle = Badge (8%) */
@@ -395,6 +412,8 @@
       --color-surface: #252525;
       --color-surface-secondary: #252525;
       --color-surface-tertiary: #353534;
+      /* the `card` rung, so a shelf of covers matches the collection tiles */
+      --color-tile: #1c1b1b;
       --color-skeleton: rgba(208, 197, 175, 0.1);
 
       /* status fills: -soft = Alert (6%), -subtle = Badge (16%) */

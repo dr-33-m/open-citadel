@@ -55,9 +55,9 @@ type BookTileProps = {
 /**
  * One book, everywhere a book is drawn as a tile.
  *
- * The cover sits centred and small on a panel of the app's `muted` ground —
- * the same shade the display-name field uses — with the shadow on the cover
- * itself. The panel is flat; the artwork is the thing that lifts.
+ * The cover sits centred and small on a panel of the app's `tile` ground,
+ * with the shadow on the cover itself. The panel is flat; the artwork is the
+ * thing that lifts.
  *
  * This exists because there were four copies of it: the two-column grid card
  * and three shelves (favourites, queue, archive) that differed only in which
@@ -87,7 +87,7 @@ function BookTileBase({
       onPress={onPress && (() => onPress(book.id))}
       onLongPress={onLongPress && (() => onLongPress(book))}
     >
-      <View className="gap-3 bg-muted p-4">
+      <View className="gap-3 bg-tile p-4">
         <View className="items-center">
           {/* The shadow lives on a wrapper because the cover clips its
               contents, and a clipping node clips its own shadow away too. */}
@@ -102,7 +102,10 @@ function BookTileBase({
                   recyclingKey={book.id}
                 />
               ) : (
-                <View className="flex-1 items-center justify-center">
+                // A cover-shaped hole otherwise: `bg-card` and the panel
+                // under it are the same colour in the dark theme, so the
+                // edge is the only thing saying a book is there.
+                <View className="flex-1 items-center justify-center border border-border">
                   <ThemedText
                     type="headlineSm"
                     color={surfaceTertiary}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
-import { Cloud, Info, Smartphone, type LucideIcon } from 'lucide-react-native';
+import { Cloud, Info, Smartphone, type LucideIcon } from '@/components/icons';
 
 import { SettingsSection } from '@/features/settings/components/settings-section';
 import { CloudPanel } from '@/features/settings/components/cloud-panel';
@@ -98,7 +98,11 @@ function ModeCard({
   ]);
   return (
     <Touchable className="flex-1" onPress={onSelect}>
-      <Card className={cn('gap-2 p-4', active && 'border-primary')}>
+      {/* `flex-1` on the card, not just on the Touchable around it. The row
+          stretches both Touchables to the taller of the two, but the card
+          inside still sized to its own text, so the one-line description left
+          a card visibly shorter than the two-line one beside it. */}
+      <Card className={cn('flex-1 gap-2 p-4', active && 'border-primary')}>
         <View className="flex-row items-center gap-3">
           <PrefixIcon icon={icon} size={36} color={active ? asColor(primary) : undefined} />
           <ThemedText type="bodyMd" color={active ? asColor(primary) : undefined}>
