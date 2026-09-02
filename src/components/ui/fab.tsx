@@ -1,5 +1,8 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { PencilSparkles, type LucideIcon } from 'lucide-react-native';
+// LOCAL EDIT: icons come from `@/components/icons` (deep lucide imports),
+// not the `lucide-react-native` barrel, which drags 1,749 icon modules into
+// the bundle. Re-apply after `panelui-cli update`.
+import { PencilSparkles, type LucideIcon } from '@/components/icons';
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { useCSSVariable } from 'uniwind';

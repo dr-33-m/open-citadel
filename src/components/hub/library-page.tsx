@@ -1,6 +1,6 @@
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
-import { ChartNoAxesGantt, Plus, ZodiacPisces } from "lucide-react-native";
+import { ChartNoAxesGantt, Plus, ZodiacPisces } from "@/components/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,

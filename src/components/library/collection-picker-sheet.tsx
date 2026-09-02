@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react-native';
+import { Check } from '@/components/icons';
 import { Fragment } from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';

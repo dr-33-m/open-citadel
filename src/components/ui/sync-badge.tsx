@@ -1,4 +1,7 @@
-import { RefreshCw } from 'lucide-react-native';
+// LOCAL EDIT: icons come from `@/components/icons` (deep lucide imports),
+// not the `lucide-react-native` barrel, which drags 1,749 icon modules into
+// the bundle. Re-apply after `panelui-cli update`.
+import { RefreshCw } from '@/components/icons';
 import React, { useEffect } from 'react';
 import { View } from 'react-native';
 import Animated, {

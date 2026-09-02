@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Sun } from 'lucide-react-native';
+import { Sun } from '@/components/icons';
 
 import { SettingsSection } from '@/features/settings/components/settings-section';
 import { ThemedText } from '@/components/themed-text';

@@ -1,4 +1,4 @@
-import { CircleCheckBig } from 'lucide-react-native';
+import { CircleCheckBig } from '@/components/icons';
 import React from 'react';
 import { ScrollView } from 'react-native';
 import { useCSSVariable } from 'uniwind';

@@ -1,4 +1,4 @@
-import { Plus, SquareLibrary } from "lucide-react-native";
+import { Plus, SquareLibrary } from "@/components/icons";
 import React from "react";
 import { ScrollView } from "react-native";
 import { useCSSVariable } from "uniwind";

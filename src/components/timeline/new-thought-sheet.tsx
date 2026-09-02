@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Sheet } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { Touchable } from '@/components/ui/touchable';
-import { Check, Sparkles } from 'lucide-react-native';
+import { Check, Sparkles } from '@/components/icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { ColorSwatch, ColorSwatchRow, HIGHLIGHT_COLORS } from '@/components/color-swatch';

@@ -12,7 +12,7 @@
  * date pickers meant scrolling past the chat transcript to find them.
  */
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ArrowLeft, Settings } from 'lucide-react-native';
+import { ArrowLeft, Settings } from '@/components/icons';
 import React from 'react';
 import { Keyboard, View, type TextInput, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';

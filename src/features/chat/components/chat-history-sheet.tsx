@@ -1,4 +1,4 @@
-import { BookOpen, MessageSquarePlus, Trash2 } from 'lucide-react-native';
+import { BookOpen, MessageSquarePlus, Trash2 } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';

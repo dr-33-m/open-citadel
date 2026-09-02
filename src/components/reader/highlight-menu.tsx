@@ -1,4 +1,4 @@
-import { Check, MessageSquare, Pencil, Share, Sparkles, StickyNote, Trash2, X } from "lucide-react-native";
+import { Check, MessageSquare, Pencil, Share, Sparkles, StickyNote, Trash2, X } from "@/components/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Keyboard,

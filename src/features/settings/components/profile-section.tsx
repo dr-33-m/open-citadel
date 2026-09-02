@@ -1,6 +1,6 @@
 import React from 'react';
 import { TextInput, View } from 'react-native';
-import { User } from 'lucide-react-native';
+import { User } from '@/components/icons';
 import { useCSSVariable } from 'uniwind';
 
 import { SettingsSection } from '@/features/settings/components/settings-section';

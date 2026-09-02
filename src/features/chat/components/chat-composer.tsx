@@ -9,7 +9,7 @@
  * The placeholder is the quietest place to say why typing will not work, so
  * it carries the same reason the banner above spells out.
  */
-import { Send, Square } from 'lucide-react-native';
+import { Send, Square } from '@/components/icons';
 import React from 'react';
 import { TextInput, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';

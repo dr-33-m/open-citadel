@@ -2,7 +2,7 @@ import {
   Bookmark as BookmarkIcon,
   ChevronDown,
   ChevronRight,
-} from "lucide-react-native";
+} from "@/components/icons";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { useCSSVariable } from "uniwind";

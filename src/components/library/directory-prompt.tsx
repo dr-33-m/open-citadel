@@ -1,4 +1,4 @@
-import { LibraryBig } from 'lucide-react-native';
+import { LibraryBig } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';

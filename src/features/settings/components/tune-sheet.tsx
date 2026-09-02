@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
-import { Info } from 'lucide-react-native';
+import { Info } from '@/components/icons';
 
 import { Card } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';

@@ -1,4 +1,4 @@
-import { ArrowLeft, AudioLines, Bookmark, BookmarkCheck, List } from 'lucide-react-native';
+import { ArrowLeft, AudioLines, Bookmark, BookmarkCheck, List } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';

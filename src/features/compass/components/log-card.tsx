@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Check, Clock, Goal, X } from 'lucide-react-native';
+import { Check, Clock, Goal, X } from '@/components/icons';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';

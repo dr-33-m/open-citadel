@@ -1,4 +1,4 @@
-import { MessageCircleHeart } from 'lucide-react-native';
+import { MessageCircleHeart } from '@/components/icons';
 import React from 'react';
 import { Linking, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';

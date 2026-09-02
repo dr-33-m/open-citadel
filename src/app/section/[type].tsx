@@ -7,7 +7,7 @@ import {
   SquareLibrary,
   Trash2,
   X,
-} from "lucide-react-native";
+} from "@/components/icons";
 import React, { useCallback, useMemo, useState } from "react";
 import { TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
 import {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCSSVariable } from 'uniwind';
-import { ChevronDown } from 'lucide-react-native';
+import { ChevronDown } from '@/components/icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { View, type ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

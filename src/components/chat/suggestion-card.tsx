@@ -1,4 +1,4 @@
-import { BookOpen, Check, Lightbulb, X } from 'lucide-react-native';
+import { BookOpen, Check, Lightbulb, X } from '@/components/icons';
 import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';

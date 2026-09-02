@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { eq } from 'drizzle-orm';
-import { BookOpen } from 'lucide-react-native';
+import { BookOpen } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';

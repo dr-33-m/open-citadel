@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from "lucide-react-native";
+import { ChevronLeft, ChevronRight } from "@/components/icons";
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useCSSVariable } from "uniwind";

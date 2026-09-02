@@ -1,4 +1,4 @@
-import { Pause, Play, SkipBack, SkipForward } from 'lucide-react-native';
+import { Pause, Play, SkipBack, SkipForward } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import Animated from 'react-native-reanimated';

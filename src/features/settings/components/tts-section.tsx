@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
-import { AudioLines, ChevronUp, Volume2 } from 'lucide-react-native';
+import { AudioLines, ChevronUp, Volume2 } from '@/components/icons';
 
 import {
   useVoicePicker,

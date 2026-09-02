@@ -13,7 +13,7 @@ import { useCSSVariable } from 'uniwind';
 
 import { asColor } from '@/utils/colors';
 import { formatBytes, formatCount } from '@/utils/format';
-import { Search, Trash2 } from 'lucide-react-native';
+import { Search, Trash2 } from '@/components/icons';
 import type { useModelSheet } from '@/features/settings/hooks/use-model-sheet';
 
 type SheetState = ReturnType<typeof useModelSheet>;

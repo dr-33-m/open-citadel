@@ -1,5 +1,5 @@
 import React from 'react';
-import { Undo2 } from 'lucide-react-native';
+import { Undo2 } from '@/components/icons';
 
 import { defaultLogValue } from '@/services/measurement';
 import type { DueItem } from '@/services/occurrences';

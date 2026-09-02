@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCSSVariable } from 'uniwind';
-import { BookOpen } from 'lucide-react-native';
+import { BookOpen } from '@/components/icons';
 
 import { SettingsSection } from '@/features/settings/components/settings-section';
 import { ThemedText } from '@/components/themed-text';

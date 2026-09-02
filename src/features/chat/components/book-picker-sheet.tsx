@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight } from '@/components/icons';
 import { Image } from 'expo-image';
 
 import { PageFade } from '@/components/scroll-fades';

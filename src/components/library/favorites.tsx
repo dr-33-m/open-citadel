@@ -1,4 +1,4 @@
-import { CircleStar } from 'lucide-react-native';
+import { CircleStar } from '@/components/icons';
 import React from 'react';
 import { ScrollView } from 'react-native';
 import { useCSSVariable } from 'uniwind';

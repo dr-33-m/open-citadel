@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { BookOpen, CalendarDays, Compass, History, ListTodo, MessageSquare, Send, Square, TrendingUp } from 'lucide-react-native';
+import { BookOpen, CalendarDays, Compass, History, ListTodo, MessageSquare, Send, Square, TrendingUp } from '@/components/icons';
 import React from 'react';
 import { TextInput, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';

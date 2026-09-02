@@ -79,6 +79,12 @@ Not as a review pass afterwards. Rules that have already bitten this project:
   on a settle signal: `useScreenSettled` for screens, the `Sheet` settled
   context for sheets, `Handover`'s `ready` prop for either.
 - **Reanimated, not core `Animated`.** Transform and opacity only.
+- **Icons come from `@/components/icons`**, never from `lucide-react-native`.
+  Metro does not tree-shake, so the package barrel put 1,749 icon modules in
+  the bundle for the 70 we draw: a third of every module in the app, 3.2MB of
+  bytecode, and ten times the icon evaluation cost on a Galaxy A33. Add a deep
+  import to that module instead. The same trap waits in any package that
+  re-exports a large set from its root.
 - **Verify on device by measurement**, not by eye and not in the simulator.
 
 ## Vendored UI — do not restructure

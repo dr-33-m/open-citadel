@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
-import { ChevronUp, MessageCircleHeart } from 'lucide-react-native';
+import { ChevronUp, MessageCircleHeart } from '@/components/icons';
 
 import { SettingsSection } from '@/features/settings/components/settings-section';
 import { CreatorNoteSheet } from '@/components/settings/creator-note-sheet';

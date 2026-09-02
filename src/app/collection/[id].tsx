@@ -1,6 +1,6 @@
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Plus, Search, Trash2, X } from "lucide-react-native";
+import { ArrowLeft, Plus, Search, Trash2, X } from "@/components/icons";
 import React, { useCallback, useMemo, useState } from "react";
 import { TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
 import { TransitionFlatList } from "@/components/navigation/transition-scroll";

@@ -1,32 +1,40 @@
 # Compass — AI Execution Telemetry (build)
 
-## Open: lucide barrel imports (startup cost, not yet measured)
+## Done: lucide barrel imports
 
-Found during the performance audit of the Compass/toast/library work; not done
-because it touches 52 files and wants its own before/after measurement rather
-than being folded into a UI pass.
+Every icon came in through the package root - `import { Compass } from
+'lucide-react-native'` - across 52 files. Metro does not tree-shake, so the
+barrel put the whole icon set in the bundle. Fixed by `src/components/icons.ts`,
+which deep-imports each icon one file at a time (`lucide-react-native/icons/
+compass`) and re-exports it under the same name, so call sites only changed
+their import path.
 
-Every icon in the app comes in through the package root — `import { Compass,
-ListTodo } from 'lucide-react-native'` — across **52 files**. Metro does not
-tree-shake by default, so the barrel pulls in far more of the icon set than the
-app draws. That lands in `startup-cherry-pick-imports`, the highest-impact
-category in the Expo performance skill: it is bundle size and JS parse time on
-every cold start, which is exactly what hurts on a Galaxy A33.
+Measured with `pnpm exec expo export --platform android --source-maps`, and on
+the Galaxy A33 by timing the two module graphs in the dev bundle.
 
-- [ ] a. Measure first, so the change can be judged: `pnpm exec expo export
-      --platform android` and record the bundle size, plus a cold-start time on
-      the A33. Without a baseline this is a guess.
-- [ ] b. Decide the fix. Either deep imports
-      (`lucide-react-native/dist/esm/icons/compass`) behind one app-level icon
-      module so call sites stay readable, or Metro's experimental tree shaking,
-      or a babel transform that rewrites the barrel. Deep imports are the
-      surest but the most churn; check whether the installed version ships the
-      per-icon paths before committing to it.
-- [ ] c. Apply, re-measure, and keep the numbers in the commit message. Revert
-      if the saving does not show up on device — the churn is only worth a real
-      number.
-- [ ] d. If deep imports win, add the rule to CLAUDE.md so new code does not
-      reintroduce the barrel one icon at a time.
+| | before | after |
+| --- | --- | --- |
+| Android bundle (Hermes) | 10,983,455 B | 7,600,992 B (**-3.23 MiB, -30.8%**) |
+| modules in the bundle | 5,066 | 3,387 (**-1,679, -33.1%**) |
+| lucide icon modules | 1,749 | 70 |
+| icon graph evaluation, A33 | 2.9s / 5.8s / 5.7s | 223ms / 575ms / 527ms |
+
+The A33 row is a dev bundle, so the absolute numbers overstate what a release
+build pays; the ratio (about 10x, stable across three runs) is the real read.
+The bundle rows are production Hermes output and are exact.
+
+Also retired four deprecated lucide alias names while passing through, since
+they no longer have files of their own: `CheckCircle` and `CircleCheckBig` were
+the same glyph under two names (now `CircleCheckBig`), `CheckCircle2` ->
+`CircleCheck`, `MinusCircle` -> `CircleMinus`, `XCircle` -> `CircleX`.
+
+- [x] a. Measure first.
+- [x] b. Deep imports behind one app-level icon module. Metro has
+      `unstable_enablePackageExports` on by default in SDK 57, so the package's
+      own `./icons/*` subpath resolves; no `dist/` paths, no Metro experiments,
+      no babel transform.
+- [x] c. Applied and re-measured, numbers above.
+- [x] d. Rule added to CLAUDE.md under "Performance is designed in".
 
 ## Extension 2: reading intelligence (read boundary, highlight context, AI tags, tag ranking)
 - [x] a. `book-context.ts`: shared `loadChapterText` + `extractSurroundingText` (before/after around locator)

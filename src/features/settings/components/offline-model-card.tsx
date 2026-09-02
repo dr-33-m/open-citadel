@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
-import { Download, MemoryStick, Power, SlidersHorizontal, Trash2 } from 'lucide-react-native';
+import { Download, MemoryStick, Power, SlidersHorizontal, Trash2 } from '@/components/icons';
 
 import { useModelSheet } from '@/features/settings/hooks/use-model-sheet';
 import { ModelPickerSheet } from '@/features/settings/components/model-picker-sheet';

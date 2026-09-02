@@ -1,4 +1,4 @@
-import { Check } from "lucide-react-native";
+import { Check } from "@/components/icons";
 import React, { useCallback, useEffect, useState } from "react";
 import { Image, View } from "react-native";
 import { useCSSVariable } from "uniwind";

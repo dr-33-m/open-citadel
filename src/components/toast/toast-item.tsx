@@ -13,7 +13,7 @@ import Animated, {
 // Remote Function to the UI runtime, so calling one from a gesture callback
 // throws "Tried to synchronously call a Remote Function".
 import { scheduleOnRN } from 'react-native-worklets';
-import { CheckCircle2, X } from 'lucide-react-native';
+import { CircleCheck, X } from '@/components/icons';
 import { useCSSVariable } from 'uniwind';
 
 import { Card } from '@/components/ui/card';
@@ -218,7 +218,7 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
         <Card>
           <Card.Content className="flex-row items-center gap-3 p-3">
             {toast.tone === 'success' && (
-              <CheckCircle2 size={18} color={asColor(success)} strokeWidth={2} />
+              <CircleCheck size={18} color={asColor(success)} strokeWidth={2} />
             )}
             <Text
               numberOfLines={2}

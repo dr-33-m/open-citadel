@@ -1,4 +1,4 @@
-import { Copy, Highlighter, MessageSquare } from "lucide-react-native";
+import { Copy, Highlighter, MessageSquare } from "@/components/icons";
 import React from "react";
 import { View } from "react-native";
 import Animated from "react-native-reanimated";

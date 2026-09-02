@@ -1,4 +1,4 @@
-import { BookOpen, CheckCircle, Clock, FolderPlus, MinusCircle, Pencil, RotateCcw, Star, StarOff, Trash2, XCircle } from 'lucide-react-native';
+import { BookOpen, CircleCheckBig, CircleMinus, CircleX, Clock, FolderPlus, Pencil, RotateCcw, Star, StarOff, Trash2 } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
@@ -185,7 +185,7 @@ export function BookActionSheet({
               <View className="h-px self-stretch bg-border" />
               <Item className="gap-4" onPress={handleRemoveFromCurrentlyReading}>
                 <Item.Media>
-                  <XCircle size={20} color={asColor(foreground)} />
+                  <CircleX size={20} color={asColor(foreground)} />
                 </Item.Media>
                 <Item.Content>
                   <ThemedText type="bodyMd">
@@ -219,7 +219,7 @@ export function BookActionSheet({
               <View className="h-px self-stretch bg-border" />
               <Item className="gap-4" onPress={handleRemoveFromQueue}>
                 <Item.Media>
-                  <MinusCircle size={20} color={asColor(foreground)} />
+                  <CircleMinus size={20} color={asColor(foreground)} />
                 </Item.Media>
                 <Item.Content>
                   <ThemedText type="bodyMd">
@@ -236,7 +236,7 @@ export function BookActionSheet({
               <View className="h-px self-stretch bg-border" />
               <Item className="gap-4" onPress={handleFinish}>
                 <Item.Media>
-                  <CheckCircle size={20} color={asColor(primary)} />
+                  <CircleCheckBig size={20} color={asColor(primary)} />
                 </Item.Media>
                 <Item.Content>
                   <ThemedText type="bodyMd" color={asColor(primary)}>

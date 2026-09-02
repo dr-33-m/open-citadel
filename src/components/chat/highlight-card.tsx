@@ -1,4 +1,4 @@
-import { BookOpen, Lightbulb } from 'lucide-react-native';
+import { BookOpen, Lightbulb } from '@/components/icons';
 import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';

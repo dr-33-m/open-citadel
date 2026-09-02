@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
-import { MemoryStick } from 'lucide-react-native';
+import { MemoryStick } from '@/components/icons';
 
 import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
