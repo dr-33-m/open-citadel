@@ -4,9 +4,11 @@
  * Two states, and which one shows is decided by whether the conversation has
  * a name yet:
  *
- * **Before there is a chat** the only thing worth naming is Samwell himself,
- * so the title is his name and it sits centred — a short fixed string is what
- * centring is *for*, and centred is how the rest of the app's headers read.
+ * **Before there is a chat** there is nothing to name but the surface, so the
+ * title is "Chat" and it sits centred — a short fixed string is what centring
+ * is *for*, and centred is how the rest of the app's headers read. It names
+ * the mode rather than Samwell because the other half of this screen is
+ * "Compass", and he is on both.
  *
  * **Once a chat exists** the title becomes whatever it turned out to be
  * about, which is a sentence fragment that runs long and truncates. That
@@ -17,7 +19,7 @@
  * had already drifted apart in title fallbacks and in whether the status line
  * was centred, which is the drift this file exists to stop.
  */
-import { ArrowLeft, Settings } from 'lucide-react-native';
+import { ArrowLeft, Settings } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
@@ -60,7 +62,7 @@ export function ChatHeader({
 
   return (
     <ScreenHeader
-      title={named ? title : 'Samwell'}
+      title={named ? title : 'Chat'}
       align={named ? 'start' : 'center'}
       leftIcon={<ArrowLeft size={iconSize.default} color={asColor(foreground)} />}
       leftLabel={backLabel}

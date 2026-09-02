@@ -7,7 +7,7 @@
  * above them — the transcript is what the reader came for, and covering it to
  * report that the model is asleep would hide the thing being explained.
  */
-import { MessageSquare } from 'lucide-react-native';
+import { MessageSquare } from '@/components/icons';
 import React from 'react';
 import { View, type ViewStyle } from 'react-native';
 import { useCSSVariable } from 'uniwind';
@@ -19,6 +19,15 @@ import { Touchable } from '@/components/ui/touchable';
 import type { SamwellStatus, SamwellStatusAction } from '@/features/chat/hooks/use-samwell-status';
 import { cn } from '@/lib/cn';
 import { asColor } from '@/utils/colors';
+
+/*
+ * Chat with nothing wrong and nothing said yet — `status` is null, so this is
+ * the only place that copy can live. Every real status brings its own title
+ * and message, and a status without a title has decided it does not want one
+ * (see `SamwellStatus.title`), so these two are never a fallback for one.
+ */
+const IDLE_TITLE = 'Ask Samwell about your books';
+const IDLE_MESSAGE = 'Analyse and learn with Samwell';
 
 /** First action reads as the recommended one; the rest are quieter alternates. */
 function StatusActions({ actions }: { actions?: SamwellStatusAction[] }) {
@@ -59,6 +68,9 @@ export function SamwellStatusEmptyState({
     '--color-destructive',
   ]);
 
+  const title = status ? status.title : IDLE_TITLE;
+  const message = status ? status.message : IDLE_MESSAGE;
+
   return (
     <EmptyState size="sm" style={style}>
       <EmptyState.Header>
@@ -76,16 +88,16 @@ export function SamwellStatusEmptyState({
             />
           )}
         </EmptyState.Media>
-        {status?.title ? (
+        {title ? (
           <ThemedText
             type="headlineSm"
-            className={cn('text-center', status.isError && 'text-destructive')}
+            className={cn('text-center', status?.isError && 'text-destructive')}
           >
-            {status.title}
+            {title}
           </ThemedText>
         ) : null}
         <EmptyState.Description className={cn(status?.isError && 'text-destructive')}>
-          {status?.message ?? 'Ask Samwell about your books'}
+          {message}
         </EmptyState.Description>
       </EmptyState.Header>
       {status?.actions ? (

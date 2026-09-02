@@ -64,6 +64,14 @@ type CompassState = {
 
   isLoaded: boolean;
   submitting: 'plan' | 'checkin' | null;
+  /**
+   * Samwell's reply while it is still being written.
+   *
+   * A stored field rather than something derived in a selector, and cleared
+   * the moment the turn lands so the finished message is rendered once, by the
+   * transcript, rather than twice.
+   */
+  streamingReply: string;
   committing: boolean;
   error: string | null;
 
@@ -243,6 +251,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   consistency: null,
   isLoaded: false,
   submitting: null,
+  streamingReply: '',
   committing: false,
   error: null,
 
@@ -286,10 +295,19 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   },
 
   sendPlanTurn: async (messages) => {
-    set({ submitting: 'plan', error: null });
+    set({ submitting: 'plan', streamingReply: '', error: null });
     try {
+      // Appended rather than replaced, so a render only ever sees the reply
+      // grow. `restart` is the one case where it goes back, and it only fires
+      // while the reply is unfinished: what is dropped was never a message.
+      const handlers = {
+        onReplyDelta: (delta: string) =>
+          set((state) => ({ streamingReply: state.streamingReply + delta })),
+        onRestart: () => set({ streamingReply: '' }),
+      };
       const turn = await requestPlanTurn({
         ...(await cloudArgs()),
+        handlers,
         body: {
           messages,
           context: {
@@ -300,23 +318,32 @@ export const useCompassStore = create<CompassState>((set, get) => ({
           journey: buildJourneySnapshot() || undefined,
         },
       });
-      set({ submitting: null });
+      set({ submitting: null, streamingReply: '' });
       return turn;
     } catch (err) {
-      set({ error: friendlyError(err), submitting: null });
+      set({ error: friendlyError(err), submitting: null, streamingReply: '' });
       return null;
     }
   },
 
   sendCheckinTurn: async (messages) => {
-    set({ submitting: 'checkin', error: null });
+    set({ submitting: 'checkin', streamingReply: '', error: null });
     try {
       const { goals: allGoals, activeGoalId, trackables: views, logsByTrackable } = get();
       const goal = allGoals.find((g) => g.id === activeGoalId);
       if (!goal) throw new CompassApiError('server', 'No goal is active.');
 
+      // Appended rather than replaced, so a render only ever sees the reply
+      // grow. `restart` is the one case where it goes back, and it only fires
+      // while the reply is unfinished: what is dropped was never a message.
+      const handlers = {
+        onReplyDelta: (delta: string) =>
+          set((state) => ({ streamingReply: state.streamingReply + delta })),
+        onRestart: () => set({ streamingReply: '' }),
+      };
       const turn = await requestCheckinTurn({
         ...(await cloudArgs()),
+        handlers,
         body: {
           messages,
           context: buildCheckinContext(goal, views, logsByTrackable),
@@ -324,10 +351,10 @@ export const useCompassStore = create<CompassState>((set, get) => ({
           journey: buildJourneySnapshot() || undefined,
         },
       });
-      set({ submitting: null });
+      set({ submitting: null, streamingReply: '' });
       return turn;
     } catch (err) {
-      set({ error: friendlyError(err), submitting: null });
+      set({ error: friendlyError(err), submitting: null, streamingReply: '' });
       return null;
     }
   },

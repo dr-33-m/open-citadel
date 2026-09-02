@@ -3,6 +3,9 @@ import { openRouterText } from '@tanstack/ai-openrouter';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
+  encodeCompassEvent,
+  readJsonStringField,
+  type CompassStreamEvent,
   COMPASS_CHECKIN_INSTRUCTIONS,
   COMPASS_ENGINEER_PROMPT,
   COMPASS_PLAN_INSTRUCTIONS,
@@ -133,6 +136,74 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
   }
 }
 
+/**
+ * One streaming attempt at a structured turn.
+ *
+ * The reply is the first field of `{ reply, draft }` and the model writes the
+ * document in schema order, so it is decodable from a prefix long before the
+ * draft exists. `readJsonStringField` turns each partial document into "what
+ * does reply say so far", and the difference against what has already been sent
+ * is the delta. Deltas are computed from the decoded value rather than forwarded
+ * raw, because the raw bytes are JSON: forwarding them would put quotes,
+ * backslashes and `\n` on screen.
+ */
+async function streamAttempt(args: {
+  modelId: string;
+  systemPrompts: string[];
+  messages: { role: 'user' | 'assistant'; content: string }[];
+  schema: z.ZodType;
+  onReply: (delta: string) => void;
+  /** Fired the moment the reply's closing quote lands, which may be well
+   *  before the run finishes or fails. The caller's retry policy turns on it,
+   *  so it cannot wait for a return value that a throw will never produce. */
+  onReplyClosed: () => void;
+  onUsage: (reported: CapturedUsage) => void;
+}): Promise<{ object: unknown; reply: string }> {
+  let raw = '';
+  let sent = '';
+  let replyClosed = false;
+  let object: unknown;
+
+  const stream = (await chat({
+    adapter: openRouterText(args.modelId as any, {
+      httpReferer: process.env.OPENROUTER_HTTP_REFERER,
+      appTitle: process.env.OPENROUTER_APP_TITLE ?? 'Open Citadel',
+    }),
+    messages: args.messages,
+    systemPrompts: args.systemPrompts,
+    outputSchema: args.schema,
+    stream: true,
+    middleware: [{ onUsage: (_ctx, reported) => args.onUsage(reported) }],
+    modelOptions: { temperature: 0.2 },
+  })) as AsyncIterable<any>;
+
+  for await (const chunk of stream) {
+    if (chunk.type === 'TEXT_MESSAGE_CONTENT' && typeof chunk.delta === 'string') {
+      raw += chunk.delta;
+      const read = readJsonStringField(raw, 'reply');
+      if (!read) continue;
+      // Only ever forward growth. A decoder that held back an unfinished
+      // escape reports the same value twice, and a shorter value would mean
+      // the document was rewritten, which cannot happen in a stream.
+      if (read.value.length > sent.length && read.value.startsWith(sent)) {
+        args.onReply(read.value.slice(sent.length));
+        sent = read.value;
+      }
+      if (read.closed && !replyClosed) {
+        replyClosed = true;
+        args.onReplyClosed();
+      }
+    } else if (chunk.type === 'CUSTOM' && chunk.name === 'structured-output.complete') {
+      object = chunk.value?.object;
+    }
+  }
+
+  if (object === undefined) {
+    throw new Error('structured output never completed');
+  }
+  return { object, reply: sent };
+}
+
 export const compassRoutes = new Hono();
 
 function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
@@ -192,22 +263,140 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
       modelId?: string;
       messages: { role: 'user' | 'assistant'; content: string }[];
     } & Record<string, unknown>;
-    const modelOutput = await runStructuredAnalysis({
-      modelId,
-      systemPrompts: [
-        COMPASS_ENGINEER_PROMPT,
-        COMPASS_TURN_PROTOCOL,
-        args.instructions,
-        `Current context (JSON):\n${JSON.stringify(context)}`,
-      ],
-      messages,
-      schema: (args.modelOutputSchema ?? args.outputSchema) as TSchema,
-      usageEventId,
+
+    const systemPrompts = [
+      COMPASS_ENGINEER_PROMPT,
+      COMPASS_TURN_PROTOCOL,
+      args.instructions,
+      `Current context (JSON):\n${JSON.stringify(context)}`,
+    ];
+    const schema = (args.modelOutputSchema ?? args.outputSchema) as z.ZodType;
+
+    /*
+     * Accumulated across attempts, not overwritten: a retry follows an attempt
+     * that already burned billed tokens. Keeping only the last attempt's
+     * numbers would drop real spend out of the metering record.
+     */
+    let usage: CapturedUsage = {};
+    let usageRecorded = false;
+    const recordUsage = (reported: CapturedUsage) => {
+      usageRecorded = true;
+      usage = {
+        promptTokens: (usage.promptTokens ?? 0) + (reported.promptTokens ?? 0),
+        completionTokens: (usage.completionTokens ?? 0) + (reported.completionTokens ?? 0),
+        totalTokens: (usage.totalTokens ?? 0) + (reported.totalTokens ?? 0),
+        cost: (usage.cost ?? 0) + (reported.cost ?? 0),
+      };
+    };
+    const billed = () => ({
+      promptTokens: usageRecorded ? (usage.promptTokens ?? null) : null,
+      completionTokens: usageRecorded ? (usage.completionTokens ?? null) : null,
+      totalTokens: usageRecorded ? (usage.totalTokens ?? null) : null,
+      costUsd: usageRecorded ? (usage.cost ?? null) : null,
     });
 
-    const result = args.normalize ? args.normalize(modelOutput, context) : modelOutput;
+    /*
+     * Newline-delimited JSON rather than TanStack's `toServerSentEventsResponse`.
+     * That helper forwards their event stream verbatim, which is right when a
+     * TanStack client is on the other end. This route sends something smaller
+     * and already chewed: the reply decoded out of the JSON, and the turn after
+     * normalization, which can only happen here because it needs the request's
+     * own context. `application/x-ndjson` is also what /chat/http already
+     * speaks, so the app has one streaming transport rather than two.
+     */
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (event: CompassStreamEvent) => {
+          controller.enqueue(encoder.encode(encodeCompassEvent(event)));
+        };
 
-    return c.json(result);
+        /** How much of the reply the client has been shown, this attempt. */
+        let shown = '';
+        /** Whether that reply is a finished message rather than a fragment. */
+        let replyComplete = false;
+
+        const finish = async (turn: unknown) => {
+          await updateUsageEvent(usageEventId, { status: 'completed', ...billed() });
+          send({ type: 'done', turn });
+        };
+
+        try {
+          let attemptsLeft = 2;
+          for (;;) {
+            attemptsLeft -= 1;
+            try {
+              const result = await streamAttempt({
+                modelId,
+                systemPrompts,
+                messages,
+                schema,
+                onReply: (delta) => {
+                  shown += delta;
+                  send({ type: 'reply', delta });
+                },
+                onReplyClosed: () => {
+                  replyComplete = true;
+                },
+                onUsage: recordUsage,
+              });
+              /*
+               * Validated here, not by the library. The streaming path does
+               * not run schema validation (TanStack's own docs: "validate the
+               * completed object in the consumer when required"), so
+               * `structured-output.complete` carries parsed JSON that has
+               * never been checked against the contract. Without this a
+               * malformed draft would reach the normalizer and then the
+               * device. It is also what makes the retry below fire.
+               */
+              const parsedOutput = schema.parse(result.object);
+              await finish(args.normalize ? args.normalize(parsedOutput, context) : parsedOutput);
+              return;
+            } catch (attemptError) {
+              /*
+               * The reply arrived in full before this failed, so the message on
+               * screen is whole and the reader has read it. Replacing it with a
+               * different one is worse than losing the proposal, which Samwell
+               * can make again next turn.
+               */
+              if (replyComplete && shown.length > 0) {
+                console.warn(
+                  `[Samwell Cloud] compass draft lost after a complete reply (${args.kind}):`,
+                  attemptError,
+                );
+                await finish({ reply: shown, draft: null });
+                return;
+              }
+              if (attemptsLeft <= 0) throw attemptError;
+              console.warn(`[Samwell Cloud] compass turn retrying (${args.kind}):`, attemptError);
+              // Nothing on screen was ever a finished message, so it can go.
+              if (shown.length > 0) send({ type: 'restart' });
+              shown = '';
+              replyComplete = false;
+            }
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Compass turn failed.';
+          console.error(`[Samwell Cloud] compass turn failed (${args.kind}):`, error);
+          await updateUsageEvent(usageEventId, {
+            status: 'errored',
+            error: message,
+            ...billed(),
+          });
+          send({ type: 'error', code: 'compass_analysis_failed', reason: message });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(body, {
+      headers: {
+        'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+      },
+    });
   });
 }
 

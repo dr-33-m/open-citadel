@@ -94,6 +94,24 @@ export interface AgentActivityInput {
 export const PENDING_ACTIVITY: AgentActivity = { orb: 'working', label: 'Processing…' };
 
 /**
+ * What Compass shows while a turn is in flight.
+ *
+ * Here rather than in the Compass body for the reason the rest of this file
+ * exists: the two chat surfaces are the same experience, and the mode only
+ * says what Samwell is focused on. Compass had a `Spinner` and an uppercase
+ * "SAMWELL IS THINKING…" where chat had the orb and the shimmer, so the same
+ * wait looked like two different products.
+ *
+ * `solving` on both: a Compass turn calls no tools and streams nothing, it
+ * reasons over a goal and comes back with one structured answer. That is the
+ * same shape of work `Thinking…` describes in chat.
+ */
+export const COMPASS_ACTIVITY: Record<'plan' | 'checkin', AgentActivity> = {
+  plan: { orb: 'solving', label: 'Thinking it through…' },
+  checkin: { orb: 'solving', label: 'Looking at where you are…' },
+};
+
+/**
  * `null` means show nothing: either nothing is running, or tokens are already
  * arriving and the reply bubble is itself the progress indicator. Two things
  * claiming to be the live status at once is how the old screen ended up with

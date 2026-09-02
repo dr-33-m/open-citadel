@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import {
+  decodeCompassEvents,
   CompassCheckinTurnSchema,
   CompassPlanTurnSchema,
   type CompassCheckinTurn,
@@ -40,13 +41,97 @@ type CompassCallArgs = {
   deviceId: string;
 };
 
-async function postCompass<T>(args: {
+/** What the caller wants to know while the turn is still arriving. */
+export interface CompassTurnHandlers {
+  /** More of Samwell's reply. Append it. */
+  onReplyDelta?: (delta: string) => void;
+  /**
+   * Throw away the reply so far; a second attempt is starting.
+   *
+   * Only ever fires while the reply is unfinished, so what is discarded was
+   * never a whole message. See `CompassStreamEvent`.
+   */
+  onRestart?: () => void;
+}
+
+/**
+ * Read a newline-delimited stream over XHR.
+ *
+ * XHR rather than `fetch`, because React Native's `fetch` has no readable
+ * response body on Android: `res.body` is undefined and the whole response
+ * arrives at once, which is streaming in name only. `onprogress` with a
+ * growing `responseText` is what the chat transport uses for the same reason.
+ */
+function streamNdjson(args: {
+  url: string;
+  deviceId: string;
+  body: unknown;
+  timeoutMs: number;
+  onEvent: (event: ReturnType<typeof decodeCompassEvents>['events'][number]) => void;
+}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    /** How much of `responseText` has already been turned into events. */
+    let consumed = 0;
+    let rest = '';
+
+    const drain = () => {
+      const chunk = xhr.responseText.slice(consumed);
+      if (!chunk) return;
+      consumed = xhr.responseText.length;
+      const decoded = decodeCompassEvents(rest + chunk);
+      rest = decoded.rest;
+      for (const event of decoded.events) args.onEvent(event);
+    };
+
+    xhr.open('POST', args.url);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.setRequestHeader('x-samwell-device-id', args.deviceId);
+    xhr.timeout = args.timeoutMs;
+
+    xhr.onprogress = drain;
+    xhr.onload = () => {
+      drain();
+      if (xhr.status === 429) {
+        reject(
+          new CompassApiError(
+            'usage_limit',
+            'Compass has reached the current usage limit. Try again after the reset window.',
+          ),
+        );
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new CompassApiError('server', `Compass request failed (${xhr.status}).`));
+        return;
+      }
+      resolve();
+    };
+    xhr.onerror = () =>
+      reject(
+        new CompassApiError('network', 'Cannot reach Samwell. Check your connection and try again.'),
+      );
+    xhr.ontimeout = () =>
+      reject(
+        new CompassApiError(
+          'network',
+          'The analysis timed out. Check your connection and try again.',
+        ),
+      );
+    xhr.onabort = () => reject(new CompassApiError('network', 'The request was cancelled.'));
+
+    xhr.send(JSON.stringify(args.body));
+  });
+}
+
+async function streamCompass<T>(args: {
   baseUrl: string;
   deviceId: string;
   path: '/compass/plan' | '/compass/checkin';
   body: unknown;
   schema: z.ZodType<T>;
   timeoutMs?: number;
+  handlers?: CompassTurnHandlers;
 }): Promise<T> {
   try {
     await preflightCloudServer(args.baseUrl);
@@ -57,47 +142,45 @@ async function postCompass<T>(args: {
     );
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), args.timeoutMs ?? ANALYSIS_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(`${args.baseUrl}${args.path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-samwell-device-id': args.deviceId,
-      },
-      body: JSON.stringify(args.body),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    throw new CompassApiError(
-      'network',
-      err instanceof Error && err.name === 'AbortError'
-        ? 'The analysis timed out. Check your connection and try again.'
-        : 'Cannot reach Samwell. Check your connection and try again.',
-    );
-  } finally {
-    clearTimeout(timer);
+  let turn: unknown;
+  let failure: CompassApiError | null = null;
+
+  await streamNdjson({
+    url: `${args.baseUrl}${args.path}`,
+    deviceId: args.deviceId,
+    body: args.body,
+    timeoutMs: args.timeoutMs ?? ANALYSIS_TIMEOUT_MS,
+    onEvent: (event) => {
+      switch (event.type) {
+        case 'reply':
+          args.handlers?.onReplyDelta?.(event.delta);
+          break;
+        case 'restart':
+          args.handlers?.onRestart?.();
+          break;
+        case 'done':
+          turn = event.turn;
+          break;
+        case 'error':
+          failure = new CompassApiError(
+            event.code === 'usage_limit_reached' ? 'usage_limit' : 'analysis_failed',
+            event.code === 'usage_limit_reached'
+              ? 'Compass has reached the current usage limit. Try again after the reset window.'
+              : "Samwell couldn't make sense of that. Try saying it a different way.",
+          );
+          break;
+      }
+    },
+  });
+
+  if (failure) throw failure;
+
+  // The stream ended without a verdict: the connection dropped mid-turn.
+  if (turn === undefined) {
+    throw new CompassApiError('network', 'Samwell stopped mid-answer. Try again.');
   }
 
-  if (res.status === 429) {
-    throw new CompassApiError(
-      'usage_limit',
-      'Compass has reached the current usage limit. Try again after the reset window.',
-    );
-  }
-  if (res.status === 502) {
-    throw new CompassApiError(
-      'analysis_failed',
-      "Samwell couldn't make sense of that. Try saying it a different way.",
-    );
-  }
-  if (!res.ok) {
-    throw new CompassApiError('server', `Compass request failed (${res.status}).`);
-  }
-
-  const parsed = args.schema.safeParse(await res.json());
+  const parsed = args.schema.safeParse(turn);
   if (!parsed.success) {
     throw new CompassApiError(
       'analysis_failed',
@@ -108,9 +191,9 @@ async function postCompass<T>(args: {
 }
 
 export function requestPlanTurn(
-  args: CompassCallArgs & { body: CompassPlanTurnRequest },
+  args: CompassCallArgs & { body: CompassPlanTurnRequest; handlers?: CompassTurnHandlers },
 ): Promise<CompassPlanTurn> {
-  return postCompass({
+  return streamCompass({
     ...args,
     path: '/compass/plan',
     body: args.body,
@@ -120,9 +203,9 @@ export function requestPlanTurn(
 }
 
 export function requestCheckinTurn(
-  args: CompassCallArgs & { body: CompassCheckinTurnRequest },
+  args: CompassCallArgs & { body: CompassCheckinTurnRequest; handlers?: CompassTurnHandlers },
 ): Promise<CompassCheckinTurn> {
-  return postCompass({
+  return streamCompass({
     ...args,
     path: '/compass/checkin',
     body: args.body,

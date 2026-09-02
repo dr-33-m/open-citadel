@@ -8,19 +8,17 @@
  * and the month behind PLANNER, for when they are what you actually came for.
  */
 import React from 'react';
-import { Compass } from 'lucide-react-native';
+import { Compass } from '@/components/icons';
 import { ScrollView, View, type ViewStyle } from 'react-native';
-import { useCSSVariable } from 'uniwind';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { PageFade } from '@/components/scroll-fades';
-import { ThemedText } from '@/components/themed-text';
-import { Spinner } from '@/components/ui/spinner';
+import { AgentStatus } from '@/features/chat/components/agent-status';
 import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
+import { COMPASS_ACTIVITY } from '@/features/chat/utils/agent-activity';
 import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
 import { GoalProposalCard } from '@/features/compass/components/goal-proposal-card';
 import type { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
-import { asColor } from '@/utils/colors';
 
 type Conversation = ReturnType<typeof useCompassConversation>;
 
@@ -47,11 +45,26 @@ export function CompassBody({
   contentColumn,
   floatingClearance,
 }: CompassBodyProps) {
-  const mutedForeground = useCSSVariable('--color-muted-foreground');
-  const muted = asColor(mutedForeground);
   const scrollRef = React.useRef<ScrollView>(null);
 
-  const { kind, messages, draft, approve, refine, submitting, committing } = conversation;
+  const { kind, messages, draft, approve, refine, submitting, streamingReply, committing } =
+    conversation;
+
+  /*
+   * A reply arriving token by token changes this component's state dozens of
+   * times a second, so anything the ScrollView is handed has to survive that.
+   *
+   * `streaming` also decides how the transcript follows the text. An animated
+   * `scrollToEnd` per token queues a new scroll animation before the last one
+   * has finished, dozens deep; jumping is what a transcript that is being
+   * written under you should do anyway, and the animation is for the one case
+   * it reads as motion: a message the reader just sent.
+   */
+  const streaming = submitting !== null && streamingReply.length > 0;
+  const followContent = React.useCallback(() => {
+    scrollRef.current?.scrollToEnd({ animated: !streaming });
+  }, [streaming]);
+  const scrollContentStyle = React.useMemo(() => [floatingClearance], [floatingClearance]);
 
   // Said before the empty prompt, not after: inviting someone to start typing
   // to something that cannot answer is worse than saying so up front.
@@ -78,21 +91,22 @@ export function CompassBody({
     );
   }
 
+  // The same component again, so an empty Compass and an empty chat are one
+  // shape with different words in it. Hand-rolling the title and the paragraph
+  // here is what left this surface without the icon the other one had.
   if (messages.length === 0) {
     return (
-      <View
-        className="flex-1 items-center justify-center gap-2 px-8"
+      <SamwellStatusEmptyState
+        icon={Compass}
         style={floatingClearance}
-      >
-        <ThemedText type="headlineSm" className="text-center">
-          {kind === 'plan' ? 'What do you want to work on?' : 'How is it going?'}
-        </ThemedText>
-        <ThemedText type="bodySm" color={muted} className="text-center">
-          {kind === 'plan'
-            ? 'Talk it through with Samwell. He will turn it into something you can actually track.'
-            : 'Tell him where you are. He can see what you have logged and what you wrote about it.'}
-        </ThemedText>
-      </View>
+        status={{
+          title: kind === 'plan' ? 'What do you want to work on?' : 'How is it going?',
+          message:
+            kind === 'plan'
+              ? 'Talk it through with Samwell. He will turn it into something you can actually track.'
+              : 'Tell him where you are. He can see what you have logged and what you wrote about it.',
+        }}
+      />
     );
   }
 
@@ -103,8 +117,8 @@ export function CompassBody({
         className="flex-1"
         style={contentColumn}
         contentContainerClassName="px-4 py-3 gap-1"
-        contentContainerStyle={[floatingClearance]}
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+        contentContainerStyle={scrollContentStyle}
+        onContentSizeChange={followContent}
       >
         {messages.map((m, i) => (
           // Index keys: these turns have no ids — they are a transient
@@ -113,13 +127,13 @@ export function CompassBody({
           <ChatBubble key={i} role={m.role} content={m.content} animateEntry />
         ))}
 
-        {submitting !== null && (
-          <View className="flex-row items-center gap-3 px-4 py-3">
-            <Spinner size="sm" />
-            <ThemedText type="labelMd" color={muted}>
-              SAMWELL IS THINKING…
-            </ThemedText>
-          </View>
+        {/* Once the reply starts arriving the bubble is the status, exactly as
+            in chat: two things claiming to report the same wait is how the
+            other surface ended up with a pill under a half-written answer. */}
+        {submitting === null ? null : streaming ? (
+          <ChatBubble role="assistant" content={streamingReply} streaming />
+        ) : (
+          <AgentStatus activity={COMPASS_ACTIVITY[submitting]} />
         )}
 
         {draft?.kind === 'plan' && (
