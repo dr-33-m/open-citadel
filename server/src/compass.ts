@@ -152,12 +152,16 @@ async function streamAttempt(args: {
   systemPrompts: string[];
   messages: { role: 'user' | 'assistant'; content: string }[];
   schema: z.ZodType;
+  /** The model's reasoning, forwarded as it is produced. */
+  onThinking: (delta: string) => void;
   onReply: (delta: string) => void;
   /** Fired the moment the reply's closing quote lands, which may be well
    *  before the run finishes or fails. The caller's retry policy turns on it,
    *  so it cannot wait for a return value that a throw will never produce. */
   onReplyClosed: () => void;
   onUsage: (reported: CapturedUsage) => void;
+  /** Fired when the reader goes away, to stop the run mid-flight. */
+  abortController: AbortController;
 }): Promise<{ object: unknown; reply: string }> {
   let raw = '';
   let sent = '';
@@ -173,12 +177,38 @@ async function streamAttempt(args: {
     systemPrompts: args.systemPrompts,
     outputSchema: args.schema,
     stream: true,
+    abortController: args.abortController,
     middleware: [{ onUsage: (_ctx, reported) => args.onUsage(reported) }],
-    modelOptions: { temperature: 0.2 },
+    modelOptions: {
+      temperature: 0.2,
+      /*
+       * Ask for the reasoning back rather than leaving it internal.
+       *
+       * OpenRouter returns reasoning only when the request asks for it, and
+       * this turn is almost entirely reasoning: measured against the live
+       * server, a plan turn was silent for 3.8s and then wrote its whole reply
+       * in 220ms. Without this the reader watches an orb for the part that
+       * takes the time and gets the answer in a blink.
+       *
+       * `enabled` rather than an `effort` level, so each model keeps its own
+       * default depth instead of every model being pushed to the same one. A
+       * model that cannot reason ignores it, emits no reasoning deltas, and
+       * the surface falls back to the orb.
+       */
+      reasoning: { enabled: true },
+    },
   })) as AsyncIterable<any>;
 
   for await (const chunk of stream) {
-    if (chunk.type === 'TEXT_MESSAGE_CONTENT' && typeof chunk.delta === 'string') {
+    /*
+     * Reasoning arrives on the same structured-output stream as the JSON, and
+     * arrives first. Dropping it was why a Compass turn looked like it had
+     * hung: everything the model was doing for the length of the wait went
+     * into a chunk type nobody handled.
+     */
+    if (chunk.type === 'REASONING_MESSAGE_CONTENT' && typeof chunk.delta === 'string') {
+      args.onThinking(chunk.delta);
+    } else if (chunk.type === 'TEXT_MESSAGE_CONTENT' && typeof chunk.delta === 'string') {
       raw += chunk.delta;
       const read = readJsonStringField(raw, 'reply');
       if (!read) continue;
@@ -305,10 +335,30 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
      * speaks, so the app has one streaming transport rather than two.
      */
     const encoder = new TextEncoder();
+    /*
+     * Whether anybody is still reading. A reader that closes the sheet, drops
+     * off the network, or hits the client's own timeout cancels the stream,
+     * and every `enqueue` after that throws ERR_INVALID_STATE.
+     *
+     * That has to be its own state rather than an exception, because an
+     * exception here is indistinguishable from the model failing — and the
+     * retry below would answer a disconnected reader by billing a second run.
+     */
+    let clientGone = false;
+    const abortController = new AbortController();
+
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
         const send = (event: CompassStreamEvent) => {
-          controller.enqueue(encoder.encode(encodeCompassEvent(event)));
+          if (clientGone) return;
+          try {
+            controller.enqueue(encoder.encode(encodeCompassEvent(event)));
+          } catch {
+            // The only way an enqueue fails is a stream that has stopped
+            // accepting writes, which means the reader has gone.
+            clientGone = true;
+            abortController.abort();
+          }
         };
 
         /** How much of the reply the client has been shown, this attempt. */
@@ -331,6 +381,7 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
                 systemPrompts,
                 messages,
                 schema,
+                onThinking: (delta) => send({ type: 'thinking', delta }),
                 onReply: (delta) => {
                   shown += delta;
                   send({ type: 'reply', delta });
@@ -339,6 +390,7 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
                   replyComplete = true;
                 },
                 onUsage: recordUsage,
+                abortController,
               });
               /*
                * Validated here, not by the library. The streaming path does
@@ -353,6 +405,20 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
               await finish(args.normalize ? args.normalize(parsedOutput, context) : parsedOutput);
               return;
             } catch (attemptError) {
+              /*
+               * Nobody is listening. There is no one to show a retry to and no
+               * one to show an error to, so the only honest thing left is to
+               * record what was billed and stop.
+               */
+              if (clientGone) {
+                console.warn(`[Samwell Cloud] compass turn abandoned (${args.kind})`);
+                await updateUsageEvent(usageEventId, {
+                  status: 'errored',
+                  error: 'client disconnected',
+                  ...billed(),
+                });
+                return;
+              }
               /*
                * The reply arrived in full before this failed, so the message on
                * screen is whole and the reader has read it. Replacing it with a
@@ -385,8 +451,18 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
           });
           send({ type: 'error', code: 'compass_analysis_failed', reason: message });
         } finally {
-          controller.close();
+          if (!clientGone) {
+            try {
+              controller.close();
+            } catch {
+              // Closed under us between the last write and here.
+            }
+          }
         }
+      },
+      cancel() {
+        clientGone = true;
+        abortController.abort();
       },
     });
 

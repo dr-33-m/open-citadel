@@ -13,6 +13,7 @@ import { ScrollView, View, type ViewStyle } from 'react-native';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { PageFade } from '@/components/scroll-fades';
+import { Reasoning } from '@/components/ui/reasoning';
 import { AgentStatus } from '@/features/chat/components/agent-status';
 import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
 import { COMPASS_ACTIVITY } from '@/features/chat/utils/agent-activity';
@@ -47,8 +48,17 @@ export function CompassBody({
 }: CompassBodyProps) {
   const scrollRef = React.useRef<ScrollView>(null);
 
-  const { kind, messages, draft, approve, refine, submitting, streamingReply, committing } =
-    conversation;
+  const {
+    kind,
+    messages,
+    draft,
+    approve,
+    refine,
+    submitting,
+    streamingReply,
+    streamingThinking,
+    committing,
+  } = conversation;
 
   /*
    * A reply arriving token by token changes this component's state dozens of
@@ -61,6 +71,13 @@ export function CompassBody({
    * it reads as motion: a message the reader just sent.
    */
   const streaming = submitting !== null && streamingReply.length > 0;
+  /*
+   * The reasoning is live only until the reply starts. Measured against the
+   * server, that is nearly the whole turn: a plan turn thought for 3.8s and
+   * then wrote its reply in 220ms, so this panel is what covers the wait and
+   * the reply is the short part at the end.
+   */
+  const thinking = submitting !== null && !streaming;
   const followContent = React.useCallback(() => {
     scrollRef.current?.scrollToEnd({ animated: !streaming });
   }, [streaming]);
@@ -130,9 +147,24 @@ export function CompassBody({
         {/* Once the reply starts arriving the bubble is the status, exactly as
             in chat: two things claiming to report the same wait is how the
             other surface ended up with a pill under a half-written answer. */}
+        {/* Above the bubble, not inside it: the trace is about the answer
+            rather than part of it. It folds itself away once the reply
+            starts. */}
+        {streamingThinking.length > 0 ? (
+          <View className="px-4 pb-1">
+            <Reasoning isStreaming={thinking}>
+              <Reasoning.Trigger />
+              <Reasoning.Content>{streamingThinking}</Reasoning.Content>
+            </Reasoning>
+          </View>
+        ) : null}
+
         {submitting === null ? null : streaming ? (
           <ChatBubble role="assistant" content={streamingReply} streaming />
-        ) : (
+        ) : streamingThinking.length > 0 ? null : (
+          // Only until the model says something. Once the trace is arriving it
+          // is the better answer to "what is happening", and two indicators
+          // claiming the same wait is what the chat surface already learned.
           <AgentStatus activity={COMPASS_ACTIVITY[submitting]} />
         )}
 

@@ -28,6 +28,7 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
   const activeGoalId = useCompassStore((s) => s.activeGoalId);
   const submitting = useCompassStore((s) => s.submitting);
   const streamingReply = useCompassStore((s) => s.streamingReply);
+  const streamingThinking = useCompassStore((s) => s.streamingThinking);
   const committing = useCompassStore((s) => s.committing);
   const sendPlanTurn = useCompassStore((s) => s.sendPlanTurn);
   const sendCheckinTurn = useCompassStore((s) => s.sendCheckinTurn);
@@ -103,6 +104,7 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
     refine,
     submitting,
     streamingReply,
+    streamingThinking,
     committing,
     isBusy: submitting !== null || committing,
   };

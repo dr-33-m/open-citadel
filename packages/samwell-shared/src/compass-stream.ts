@@ -28,6 +28,14 @@
  */
 
 export type CompassStreamEvent =
+  /**
+   * More of the model's reasoning, before it writes anything.
+   *
+   * This is the part of a turn that actually takes time: measured against the
+   * live server, a plan turn was silent for 3.8s and then wrote its whole
+   * reply in 220ms. The reply is not what there is to watch; the thinking is.
+   */
+  | { type: 'thinking'; delta: string }
   /** More of the reply. Append it; deltas never overlap and never go back. */
   | { type: 'reply'; delta: string }
   /** Discard the reply so far. A second attempt is starting. */

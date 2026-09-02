@@ -72,6 +72,14 @@ type CompassState = {
    * transcript, rather than twice.
    */
   streamingReply: string;
+  /**
+   * The model's reasoning for the turn in flight.
+   *
+   * Kept after the turn lands rather than cleared with the reply, so the
+   * folded "Thought for 8 seconds" row stays with the answer it produced. The
+   * next turn is what clears it.
+   */
+  streamingThinking: string;
   committing: boolean;
   error: string | null;
 
@@ -252,6 +260,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   isLoaded: false,
   submitting: null,
   streamingReply: '',
+  streamingThinking: '',
   committing: false,
   error: null,
 
@@ -295,15 +304,17 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   },
 
   sendPlanTurn: async (messages) => {
-    set({ submitting: 'plan', streamingReply: '', error: null });
+    set({ submitting: 'plan', streamingReply: '', streamingThinking: '', error: null });
     try {
       // Appended rather than replaced, so a render only ever sees the reply
       // grow. `restart` is the one case where it goes back, and it only fires
       // while the reply is unfinished: what is dropped was never a message.
       const handlers = {
+        onThinkingDelta: (delta: string) =>
+          set((state) => ({ streamingThinking: state.streamingThinking + delta })),
         onReplyDelta: (delta: string) =>
           set((state) => ({ streamingReply: state.streamingReply + delta })),
-        onRestart: () => set({ streamingReply: '' }),
+        onRestart: () => set({ streamingReply: '', streamingThinking: '' }),
       };
       const turn = await requestPlanTurn({
         ...(await cloudArgs()),
@@ -327,7 +338,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   },
 
   sendCheckinTurn: async (messages) => {
-    set({ submitting: 'checkin', streamingReply: '', error: null });
+    set({ submitting: 'checkin', streamingReply: '', streamingThinking: '', error: null });
     try {
       const { goals: allGoals, activeGoalId, trackables: views, logsByTrackable } = get();
       const goal = allGoals.find((g) => g.id === activeGoalId);
@@ -337,9 +348,11 @@ export const useCompassStore = create<CompassState>((set, get) => ({
       // grow. `restart` is the one case where it goes back, and it only fires
       // while the reply is unfinished: what is dropped was never a message.
       const handlers = {
+        onThinkingDelta: (delta: string) =>
+          set((state) => ({ streamingThinking: state.streamingThinking + delta })),
         onReplyDelta: (delta: string) =>
           set((state) => ({ streamingReply: state.streamingReply + delta })),
-        onRestart: () => set({ streamingReply: '' }),
+        onRestart: () => set({ streamingReply: '', streamingThinking: '' }),
       };
       const turn = await requestCheckinTurn({
         ...(await cloudArgs()),
