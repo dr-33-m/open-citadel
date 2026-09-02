@@ -62,6 +62,13 @@ export interface CloudChatTurnOptions {
   history: StoredChatMessage[];
   content: string;
   onStreamingContent: (content: string) => void;
+  /**
+   * The model's reasoning so far, as one growing string.
+   *
+   * The whole trace rather than a delta, so the caller stores what it is given
+   * instead of accumulating a second copy of it.
+   */
+  onThinkingContent: (content: string) => void;
   /** `name` is the tool the status describes, so the caller can pick a
    *  matching indicator; both are null when the run ends. */
   onToolStatus: (status: string | null, name: string | null) => void;
@@ -358,8 +365,15 @@ export async function sendCloudChatTurn({
   history,
   content,
   onStreamingContent,
+  onThinkingContent,
   onToolStatus,
 }: CloudChatTurnOptions): Promise<string> {
+  /*
+   * The reasoning trace, accumulated here rather than in the store, so a
+   * re-render of the chat screen cannot lose a delta that arrived between two
+   * of them.
+   */
+  let thinking = '';
   await preflightCloudServer(baseUrl);
 
   const approvals: ApprovalRequest[] = [];
@@ -379,6 +393,19 @@ export async function sendCloudChatTurn({
     onChunk: (chunk) => {
       const approval = collectApproval(chunk);
       if (approval) approvals.push(approval);
+
+      /*
+       * Reasoning arrives as its own chunk type, before any answer text. It
+       * was being dropped, which is why the cloud half of the app never had a
+       * thinking trace while the on-device half did.
+       */
+      if (chunk.type === 'REASONING_MESSAGE_CONTENT') {
+        const delta = (chunk as { delta?: unknown }).delta;
+        if (typeof delta === 'string' && delta) {
+          thinking += delta;
+          onThinkingContent(thinking);
+        }
+      }
 
       const toolName = readToolName(chunk);
       if (toolName) onToolStatus(statusForTool(toolName), toolName);

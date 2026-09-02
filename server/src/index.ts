@@ -424,6 +424,21 @@ app.post('/chat/http', async (c) => {
       maxCompletionTokens: 1200,
       toolChoice: 'auto',
       parallelToolCalls: false,
+      /*
+       * Ask for the reasoning back rather than leaving it internal.
+       *
+       * OpenRouter returns reasoning only when the request asks for it, so a
+       * reasoning model's thinking was being spent and thrown away: the app
+       * has had a `ThinkingSection` since the on-device path landed, and on
+       * cloud it was always empty.
+       *
+       * `enabled` rather than an `effort` level, so each model keeps its own
+       * default depth. A model that cannot reason ignores it and emits no
+       * reasoning deltas, which is what makes this safe to send to every
+       * model in the fallback chain rather than gating on a capability flag
+       * the catalogue does not carry.
+       */
+      reasoning: { enabled: true },
     },
   });
 

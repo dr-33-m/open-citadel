@@ -113,10 +113,15 @@ export function ChatTranscript({
             // so the handover is invisible rather than a spinner turning into
             // an orb.
             <AgentStatus activity={PENDING_ACTIVITY} />
-          ) : !isGenerating && thinkingContent ? (
-            <ThinkingSection content={thinkingContent} />
+          ) : thinkingContent && !streamingContent ? (
+            // The trace outranks the orb while it is arriving: it answers
+            // "what is happening" with what is actually happening. Two things
+            // reporting one wait is the mistake this footer already made once.
+            <ThinkingSection content={thinkingContent} streaming={isGenerating} />
           ) : activity ? (
             <AgentStatus activity={activity} />
+          ) : !isGenerating && thinkingContent ? (
+            <ThinkingSection content={thinkingContent} />
           ) : null}
         </ScrollView>
       </PageFade>

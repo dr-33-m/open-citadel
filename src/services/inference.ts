@@ -166,6 +166,17 @@ export function checkMemoryHeadroom(minAvailableBytes = 250 * 1024 * 1024): Memo
  */
 export async function chat(
   userMessage: string,
+  /**
+   * `reasoningContent` is always empty here, and cannot be otherwise yet.
+   *
+   * The engine streams one undifferentiated token channel —
+   * `execute(parts, onToken)` — and its reasoning only surfaces at the end, on
+   * `ExecuteResult.thinkingText`, which is what fills the trace panel on this
+   * path. The spec's `LoadOptions` doc mentions an `onThinkingToken`, but no
+   * such parameter exists on the native interface; adding one is a fork change
+   * and a native rebuild. Until then on-device thinking is a finished trace,
+   * where cloud's is a live one.
+   */
   onData: (data: { content: string; reasoningContent: string }) => void,
 ): Promise<ExecuteResult> {
   if (!_llm) throw new Error('No model loaded');

@@ -533,6 +533,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               streamingContent: streamed,
             });
           },
+          // The same field the on-device path fills from `result.thinkingText`,
+          // so one trace slot serves both engines. Live here rather than at the
+          // end, because on cloud the thinking IS the wait.
+          onThinkingContent: (trace) => set({ isThinking: true, thinkingContent: trace }),
           onToolStatus: (status, name) => {
             set({
               isToolCalling: status !== null,

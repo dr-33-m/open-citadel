@@ -171,9 +171,13 @@ export default function ChatSessionScreen() {
   });
 
   const listFooter = useMemo(() => {
-    // The finished reply's trace, the live activity line, the streaming
-    // bubble, or nothing — in that order, and never two at once.
-    if (!isGenerating && thinkingContent) return <ThinkingSection content={thinkingContent} />;
+    // The trace, the live activity line, the streaming bubble, or nothing —
+    // in that order, and never two at once. The trace comes first while it is
+    // arriving because on a reasoning model it is the wait, and it outranks an
+    // orb that can only say "working".
+    if (thinkingContent && !streamingContent) {
+      return <ThinkingSection content={thinkingContent} streaming={isGenerating} />;
+    }
     if (activity) return <AgentStatus activity={activity} />;
     if (isGenerating && streamingContent) {
       return (
