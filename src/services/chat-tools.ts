@@ -1,5 +1,6 @@
 import { and, desc, eq, like, or } from 'drizzle-orm';
 import type { ToolDefinition } from '@dr33m/react-native-litert-lm';
+import { SAMWELL_SYSTEM_PROMPT, SAMWELL_SYSTEM_PROMPT_COMPACT } from 'samwell-shared';
 
 import { db } from '@/db/client';
 import { books, chatSuggestions, collections, highlights, notes, readingProgress, thoughts } from '@/db/schema';
@@ -556,6 +557,20 @@ export function toolsForContext(maxContextTokens: number): ToolDefinition[] {
   return maxContextTokens >= FULL_TOOLSET_MIN_CONTEXT_TOKENS
     ? SAMWELL_TOOLS_LITERT
     : SAMWELL_TOOLS_LITERT_DEVICE;
+}
+
+/**
+ * The system prompt that matches that toolset.
+ *
+ * Same threshold, deliberately in the same function-pair as `toolsForContext`:
+ * the compact prompt names only the tools in `DEVICE_TOOL_NAMES`, so a window
+ * that loads the full catalogue must get the full prompt or Samwell will not
+ * know he has half his tools. Two thresholds in two files is how they drift.
+ */
+export function systemPromptForContext(maxContextTokens: number): string {
+  return maxContextTokens >= FULL_TOOLSET_MIN_CONTEXT_TOKENS
+    ? SAMWELL_SYSTEM_PROMPT
+    : SAMWELL_SYSTEM_PROMPT_COMPACT;
 }
 
 // ── Tool result types ───────────────────────────────────────────────────────

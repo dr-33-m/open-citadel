@@ -1,6 +1,5 @@
 import { createLLM, isNativeAvailable, type Backend, type ExecuteResult, type MemoryUsage, type ToolResponse } from '@dr33m/react-native-litert-lm';
-import { SAMWELL_SYSTEM_PROMPT } from 'samwell-shared';
-import { toolsForContext } from './chat-tools';
+import { systemPromptForContext, toolsForContext } from './chat-tools';
 import {
   ContextBudget,
   estimateTokens,
@@ -48,10 +47,13 @@ export async function loadModel(filePath: string, settings?: Partial<ModelSettin
 
   const maxContextTokens = settings?.contextSize ?? 4096;
   const tools = enableToolCalling ? toolsForContext(maxContextTokens) : [];
+  // Paired with the toolset above: the compact prompt describes only the
+  // device toolset, so the two are chosen on the same threshold in one place.
+  const systemPrompt = systemPromptForContext(maxContextTokens);
 
   _llm = createLLM();
   await _llm.loadModel(filePath, {
-    systemPrompt: SAMWELL_SYSTEM_PROMPT,
+    systemPrompt,
     backend: settings?.backend ?? 'gpu',
     maxContextTokens,
     maxOutputTokens: 1024,
@@ -68,7 +70,7 @@ export async function loadModel(filePath: string, settings?: Partial<ModelSettin
   // every conversation the engine builds, so they are the floor no amount of
   // compaction can go below.
   const baseline =
-    tokensFor(SAMWELL_SYSTEM_PROMPT) +
+    tokensFor(systemPrompt) +
     tools.reduce((n, t) => n + tokensFor(`${t.name}${t.description}${t.parametersJson}`), 0);
   _budget = new ContextBudget(maxContextTokens, baseline, REPLY_RESERVE_TOKENS);
 }
