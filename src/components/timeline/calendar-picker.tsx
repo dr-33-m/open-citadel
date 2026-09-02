@@ -5,6 +5,7 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
+import { Card } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { cn } from '@/lib/cn';
@@ -173,7 +174,10 @@ export function CalendarPicker({
 
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <View className="px-6">
+      {/* The month sits in a card, like the Compass planner's does: a calendar
+          is a surface carrying content, not a bare block of the sheet. */}
+      <View className="px-4">
+        <Card className="p-4">
         <View className="mb-4 flex-row items-center justify-between">
           <Touchable onPress={prevMonth} className="h-9 w-9 items-center justify-center" hitSlop={4}>
             <ChevronLeft size={20} color={asColor(foreground)} />
@@ -219,11 +223,14 @@ export function CalendarPicker({
                   key={ci}
                   className={cn(
                     'flex-1 items-center justify-center py-3',
-                    // Literal `rounded-full`, not a themed radius step: this
-                    // circular selected/today mark is a deliberate exception
-                    // to the app's square-corner rule, same as before.
-                    isSelected && 'rounded-full bg-primary',
-                    isToday && !isSelected && 'rounded-full border border-primary',
+                    // Square, like the Compass planner's day marks. On RN 0.86
+                    // / Fabric a filled view ignores `borderRadius` while a
+                    // stroked one honours it, so a round selected day and a
+                    // round today ring could not be made to agree — and two
+                    // calendars in one app must not disagree about what a day
+                    // looks like.
+                    isSelected && 'bg-primary',
+                    isToday && !isSelected && 'border border-primary',
                   )}
                   onPress={() => {
                     if (!isDisabled) {
@@ -247,7 +254,7 @@ export function CalendarPicker({
                   </ThemedText>
                   {legacyMode && dateStr < today && (
                     <View
-                      className="mt-1 h-[3px] w-[3px] rounded-full"
+                      className="mt-1 h-[3px] w-[3px]"
                       style={{ backgroundColor: asColor(dotColor), opacity: dotOpacity }}
                     />
                   )}
@@ -256,6 +263,7 @@ export function CalendarPicker({
             })}
           </View>
         ))}
+        </Card>
       </View>
     </Sheet>
   );

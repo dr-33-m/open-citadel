@@ -141,6 +141,9 @@ export function LibraryPage() {
   const archivedBooks = useArchivedBooks();
   const favoriteBooks = useFavoriteBooks();
   const allBooks = useAllBooks();
+  /* A fresh array every render is a new prop for the memo'd shelf below, which
+     is the whole point of memoizing it. */
+  const allBooksPreview = React.useMemo(() => allBooks.slice(0, 20), [allBooks]);
 
   // Auto-scroll back when a currently-reading book is removed. Also re-scrubs
   // the scroll target when the window width changes (rotation/foldables), so
@@ -454,7 +457,7 @@ export function LibraryPage() {
                     }}
                   />
                   <BookQueue
-                    books={allBooks.slice(0, 20)}
+                    books={allBooksPreview}
                     onBookPress={openReader}
                     onBookLongPress={setActionBook}
                   />

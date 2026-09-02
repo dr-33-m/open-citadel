@@ -3,20 +3,19 @@ import { openRouterText } from '@tanstack/ai-openrouter';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
+  COMPASS_CHECKIN_INSTRUCTIONS,
   COMPASS_ENGINEER_PROMPT,
-  COMPASS_MORNING_INSTRUCTIONS,
-  COMPASS_NIGHT_INSTRUCTIONS,
-  COMPASS_SETUP_INSTRUCTIONS,
+  COMPASS_PLAN_INSTRUCTIONS,
   COMPASS_TURN_PROTOCOL,
-  CompassMorningTurnModelSchema,
-  CompassMorningTurnRequestSchema,
-  CompassMorningTurnSchema,
-  CompassNightTurnRequestSchema,
-  CompassNightTurnSchema,
-  CompassSetupTurnRequestSchema,
-  CompassSetupTurnSchema,
+  CompassCheckinTurnModelSchema,
+  CompassCheckinTurnRequestSchema,
+  CompassCheckinTurnSchema,
+  CompassPlanTurnModelSchema,
+  CompassPlanTurnRequestSchema,
+  CompassPlanTurnSchema,
   DEFAULT_CLOUD_MODEL_ID,
-  normalizeCompassMorningTurn,
+  normalizeCompassCheckinTurn,
+  normalizeCompassPlanTurn,
 } from 'samwell-shared';
 import { z } from 'zod';
 
@@ -42,7 +41,7 @@ function resolveModelId(requested: string | undefined, knownModelIds: string[]):
 export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
   modelId: string;
   systemPrompts: string[];
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: { role: 'user' | 'assistant'; content: string }[];
   schema: TSchema;
   usageEventId: string;
   maxCompletionTokens?: number;
@@ -143,7 +142,7 @@ export const compassRoutes = new Hono();
 
 function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
   path: string;
-  kind: 'compass_setup' | 'compass_morning' | 'compass_night';
+  kind: 'compass_plan' | 'compass_checkin';
   requestSchema: z.ZodType<{ modelId?: string | undefined } & Record<string, unknown>>;
   outputSchema: TSchema;
   /**
@@ -157,7 +156,7 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
    * Takes `any` so typed normalizers like `normalizeCompassMorningTurn` fit
    * without cast gymnastics — the input has already been validated against
    * `modelOutputSchema` by the time it gets here. */
-  normalize?: (raw: any) => z.infer<TSchema>;
+  normalize?: (raw: any, context: Record<string, unknown>) => z.infer<TSchema>;
   instructions: string;
 }): void {
   compassRoutes.post(args.path, async (c) => {
@@ -196,7 +195,7 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
 
     const { modelId: _requestedModel, messages, ...context } = parsed.data as {
       modelId?: string;
-      messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+      messages: { role: 'user' | 'assistant'; content: string }[];
     } & Record<string, unknown>;
     const modelOutput = await runStructuredAnalysis({
       modelId,
@@ -211,35 +210,44 @@ function registerAnalysisRoute<TSchema extends z.ZodType>(args: {
       usageEventId,
     });
 
-    const result = args.normalize ? args.normalize(modelOutput) : modelOutput;
+    const result = args.normalize ? args.normalize(modelOutput, context) : modelOutput;
 
     return c.json(result);
   });
 }
 
 registerAnalysisRoute({
-  path: '/setup',
-  kind: 'compass_setup',
-  requestSchema: CompassSetupTurnRequestSchema,
-  outputSchema: CompassSetupTurnSchema,
-  instructions: COMPASS_SETUP_INSTRUCTIONS,
+  path: '/plan',
+  kind: 'compass_plan',
+  requestSchema: CompassPlanTurnRequestSchema,
+  outputSchema: CompassPlanTurnSchema,
+  // The goal proposal is the largest structured output this app asks for — a
+  // goal wrapping up to five trackables, each with its own schedule and
+  // measurement. Holding the model to the strict discriminated unions throws
+  // away an otherwise good conversation over one stray key, so it answers in
+  // the flat nullable shape and the normalizer rebuilds the real thing.
+  modelOutputSchema: CompassPlanTurnModelSchema,
+  normalize: (raw, context) => {
+    const ctx = (context.context ?? {}) as { today?: string; timezone?: string };
+    return normalizeCompassPlanTurn(raw, {
+      today: ctx.today ?? new Date().toISOString().slice(0, 10),
+      timezone: ctx.timezone ?? 'UTC',
+    });
+  },
+  instructions: COMPASS_PLAN_INSTRUCTIONS,
 });
 
 registerAnalysisRoute({
-  path: '/morning',
-  kind: 'compass_morning',
-  requestSchema: CompassMorningTurnRequestSchema,
-  outputSchema: CompassMorningTurnSchema,
-  // Validated loosely, then trimmed to fit — see CompassMorningTurnModelSchema.
-  modelOutputSchema: CompassMorningTurnModelSchema,
-  normalize: normalizeCompassMorningTurn,
-  instructions: COMPASS_MORNING_INSTRUCTIONS,
-});
-
-registerAnalysisRoute({
-  path: '/night',
-  kind: 'compass_night',
-  requestSchema: CompassNightTurnRequestSchema,
-  outputSchema: CompassNightTurnSchema,
-  instructions: COMPASS_NIGHT_INSTRUCTIONS,
+  path: '/checkin',
+  kind: 'compass_checkin',
+  requestSchema: CompassCheckinTurnRequestSchema,
+  outputSchema: CompassCheckinTurnSchema,
+  modelOutputSchema: CompassCheckinTurnModelSchema,
+  // An adjustment naming a trackable that does not exist cannot be approved,
+  // so it is dropped here rather than shown as a button that does nothing.
+  normalize: (raw, context) => {
+    const ctx = (context.context ?? {}) as { trackables?: { id: string }[] };
+    return normalizeCompassCheckinTurn(raw, (ctx.trackables ?? []).map((t) => t.id));
+  },
+  instructions: COMPASS_CHECKIN_INSTRUCTIONS,
 });

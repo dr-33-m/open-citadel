@@ -1,25 +1,17 @@
 import { create } from 'zustand';
-import type {
-  CompassChatMessage,
-  CompassMorningAnalysis,
-  CompassNightAnalysis,
-  CompassSetupProposal,
-} from 'samwell-shared';
+import type { CompassChatMessage, CompassCheckinDraft, GoalProposal } from 'samwell-shared';
 
 export type SamwellMode = 'chat' | 'compass';
+
+/** What the current Compass conversation has proposed, if anything. */
 export type CompassDraft =
-  | CompassSetupProposal
-  | CompassMorningAnalysis
-  | CompassNightAnalysis
+  | { kind: 'plan'; proposal: GoalProposal }
+  | { kind: 'checkin'; draft: CompassCheckinDraft }
   | null;
 
 type SamwellSessionStore = {
   /** Chat or Compass — the two things the one screen does. */
   mode: SamwellMode;
-  /** Whether the Compass conversation is open over the Compass timeline. */
-  compassOpen: boolean;
-  /** Peeking at the timeline without closing the conversation behind it. */
-  compassPeek: boolean;
   /** What is typed but not yet sent. */
   draft: string;
   /** The book a not-yet-created chat will be grounded in. */
@@ -28,13 +20,28 @@ type SamwellSessionStore = {
   /** The Compass conversation in progress, and the proposal it has reached. */
   compassMessages: CompassChatMessage[];
   compassDraft: CompassDraft;
-  /** An approved setup proposal, waiting on its dates before it is committed. */
-  committingProposal: CompassSetupProposal | null;
-  milestoneDate: string | null;
-  goalDate: string | null;
+  /**
+   * The user asked to work on the draft some more.
+   *
+   * This does NOT dismiss the card — that is the whole reason the old REFINE
+   * button never worked. It stays on screen while they type their objection,
+   * so they can see what they are arguing with. The next send clears it.
+   */
+  refining: boolean;
+
+  /**
+   * Cards swiped past with "not now", for this session only.
+   *
+   * Deliberately not a row. "Not now" is not data: the user did not tell us
+   * anything happened, only that they did not want to answer yet, and writing
+   * that down would put it in the consistency maths where it does not belong.
+   * It comes back tomorrow, and it comes back if they reopen the deck after a
+   * relaunch, which is the honest behaviour.
+   */
+  skippedTrackableIds: string[];
 
   set: (patch: Partial<SamwellSessionStore>) => void;
-  /** Everything a finished check-in or a fresh chat should clear. */
+  /** Everything a finished conversation or a fresh one should clear. */
   resetCompass: () => void;
 };
 
@@ -47,33 +54,26 @@ type SamwellSessionStore = {
  * anything held in `useState` there would go with it. Most of what the screen
  * shows already lives in a store (`useChatStore`, `useCompassStore`); this is
  * the rest, and it is the part that would hurt most to lose: a half-finished
- * check-in is a conversation the user has already had once.
+ * conversation is one the user has already had once.
  *
  * Deliberately not persisted to disk. This survives navigation, not a
- * relaunch — a stale morning check-in restored days later would be worse than
- * a fresh one.
+ * relaunch.
  */
 export const useSamwellSessionStore = create<SamwellSessionStore>((set) => ({
   mode: 'chat',
-  compassOpen: false,
-  compassPeek: false,
   draft: '',
   pendingBook: null,
   compassMessages: [],
   compassDraft: null,
-  committingProposal: null,
-  milestoneDate: null,
-  goalDate: null,
+  refining: false,
+  skippedTrackableIds: [],
 
   set: (patch) => set(patch),
   resetCompass: () =>
     set({
       compassMessages: [],
       compassDraft: null,
-      committingProposal: null,
-      milestoneDate: null,
-      goalDate: null,
-      compassOpen: false,
-      compassPeek: false,
+      refining: false,
+      skippedTrackableIds: [],
     }),
 }));

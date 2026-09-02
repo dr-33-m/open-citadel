@@ -30,6 +30,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 
 import { ApprovalDialog } from '@/components/approval-dialog';
 import { MemoryHud } from '@/components/dev/memory-hud';
+import { ToastProvider } from '@/components/toast/toast-provider';
 import { PanelUIProvider } from '@/components/ui/panel-ui-provider';
 import { ThemeTokensProvider } from '@/hooks/use-theme-tokens';
 import { TransitionStack } from '@/navigation/stack';
@@ -232,6 +233,9 @@ export default function RootLayout() {
         in the app needs, plus PanelUI's own portal/toast host and the keyboard
         controller provider. */}
     <PanelUIProvider>
+      {/* Toasts portal into PanelUIProvider's host so they draw above every
+          sheet, so this has to sit inside it. */}
+      <ToastProvider>
       {/* Every sheet in the app is a @gorhom/bottom-sheet modal (see
           components/ui/sheet), and they present into this provider's own
           portal host. It sits above the navigator rather than inside it, so a
@@ -295,6 +299,7 @@ export default function RootLayout() {
           {__DEV__ && <MemoryHud />}
         </ThemeProvider>
       </BottomSheetModalProvider>
+      </ToastProvider>
     </PanelUIProvider>
     </ThemeTokensProvider>
   );

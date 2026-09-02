@@ -1,37 +1,37 @@
 /**
- * What the Compass tab shows: the timeline, or the conversation over it.
+ * What Compass shows: a conversation, and whatever it has proposed.
  *
- * Closed (or peeked) it is the timeline — the goal, where it stands, what is
- * due. Open it is a check-in conversation, which ends in a draft card the
- * reader approves rather than in a message, because a check-in is something
- * you agree to, not something Samwell tells you.
+ * You land on an empty chat. There is no dashboard to read first and no clock
+ * deciding what kind of conversation you are allowed to have — the reason
+ * someone opens this is usually that they are stuck right now, and the useful
+ * response to that is a cursor, not a chart. The numbers live behind INSIGHTS
+ * and the month behind PLANNER, for when they are what you actually came for.
  */
 import React from 'react';
+import { Compass } from 'lucide-react-native';
 import { ScrollView, View, type ViewStyle } from 'react-native';
 import { useCSSVariable } from 'uniwind';
-import type {
-  CompassMorningAnalysis,
-  CompassNightAnalysis,
-  CompassSetupProposal,
-} from 'samwell-shared';
 
-import { PageFade } from '@/components/scroll-fades';
 import { ChatBubble } from '@/components/chat/chat-bubble';
-import { MorningDraftCard, NightDraftCard, SetupDraftCard } from '@/components/compass/draft-cards';
-import { formatCompassDate } from '@/components/compass/format';
-import { SamwellCompassTimeline } from '@/components/samwell/samwell-compass-timeline';
+import { PageFade } from '@/components/scroll-fades';
 import { ThemedText } from '@/components/themed-text';
-import { GoldButton } from '@/components/ui/gold-button';
 import { Spinner } from '@/components/ui/spinner';
-import { Touchable } from '@/components/ui/touchable';
-import type { CompassFlowState } from '@/features/compass/hooks/use-compass-flow';
+import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
+import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
+import { GoalProposalCard } from '@/features/compass/components/goal-proposal-card';
+import type { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
 import { asColor } from '@/utils/colors';
 
+type Conversation = ReturnType<typeof useCompassConversation>;
+
 interface CompassBodyProps {
-  compass: CompassFlowState;
+  conversation: Conversation;
+  /** Compass is a cloud feature; without it there is nothing to talk to. */
   cloudReady: boolean;
   notConfigured: boolean;
   onOpenSettings: () => void;
+  /** Titles by trackable id, so an adjustment can name what it changes. */
+  trackableTitles: Record<string, string>;
   /** The shared centred column, so this matches the chat transcript. */
   contentColumn: ViewStyle;
   /** Keeps content clear of the floating input card. */
@@ -39,44 +39,63 @@ interface CompassBodyProps {
 }
 
 export function CompassBody({
-  compass,
+  conversation,
   cloudReady,
   notConfigured,
   onOpenSettings,
+  trackableTitles,
   contentColumn,
   floatingClearance,
 }: CompassBodyProps) {
-  const [primary, mutedForeground] = useCSSVariable([
-    '--color-primary',
-    '--color-muted-foreground',
-  ]);
+  const mutedForeground = useCSSVariable('--color-muted-foreground');
+  const muted = asColor(mutedForeground);
   const scrollRef = React.useRef<ScrollView>(null);
 
-  const { flow, opener, messages, draft, open, peek, submitting, committingProposal } = compass;
+  const { kind, messages, draft, approve, refine, submitting, committing } = conversation;
 
-  if (!open || peek) {
+  // Said before the empty prompt, not after: inviting someone to start typing
+  // to something that cannot answer is worse than saying so up front.
+  //
+  // Drawn by the same component the chat surface uses, rather than a layout of
+  // its own. It had a full-width `GoldButton` where chat has a small bordered
+  // one, so the two halves of one screen disagreed about how big "the way out
+  // of this" is — and there is no reason for the answer to differ by tab.
+  if (!cloudReady) {
     return (
-      <SamwellCompassTimeline
-        cloudReady={cloudReady}
-        notConfigured={notConfigured}
-        onOpenSettings={onOpenSettings}
-        goal={compass.goal}
+      <SamwellStatusEmptyState
+        icon={Compass}
+        style={floatingClearance}
+        status={{
+          title: 'Compass needs Samwell Cloud.',
+          message: notConfigured
+            ? 'This build has no cloud server, so Samwell cannot help you plan a goal yet.'
+            : 'Tap button below to switch Samwell to cloud mode and get started with your goals.',
+          actions: notConfigured
+            ? undefined
+            : [{ label: 'OPEN SETTINGS', onPress: onOpenSettings }],
+        }}
       />
     );
   }
 
   if (messages.length === 0) {
     return (
-      <View className="flex-1 items-center justify-center gap-2 px-4" style={floatingClearance}>
-        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          Start chatting
+      <View
+        className="flex-1 items-center justify-center gap-2 px-8"
+        style={floatingClearance}
+      >
+        <ThemedText type="headlineSm" className="text-center">
+          {kind === 'plan' ? 'What do you want to work on?' : 'How is it going?'}
+        </ThemedText>
+        <ThemedText type="bodySm" color={muted} className="text-center">
+          {kind === 'plan'
+            ? 'Talk it through with Samwell. He will turn it into something you can actually track.'
+            : 'Tell him where you are. He can see what you have logged and what you wrote about it.'}
         </ThemedText>
       </View>
     );
   }
 
-  // Both edges, matching the chat transcript beside it: the check-in runs
-  // under the header and under the floating input card.
   return (
     <PageFade edges="both">
       <ScrollView
@@ -87,111 +106,45 @@ export function CompassBody({
         contentContainerStyle={[floatingClearance]}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
-        <ChatBubble role="assistant" content={opener} animateEntry />
         {messages.map((m, i) => (
-          // Index keys: Compass turns have no ids — they are a transient
+          // Index keys: these turns have no ids — they are a transient
           // transcript in the session store, and the list only ever grows at
           // the end, so an index is stable for every row that already exists.
           <ChatBubble key={i} role={m.role} content={m.content} animateEntry />
         ))}
 
-        {submitting === flow && (
+        {submitting !== null && (
           <View className="flex-row items-center gap-3 px-4 py-3">
             <Spinner size="sm" />
-            <ThemedText type="labelMd" color={asColor(mutedForeground)}>
-              GRAND MAESTER SAMWELL IS THINKING…
+            <ThemedText type="labelMd" color={muted}>
+              SAMWELL IS THINKING…
             </ThemedText>
           </View>
         )}
 
-        {draft && !committingProposal && (
+        {draft?.kind === 'plan' && (
           <View className="px-1 py-2">
-            <DraftCard compass={compass} />
+            <GoalProposalCard
+              proposal={draft.proposal}
+              onApprove={() => void approve()}
+              onRefine={refine}
+              disabled={committing}
+            />
           </View>
         )}
 
-        {committingProposal && <CommitCard compass={compass} primary={asColor(primary)} />}
+        {draft?.kind === 'checkin' && (
+          <View className="px-1 py-2">
+            <CheckinDraftCard
+              draft={draft.draft}
+              titles={trackableTitles}
+              onApprove={() => void approve()}
+              onRefine={refine}
+              disabled={committing}
+            />
+          </View>
+        )}
       </ScrollView>
     </PageFade>
-  );
-}
-
-/** The flow's own draft card. Setup proposes a goal; the check-ins propose a
- *  reading of the day just described. */
-function DraftCard({ compass }: { compass: CompassFlowState }) {
-  const { flow, draft, approveDraft, finalizing } = compass;
-
-  if (flow === 'setup') {
-    return (
-      <SetupDraftCard
-        proposal={draft as CompassSetupProposal}
-        onApprove={approveDraft}
-        onRefine={() => {}}
-      />
-    );
-  }
-  if (flow === 'morning') {
-    return (
-      <MorningDraftCard
-        analysis={draft as CompassMorningAnalysis}
-        onApprove={approveDraft}
-        onRefine={() => {}}
-        disabled={finalizing}
-      />
-    );
-  }
-  return (
-    <NightDraftCard
-      analysis={draft as CompassNightAnalysis}
-      onApprove={approveDraft}
-      onRefine={() => {}}
-      disabled={finalizing}
-    />
-  );
-}
-
-/** Where an approved setup lands: the goal is settled, the dates are not. */
-function CommitCard({
-  compass,
-  primary,
-}: {
-  compass: CompassFlowState;
-  primary: string | undefined;
-}) {
-  const { committingProposal, milestoneDate, goalDate, goal, finalizing, confirmSetup, setCalendarFor } =
-    compass;
-  if (!committingProposal) return null;
-
-  return (
-    <View className="px-1 py-2">
-      <View className="gap-3 border-l-2 border-l-primary bg-card p-4">
-        <ThemedText type="labelSm" color={primary}>
-          COMMIT
-        </ThemedText>
-        <ThemedText type="headlineSm">{committingProposal.goalTitle}</ThemedText>
-        <Touchable
-          className="border border-border bg-muted p-3"
-          onPress={() => setCalendarFor('milestone')}
-        >
-          <ThemedText type="bodyMd">
-            {milestoneDate ? formatCompassDate(milestoneDate) : 'Pick milestone date'}
-          </ThemedText>
-        </Touchable>
-        {!goal && (
-          <Touchable
-            className="border border-border bg-muted p-3"
-            onPress={() => setCalendarFor('goal')}
-          >
-            <ThemedText type="bodyMd">
-              {goalDate ? formatCompassDate(goalDate) : 'Pick goal target date'}
-            </ThemedText>
-          </Touchable>
-        )}
-        <GoldButton
-          label={finalizing ? 'SETTING UP…' : 'CONFIRM GOAL'}
-          onPress={finalizing ? undefined : () => void confirmSetup()}
-        />
-      </View>
-    </View>
   );
 }

@@ -12,10 +12,10 @@ import { SettingsSection } from '@/features/settings/components/settings-section
 import { ThemedText } from '@/components/themed-text';
 import { VoiceListSkeleton } from '@/components/skeletons/voice-list-skeleton';
 import { PageFade } from '@/components/scroll-fades';
+import { Card } from '@/components/ui/card';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
-import { elevation } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
@@ -44,35 +44,30 @@ export function TtsSection() {
         {TTS_RATES.map((r) => {
           const active = Math.abs(ttsRate - r) < 0.01;
           return (
-            <Touchable
-              key={r}
-              className={cn('bg-card px-4 py-2', active && 'bg-primary')}
-              style={elevation.soft}
-              onPress={() => setTtsRate(r)}
-            >
-              <ThemedText type="labelSm" color={active ? asColor(primaryForeground) : undefined}>
-                {r === 1 ? '1×' : `${r}×`}
-              </ThemedText>
+            <Touchable key={r} onPress={() => setTtsRate(r)}>
+              <Card className={cn('px-4 py-2', active && 'border-primary bg-primary')}>
+                <ThemedText type="labelSm" color={active ? asColor(primaryForeground) : undefined}>
+                  {r === 1 ? '1×' : `${r}×`}
+                </ThemedText>
+              </Card>
             </Touchable>
           );
         })}
       </View>
 
-      <Touchable
-        className="flex-row items-center justify-between bg-card p-4"
-        style={elevation.soft}
-        onPress={() => void picker.open()}
-      >
-        <View className="flex-row items-center gap-3">
-          <PrefixIcon icon={AudioLines} size={36} />
-          <ThemedText type="bodyMd">Voice</ThemedText>
-        </View>
-        <View className="flex-row items-center gap-1">
-          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            {picker.currentName}
-          </ThemedText>
-          <ChevronUp size={14} color={asColor(mutedForeground)} />
-        </View>
+      <Touchable onPress={() => void picker.open()}>
+        <Card className="flex-row items-center justify-between p-4">
+          <View className="flex-row items-center gap-3">
+            <PrefixIcon icon={AudioLines} size={36} />
+            <ThemedText type="bodyMd">Voice</ThemedText>
+          </View>
+          <View className="flex-row items-center gap-1">
+            <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+              {picker.currentName}
+            </ThemedText>
+            <ChevronUp size={14} color={asColor(mutedForeground)} />
+          </View>
+        </Card>
       </Touchable>
 
       <VoicePickerModal

@@ -3,11 +3,12 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 import { Info } from 'lucide-react-native';
 
+import { Card } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
 import { Switch } from '@/components/ui/switch';
 import { Touchable } from '@/components/ui/touchable';
-import { elevation, spacing } from '@/constants/theme';
+import { spacing } from '@/constants/theme';
 import { useModelStore } from '@/stores/model';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
@@ -68,13 +69,14 @@ export function TuneSheet({
               return (
                 <Touchable
                   key={backend}
-                  className={cn('bg-muted px-4 py-2', active && 'bg-primary')}
-                  style={[elevation.soft, disabled && { opacity: 0.35 }]}
+                  style={disabled ? { opacity: 0.35 } : undefined}
                   onPress={() => { if (!disabled) setInference({ backend }); }}
                 >
-                  <ThemedText type="labelSm" color={active ? asColor(primaryForeground) : undefined}>
-                    {backend.toUpperCase()}
-                  </ThemedText>
+                  <Card className={cn('px-4 py-2', active && 'border-primary bg-primary')}>
+                    <ThemedText type="labelSm" color={active ? asColor(primaryForeground) : undefined}>
+                      {backend.toUpperCase()}
+                    </ThemedText>
+                  </Card>
                 </Touchable>
               );
             })}
@@ -92,18 +94,15 @@ export function TuneSheet({
             {[2048, 4096].map((size) => {
               const active = inference.contextSize === size;
               return (
-                <Touchable
-                  key={size}
-                  className={cn('bg-muted px-4 py-2', active && 'bg-primary')}
-                  style={elevation.soft}
-                  onPress={() => setInference({ contextSize: size })}
-                >
-                  <ThemedText
-                    type="labelSm"
-                    color={active ? asColor(primaryForeground) : undefined}
-                  >
-                    {`${size / 1024}K`}
-                  </ThemedText>
+                <Touchable key={size} onPress={() => setInference({ contextSize: size })}>
+                  <Card className={cn('px-4 py-2', active && 'border-primary bg-primary')}>
+                    <ThemedText
+                      type="labelSm"
+                      color={active ? asColor(primaryForeground) : undefined}
+                    >
+                      {`${size / 1024}K`}
+                    </ThemedText>
+                  </Card>
                 </Touchable>
               );
             })}

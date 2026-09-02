@@ -228,7 +228,7 @@ export async function upsertCloudModel(model: CloudModelOption): Promise<void> {
   });
 }
 
-function resetTime(events: Array<{ created_at_ms: number }>, windowMs: number): string | null {
+function resetTime(events: { created_at_ms: number }[], windowMs: number): string | null {
   if (events.length === 0) return null;
   const oldest = Math.min(...events.map((event) => event.created_at_ms));
   return new Date(oldest + windowMs).toISOString();

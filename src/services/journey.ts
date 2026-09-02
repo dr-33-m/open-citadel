@@ -1,16 +1,17 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import {
   books,
-  compassCheckins,
-  compassGoals,
-  compassMilestones,
+  goals,
   highlights,
   journeyNotes,
   readingProgress,
+  trackableLogs,
+  trackables,
 } from '@/db/schema';
 import { extractKeywords } from '@/services/compass-reading-rank';
+import { addDaysYmd, localDayString } from '@/utils/day';
 
 /**
  * Journey memory, the arc of the user's reading and execution, synthesized
@@ -23,7 +24,8 @@ import { extractKeywords } from '@/services/compass-reading-rank';
 const MAX_SNAPSHOT_CHARS = 1600;
 const MAX_NOTES_CHARS = 1000;
 const RECENT_FINISHED = 6;
-const RECENT_CHECKINS = 5;
+/** How far back the snapshot looks to say whether the work is happening. */
+const RECENT_LOG_DAYS = 14;
 const TOP_TAGS = 8;
 
 function parseTags(raw: string | null): string[] {
@@ -113,63 +115,37 @@ export function buildJourneySnapshot(options?: { includeCompass?: boolean }): st
   }
 
   if (includeCompass) {
-    const goal = db.select().from(compassGoals).where(eq(compassGoals.status, 'active')).get();
+    const goal = db.select().from(goals).where(eq(goals.status, 'ACTIVE')).get();
     if (goal) {
-      const milestone = db
-        .select()
-        .from(compassMilestones)
-        .where(and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'active')))
-        .orderBy(desc(compassMilestones.sortOrder))
-        .get();
-      lines.push(
-        `Active goal: ${goal.title}` + (milestone ? `, current milestone: ${milestone.title}` : ''),
-      );
+      lines.push(`Active goal: ${goal.title} (through ${goal.endDate})`);
 
-      const recentNight = db
-        .select({ focusScore: compassCheckins.focusScore, localDate: compassCheckins.localDate })
-        .from(compassCheckins)
-        .where(and(eq(compassCheckins.goalId, goal.id), eq(compassCheckins.kind, 'night')))
-        .orderBy(desc(compassCheckins.localDate))
-        .limit(RECENT_CHECKINS)
+      const active = db
+        .select({ id: trackables.id, title: trackables.title })
+        .from(trackables)
+        .where(and(eq(trackables.goalId, goal.id), eq(trackables.status, 'ACTIVE')))
         .all();
-      const scores = recentNight.map((r) => r.focusScore).filter((s): s is number => s != null);
-      if (scores.length > 0) {
+      if (active.length > 0) {
+        lines.push('Tracking: ' + active.map((t) => t.title).join('; '));
+      }
+
+      // Deliberately a count of recent logs rather than a score. There is no
+      // focus score in this model, and no streak either — the snapshot's job is
+      // to say whether the work is happening lately, not to grade it.
+      const since = addDaysYmd(localDayString(), -RECENT_LOG_DAYS);
+      const recent = db
+        .select({ id: trackableLogs.id, completed: trackableLogs.completed })
+        .from(trackableLogs)
+        .innerJoin(trackables, eq(trackableLogs.trackableId, trackables.id))
+        .where(and(eq(trackables.goalId, goal.id), gte(trackableLogs.date, since)))
+        .all();
+      if (recent.length > 0) {
+        const done = recent.filter((r) => r.completed !== 0).length;
+        const missed = recent.length - done;
         lines.push(
-          `Recent focus scores (newest first): ${scores.join(', ')}` +
-            (scores.length >= 2
-              ? scores[0] > scores[scores.length - 1]
-                ? ', trending up'
-                : scores[0] < scores[scores.length - 1]
-                  ? ', trending down'
-                  : ''
-              : ''),
+          `Last ${RECENT_LOG_DAYS} days: ${done} logged done` +
+            (missed > 0 ? `, ${missed} logged as missed` : ''),
         );
       }
-    }
-
-    const completed = db
-      .select({
-        title: compassMilestones.title,
-        variance: compassMilestones.finalVarianceDays,
-      })
-      .from(compassMilestones)
-      .where(eq(compassMilestones.status, 'completed'))
-      .orderBy(desc(compassMilestones.sortOrder))
-      .limit(3)
-      .all();
-    if (completed.length > 0) {
-      lines.push(
-        'Completed milestones: ' +
-          completed
-            .map(
-              (m) =>
-                `${m.title}` +
-                (m.variance != null
-                  ? ` (${m.variance > 0 ? `+${m.variance}d over` : m.variance < 0 ? `${-m.variance}d under` : 'on target'})`
-                  : ''),
-            )
-            .join('; '),
-      );
     }
   }
 
@@ -290,53 +266,38 @@ export function saveBookFinishedNote(bookId: string): void {
  * conversation sizes against real history instead of starting from zero. No
  * LLM call.
  */
+/**
+ * A permanent one-line record of how a goal ended.
+ *
+ * No rank and no grade. The old model handed out an A/B/C letter for finishing
+ * early, on time or late, which is a badge, and a badge is exactly what this
+ * rebuild set out not to have. What is worth remembering in two years is what
+ * the goal was, whether it was finished, and how reliably it was worked at —
+ * so that is what gets written.
+ */
 export function saveGoalFinishedNote(
   goalId: string,
   title: string,
   outcome: {
     completed: boolean;
-    rank: 'A' | 'B' | 'C' | null;
-    varianceDays: number | null;
-    completedMilestones: number;
-    estimatedMilestones: number | null;
+    /** 0..1, or null when nothing was ever expected of it. */
+    executionRatio: number | null;
   },
 ): void {
-  if (!outcome.completed) {
-    const scope =
-      outcome.estimatedMilestones != null
-        ? ` after ${outcome.completedMilestones} of ${outcome.estimatedMilestones} planned milestones`
-        : '';
-    db.insert(journeyNotes)
-      .values({
-        id: createId(),
-        kind: 'goal_finished',
-        text: `Abandoned goal "${title}"${scope}, before reaching its planned scope. No rank earned.`,
-        tags: null,
-        sourceRef: goalId,
-        createdAt: new Date().toISOString(),
-      })
-      .run();
-    return;
-  }
+  const consistency =
+    outcome.executionRatio == null
+      ? ''
+      : ` Consistency across its life: ${Math.round(outcome.executionRatio * 100)}%.`;
 
-  // Word the timing from rank, not a re-derived threshold, so this note can
-  // never disagree with the rank shown in Settings.
-  const { rank, varianceDays } = outcome;
-  const timing =
-    rank === 'A' && varianceDays != null
-      ? `${-varianceDays} days early`
-      : rank === 'C' && varianceDays != null
-        ? `${varianceDays} days late`
-        : rank === 'B'
-          ? 'on time'
-          : 'no target date was set';
-  const rankLabel = rank ? `${rank} player — ` : '';
+  const text = outcome.completed
+    ? `Completed goal "${title}".${consistency}`
+    : `Stopped goal "${title}" before the end.${consistency}`;
 
   db.insert(journeyNotes)
     .values({
       id: createId(),
       kind: 'goal_finished',
-      text: `Completed goal "${title}": ${rankLabel}finished ${timing}.`,
+      text,
       tags: null,
       sourceRef: goalId,
       createdAt: new Date().toISOString(),

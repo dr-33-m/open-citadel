@@ -22,10 +22,7 @@ type SettingsState = {
   cloudModelsError: string | null;
   ttsVoice: string | null;
   ttsVoiceLanguage: string | null;
-  ttsRate: number;
-  compassMorningTime: string;
-  compassNightTime: string;
-  isLoaded: boolean;
+  ttsRate: number;  isLoaded: boolean;
   loadSettings: () => Promise<void>;
   setUsername: (name: string) => Promise<void>;
   setTheme: (theme: AppTheme) => Promise<void>;
@@ -36,11 +33,8 @@ type SettingsState = {
   loadCloudModels: () => Promise<void>;
   setTtsVoice: (voice: string | null, language?: string | null) => Promise<void>;
   setTtsRate: (rate: number) => Promise<void>;
-  setCompassTimes: (morningTime: string, nightTime: string) => Promise<void>;
 };
 
-export const COMPASS_DEFAULT_MORNING_TIME = '08:00';
-export const COMPASS_DEFAULT_NIGHT_TIME = '21:00';
 
 async function saveSetting(key: string, value: string) {
   db
@@ -71,10 +65,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   cloudModelsError: null,
   ttsVoice: null,
   ttsVoiceLanguage: null,
-  ttsRate: 1.0,
-  compassMorningTime: COMPASS_DEFAULT_MORNING_TIME,
-  compassNightTime: COMPASS_DEFAULT_NIGHT_TIME,
-  isLoaded: false,
+  ttsRate: 1.0,  isLoaded: false,
 
   loadSettings: async () => {
     const rows = await db.select().from(appSettings);
@@ -94,10 +85,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       cloudDeviceId,
       ttsVoice: map['ttsVoice'] ?? null,
       ttsVoiceLanguage: map['ttsVoiceLanguage'] ?? null,
-      ttsRate: parseFloat(map['ttsRate'] ?? '1'),
-      compassMorningTime: map['compass.morningTime'] ?? COMPASS_DEFAULT_MORNING_TIME,
-      compassNightTime: map['compass.nightTime'] ?? COMPASS_DEFAULT_NIGHT_TIME,
-      isLoaded: true,
+      ttsRate: parseFloat(map['ttsRate'] ?? '1'),      isLoaded: true,
     });
   },
 
@@ -197,9 +185,4 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ ttsRate: rate });
   },
 
-  setCompassTimes: async (morningTime: string, nightTime: string) => {
-    await saveSetting('compass.morningTime', morningTime);
-    await saveSetting('compass.nightTime', nightTime);
-    set({ compassMorningTime: morningTime, compassNightTime: nightTime });
-  },
 }));

@@ -7,7 +7,7 @@ import {
 } from 'samwell-shared';
 
 import { db } from '@/db/client';
-import { compassGoals } from '@/db/schema';
+import { goals } from '@/db/schema';
 import * as Inference from '@/services/inference';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -36,9 +36,9 @@ function clamp(value: string | undefined, max: number): string | undefined {
 
 export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
   const goal = db
-    .select({ title: compassGoals.title })
-    .from(compassGoals)
-    .where(eq(compassGoals.status, 'active'))
+    .select({ title: goals.title })
+    .from(goals)
+    .where(eq(goals.status, 'ACTIVE'))
     .get()?.title;
 
   const payload = {

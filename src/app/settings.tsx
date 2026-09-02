@@ -1,14 +1,13 @@
 import React from 'react';
 import { useCSSVariable } from 'uniwind';
 import { ChevronDown } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
-import { View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View, type ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PageFade } from '@/components/scroll-fades';
 import { AppearanceSection } from '@/features/settings/components/appearance-section';
 import { BooksTipSection } from '@/features/settings/components/books-tip-section';
-import { CompassSection } from '@/features/settings/components/compass-section';
 import { ProfileSection } from '@/features/settings/components/profile-section';
 import { ReachOutSection } from '@/features/settings/components/reach-out-section';
 import { SamwellSection } from '@/features/settings/components/samwell-section';
@@ -21,7 +20,6 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, iconSize, layout } from '@/constants/theme';
 import { backTo } from '@/navigation/navigate';
 import { useScreenSettled } from '@/navigation/use-screen-settled';
-import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 
 /**
@@ -42,8 +40,33 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [foreground] = useCSSVariable(['--color-foreground']);
-  const samwellMode = useSettingsStore((s) => s.samwellMode);
   const settled = useScreenSettled();
+
+  /**
+   * Arriving pointed at a section, from the "set Samwell up" way out of an
+   * empty chat.
+   *
+   * The scroll waits for `settled` and then animates. Both halves matter: run
+   * it during the drawer's rise and it competes with the transition for the UI
+   * thread, and jump to the offset outright and the reader lands somewhere
+   * with no idea what they travelled past.
+   */
+  const { section } = useLocalSearchParams<{ section?: string }>();
+  const scrollRef = React.useRef<ScrollView>(null);
+  const sectionY = React.useRef<number | null>(null);
+  const scrolled = React.useRef(false);
+
+  const revealSection = React.useCallback(() => {
+    if (scrolled.current || !settled || section !== 'samwell') return;
+    const y = sectionY.current;
+    if (y == null) return;
+    scrolled.current = true;
+    // A little above it, so the section's own label is not welded to the
+    // top edge and you can see it has something above it.
+    scrollRef.current?.scrollTo({ y: Math.max(0, y - 24), animated: true });
+  }, [section, settled]);
+
+  React.useEffect(revealSection, [revealSection]);
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -76,6 +99,7 @@ export default function SettingsScreen() {
         {/* Replaces the header's bottom rule — see library-page. */}
         <PageFade>
           <TransitionScrollView
+            ref={scrollRef}
             className="flex-1 px-6"
             style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
             contentContainerStyle={{
@@ -89,11 +113,14 @@ export default function SettingsScreen() {
 
             <BooksTipSection />
 
-            <SamwellSection />
-
-            {/* Compass is cloud-only: check-ins run through Grand Maester
-                Samwell on the server. */}
-            {samwellMode === 'cloud' && settled && <CompassSection />}
+            <View
+              onLayout={(e) => {
+                sectionY.current = e.nativeEvent.layout.y;
+                revealSection();
+              }}
+            >
+              <SamwellSection />
+            </View>
 
             {settled && <TtsSection />}
 

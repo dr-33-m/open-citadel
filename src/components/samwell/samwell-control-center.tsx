@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { BookOpen, CalendarDays, Compass, Flag, Gauge, History, MessageSquare, Send, Square } from 'lucide-react-native';
+import { BookOpen, CalendarDays, Compass, History, ListTodo, MessageSquare, Send, Square, TrendingUp } from 'lucide-react-native';
 import React from 'react';
 import { TextInput, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
@@ -11,20 +11,25 @@ import { cn } from '@/lib/cn';
 
 type SamwellControlCenterProps = {
   mode: 'chat' | 'compass';
-  /** Whether the Compass conversation is open over the Compass timeline. */
-  compassOpen: boolean;
-  compassPeek: boolean;
   onSelectMode: (mode: 'chat' | 'compass') => void;
   /** Held while Samwell is working. Switching mode mid-turn would swap the
    * screen out from under a reply that is still arriving, and in chat mode it
    * also risks a second caller reaching the engine. */
   lockMode?: boolean;
-  onTogglePeek: () => void;
   text: string;
   onChangeText: (t: string) => void;
   onSend: () => void;
   busy: boolean;
   placeholder: string;
+  /**
+   * This mode has nothing to talk to — offline Compass, which is cloud-only.
+   *
+   * The field stops taking input and the mode's own action buttons go away
+   * entirely, rather than sitting there inert: a row of controls that does
+   * nothing when pressed reads as broken, and the empty state above already
+   * says what to do about it.
+   */
+  unavailable?: boolean;
   /** Chat mode only — replaces Send with a Stop button while a reply is
    * actively generating, matching the old per-session chat screen. */
   showStop?: boolean;
@@ -42,8 +47,18 @@ type SamwellControlCenterProps = {
   onOpenHistory?: () => void;
   // Compass mode only.
   hasGoal?: boolean;
-  onOpenGoal?: () => void;
-  onOpenMilestone?: () => void;
+  /** How many activities are still owed today; badges the log button. */
+  dueCount?: number;
+  onOpenDeck?: () => void;
+  onOpenPlanner?: () => void;
+  onOpenInsights?: () => void;
+  /**
+   * The composer's own input, handed up so a caller can focus it.
+   *
+   * This is what makes "work on it more" work: the draft card stays on screen
+   * and the cursor lands here, instead of the card being dismissed.
+   */
+  inputRef?: React.RefObject<TextInput | null>;
 };
 
 /**
@@ -54,15 +69,14 @@ type SamwellControlCenterProps = {
 export function SamwellControlCenter({
   mode,
   lockMode,
-  compassOpen,
-  compassPeek,
+
   onSelectMode,
-  onTogglePeek,
   text,
   onChangeText,
   onSend,
   busy,
   placeholder,
+  unavailable = false,
   showStop = false,
   onStop,
   showBookButton = true,
@@ -72,8 +86,11 @@ export function SamwellControlCenter({
   onClearBook,
   onOpenHistory,
   hasGoal,
-  onOpenGoal,
-  onOpenMilestone,
+  dueCount = 0,
+  onOpenDeck,
+  onOpenPlanner,
+  onOpenInsights,
+  inputRef,
 }: SamwellControlCenterProps) {
   // Literal colours for consumers a className can't reach: lucide icon props
   // and TextInput's placeholderTextColor.
@@ -84,7 +101,7 @@ export function SamwellControlCenter({
     '--color-surface-tertiary',
     '--color-foreground',
   ]);
-  const canSend = text.trim().length > 0 && !busy;
+  const canSend = text.trim().length > 0 && !busy && !unavailable;
   const [isStopping, setIsStopping] = React.useState(false);
   React.useEffect(() => {
     if (!showStop) setIsStopping(false);
@@ -98,6 +115,7 @@ export function SamwellControlCenter({
       {/* No border/background of its own — reads as part of the same card
           surface rather than a boxed field inside it. */}
       <TextInput
+        ref={inputRef}
         className="max-h-[120px] min-h-[40px] px-2 py-2 text-[16px] text-foreground"
         style={{ fontFamily: fontFamily.sans, lineHeight: 24 }}
         multiline
@@ -105,7 +123,7 @@ export function SamwellControlCenter({
         placeholderTextColor={asColor(mutedForeground)}
         value={text}
         onChangeText={onChangeText}
-        editable={!busy}
+        editable={!busy && !unavailable}
       />
 
       <View className="flex-row items-center gap-2">
@@ -182,36 +200,52 @@ export function SamwellControlCenter({
           </>
         )}
 
-        {mode === 'compass' && (
+        {mode === 'compass' && !unavailable && (
           <>
+            {/* The screen's one gold control: today's activities. It stays
+                lit whenever there is a goal — the count that used to sit
+                beside it repeated what the deck says on its own first card,
+                and a badge that is nearly always showing stops being news. */}
             <Touchable
               className="h-10 w-10 items-center justify-center border border-border"
-              onPress={hasGoal ? onOpenGoal : undefined}
+              onPress={hasGoal && dueCount > 0 ? onOpenDeck : undefined}
+              accessibilityRole="button"
+              accessibilityLabel={
+                dueCount > 0 ? `Log today, ${dueCount} to go` : 'Nothing due today'
+              }
             >
-              <Flag size={iconSize.default} color={asColor(hasGoal ? primary : mutedForeground)} strokeWidth={2} />
+              <ListTodo
+                size={iconSize.default}
+                color={asColor(hasGoal && dueCount > 0 ? primary : mutedForeground)}
+                strokeWidth={2}
+              />
             </Touchable>
+
             <Touchable
               className="h-10 w-10 items-center justify-center border border-border"
-              onPress={hasGoal ? onOpenMilestone : undefined}
+              onPress={hasGoal ? onOpenPlanner : undefined}
+              accessibilityRole="button"
+              accessibilityLabel="Planner"
             >
-              <Gauge size={iconSize.default} color={asColor(hasGoal ? primary : mutedForeground)} strokeWidth={2} />
+              <CalendarDays
+                size={iconSize.default}
+                color={asColor(hasGoal ? primary : mutedForeground)}
+                strokeWidth={2}
+              />
             </Touchable>
-            {compassOpen && (
-              <Touchable
-                key={compassPeek ? 'peek-on' : 'peek-off'}
-                className={cn(
-                  'h-10 w-10 items-center justify-center border',
-                  compassPeek ? 'border-primary' : 'border-border',
-                )}
-                onPress={onTogglePeek}
-              >
-                <CalendarDays
-                  size={iconSize.default}
-                  color={asColor(compassPeek ? primary : mutedForeground)}
-                  strokeWidth={2}
-                />
-              </Touchable>
-            )}
+
+            <Touchable
+              className="h-10 w-10 items-center justify-center border border-border"
+              onPress={hasGoal ? onOpenInsights : undefined}
+              accessibilityRole="button"
+              accessibilityLabel="Insights"
+            >
+              <TrendingUp
+                size={iconSize.default}
+                color={asColor(hasGoal ? primary : mutedForeground)}
+                strokeWidth={2}
+              />
+            </Touchable>
           </>
         )}
 

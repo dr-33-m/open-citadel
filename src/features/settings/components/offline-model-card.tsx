@@ -11,8 +11,8 @@ import { ConfirmDeleteSheet } from '@/features/settings/components/confirm-delet
 import { MemoryInfoSheet } from '@/features/settings/components/memory-info-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { usePulse } from '@/hooks/use-pulse';
+import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
-import { elevation } from '@/constants/theme';
 import { useModelStore } from '@/stores/model';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
@@ -66,7 +66,7 @@ export function OfflineModelCard() {
 
   return (
     <>
-      <View className="gap-3 bg-card p-4" style={elevation.soft}>
+      <Card className="gap-3 p-4">
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1 gap-1">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>MODEL</ThemedText>
@@ -177,7 +177,7 @@ export function OfflineModelCard() {
             </Touchable>
           </View>
         )}
-      </View>
+      </Card>
 
       <ModelPickerSheet
         sheet={modelSheet}

@@ -1,14 +1,11 @@
 import type { z } from 'zod';
 import {
-  CompassMorningTurnSchema,
-  CompassNightTurnSchema,
-  CompassSetupTurnSchema,
-  type CompassMorningTurn,
-  type CompassMorningTurnRequest,
-  type CompassNightTurn,
-  type CompassNightTurnRequest,
-  type CompassSetupTurn,
-  type CompassSetupTurnRequest,
+  CompassCheckinTurnSchema,
+  CompassPlanTurnSchema,
+  type CompassCheckinTurn,
+  type CompassCheckinTurnRequest,
+  type CompassPlanTurn,
+  type CompassPlanTurnRequest,
 } from 'samwell-shared';
 
 import { preflightCloudServer } from './cloud-chat';
@@ -27,6 +24,17 @@ export class CompassApiError extends Error {
 
 const ANALYSIS_TIMEOUT_MS = 60_000;
 
+/**
+ * The plan turn gets longer.
+ *
+ * A goal proposal is the largest structured output this app asks for — a goal
+ * wrapping up to five trackables, each with its own schedule and measurement —
+ * and it is produced at the one moment the user is most invested, having just
+ * talked through what they want. Timing that out at 60s and losing the
+ * conversation is a far worse failure than waiting another half minute.
+ */
+const PLAN_TIMEOUT_MS = 90_000;
+
 type CompassCallArgs = {
   baseUrl: string;
   deviceId: string;
@@ -35,21 +43,22 @@ type CompassCallArgs = {
 async function postCompass<T>(args: {
   baseUrl: string;
   deviceId: string;
-  path: '/compass/setup' | '/compass/morning' | '/compass/night';
+  path: '/compass/plan' | '/compass/checkin';
   body: unknown;
   schema: z.ZodType<T>;
+  timeoutMs?: number;
 }): Promise<T> {
   try {
     await preflightCloudServer(args.baseUrl);
   } catch (err) {
     throw new CompassApiError(
       'network',
-      err instanceof Error ? err.message : 'Cannot reach Grand Maester Samwell.',
+      err instanceof Error ? err.message : 'Cannot reach Samwell.',
     );
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), args.timeoutMs ?? ANALYSIS_TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(`${args.baseUrl}${args.path}`, {
@@ -66,7 +75,7 @@ async function postCompass<T>(args: {
       'network',
       err instanceof Error && err.name === 'AbortError'
         ? 'The analysis timed out. Check your connection and try again.'
-        : 'Cannot reach Grand Maester Samwell. Check your connection and try again.',
+        : 'Cannot reach Samwell. Check your connection and try again.',
     );
   } finally {
     clearTimeout(timer);
@@ -81,7 +90,7 @@ async function postCompass<T>(args: {
   if (res.status === 502) {
     throw new CompassApiError(
       'analysis_failed',
-      "The engineer couldn't parse that report. Try rephrasing what happened.",
+      "Samwell couldn't make sense of that. Try saying it a different way.",
     );
   }
   if (!res.ok) {
@@ -92,26 +101,31 @@ async function postCompass<T>(args: {
   if (!parsed.success) {
     throw new CompassApiError(
       'analysis_failed',
-      "The engineer couldn't parse that report. Try rephrasing what happened.",
+      "Samwell couldn't make sense of that. Try saying it a different way.",
     );
   }
   return parsed.data;
 }
 
-export function requestSetupTurn(
-  args: CompassCallArgs & { body: CompassSetupTurnRequest },
-): Promise<CompassSetupTurn> {
-  return postCompass({ ...args, path: '/compass/setup', body: args.body, schema: CompassSetupTurnSchema });
+export function requestPlanTurn(
+  args: CompassCallArgs & { body: CompassPlanTurnRequest },
+): Promise<CompassPlanTurn> {
+  return postCompass({
+    ...args,
+    path: '/compass/plan',
+    body: args.body,
+    schema: CompassPlanTurnSchema,
+    timeoutMs: PLAN_TIMEOUT_MS,
+  });
 }
 
-export function requestMorningTurn(
-  args: CompassCallArgs & { body: CompassMorningTurnRequest },
-): Promise<CompassMorningTurn> {
-  return postCompass({ ...args, path: '/compass/morning', body: args.body, schema: CompassMorningTurnSchema });
-}
-
-export function requestNightTurn(
-  args: CompassCallArgs & { body: CompassNightTurnRequest },
-): Promise<CompassNightTurn> {
-  return postCompass({ ...args, path: '/compass/night', body: args.body, schema: CompassNightTurnSchema });
+export function requestCheckinTurn(
+  args: CompassCallArgs & { body: CompassCheckinTurnRequest },
+): Promise<CompassCheckinTurn> {
+  return postCompass({
+    ...args,
+    path: '/compass/checkin',
+    body: args.body,
+    schema: CompassCheckinTurnSchema,
+  });
 }

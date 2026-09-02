@@ -8,9 +8,9 @@ import { CloudPanel } from '@/features/settings/components/cloud-panel';
 import { OfflineModelCard } from '@/features/settings/components/offline-model-card';
 import { EngineInfoSheet, type EngineMode } from '@/components/settings/engine-info-sheet';
 import { ThemedText } from '@/components/themed-text';
+import { Card } from '@/components/ui/card';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Touchable } from '@/components/ui/touchable';
-import { elevation } from '@/constants/theme';
 import { isNativeAvailable } from '@/services/inference';
 import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
@@ -97,23 +97,21 @@ function ModeCard({
     '--color-muted-foreground',
   ]);
   return (
-    <Touchable
-      className={cn('flex-1 gap-2 border border-surface-tertiary bg-card p-4', active && 'border-primary')}
-      style={elevation.soft}
-      onPress={onSelect}
-    >
-      <View className="flex-row items-center gap-3">
-        <PrefixIcon icon={icon} size={36} color={active ? asColor(primary) : undefined} />
-        <ThemedText type="bodyMd" color={active ? asColor(primary) : undefined}>
-          {label}
+    <Touchable className="flex-1" onPress={onSelect}>
+      <Card className={cn('gap-2 p-4', active && 'border-primary')}>
+        <View className="flex-row items-center gap-3">
+          <PrefixIcon icon={icon} size={36} color={active ? asColor(primary) : undefined} />
+          <ThemedText type="bodyMd" color={active ? asColor(primary) : undefined}>
+            {label}
+          </ThemedText>
+        </View>
+        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+          {description}
         </ThemedText>
-      </View>
-      <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-        {description}
-      </ThemedText>
-      <Touchable className="absolute right-2 top-2" onPress={onInfo} hitSlop={10}>
-        <Info size={15} color={asColor(mutedForeground)} />
-      </Touchable>
+        <Touchable className="absolute right-2 top-2" onPress={onInfo} hitSlop={10}>
+          <Info size={15} color={asColor(mutedForeground)} />
+        </Touchable>
+      </Card>
     </Touchable>
   );
 }

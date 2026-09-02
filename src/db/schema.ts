@@ -1,5 +1,5 @@
-import { integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import type { CompassAlignment, CompassCategory } from "samwell-shared";
+import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { GoalCategory, GoalPriority, LifecycleStatus } from "samwell-shared";
 
 export const books = sqliteTable("books", {
   id: text("id").primaryKey(),
@@ -137,6 +137,18 @@ export const localModels = sqliteTable("llama_models", {
 export const chatSessions = sqliteTable("chat_sessions", {
   id: text("id").primaryKey(),
   bookId: text("book_id").references(() => books.id, { onDelete: "set null" }),
+  /**
+   * The goal a Compass conversation belongs to.
+   *
+   * A check-in is a chat — transcript, streaming, markdown, cited highlights —
+   * so it lives here rather than in a second thread system that would drift
+   * from this one. `kind` is what keeps the two apart in the history sheets.
+   */
+  goalId: text("goal_id").references(() => goals.id, { onDelete: "cascade" }),
+  kind: text("kind")
+    .$type<"reading" | "compass_plan" | "compass_checkin">()
+    .notNull()
+    .default("reading"),
   title: text("title").notNull(),
   contextText: text("context_text"),
   contextLocator: text("context_locator"),
@@ -223,94 +235,135 @@ export const syncItems = sqliteTable("sync_items", {
   updatedAt: text("updated_at").notNull(),
 });
 
-// ── Compass (AI execution telemetry) tables ──────────────────────────────────
+// ── Compass: Goal → Trackable → Schedule → Measurement → Log ────────────────
+//
+// Consistency is NOT here. It is derived from schedules and logs by
+// `services/consistency.ts` on every read, because a stored score is a score
+// that can disagree with the rows it came from — and the number this feature
+// shows is a claim about the user's own discipline. There are no streaks in
+// this model, by design.
 
-export const compassGoals = sqliteTable("compass_goals", {
+export const goals = sqliteTable("goals", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
-  status: text("status")
-    .$type<"active" | "completed" | "archived">()
-    .notNull()
-    .default("active"),
-  startDate: text("start_date"),
-  /** The outer commitment, one level above the milestone. Fixed, like the milestone's. */
-  targetDate: text("target_date"),
-  /** How many milestones the goal is expected to take; goal progress is counted in these. */
-  estimatedMilestones: integer("estimated_milestones"),
-  currentProjectedDate: text("current_projected_date"),
-  /** Set once, at archive: how the finish compared to the original target. */
-  rank: text("rank").$type<"A" | "B" | "C">(),
-  finalVarianceDays: integer("final_variance_days"),
-  createdAt: text("created_at").notNull(),
-  completedAt: text("completed_at"),
-});
-
-export const compassMilestones = sqliteTable("compass_milestones", {
-  id: text("id").primaryKey(),
-  goalId: text("goal_id")
-    .notNull()
-    .references(() => compassGoals.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  effortUnitDefinition: text("effort_unit_definition").notNull(),
-  status: text("status").$type<"active" | "completed">().notNull().default("active"),
-  estimatedEffortUnits: real("estimated_effort_units").notNull(),
-  completedEffortUnits: real("completed_effort_units").notNull().default(0),
+  /** Local calendar days, YYYY-MM-DD — never an instant. */
   startDate: text("start_date").notNull(),
-  /** The original commitment. Never rewritten — the gap to the projection is the product. */
-  targetDate: text("target_date").notNull(),
+  endDate: text("end_date").notNull(),
+  category: text("category").$type<GoalCategory>().notNull(),
+  priority: text("priority").$type<GoalPriority>().notNull().default("MEDIUM"),
+  status: text("status").$type<LifecycleStatus>().notNull().default("ACTIVE"),
   /**
-   * The last compass day the driver actually reported (night check-in). Pace is
-   * averaged to here, not to today, so the projection only moves when new data
-   * lands rather than drifting later every morning on its own.
+   * The numeric outcome, when there is one: 4000 / "USD".
+   *
+   * Execution and outcome are different facts — 92% consistent and $1,200 of
+   * $4,000 answer different questions — so they are never averaged into one
+   * number. Null for a purely behavioural goal.
    */
-  lastReportedDate: text("last_reported_date"),
-  currentProjectedDate: text("current_projected_date"),
-  actualCompletedDate: text("actual_completed_date"),
-  originalEstimateDays: integer("original_estimate_days").notNull(),
-  finalVarianceDays: integer("final_variance_days"),
-  sortOrder: integer("sort_order").notNull().default(0),
+  outcomeTarget: real("outcome_target"),
+  outcomeUnit: text("outcome_unit"),
   createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });
 
-export const compassCheckins = sqliteTable(
-  "compass_checkins",
+export const trackables = sqliteTable(
+  "trackables",
   {
     id: text("id").primaryKey(),
     goalId: text("goal_id")
       .notNull()
-      .references(() => compassGoals.id, { onDelete: "cascade" }),
-    milestoneId: text("milestone_id")
-      .notNull()
-      .references(() => compassMilestones.id, { onDelete: "cascade" }),
-    localDate: text("local_date").notNull(),
-    kind: text("kind").$type<"morning" | "night">().notNull(),
-    rawText: text("raw_text").notNull(),
-    missionSummary: text("mission_summary"),
-    focusScore: integer("focus_score"),
-    /** Units applied to the milestone by this (night) check-in; reversed on same-day overwrite. */
-    effortUnitsCompleted: real("effort_units_completed"),
-    pitWallMessage: text("pit_wall_message").notNull(),
-    analysisJson: text("analysis_json").notNull(),
+      .references(() => goals.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date").notNull(),
+    /** `HH:MM`, 24-hour. Orders the planner's day list; never gates a log. */
+    timeOfDay: text("time_of_day"),
+    /**
+     * `Schedule` and `Measurement` as JSON.
+     *
+     * Both are strictly 1:1 with a trackable and are never queried by their
+     * internals — occurrence expansion is an in-memory pass over tens of rows.
+     * The alternative is one wide sparse table in which invalid states are
+     * freely representable (a DAILY schedule carrying `daysOfWeek`, a
+     * COMPLETION measurement carrying a target); SQLite cannot enforce a
+     * six-way discriminated union and a zod parse on read can.
+     *
+     * Deliberately plain `text`, not drizzle's `mode: "json"`, which hands back
+     * `any` with no validation and would let a corrupt row propagate a
+     * malformed object into the occurrence engine. Parse explicitly and let one
+     * bad row degrade one trackable.
+     */
+    schedule: text("schedule").notNull(),
+    measurement: text("measurement").notNull(),
+    status: text("status").$type<LifecycleStatus>().notNull().default("ACTIVE"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
-  (t) => [uniqueIndex("compass_checkins_day_kind_idx").on(t.goalId, t.localDate, t.kind)],
+  (t) => [index("trackables_goal_idx").on(t.goalId)],
 );
 
-export const compassActions = sqliteTable("compass_actions", {
-  id: text("id").primaryKey(),
-  checkinId: text("checkin_id")
-    .notNull()
-    .references(() => compassCheckins.id, { onDelete: "cascade" }),
-  description: text("description").notNull(),
-  category: text("category").$type<CompassCategory>().notNull(),
-  alignment: text("alignment").$type<CompassAlignment>().notNull(),
-  minutes: integer("minutes"),
-  effortUnits: real("effort_units"),
-  planned: integer("planned").notNull().default(0),
-  createdAt: text("created_at").notNull(),
-});
+/**
+ * When a trackable was paused, as a window with its own lifecycle.
+ *
+ * A `status = "PAUSED"` column can only say "paused right now". The moment the
+ * user resumes, nothing records that it was paused from the 5th to the 12th,
+ * so the consistency denominator silently re-absorbs those days and the score
+ * drops retroactively for time the user was never expected to show up. Paused
+ * is not missed, and that promise needs a temporal fact to keep it.
+ *
+ * `endDate` is null while the pause is open.
+ */
+export const trackablePauses = sqliteTable(
+  "trackable_pauses",
+  {
+    id: text("id").primaryKey(),
+    trackableId: text("trackable_id")
+      .notNull()
+      .references(() => trackables.id, { onDelete: "cascade" }),
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("trackable_pauses_trackable_idx").on(t.trackableId)],
+);
+
+export const trackableLogs = sqliteTable(
+  "trackable_logs",
+  {
+    id: text("id").primaryKey(),
+    trackableId: text("trackable_id")
+      .notNull()
+      .references(() => trackables.id, { onDelete: "cascade" }),
+    /** The local day the log counts for. */
+    date: text("date").notNull(),
+    /**
+     * Three states, not a boolean:
+     *
+     *   1    — done, for a COMPLETION measurement
+     *   null — done, and `value` carries the number
+     *   0    — an explicit "this did not happen"
+     *
+     * A value-carrying log stores the raw number and leaves this null on
+     * purpose. Writing `0` because 350 < 500 would bake a derived judgement
+     * into a stored fact, so editing the target later — or turning on partial
+     * credit later — would contradict the row. Whether the target was met is
+     * derived at read time instead, which is what keeps partial credit a
+     * future decision rather than a future migration.
+     */
+    completed: integer("completed"),
+    value: real("value"),
+    /**
+     * The journal. Written on wins as well as misses: what you overcame to do
+     * it is as much material for a check-in as why you didn't.
+     */
+    note: text("note"),
+    createdAt: text("created_at").notNull(),
+  },
+  // Not unique: a flexible target ("six times a week") is logged several times
+  // in a day by design.
+  (t) => [index("trackable_logs_trackable_date_idx").on(t.trackableId, t.date)],
+);
 
 // ── Journey memory (on-device; the arc of the user's reading + execution) ─────
 

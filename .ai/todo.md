@@ -1,5 +1,33 @@
 # Compass — AI Execution Telemetry (build)
 
+## Open: lucide barrel imports (startup cost, not yet measured)
+
+Found during the performance audit of the Compass/toast/library work; not done
+because it touches 52 files and wants its own before/after measurement rather
+than being folded into a UI pass.
+
+Every icon in the app comes in through the package root — `import { Compass,
+ListTodo } from 'lucide-react-native'` — across **52 files**. Metro does not
+tree-shake by default, so the barrel pulls in far more of the icon set than the
+app draws. That lands in `startup-cherry-pick-imports`, the highest-impact
+category in the Expo performance skill: it is bundle size and JS parse time on
+every cold start, which is exactly what hurts on a Galaxy A33.
+
+- [ ] a. Measure first, so the change can be judged: `pnpm exec expo export
+      --platform android` and record the bundle size, plus a cold-start time on
+      the A33. Without a baseline this is a guess.
+- [ ] b. Decide the fix. Either deep imports
+      (`lucide-react-native/dist/esm/icons/compass`) behind one app-level icon
+      module so call sites stay readable, or Metro's experimental tree shaking,
+      or a babel transform that rewrites the barrel. Deep imports are the
+      surest but the most churn; check whether the installed version ships the
+      per-icon paths before committing to it.
+- [ ] c. Apply, re-measure, and keep the numbers in the commit message. Revert
+      if the saving does not show up on device — the churn is only worth a real
+      number.
+- [ ] d. If deep imports win, add the rule to CLAUDE.md so new code does not
+      reintroduce the barrel one icon at a time.
+
 ## Extension 2: reading intelligence (read boundary, highlight context, AI tags, tag ranking)
 - [x] a. `book-context.ts`: shared `loadChapterText` + `extractSurroundingText` (before/after around locator)
 - [x] b. Schema: `highlights.context` column + hand-written migration 0011

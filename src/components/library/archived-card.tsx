@@ -1,17 +1,12 @@
 import { CircleCheckBig } from 'lucide-react-native';
-import { Image } from 'expo-image';
 import React from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { RowFade } from '@/components/scroll-fades';
-import { SyncBadge } from '@/components/ui/sync-badge';
-import { Touchable } from '@/components/ui/touchable';
 
-import { ThemedText } from '@/components/themed-text';
-import { fontFamily, motion } from '@/constants/theme';
+import { BookTile } from '@/components/library/book-tile';
 import type { books as booksTable } from '@/db/schema';
-import { COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
 
 type Book = typeof booksTable.$inferSelect;
 
@@ -26,9 +21,15 @@ function asColor(value: string | number | undefined): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-const COVER_FILL = { width: '100%' as const, height: '100%' as const };
+/** Wider than the old bare cover: the tile is a panel with the cover
+ *  inset in it, so the artwork keeps its size. */
+const SHELF_TILE_WIDTH = 170;
 
-export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedCardProps) {
+/**
+ * `memo`'d: the library page re-renders on every sync tick, and without
+ * this each one rebuilt every shelf and every tile on it.
+ */
+export const ArchivedCards = React.memo(function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedCardProps) {
   const [ghostInk, mutedForeground, primary] = useCSSVariable([
     '--color-surface-tertiary',
     '--color-muted-foreground',
@@ -45,57 +46,20 @@ export function ArchivedCards({ books, onBookPress, onBookLongPress }: ArchivedC
         contentContainerClassName="gap-4 px-6"
       >
         {books.map((book) => (
-          <Touchable
+          <BookTile
             key={book.id}
-            onPress={() => onBookPress?.(book.id)}
-            onLongPress={() => onBookLongPress?.(book)}
-            className="w-[130px] gap-2"
-          >
-            <View className="aspect-[2/3] w-[130px] bg-muted">
-              {book.coverUrl ? (
-                <Image
-                  source={{ uri: book.coverUrl }}
-                  style={COVER_FILL}
-                  placeholder={{ blurhash: COVER_PLACEHOLDER_BLURHASH }}
-                  transition={motion.slow}
-                />
-              ) : (
-                <View className="flex-1 items-center justify-center">
-                  <ThemedText
-                    type="displayLg"
-                    color={asColor(ghostInk)}
-                    style={{ fontSize: 36, fontFamily: fontFamily.serif }}
-                  >
-                    {book.title.charAt(0).toUpperCase()}
-                  </ThemedText>
-                  <ThemedText
-                    type="labelSm"
-                    color={asColor(mutedForeground)}
-                    className="absolute bottom-2 px-2"
-                    style={{ textAlign: 'center', fontSize: 9 }}
-                    numberOfLines={2}
-                  >
-                    {book.title}
-                  </ThemedText>
-                </View>
-              )}
-              {!book.filePath ? (
-                <SyncBadge />
-              ) : (
-                <View className="absolute left-2 top-2 rounded-full bg-background">
-                  <CircleCheckBig size={22} color={asColor(primary)} />
-                </View>
-              )}
-            </View>
-            <ThemedText type="bodySm" numberOfLines={1} className="mt-1">
-              {book.title}
-            </ThemedText>
-            <ThemedText type="labelSm" color={asColor(mutedForeground)} numberOfLines={1}>
-              {book.author}
-            </ThemedText>
-          </Touchable>
+            book={book}
+            width={SHELF_TILE_WIDTH}
+            mutedForeground={asColor(mutedForeground)}
+            surfaceTertiary={asColor(ghostInk)}
+            titleLines={1}
+            badgeIcon={CircleCheckBig}
+            badgeColor={asColor(primary)}
+            onPress={onBookPress}
+            onLongPress={onBookLongPress}
+          />
         ))}
       </ScrollView>
     </RowFade>
   );
-}
+});

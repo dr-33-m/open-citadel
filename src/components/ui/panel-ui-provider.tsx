@@ -6,7 +6,6 @@ import {
   PortalProvider,
   useModalIsolationActive,
 } from '@/components/ui/portal';
-import { ToastViewport } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 
 /**
@@ -95,8 +94,9 @@ function ProviderSurface({
       >
         {children}
       </View>
-      {/* Sits before PortalHost so it can portal into it. */}
-      <ToastViewport />
+      {/* LOCAL EDIT: PanelUI's ToastViewport is gone, and `components/ui/
+          toast*` with it. The app's toast is `components/toast`, which portals
+          into the host below. Re-apply after `panelui-cli update`. */}
       <PortalHost />
     </View>
   );

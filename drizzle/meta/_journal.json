@@ -127,6 +127,13 @@
       "when": 1787000000000,
       "tag": "0017_milestone_last_reported",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1788200000000,
+      "tag": "0018_trackables",
+      "breakpoints": true
     }
   ]
 }

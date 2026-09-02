@@ -2,102 +2,164 @@ import { z } from 'zod';
 
 /**
  * Compass wire contract, shared by the app and the cloud server.
+ *
+ * The domain is Goal → Trackable → Schedule → Measurement → Log → Consistency.
+ * A goal is the outcome; a trackable is the smallest thing that can be logged;
+ * a schedule says when it is expected; a measurement says what counts as done;
+ * a log says what happened. Consistency is derived from those and is never
+ * stored, and there are no streaks anywhere in the model.
+ *
+ * ## Why every concept has two schemas
+ *
  * The response schemas double as the LLM structured-output schemas
- * (`chat({ outputSchema })`), so LLM-facing fields use `.nullable()`
- * rather than `.optional()` — strict json_schema requires every key.
+ * (`chat({ outputSchema })`), and strict `json_schema` requires every key to be
+ * present — which is why LLM-facing fields use `.nullable()` rather than
+ * `.optional()`. A discriminated union makes that worse: it asks the model to
+ * pick a shape *and* omit the keys of the shapes it did not pick, which it does
+ * unreliably, and a single stray key throws away an otherwise perfect goal.
+ *
+ * So each of Schedule and Measurement exists twice:
+ *
+ * - **Strict** (`ScheduleSchema`) — a real discriminated union. What the client
+ *   validates, what the database stores, what the engines read.
+ * - **Model** (`ScheduleModelSchema`) — one flat object with every key present
+ *   and nullable. What the model is asked for.
+ *
+ * `normalizeGoalProposal` is the bridge: it drops the keys that do not belong
+ * to the chosen variant, fills in what the model left out, clamps what it got
+ * wrong, and downgrades a variant it cannot rescue rather than failing the
+ * turn. A good conversation should not die on one bad field.
  */
 
-export const COMPASS_CATEGORIES = [
-  'execution',
-  'learning',
-  'recovery',
-  'admin',
-  'maintenance',
-  'distraction',
-  'unclear',
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+export const GOAL_CATEGORIES = [
+  'HEALTH',
+  'FITNESS',
+  'LEARNING',
+  'CAREER',
+  'BUSINESS',
+  'FINANCE',
+  'CREATIVE',
+  'PERSONAL',
+  'RELATIONSHIPS',
+  'OTHER',
 ] as const;
-export type CompassCategory = (typeof COMPASS_CATEGORIES)[number];
+export type GoalCategory = (typeof GOAL_CATEGORIES)[number];
 
-export const COMPASS_ALIGNMENTS = [
-  'directly_aligned',
-  'supportive',
-  'weakly_aligned',
-  'distraction',
-  'unclear',
+export const GOAL_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'] as const;
+export type GoalPriority = (typeof GOAL_PRIORITIES)[number];
+
+/** Shared by goals and trackables — they move through the same four states. */
+export const LIFECYCLE_STATUSES = ['ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED'] as const;
+export type LifecycleStatus = (typeof LIFECYCLE_STATUSES)[number];
+
+export const SCHEDULE_TYPES = [
+  'DAILY',
+  'WEEKLY_DAYS',
+  'WEEKLY_TARGET',
+  'MONTHLY_TARGET',
+  'SPECIFIC_DATES',
+  'INTERVAL',
 ] as const;
-export type CompassAlignment = (typeof COMPASS_ALIGNMENTS)[number];
+export type ScheduleType = (typeof SCHEDULE_TYPES)[number];
 
-export const COMPASS_SCHEDULE_STATUSES = ['ahead', 'on_track', 'behind', 'unknown'] as const;
-export type CompassScheduleStatus = (typeof COMPASS_SCHEDULE_STATUSES)[number];
+export const MEASUREMENT_TYPES = [
+  'COMPLETION',
+  'QUANTITY',
+  'DURATION',
+  'AMOUNT',
+  'RATING',
+] as const;
+export type MeasurementType = (typeof MEASUREMENT_TYPES)[number];
 
-export type CompassCheckinKind = 'morning' | 'night';
+// ── Schedule ─────────────────────────────────────────────────────────────────
 
-export const CompassActionSchema = z.object({
-  description: z.string().min(1),
-  category: z.enum(COMPASS_CATEGORIES),
-  alignment: z.enum(COMPASS_ALIGNMENTS),
-  minutes: z.number().int().min(0).nullable(),
-  effortUnits: z.number().min(0).nullable(),
+const YmdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD');
+
+/** 0 = Sunday, matching `Date#getDay()` and the app's weekday rows. */
+const DayOfWeekSchema = z.number().int().min(0).max(6);
+
+const TimezoneSchema = z.string().min(1).max(64);
+
+export const ScheduleSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('DAILY'), timezone: TimezoneSchema }),
+  z.object({
+    type: z.literal('WEEKLY_DAYS'),
+    daysOfWeek: z.array(DayOfWeekSchema).min(1).max(7),
+    timezone: TimezoneSchema,
+  }),
+  z.object({
+    type: z.literal('WEEKLY_TARGET'),
+    target: z.number().int().min(1).max(7),
+    timezone: TimezoneSchema,
+  }),
+  z.object({
+    type: z.literal('MONTHLY_TARGET'),
+    target: z.number().int().min(1).max(31),
+    timezone: TimezoneSchema,
+  }),
+  z.object({
+    type: z.literal('SPECIFIC_DATES'),
+    dates: z.array(YmdSchema).min(1).max(200),
+    timezone: TimezoneSchema,
+  }),
+  z.object({
+    type: z.literal('INTERVAL'),
+    intervalDays: z.number().int().min(1).max(365),
+    timezone: TimezoneSchema,
+  }),
+]);
+export type Schedule = z.infer<typeof ScheduleSchema>;
+
+/** The flat shape the model is asked for. Every key present, every key nullable. */
+export const ScheduleModelSchema = z.object({
+  type: z.enum(SCHEDULE_TYPES),
+  daysOfWeek: z.array(z.number()).nullable(),
+  target: z.number().nullable(),
+  dates: z.array(z.string()).nullable(),
+  intervalDays: z.number().nullable(),
 });
-export type CompassAction = z.infer<typeof CompassActionSchema>;
+export type ScheduleModel = z.infer<typeof ScheduleModelSchema>;
 
-/**
- * The goal-level race, one level above the current milestone. A goal carries its
- * own fixed target date and an estimate of how many milestones it takes; progress
- * is counted in fractional milestones so it works even when each milestone counts
- * a different kind of step. This is what makes the dual read possible: on pace for
- * this milestone, but the whole goal still lands late.
- */
-export const CompassGoalTrackSchema = z.object({
-  targetDate: z.string(),
-  estimatedMilestones: z.number(),
-  completedMilestones: z.number(),
-  /** Milestones done including the current one's fraction, e.g. 2.4 of 7. */
-  milestonesDone: z.number(),
-  currentProjectedDate: z.string().nullable(),
-  /** Signed: negative once the target date has passed, by that many days. */
-  daysRemaining: z.number().int(),
-  scheduleStatus: z.enum(COMPASS_SCHEDULE_STATUSES),
-  varianceDays: z.number().int().nullable(),
+// ── Measurement ──────────────────────────────────────────────────────────────
+
+export const MeasurementSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('COMPLETION') }),
+  z.object({
+    type: z.literal('QUANTITY'),
+    target: z.number().positive(),
+    unit: z.string().min(1).max(32),
+  }),
+  z.object({
+    type: z.literal('DURATION'),
+    target: z.number().positive(),
+    unit: z.enum(['minutes', 'hours']),
+  }),
+  z.object({
+    type: z.literal('AMOUNT'),
+    target: z.number().positive(),
+    unit: z.string().min(1).max(32),
+  }),
+  z.object({
+    type: z.literal('RATING'),
+    min: z.number().int(),
+    max: z.number().int(),
+  }),
+]);
+export type Measurement = z.infer<typeof MeasurementSchema>;
+
+export const MeasurementModelSchema = z.object({
+  type: z.enum(MEASUREMENT_TYPES),
+  target: z.number().nullable(),
+  unit: z.string().nullable(),
+  min: z.number().nullable(),
+  max: z.number().nullable(),
 });
-export type CompassGoalTrack = z.infer<typeof CompassGoalTrackSchema>;
+export type MeasurementModel = z.infer<typeof MeasurementModelSchema>;
 
-/** Client-computed context sent with every check-in. Dates are local YYYY-MM-DD. */
-export const CompassTelemetrySchema = z.object({
-  goalTitle: z.string(),
-  milestoneTitle: z.string(),
-  effortUnitDefinition: z.string(),
-  estimatedEffortUnits: z.number(),
-  completedEffortUnits: z.number(),
-  startDate: z.string(),
-  targetDate: z.string(),
-  currentProjectedDate: z.string().nullable(),
-  today: z.string(),
-  /**
-   * Last day the driver actually reported. avgDailyUnits is measured to here,
-   * not to today, and the gap between the two is how stale the pace read is.
-   * Optional so clients built before it existed still validate.
-   */
-  lastReportedDate: z.string().nullable().optional(),
-  daysElapsed: z.number().int(),
-  /** Signed: negative once the target date has passed, by that many days. */
-  daysRemaining: z.number().int(),
-  avgDailyUnits: z.number().nullable(),
-  /** Null once the target has passed — no daily pace still meets a date that is gone. */
-  requiredDailyUnits: z.number().nullable(),
-  scheduleStatus: z.enum(COMPASS_SCHEDULE_STATUSES),
-  varianceDays: z.number().int().nullable(),
-  /** Absent on goals set up before two-level targets existed. */
-  goalTrack: CompassGoalTrackSchema.nullable().optional(),
-});
-export type CompassTelemetry = z.infer<typeof CompassTelemetrySchema>;
+// ── Reading context (unchanged: the library is what makes this Open Citadel) ──
 
-/**
- * A passage from the driver's library: a book highlight, a note on one, or a
- * standalone thought. Sent per-request only — never stored server-side. The
- * engineer cites these when they sharpen the analysis; reading is the point
- * of Open Citadel, and Compass is where it gets applied.
- */
 export const CompassReadingRefSchema = z.object({
   kind: z.enum(['highlight', 'note', 'thought']),
   text: z.string().min(1).max(500),
@@ -108,151 +170,6 @@ export type CompassReadingRef = z.infer<typeof CompassReadingRefSchema>;
 
 const ReadingContextSchema = z.array(CompassReadingRefSchema).max(12).optional();
 
-export const CompassSetupRequestSchema = z.object({
-  description: z.string().min(1).max(4000),
-  modelId: z.string().optional(),
-  existingGoal: z
-    .object({
-      title: z.string(),
-      description: z.string().nullable(),
-    })
-    .optional(),
-  readingContext: ReadingContextSchema,
-});
-export type CompassSetupRequest = z.infer<typeof CompassSetupRequestSchema>;
-
-export const CompassMorningRequestSchema = z.object({
-  text: z.string().min(1).max(4000),
-  modelId: z.string().optional(),
-  telemetry: CompassTelemetrySchema,
-  readingContext: ReadingContextSchema,
-  journey: z.string().max(4000).optional(),
-});
-export type CompassMorningRequest = z.infer<typeof CompassMorningRequestSchema>;
-
-export const CompassMorningPlanSchema = z.object({
-  missionSummary: z.string(),
-  actions: z.array(
-    z.object({
-      description: z.string(),
-      category: z.enum(COMPASS_CATEGORIES),
-      alignment: z.enum(COMPASS_ALIGNMENTS),
-    }),
-  ),
-});
-export type CompassMorningPlan = z.infer<typeof CompassMorningPlanSchema>;
-
-export const CompassNightRequestSchema = z.object({
-  text: z.string().min(1).max(4000),
-  modelId: z.string().optional(),
-  telemetry: CompassTelemetrySchema,
-  morningPlan: CompassMorningPlanSchema.nullable(),
-  readingContext: ReadingContextSchema,
-  journey: z.string().max(4000).optional(),
-});
-export type CompassNightRequest = z.infer<typeof CompassNightRequestSchema>;
-
-export const CompassSetupProposalSchema = z.object({
-  goalTitle: z.string().min(1),
-  goalSummary: z.string(),
-  milestoneTitle: z.string().min(1),
-  effortUnitDefinition: z.string().min(1),
-  estimatedEffortUnits: z.number().positive(),
-  /**
-   * Realistic days for THIS milestone alone. A milestone must never inherit the
-   * goal's whole runway, or its pace maths are meaningless; the app pre-fills the
-   * date picker with it and the driver commits to the actual date.
-   */
-  milestoneDurationDays: z.number().int().positive(),
-  /** Days for the whole goal. Null when planning the next milestone of a goal that already has a target. */
-  goalDurationDays: z.number().int().positive().nullable(),
-  /** How many milestones of this size the goal needs end to end. Null in next-milestone mode. */
-  estimatedMilestones: z.number().int().positive().nullable(),
-  rationale: z.string(),
-});
-export type CompassSetupProposal = z.infer<typeof CompassSetupProposalSchema>;
-
-/**
- * The icon vocabulary Samwell may pick from for a mission step (generative UI:
- * he chooses, the app renders one of OUR icons). Every value maps to a
- * lucide-react-native icon in the app's mission-icon map; keep them in sync.
- */
-export const COMPASS_MISSION_ICONS = [
-  'video',
-  'mic',
-  'camera',
-  'wrench',
-  'hammer',
-  'target',
-  'book-open',
-  'pencil',
-  'pen',
-  'search',
-  'code',
-  'dumbbell',
-  'brain',
-  'lightbulb',
-  'clock',
-  'check-circle',
-  'flag',
-  'zap',
-  'list-checks',
-  'message-square',
-  'mail',
-  'phone',
-  'file-text',
-  'image',
-  'music',
-  'trending-up',
-  'coffee',
-  'users',
-  'calendar',
-  'rocket',
-  'star',
-  'circle',
-] as const;
-export type CompassMissionIcon = (typeof COMPASS_MISSION_ICONS)[number];
-
-export const CompassMissionStepSchema = z.object({
-  title: z.string().min(1),
-  detail: z.string(),
-  icon: z.enum(COMPASS_MISSION_ICONS),
-  /** 1 for the very next physical action, counting up from there. Optional
-   * so historical rows saved before this field existed still parse; the
-   * client only sorts by it when every step in the array has one. */
-  order: z.number().int().min(1).optional(),
-});
-export type CompassMissionStep = z.infer<typeof CompassMissionStepSchema>;
-
-export const CompassMorningAnalysisSchema = z.object({
-  actions: z.array(CompassActionSchema).min(1),
-  /** One short, punchy directive for today. Becomes the focus-card headline. */
-  headline: z.string().min(1),
-  /** Today's mission as 1-4 ordered steps, each rendered as a card with an icon. */
-  mission: z.array(CompassMissionStepSchema).min(1).max(4),
-  pitWallMessage: z.string().min(1),
-});
-export type CompassMorningAnalysis = z.infer<typeof CompassMorningAnalysisSchema>;
-
-export const CompassNightAnalysisSchema = z.object({
-  actions: z.array(CompassActionSchema).min(1),
-  /** One short line: today's result and tomorrow's single focus. Focus-card headline. */
-  headline: z.string().min(1),
-  effortUnitsCompleted: z.number().min(0),
-  pitWallMessage: z.string().min(1),
-  /** One-line reflection on the journey's direction, or null if nothing notable today. */
-  journeyNote: z.string().nullable(),
-});
-export type CompassNightAnalysis = z.infer<typeof CompassNightAnalysisSchema>;
-
-// ── Conversational turns ─────────────────────────────────────────────────────
-// Check-ins and goal setup are a back-and-forth: the driver and Grand Maester
-// Samwell iterate in chat until they agree on a draft, then the driver approves
-// it. Each turn sends the conversation so far plus current context; the engine
-// returns a conversational `reply` and, once it has a concrete proposal, a
-// structured `draft` (null while still clarifying). The driver finalizes; the
-// engine never persists on its own.
-
 export const CompassChatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string().min(1).max(4000),
@@ -261,89 +178,372 @@ export type CompassChatMessage = z.infer<typeof CompassChatMessageSchema>;
 
 const ChatMessagesSchema = z.array(CompassChatMessageSchema).min(1).max(40);
 
-export const CompassSetupTurnRequestSchema = z.object({
+// ── The proposal ─────────────────────────────────────────────────────────────
+
+/**
+ * Five is the hard cap, and it is structural rather than advisory.
+ *
+ * The prompt asks for the fewest trackables that can carry the goal, but a
+ * model that ignores that produces a system nobody can log daily, which is the
+ * single most likely way this feature fails a real user. The model schema
+ * allows more so an over-eager response still parses; the normalizer then
+ * takes the first five.
+ */
+export const MAX_TRACKABLES = 5;
+
+/**
+ * Durations, not dates.
+ *
+ * Models are unreliable at "what date is six weeks from Tuesday", and there is
+ * no reason to make them try — the client knows what today is and can do exact
+ * arithmetic. `startOffsetDays` counts from the goal's start; a null
+ * `durationDays` means the trackable runs to the end of the goal.
+ * SPECIFIC_DATES is the one place real dates are unavoidable, and the
+ * normalizer drops any that fall outside the resolved window.
+ */
+const TrackableProposalCore = {
+  title: z.string().min(1).max(120),
+  description: z.string().max(500).nullable(),
+  startOffsetDays: z.number().int().min(0).max(3650),
+  durationDays: z.number().int().min(1).max(3650).nullable(),
+  /** `HH:MM`, 24-hour. Display and ordering only — it never gates a log. */
+  timeOfDay: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:MM')
+    .nullable(),
+};
+
+export const TrackableProposalSchema = z.object({
+  ...TrackableProposalCore,
+  schedule: ScheduleSchema,
+  measurement: MeasurementSchema,
+});
+export type TrackableProposal = z.infer<typeof TrackableProposalSchema>;
+
+const TrackableProposalModelSchema = z.object({
+  ...TrackableProposalCore,
+  schedule: ScheduleModelSchema,
+  measurement: MeasurementModelSchema,
+});
+
+const GoalProposalCore = {
+  title: z.string().min(1).max(120),
+  summary: z.string().min(1).max(600),
+  category: z.enum(GOAL_CATEGORIES),
+  priority: z.enum(GOAL_PRIORITIES),
+  durationDays: z.number().int().min(1).max(3650),
+  /**
+   * The numeric outcome, when the goal has one: "$4,000", "10kg".
+   *
+   * This is what makes the execution/outcome split expressible at all — being
+   * 92% consistent and being $1,200 into $4,000 are different facts and the
+   * spec is emphatic that they must not be averaged into one number. Null for
+   * a goal that is purely behavioural, like showering cold for a year.
+   */
+  outcomeTarget: z.number().positive().nullable(),
+  outcomeUnit: z.string().min(1).max(32).nullable(),
+  rationale: z.string().max(1000).nullable(),
+};
+
+export const GoalProposalSchema = z.object({
+  ...GoalProposalCore,
+  trackables: z.array(TrackableProposalSchema).min(1).max(MAX_TRACKABLES),
+});
+export type GoalProposal = z.infer<typeof GoalProposalSchema>;
+
+const GoalProposalModelSchema = z.object({
+  ...GoalProposalCore,
+  trackables: z.array(TrackableProposalModelSchema).min(1).max(10),
+});
+
+// ── Plan turn (the goal brainstorm) ──────────────────────────────────────────
+
+export const CompassPlanTurnRequestSchema = z.object({
   messages: ChatMessagesSchema,
   modelId: z.string().optional(),
+  context: z.object({
+    today: YmdSchema,
+    timezone: TimezoneSchema,
+  }),
   existingGoal: z
     .object({
       title: z.string(),
-      description: z.string().nullable(),
+      summary: z.string().nullable(),
     })
     .optional(),
   readingContext: ReadingContextSchema,
   journey: z.string().max(4000).optional(),
 });
-export type CompassSetupTurnRequest = z.infer<typeof CompassSetupTurnRequestSchema>;
+export type CompassPlanTurnRequest = z.infer<typeof CompassPlanTurnRequestSchema>;
 
-export const CompassMorningTurnRequestSchema = z.object({
-  messages: ChatMessagesSchema,
-  modelId: z.string().optional(),
-  telemetry: CompassTelemetrySchema,
-  readingContext: ReadingContextSchema,
-  journey: z.string().max(4000).optional(),
-});
-export type CompassMorningTurnRequest = z.infer<typeof CompassMorningTurnRequestSchema>;
-
-export const CompassNightTurnRequestSchema = z.object({
-  messages: ChatMessagesSchema,
-  modelId: z.string().optional(),
-  telemetry: CompassTelemetrySchema,
-  morningPlan: CompassMorningPlanSchema.nullable(),
-  readingContext: ReadingContextSchema,
-  journey: z.string().max(4000).optional(),
-});
-export type CompassNightTurnRequest = z.infer<typeof CompassNightTurnRequestSchema>;
-
-export const CompassSetupTurnSchema = z.object({
+export const CompassPlanTurnSchema = z.object({
   reply: z.string().min(1),
-  draft: CompassSetupProposalSchema.nullable(),
+  draft: GoalProposalSchema.nullable(),
 });
-export type CompassSetupTurn = z.infer<typeof CompassSetupTurnSchema>;
+export type CompassPlanTurn = z.infer<typeof CompassPlanTurnSchema>;
 
-export const CompassMorningTurnSchema = z.object({
+export const CompassPlanTurnModelSchema = z.object({
   reply: z.string().min(1),
-  draft: CompassMorningAnalysisSchema.nullable(),
+  draft: GoalProposalModelSchema.nullable(),
 });
-export type CompassMorningTurn = z.infer<typeof CompassMorningTurnSchema>;
+export type CompassPlanTurnModel = z.infer<typeof CompassPlanTurnModelSchema>;
+
+// ── Check-in turn ────────────────────────────────────────────────────────────
+
+export const ADJUSTMENT_ACTIONS = ['PAUSE', 'RESUME', 'RETARGET', 'RETIRE'] as const;
+export type AdjustmentAction = (typeof ADJUSTMENT_ACTIONS)[number];
 
 /**
- * What the MODEL is validated against for a morning check-in turn — looser
- * than `CompassMorningTurnSchema` only where the server can trim losslessly.
+ * A change to an existing trackable, proposed in a check-in and approved the
+ * same way a goal is.
  *
- * Holding the model to the strict `mission` cap of 4 steps 502s the whole
- * request when it plans a fifth: structured-output validation fails, the
- * retry fails the same way, and a turn whose first four steps were a
- * perfectly good mission is thrown away. Everything else stays strict —
- * a 0-day milestone or an empty headline is genuinely bad data, and a
- * retry is the right response to that. The server trims the extra steps
- * via `normalizeCompassMorningTurn` and re-validates against the strict
- * schema before returning, so the wire contract never changes.
+ * Deliberately flat and deliberately small. The check-in's job is to talk, and
+ * a large nested object here buys nothing — a goal that needs restructuring
+ * wants a plan conversation, not a check-in that quietly rewrites it. History
+ * keeps the old value, so consistency before an adjustment is never rewritten
+ * by one.
  */
-export const CompassMorningAnalysisModelSchema = CompassMorningAnalysisSchema.extend({
-  mission: z.array(CompassMissionStepSchema).min(1).max(8),
+export const AdjustmentSchema = z.object({
+  trackableId: z.string().min(1),
+  action: z.enum(ADJUSTMENT_ACTIONS),
+  /** Only meaningful for RETARGET: the new schedule target or measurement target. */
+  target: z.number().nullable(),
+  reason: z.string().min(1).max(400),
 });
-export type CompassMorningAnalysisModel = z.infer<typeof CompassMorningAnalysisModelSchema>;
+export type Adjustment = z.infer<typeof AdjustmentSchema>;
 
-export const CompassMorningTurnModelSchema = z.object({
+export const MAX_ADJUSTMENTS = 3;
+
+/** What the client tells the server about how the goal is actually going. */
+export const CompassCheckinContextSchema = z.object({
+  today: YmdSchema,
+  timezone: TimezoneSchema,
+  goalTitle: z.string(),
+  goalSummary: z.string().nullable(),
+  startDate: YmdSchema,
+  endDate: YmdSchema,
+  daysRemaining: z.number().int(),
+  /** 0..1, or null when nothing has been expected yet. Never 0 on day one. */
+  executionRatio: z.number().min(0).max(1).nullable(),
+  outcome: z
+    .object({
+      value: z.number(),
+      target: z.number(),
+      unit: z.string(),
+    })
+    .nullable(),
+  trackables: z
+    .array(
+      z.object({
+        id: z.string(),
+        title: z.string(),
+        status: z.enum(LIFECYCLE_STATUSES),
+        scheduleSummary: z.string(),
+        expected: z.number().int(),
+        completed: z.number().int(),
+        ratio: z.number().min(0).max(1).nullable(),
+      }),
+    )
+    .max(MAX_TRACKABLES),
+  /**
+   * The journal: what the user wrote when they logged, wins and misses alike.
+   *
+   * This is the material the conversation is actually about. A miss that says
+   * "editing is the bottleneck" three weeks running is a workflow problem, and
+   * only the notes can say so.
+   */
+  recentNotes: z
+    .array(
+      z.object({
+        date: YmdSchema,
+        trackableTitle: z.string(),
+        completed: z.boolean(),
+        note: z.string().max(1000),
+      }),
+    )
+    .max(30),
+});
+export type CompassCheckinContext = z.infer<typeof CompassCheckinContextSchema>;
+
+export const CompassCheckinTurnRequestSchema = z.object({
+  messages: ChatMessagesSchema,
+  modelId: z.string().optional(),
+  context: CompassCheckinContextSchema,
+  readingContext: ReadingContextSchema,
+  journey: z.string().max(4000).optional(),
+});
+export type CompassCheckinTurnRequest = z.infer<typeof CompassCheckinTurnRequestSchema>;
+
+export const CompassCheckinDraftSchema = z.object({
+  /** One line worth remembering, distilled. Feeds `journeyNotes`. */
+  journeyNote: z.string().max(300).nullable(),
+  adjustments: z.array(AdjustmentSchema).max(MAX_ADJUSTMENTS),
+});
+export type CompassCheckinDraft = z.infer<typeof CompassCheckinDraftSchema>;
+
+export const CompassCheckinTurnSchema = z.object({
   reply: z.string().min(1),
-  draft: CompassMorningAnalysisModelSchema.nullable(),
+  draft: CompassCheckinDraftSchema.nullable(),
 });
-export type CompassMorningTurnModel = z.infer<typeof CompassMorningTurnModelSchema>;
+export type CompassCheckinTurn = z.infer<typeof CompassCheckinTurnSchema>;
 
-/** Trims a model-produced morning turn down to the strict wire contract:
- * currently just capping the mission at four steps. */
-export function normalizeCompassMorningTurn(turn: CompassMorningTurnModel): CompassMorningTurn {
+const CompassCheckinDraftModelSchema = z.object({
+  journeyNote: z.string().nullable(),
+  adjustments: z.array(AdjustmentSchema).max(10),
+});
+
+export const CompassCheckinTurnModelSchema = z.object({
+  reply: z.string().min(1),
+  draft: CompassCheckinDraftModelSchema.nullable(),
+});
+export type CompassCheckinTurnModel = z.infer<typeof CompassCheckinTurnModelSchema>;
+
+// ── Normalization: loose model output → strict wire shape ────────────────────
+
+export type NormalizeContext = { today: string; timezone: string };
+
+function clampInt(value: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, Math.round(value)));
+}
+
+function isYmd(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/**
+ * Rescue a schedule, or fall back to DAILY.
+ *
+ * Downgrading beats failing. A WEEKLY_DAYS with no days is not a schedule, but
+ * the rest of the proposal around it is usually fine, and DAILY is the honest
+ * reading of "do this regularly" — the user can correct it in one tap, where a
+ * rejected turn costs them the whole conversation.
+ */
+export function normalizeSchedule(raw: ScheduleModel, ctx: NormalizeContext): Schedule {
+  const timezone = ctx.timezone;
+
+  switch (raw.type) {
+    case 'WEEKLY_DAYS': {
+      const days = Array.from(
+        new Set((raw.daysOfWeek ?? []).map((d) => Math.round(d)).filter((d) => d >= 0 && d <= 6)),
+      ).sort((a, b) => a - b);
+      if (days.length === 0) return { type: 'DAILY', timezone };
+      return { type: 'WEEKLY_DAYS', daysOfWeek: days, timezone };
+    }
+    case 'WEEKLY_TARGET': {
+      if (raw.target == null) return { type: 'DAILY', timezone };
+      return { type: 'WEEKLY_TARGET', target: clampInt(raw.target, 1, 7), timezone };
+    }
+    case 'MONTHLY_TARGET': {
+      if (raw.target == null) return { type: 'DAILY', timezone };
+      return { type: 'MONTHLY_TARGET', target: clampInt(raw.target, 1, 31), timezone };
+    }
+    case 'SPECIFIC_DATES': {
+      const dates = Array.from(new Set((raw.dates ?? []).filter(isYmd))).sort().slice(0, 200);
+      if (dates.length === 0) return { type: 'DAILY', timezone };
+      return { type: 'SPECIFIC_DATES', dates, timezone };
+    }
+    case 'INTERVAL': {
+      if (raw.intervalDays == null) return { type: 'DAILY', timezone };
+      const days = clampInt(raw.intervalDays, 1, 365);
+      // Every 1 day IS daily, and saying so keeps one representation per meaning.
+      if (days === 1) return { type: 'DAILY', timezone };
+      return { type: 'INTERVAL', intervalDays: days, timezone };
+    }
+    case 'DAILY':
+    default:
+      return { type: 'DAILY', timezone };
+  }
+}
+
+const DEFAULT_RATING_MIN = 1;
+const DEFAULT_RATING_MAX = 5;
+
+/**
+ * Rescue a measurement, or fall back to COMPLETION.
+ *
+ * COMPLETION is the safe floor for the same reason DAILY is: "did it happen"
+ * is always answerable, so a trackable that lands there is still loggable.
+ */
+export function normalizeMeasurement(raw: MeasurementModel): Measurement {
+  switch (raw.type) {
+    case 'QUANTITY':
+    case 'AMOUNT': {
+      const target = raw.target;
+      const unit = raw.unit?.trim();
+      if (target == null || target <= 0 || !unit) return { type: 'COMPLETION' };
+      return { type: raw.type, target, unit: unit.slice(0, 32) };
+    }
+    case 'DURATION': {
+      const target = raw.target;
+      if (target == null || target <= 0) return { type: 'COMPLETION' };
+      const unit = raw.unit === 'hours' ? 'hours' : 'minutes';
+      return { type: 'DURATION', target, unit };
+    }
+    case 'RATING': {
+      const min = raw.min == null ? DEFAULT_RATING_MIN : Math.round(raw.min);
+      const max = raw.max == null ? DEFAULT_RATING_MAX : Math.round(raw.max);
+      if (max <= min) return { type: 'RATING', min: DEFAULT_RATING_MIN, max: DEFAULT_RATING_MAX };
+      return { type: 'RATING', min, max };
+    }
+    case 'COMPLETION':
+    default:
+      return { type: 'COMPLETION' };
+  }
+}
+
+export function normalizeCompassPlanTurn(
+  turn: CompassPlanTurnModel,
+  ctx: NormalizeContext,
+): CompassPlanTurn {
+  if (turn.draft === null) return { reply: turn.reply, draft: null };
+
+  const draft = turn.draft;
+  const trackables = draft.trackables.slice(0, MAX_TRACKABLES).map((t) => ({
+    title: t.title,
+    description: t.description,
+    startOffsetDays: t.startOffsetDays,
+    durationDays: t.durationDays,
+    timeOfDay: t.timeOfDay,
+    schedule: normalizeSchedule(t.schedule, ctx),
+    measurement: normalizeMeasurement(t.measurement),
+  }));
+
+  // An outcome needs both halves to mean anything; half of one is noise.
+  const hasOutcome = draft.outcomeTarget != null && draft.outcomeUnit != null;
+
   return {
     reply: turn.reply,
-    draft:
-      turn.draft === null
-        ? null
-        : { ...turn.draft, mission: turn.draft.mission.slice(0, 4) },
+    draft: {
+      title: draft.title,
+      summary: draft.summary,
+      category: draft.category,
+      priority: draft.priority,
+      durationDays: draft.durationDays,
+      outcomeTarget: hasOutcome ? draft.outcomeTarget : null,
+      outcomeUnit: hasOutcome ? draft.outcomeUnit : null,
+      rationale: draft.rationale,
+      trackables,
+    },
   };
 }
 
-export const CompassNightTurnSchema = z.object({
-  reply: z.string().min(1),
-  draft: CompassNightAnalysisSchema.nullable(),
-});
-export type CompassNightTurn = z.infer<typeof CompassNightTurnSchema>;
+export function normalizeCompassCheckinTurn(
+  turn: CompassCheckinTurnModel,
+  knownTrackableIds: readonly string[],
+): CompassCheckinTurn {
+  if (turn.draft === null) return { reply: turn.reply, draft: null };
+
+  const known = new Set(knownTrackableIds);
+  // A proposal against a trackable that does not exist cannot be approved, and
+  // showing it would offer the user a button that does nothing.
+  const adjustments = turn.draft.adjustments
+    .filter((a) => known.has(a.trackableId))
+    .slice(0, MAX_ADJUSTMENTS);
+
+  const journeyNote = turn.draft.journeyNote?.slice(0, 300) ?? null;
+
+  // A draft with nothing left in it is not a draft.
+  if (adjustments.length === 0 && !journeyNote) return { reply: turn.reply, draft: null };
+
+  return { reply: turn.reply, draft: { journeyNote, adjustments } };
+}

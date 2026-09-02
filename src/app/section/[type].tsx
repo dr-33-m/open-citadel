@@ -19,6 +19,7 @@ import { BookGridSkeleton } from "@/components/skeletons/book-grid-skeleton";
 import { CollectionGridSkeleton } from "@/components/skeletons/collection-grid-skeleton";
 import { useScreenSettled } from "@/navigation/use-screen-settled";
 
+import { Card } from "@/components/ui/card";
 import { Touchable } from "@/components/ui/touchable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
@@ -31,7 +32,7 @@ import { EditTitleSheet } from "@/components/library/edit-title-sheet";
 import { NewCollectionPrompt } from "@/components/library/new-collection-prompt";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { elevation, fontFamily, spacing, MaxContentWidth } from "@/constants/theme";
+import { fontFamily, spacing, MaxContentWidth } from "@/constants/theme";
 import type { books as booksTable } from "@/db/schema";
 import { asColor } from "@/utils/colors";
 import {
@@ -109,18 +110,16 @@ const CollectionCell = React.memo(function CollectionCell({
   onPress: (id: string) => void;
 }) {
   return (
-    <Touchable
-      className="flex-1 bg-card gap-2 p-5"
-      style={elevation.soft}
-      onPress={() => onPress(id)}
-    >
-      <SquareLibrary size={22} color={asColor(primary)} />
-      <ThemedText type="bodyMd" numberOfLines={2}>
-        {name}
-      </ThemedText>
-      <ThemedText type="labelSm" color={asColor(primary)}>
-        {count} {count === 1 ? "BOOK" : "BOOKS"}
-      </ThemedText>
+    <Touchable className="flex-1" onPress={() => onPress(id)}>
+      <Card className="gap-2 p-5">
+        <SquareLibrary size={22} color={asColor(primary)} />
+        <ThemedText type="bodyMd" numberOfLines={2}>
+          {name}
+        </ThemedText>
+        <ThemedText type="labelSm" color={asColor(primary)}>
+          {count} {count === 1 ? "BOOK" : "BOOKS"}
+        </ThemedText>
+      </Card>
     </Touchable>
   );
 });

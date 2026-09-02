@@ -13,11 +13,13 @@
  * *defined* theme to declare every token, which would otherwise make them a
  * maintenance trap on every future token added here).
  *
- * `--color-code-*` and `--color-chart-*` are left on PanelUI's shipped
- * defaults: code blocks are reachable once chat adopts the `Response`
- * component, and generic syntax colours don't need to be on-brand, while
- * charts have no feature surface in this app at all yet. Revisit both with
- * real content in front of you rather than guessed values.
+ * `--color-code-*` is left on PanelUI's shipped defaults: code blocks are
+ * reachable once chat adopts the `Response` component, and generic syntax
+ * colours don't need to be on-brand. Revisit with real content in front of
+ * you rather than guessed values.
+ *
+ * `--color-chart-*` no longer is. Compass's insights are the real content the
+ * old note was waiting for, so the ramp below is the app's own.
  */
 
 @theme {
@@ -130,7 +132,6 @@
   --color-destructive-soft: unset;
   --color-destructive-subtle: unset;
 
-  /* Chart series — left on PanelUI's shipped ramp; see file header. */
   /* Syntax colours, for CodeBlock — left on PanelUI's shipped ramp; see file header. */
   --color-code-keyword: unset;
   --color-code-string: unset;
@@ -142,6 +143,7 @@
   --color-code-inserted: unset;
   --color-code-deleted: unset;
 
+  /* Chart series — the app's own warm ramp; see file header. */
   --color-chart-1: unset;
   --color-chart-2: unset;
   --color-chart-3: unset;
@@ -248,8 +250,22 @@
       --color-warning-foreground: #8A5610;
       --color-warning-solid-foreground: #1C1510;
 
-      --color-border: rgba(28, 21, 16, 0.12);
-      --color-input: rgba(28, 21, 16, 0.12);
+      /*
+       * Heavier than the dark theme's 0.15, not lighter, and the asymmetry is
+       * the point.
+       *
+       * A hairline is only ever seen against the surface it encloses, and this
+       * one has to travel a much shorter distance: dark's border sits 12 L*
+       * above a card at L* 10, where that is a doubling; light's sits below a
+       * card at L* 98, where the same 12 is a rounding error. At the old 0.12
+       * the step was 9.6 L* and the cards on this page had no edge at all —
+       * they were a slightly paler rectangle on a pale ground, held together
+       * by a shadow that a light theme barely shows either. 0.20 puts the step
+       * at 16 L*, past dark's 12, which is what it takes for the two themes to
+       * read as the same design.
+       */
+      --color-border: rgba(28, 21, 16, 0.20);
+      --color-input: rgba(28, 21, 16, 0.20);
       --color-ring: #B8861A;
 
       --color-surface: #EDE5D4;
@@ -278,12 +294,20 @@
       --color-code-inserted: #0a7d55;
       --color-code-deleted: #cf222e;
 
-      /* chart series — PanelUI default, unchanged */
-      --color-chart-1: #262626;
-      --color-chart-2: #3b82f6;
-      --color-chart-3: #10b981;
-      --color-chart-4: #f59e0b;
-      --color-chart-5: #8b5cf6;
+      /*
+       * Chart series — a warm monochrome ramp, gold to ash. Hue is never the
+       * variable: four unrelated colours would break the one rule the whole
+       * palette rests on, that gold is the only colour with a job. Series
+       * separate by weight and chroma instead, which is also the order of
+       * prominence, so chart-1 is always the series the chart is about.
+       * Every value clears 3:1 against `--color-card`, which is what a chart
+       * is drawn on. See DESIGN.md.
+       */
+      --color-chart-1: #B8861A;
+      --color-chart-2: #7A5A10;
+      --color-chart-3: #6B6050;
+      --color-chart-4: #9A8B6E;
+      --color-chart-5: #3E3830;
 
       /* Citadel Frame shape scale: square, always */
       --radius-xs: 0px;
@@ -394,12 +418,12 @@
       --color-code-inserted: #7ee787;
       --color-code-deleted: #ff7b72;
 
-      /* chart series — PanelUI default, unchanged */
-      --color-chart-1: #fafafa;
-      --color-chart-2: #60a5fa;
-      --color-chart-3: #34d399;
-      --color-chart-4: #fbbf24;
-      --color-chart-5: #a78bfa;
+      /* Chart series — the warm monochrome ramp. See the light block. */
+      --color-chart-1: #f2ca50;
+      --color-chart-2: #b8892c;
+      --color-chart-3: #d0c5af;
+      --color-chart-4: #8a8378;
+      --color-chart-5: #6b655c;
 
       /* Citadel Frame shape scale: square, always */
       --radius-xs: 0px;

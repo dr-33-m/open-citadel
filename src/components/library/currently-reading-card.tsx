@@ -91,7 +91,11 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
           </ThemedText>
 
           <View className="mt-3 gap-2">
-            <View className="flex-row justify-between">
+            <Progress value={progress} minValue={0} maxValue={1} size="sm" />
+            {/* Below the bar, the same way the Compass insights card reads.
+                `Progress` only draws its own labels above it, and above is
+                where the title already is. */}
+            <View className="flex-row items-center justify-between gap-3">
               <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                 PROGRESS
               </ThemedText>
@@ -99,7 +103,6 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
                 {Math.round(progress * 100)}%
               </ThemedText>
             </View>
-            <Progress value={progress} minValue={0} maxValue={1} size="sm" />
           </View>
         </View>
       </Card>

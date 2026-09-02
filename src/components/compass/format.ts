@@ -1,5 +1,3 @@
-import type { CompassScheduleStatus } from 'samwell-shared';
-
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** '2026-07-15' → '15 Jul' (or '15 Jul 2027' when not the current year). */
@@ -21,26 +19,61 @@ export function daysLeftText(daysRemaining: number | null | undefined): string {
   return daysRemaining > 0 ? `${days} ${unit} left` : `${days} ${unit} over`;
 }
 
-/** Short pace read for the dashboard strip and the progress sheet: "On track", "2 days behind". */
-export function paceVerdict(status: CompassScheduleStatus, varianceDays: number | null): string {
-  if (status === 'unknown' || varianceDays === null) return 'Not enough data yet';
-  if (status === 'on_track') return 'On track';
-  const days = Math.abs(varianceDays);
-  const unit = days === 1 ? 'day' : 'days';
-  return status === 'behind' ? `${days} ${unit} behind` : `${days} ${unit} ahead`;
-}
-
 export const SCORE_GREEN = '#4caf50';
 export const SCORE_RED = '#e53935';
 
 /**
- * Focus-score colour psychology: green at 70+, the theme gold between 50 and 69,
- * red below 50. `gold` is passed in so it stays theme-aware (light/dark).
- * A null score (nothing logged yet) falls back to gold.
+ * How a number is doing, as a tone rather than a colour.
+ *
+ * Red and green are strong words and they were being spent on ordinary
+ * numbers: a goal three weeks in at 14% of its money read as an emergency,
+ * when it is just early. So the palette's own colours carry the everyday case,
+ * and the two loud ones are reserved for the two things worth interrupting
+ * someone about — you are materially behind the clock, or you are far enough
+ * ahead that this is going to finish well.
  */
-export function scoreColor(score: number | null | undefined, gold: string): string {
-  if (score == null) return gold;
-  if (score >= 70) return SCORE_GREEN;
-  if (score >= 50) return gold;
-  return SCORE_RED;
+export type PaceTone = 'neutral' | 'strong' | 'behind';
+
+/** Below the pace the calendar implies by this much, and it is a real gap. */
+const BEHIND_SLACK = 0.15;
+/** At or past this, and not behind, the thing is on course to land. */
+const STRONG = 0.8;
+/** With no clock to judge against, this is where a ratio stops being ordinary. */
+const WEAK = 0.5;
+
+/**
+ * `progress` and `elapsed` are both 0..1. Pass `elapsed` as null for a figure
+ * that is already measured against what was due to date — a consistency ratio
+ * carries its own pace, so comparing it to the calendar again double-counts.
+ */
+export function paceTone(
+  progress: number | null | undefined,
+  elapsed: number | null,
+): PaceTone {
+  if (progress == null) return 'neutral';
+
+  if (elapsed == null) {
+    if (progress >= STRONG) return 'strong';
+    return progress < WEAK ? 'behind' : 'neutral';
+  }
+
+  if (progress < elapsed - BEHIND_SLACK) return 'behind';
+  if (progress >= STRONG && progress >= elapsed) return 'strong';
+  return 'neutral';
+}
+
+/**
+ * The colour for a tone. `neutral` takes the caller's own theme colour, so two
+ * things being read side by side can stay distinguishable while both are
+ * ordinary.
+ */
+export function toneColor(tone: PaceTone, neutral: string): string {
+  if (tone === 'strong') return SCORE_GREEN;
+  if (tone === 'behind') return SCORE_RED;
+  return neutral;
+}
+
+/** A 0..1 ratio as the 0-100 figure the UI prints. Null stays null. */
+export function ratioScore(ratio: number | null | undefined): number | null {
+  return ratio == null ? null : Math.round(ratio * 100);
 }

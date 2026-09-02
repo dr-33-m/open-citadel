@@ -41,6 +41,11 @@ consumer, not in anticipation of one.
 - **One component per file**, named after the file. A small private helper
   used only by that component may share the file; anything a second file
   wants gets its own.
+- **Every scrollable gets a scroll fade**, except a carousel. `PageFade` for a
+  vertical page or sheet, `RowFade` for a horizontal shelf, both from
+  `components/scroll-fades`. The scrollbars are all hidden, so the fade is the
+  only thing saying content continues; pass the right `surface` or it draws a
+  band of the wrong shade instead of a fade.
 - **No logic in JSX.** Derive above the `return`, or in a hook, or in a pure
   function in `utils/`.
 

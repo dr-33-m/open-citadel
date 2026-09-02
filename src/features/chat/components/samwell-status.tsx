@@ -47,9 +47,12 @@ function StatusActions({ actions }: { actions?: SamwellStatusAction[] }) {
 export function SamwellStatusEmptyState({
   status,
   style,
+  /** The surface's own icon — a compass on Compass, a bubble on chat. */
+  icon: Icon = MessageSquare,
 }: {
   status: SamwellStatus | null;
   style?: ViewStyle;
+  icon?: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 }) {
   const [mutedForeground, destructive] = useCSSVariable([
     '--color-muted-foreground',
@@ -63,15 +66,24 @@ export function SamwellStatusEmptyState({
           {status?.isLoading ? (
             <Spinner size="md" />
           ) : (
-            <MessageSquare
+            // Full strength. At 0.3 on `muted-foreground` this was so close to
+            // the page that it read as a smudge rather than as an icon, which
+            // is worse than no icon at all.
+            <Icon
               size={40}
               color={status?.isError ? asColor(destructive) : asColor(mutedForeground)}
-              // Dimmed when it is only decoration; full strength when it is
-              // carrying an error the reader has to notice.
-              style={{ opacity: status?.isError ? 1 : 0.3 }}
+              strokeWidth={2}
             />
           )}
         </EmptyState.Media>
+        {status?.title ? (
+          <ThemedText
+            type="headlineSm"
+            className={cn('text-center', status.isError && 'text-destructive')}
+          >
+            {status.title}
+          </ThemedText>
+        ) : null}
         <EmptyState.Description className={cn(status?.isError && 'text-destructive')}>
           {status?.message ?? 'Ask Samwell about your books'}
         </EmptyState.Description>

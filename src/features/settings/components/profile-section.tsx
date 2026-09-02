@@ -4,27 +4,21 @@ import { User } from 'lucide-react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { SettingsSection } from '@/features/settings/components/settings-section';
-import { usePlayerRank } from '@/features/settings/hooks/use-player-rank';
-import { ThemedText } from '@/components/themed-text';
+import { Card } from '@/components/ui/card';
+import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { asColor } from '@/utils/colors';
 import { useSettingsStore } from '@/stores/settings';
-import { fontFamily, iconSize } from '@/constants/theme';
-import { SCORE_GREEN, SCORE_RED } from '@/components/compass/format';
+import { fontFamily } from '@/constants/theme';
 
 /**
- * Display name plus the earned rank beside it. Owns the edit draft — the
+ * Display name. Owns the edit draft — the
  * store only hears about a name on blur/submit, not per keystroke.
  */
 export const ProfileSection = React.memo(function ProfileSection() {
-  const [primary, mutedForeground, foreground] = useCSSVariable([
-    '--color-primary',
-    '--color-muted-foreground',
-    '--color-foreground',
-  ]);
+  const mutedForeground = useCSSVariable('--color-muted-foreground');
   const username = useSettingsStore((s) => s.username);
   const setUsername = useSettingsStore((s) => s.setUsername);
   const [editingName, setEditingName] = React.useState(username);
-  const playerRank = usePlayerRank();
 
   const commitName = () => {
     const trimmed = editingName.trim();
@@ -33,37 +27,31 @@ export const ProfileSection = React.memo(function ProfileSection() {
 
   return (
     <SettingsSection label="PROFILE" divider={false} className="mt-6 gap-4">
-      <View className="flex-row items-center gap-3 bg-muted px-4">
-        <User size={iconSize.default} color={asColor(foreground)} strokeWidth={2} />
-        <TextInput
-          className="flex-1 py-4 text-[16px] text-foreground"
-          style={{ fontFamily: fontFamily.sans }}
-          placeholder="Display name"
-          placeholderTextColor={asColor(mutedForeground)}
-          value={editingName}
-          onChangeText={setEditingName}
-          onBlur={commitName}
-          onSubmitEditing={commitName}
-          returnKeyType="done"
-          autoCorrect={false}
-        />
-        {playerRank && (
-          <View
-            className="h-7 w-7 items-center justify-center border"
-            style={{
-              borderColor:
-                playerRank === 'A' ? SCORE_GREEN : playerRank === 'C' ? SCORE_RED : asColor(primary),
-            }}
-          >
-            <ThemedText
-              type="labelMd"
-              color={playerRank === 'A' ? SCORE_GREEN : playerRank === 'C' ? SCORE_RED : asColor(primary)}
-            >
-              {playerRank}
-            </ThemedText>
-          </View>
-        )}
-      </View>
+      {/* A card holding the field, not a bare strip of colour on the page.
+          The field is `inset` — a translucent darkening, so it is literally a
+          darker shade of whatever the card under it is, in either theme. It is
+          the same token the vendored Card uses for a band set into itself, and
+          `muted` was wrong here: `muted` is its own flat surface, so against
+          the card it read as a second, unrelated block rather than as a well
+          sunk into the one it sits on. */}
+      <Card className="p-4">
+        <View className="flex-row items-center gap-3 bg-inset px-4">
+          {/* The same bordered badge every other settings row leads with. */}
+          <PrefixIcon icon={User} size={36} />
+          <TextInput
+            className="flex-1 py-4 text-[16px] text-foreground"
+            style={{ fontFamily: fontFamily.sans }}
+            placeholder="Display name"
+            placeholderTextColor={asColor(mutedForeground)}
+            value={editingName}
+            onChangeText={setEditingName}
+            onBlur={commitName}
+            onSubmitEditing={commitName}
+            returnKeyType="done"
+            autoCorrect={false}
+          />
+        </View>
+      </Card>
     </SettingsSection>
   );
 });

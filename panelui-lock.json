@@ -21,14 +21,6 @@
       "item": "modal-isolation-store",
       "digest": "sha256:346301f0da15175f23a8918834d0c6e9bbdb096e3c130fa92bc9640dc3500c70"
     },
-    "src/components/ui/toast.tsx": {
-      "item": "toast",
-      "digest": "sha256:9db0a732afe98dc8a0ad0033c8fce362b8d9ac5c6f9110c4fec44baea5c587fc"
-    },
-    "src/components/ui/toast-store.ts": {
-      "item": "toast",
-      "digest": "sha256:3a74ab7c74e9aae50664bd5e7fd1204b267b45e20a1e89821911ceee4fc3d63f"
-    },
     "src/components/ui/button.tsx": {
       "item": "button",
       "digest": "sha256:bf89fea5e22977f2d035b3f3585f4b76eaeb5a74fa94255a0807a2ccddf16ce8"
@@ -365,7 +357,6 @@
       "portal",
       "focus-restoration-store",
       "modal-isolation-store",
-      "toast",
       "button",
       "animated-pressable",
       "icons",

@@ -41,7 +41,7 @@ import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
 type RunAgentInput = {
   threadId?: string;
   runId?: string;
-  messages?: Array<unknown>;
+  messages?: unknown[];
   forwardedProps?: Record<string, unknown>;
   data?: Record<string, unknown>;
 };
@@ -82,7 +82,7 @@ function readModelId(body: RunAgentInput, knownModelIds: string[]): string {
   return knownModelIds.includes(modelId) ? modelId : (knownModelIds[0] ?? DEFAULT_CLOUD_MODEL_ID);
 }
 
-function isCountableUserTurn(messages: Array<unknown>): boolean {
+function isCountableUserTurn(messages: unknown[]): boolean {
   const last = messages.at(-1);
   if (!last || typeof last !== 'object') return true;
   return (last as { role?: unknown }).role === 'user';
@@ -245,7 +245,7 @@ app.post('/chat/http', async (c) => {
 
   const countsTowardLimit = isCountableUserTurn(body.messages);
 
-  const rawMessages = body.messages as Array<{ role?: string; content?: unknown }>;
+  const rawMessages = body.messages as { role?: string; content?: unknown }[];
   const sessionSystemPrompts = rawMessages
     .filter((m) => m?.role === 'system' && typeof m.content === 'string' && m.content.trim())
     .map((m) => m.content as string);
@@ -402,7 +402,7 @@ async function summarizeForCompaction({
   modelId,
   deviceId,
 }: {
-  dropped: Array<{ role: string; content: unknown }>;
+  dropped: { role: string; content: unknown }[];
   modelId: string;
   deviceId: string;
 }): Promise<string> {

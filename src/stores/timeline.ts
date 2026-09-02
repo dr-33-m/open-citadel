@@ -3,7 +3,7 @@ import { create } from "zustand";
 
 import { db } from "@/db/client";
 import { books, highlights, notes, thoughts } from "@/db/schema";
-import { todayLocalYmd } from "@/services/compass-math";
+import { localDayString } from "@/utils/day";
 import { useSettingsStore } from "@/stores/settings";
 
 export type TimelineItem = {
@@ -104,7 +104,7 @@ function localDayRangeUtc(targetDateYmd: string): { start: string; end: string }
 
 export const useTimelineStore = create<TimelineState>((set, get) => ({
   groups: [],
-  selectedDate: todayLocalYmd(),
+  selectedDate: localDayString(),
   isLoading: false,
 
   loadTimeline: async (date?: string) => {

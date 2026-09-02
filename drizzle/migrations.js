@@ -18,6 +18,7 @@ import m0014 from "./0014_goal_rank.js";
 import m0015 from "./0015_chat_suggestions.js";
 import m0016 from "./0016_queue_order.js";
 import m0017 from "./0017_milestone_last_reported.js";
+import m0018 from "./0018_trackables.js";
 import journal from "./meta/_journal.json";
 
 export default {
@@ -41,5 +42,6 @@ export default {
     m0015,
     m0016,
     m0017,
+    m0018,
   },
 };

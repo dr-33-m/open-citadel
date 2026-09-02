@@ -34,6 +34,14 @@ export interface SamwellStatusAction {
 }
 
 export interface SamwellStatus {
+  /**
+   * The wall, named in one line, with `message` saying what to do about it.
+   *
+   * Only the states that are a setup wall carry one. A transient state —
+   * waking up, a retry — is a sentence about right now, and giving it a
+   * heading would make a passing moment look like a place you have arrived.
+   */
+  title?: string;
   message: string;
   actions?: SamwellStatusAction[];
   /** Renders in the destructive colour — a failure, not a state. */
@@ -113,7 +121,8 @@ export function useSamwellStatus({
     // base URL is entered and where switching back offline lives, so it is
     // the way out of this either way.
     return {
-      message: 'Grand Maester Samwell is not set up in this build yet.',
+      title: 'Samwell Cloud is not set up.',
+      message: 'This build has no cloud server, so there is nothing to talk to yet.',
       actions: [{ label: 'OPEN SETTINGS', onPress: onOpenSettings }],
     };
   }
@@ -122,7 +131,8 @@ export function useSamwellStatus({
 
   if (!downloaded) {
     return {
-      message: 'Samwell needs a model to run. Set one up in Settings.',
+      title: 'Samwell needs a model to run.',
+      message: 'Tap button below to set up Samwell.',
       actions: [{ label: 'SET UP SAMWELL', onPress: onOpenSettings }],
     };
   }
@@ -141,7 +151,8 @@ export function useSamwellStatus({
 
   if (!ready) {
     return {
-      message: 'Samwell is offline. Wake him up to chat.',
+      title: 'Samwell is asleep.',
+      message: 'Tap button below to wake him up.',
       actions: [{ label: 'WAKE UP', onPress: initContext }],
     };
   }

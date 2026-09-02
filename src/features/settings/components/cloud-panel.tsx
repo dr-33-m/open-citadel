@@ -2,11 +2,11 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { Card } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { Progress } from '@/components/ui/progress';
-import { elevation } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 
@@ -31,7 +31,7 @@ export function CloudPanel() {
 
   return (
     <>
-      <View className="gap-3 bg-card p-4" style={elevation.soft}>
+      <Card className="gap-3 p-4">
         {!cloudBaseUrl && (
           <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
             Grand Maester Samwell is not set up in this build yet.
@@ -76,7 +76,7 @@ export function CloudPanel() {
             </ThemedText>
           )}
         </View>
-      </View>
+      </Card>
 
       <CloudModelSheet
         visible={pickerVisible}

@@ -1,101 +1,97 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { create } from 'zustand';
 import {
-  CompassMorningAnalysisSchema,
+  MeasurementSchema,
+  ScheduleSchema,
+  type Adjustment,
   type CompassChatMessage,
-  type CompassMorningAnalysis,
-  type CompassMorningPlan,
-  type CompassMorningTurn,
-  type CompassNightAnalysis,
-  type CompassNightTurn,
-  type CompassSetupProposal,
-  type CompassSetupTurn,
-  type CompassTelemetry,
+  type CompassCheckinContext,
+  type CompassCheckinTurn,
+  type CompassPlanTurn,
+  type GoalProposal,
+  type Measurement,
+  type Schedule,
 } from 'samwell-shared';
 
 import { db } from '@/db/client';
-import { compassActions, compassCheckins, compassGoals, compassMilestones } from '@/db/schema';
-import {
-  CompassApiError,
-  requestMorningTurn,
-  requestNightTurn,
-  requestSetupTurn,
-} from '@/services/compass-api';
-import { currentCompassDay } from '@/services/compass-day';
-import {
-  buildTelemetry,
-  computeFinalVarianceDays,
-  computeFocusScore,
-  computeGoalTrack,
-  computeProgress,
-  computeProjection,
-  daysBetween,
-  deriveGoalRank,
-  earliestYmd,
-  isGoalComplete,
-  isMilestoneFullyStepped,
-  latestYmd,
-  stepThresholdDate,
-} from '@/services/compass-math';
-import { syncCompassReminders } from '@/services/compass-notifications';
+import { goals, trackableLogs, trackablePauses, trackables } from '@/db/schema';
+import { CompassApiError, requestCheckinTurn, requestPlanTurn } from '@/services/compass-api';
 import { selectReadingContext } from '@/services/compass-reading';
-import { buildJourneySnapshot, saveGoalFinishedNote, saveJourneyReflection } from '@/services/journey';
+import {
+  goalExecution,
+  goalOutcome,
+  trackableConsistency,
+  type ConsistencyResult,
+  type GoalExecution,
+  type GoalOutcome,
+} from '@/services/consistency';
+import { buildJourneySnapshot, saveJourneyReflection } from '@/services/journey';
+import {
+  dueOn,
+  scheduleSummary,
+  type DueItem,
+  type LogView,
+  type PauseWindow,
+  type TrackableView,
+} from '@/services/occurrences';
 import { useSettingsStore } from '@/stores/settings';
+import { addDaysYmd, localDayString, minYmd } from '@/utils/day';
 
-export type CompassGoalRow = typeof compassGoals.$inferSelect;
-export type CompassMilestoneRow = typeof compassMilestones.$inferSelect;
-export type CompassCheckinRow = typeof compassCheckins.$inferSelect;
+export type GoalRow = typeof goals.$inferSelect;
+
+export type GoalConsistency = {
+  execution: GoalExecution;
+  outcome: GoalOutcome | null;
+};
 
 type CompassState = {
-  goal: CompassGoalRow | null;
-  milestone: CompassMilestoneRow | null;
-  lastCompletedMilestone: CompassMilestoneRow | null;
-  todayMorning: CompassCheckinRow | null;
-  todayNight: CompassCheckinRow | null;
-  recentCheckins: CompassCheckinRow[];
-  telemetry: CompassTelemetry | null;
+  goals: GoalRow[];
+  activeGoalId: string | null;
+  /** Trackables of the active goal, with their JSON columns already parsed. */
+  trackables: TrackableView[];
+  logsByTrackable: Map<string, LogView[]>;
+
+  /**
+   * Derived data, held as STORED fields and recomputed on every write.
+   *
+   * Not computed inside a selector. Under zustand v5 a selector that builds a
+   * new array or object returns a fresh reference on every store change, so
+   * every subscriber re-renders on every keystroke of a streaming reply. The
+   * old store made the same call with `telemetry`, and for the same reason.
+   */
+  due: DueItem[];
+  consistency: GoalConsistency | null;
+
   isLoaded: boolean;
-  submitting: 'setup' | 'morning' | 'night' | null;
+  submitting: 'plan' | 'checkin' | null;
+  committing: boolean;
   error: string | null;
 
   loadCompass: () => Promise<void>;
-  // Conversational turns: send the exchange so far, get Samwell's reply + an
-  // optional structured draft. Nothing is persisted until the driver finalizes.
-  sendSetupTurn: (messages: CompassChatMessage[]) => Promise<CompassSetupTurn | null>;
-  sendMorningTurn: (messages: CompassChatMessage[]) => Promise<CompassMorningTurn | null>;
-  sendNightTurn: (messages: CompassChatMessage[]) => Promise<CompassNightTurn | null>;
-  finalizeSetup: (args: {
-    proposal: CompassSetupProposal;
-    /** The near commitment: when THIS milestone is due. */
-    milestoneTargetDate: string;
-    /** The outer commitment. Ignored when the goal already has one. */
-    goalTargetDate?: string | null;
-    goalTitle?: string;
-    milestoneTitle?: string;
-    estimatedEffortUnits?: number;
-  }) => Promise<boolean>;
-  /** Re-commit the dates on an existing race, for a milestone that was mis-scoped at setup. */
-  updateTargetDates: (args: {
-    milestoneTargetDate?: string;
-    goalTargetDate?: string;
-  }) => Promise<boolean>;
-  finalizeMorning: (args: { analysis: CompassMorningAnalysis; transcript: string }) => Promise<boolean>;
-  finalizeNight: (args: { analysis: CompassNightAnalysis; transcript: string }) => Promise<boolean>;
-  completeMilestone: () => Promise<void>;
-  /** Retire the current goal so a fresh one can be planned. History is kept, not deleted. */
-  archiveGoal: () => Promise<void>;
+  selectGoal: (goalId: string) => Promise<void>;
+
+  sendPlanTurn: (messages: CompassChatMessage[]) => Promise<CompassPlanTurn | null>;
+  sendCheckinTurn: (messages: CompassChatMessage[]) => Promise<CompassCheckinTurn | null>;
+  commitProposal: (proposal: GoalProposal) => Promise<string | null>;
+  applyCheckinDraft: (draft: {
+    journeyNote: string | null;
+    adjustments: Adjustment[];
+  }) => Promise<void>;
+
+  logDone: (trackableId: string, value: number | null, note: string | null) => Promise<void>;
+  logMissed: (trackableId: string, note: string | null) => Promise<void>;
+  undoLastLog: () => Promise<void>;
+
+  pauseTrackable: (trackableId: string) => Promise<void>;
+  resumeTrackable: (trackableId: string) => Promise<void>;
+  completeGoal: (goalId: string) => Promise<void>;
+  cancelGoal: (goalId: string) => Promise<void>;
+
   clearError: () => void;
 };
 
 function createId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function userText(messages: CompassChatMessage[]): string {
-  return messages
-    .filter((m) => m.role === 'user')
-    .map((m) => m.content)
-    .join(' ');
 }
 
 function friendlyError(err: unknown): string {
@@ -111,242 +107,196 @@ async function cloudArgs(): Promise<{ baseUrl: string; deviceId: string }> {
   return { baseUrl: cloudBaseUrl, deviceId: await getCloudDeviceId() };
 }
 
-function deleteCheckin(checkinId: string): void {
-  db.delete(compassActions).where(eq(compassActions.checkinId, checkinId)).run();
-  db.delete(compassCheckins).where(eq(compassCheckins.id, checkinId)).run();
-}
-
-function insertActions(
-  checkinId: string,
-  actions: CompassMorningAnalysis['actions'],
-  planned: boolean,
-  now: string,
-): void {
-  for (const action of actions) {
-    db.insert(compassActions)
-      .values({
-        id: createId('cact'),
-        checkinId,
-        description: action.description,
-        category: action.category,
-        alignment: action.alignment,
-        minutes: action.minutes,
-        effortUnits: action.effortUnits,
-        planned: planned ? 1 : 0,
-        createdAt: now,
-      })
-      .run();
-  }
-}
-
-function completedMilestonesFor(goalId: string): CompassMilestoneRow[] {
-  return db
-    .select()
-    .from(compassMilestones)
-    .where(and(eq(compassMilestones.goalId, goalId), eq(compassMilestones.status, 'completed')))
-    .all();
+function userText(messages: CompassChatMessage[]): string {
+  return messages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content)
+    .join(' ')
+    .slice(0, 600);
 }
 
 /**
- * When a milestone actually finished: the night check-in whose steps crossed the
- * estimate, else the last day reported, else today. Dating it by the moment the
- * driver pressed a button would put the same lag into the milestone's variance
- * that the goal's rank was just freed from.
+ * Parse a JSON column, or give up on this one row.
+ *
+ * Returning null rather than throwing is deliberate: one corrupt schedule
+ * should cost the user that trackable, not the whole deck.
  */
-function milestoneFinishDate(milestone: CompassMilestoneRow, fallbackDay: string): string {
-  const reports = db
-    .select({
-      date: compassCheckins.localDate,
-      units: compassCheckins.effortUnitsCompleted,
-    })
-    .from(compassCheckins)
-    .where(
-      and(eq(compassCheckins.milestoneId, milestone.id), eq(compassCheckins.kind, 'night')),
-    )
-    .all();
-
-  return (
-    stepThresholdDate(
-      reports.map((r) => ({ date: r.date, units: r.units ?? 0 })),
-      milestone.estimatedEffortUnits,
-    ) ??
-    milestone.lastReportedDate ??
-    fallbackDay
-  );
-}
-
-/** Mark a milestone done, dated by when the work landed and graded against its own target. */
-function completeMilestoneRow(milestone: CompassMilestoneRow, fallbackDay: string): string {
-  const actualCompletedDate = milestoneFinishDate(milestone, fallbackDay);
-  db.update(compassMilestones)
-    .set({
-      status: 'completed',
-      actualCompletedDate,
-      finalVarianceDays: computeFinalVarianceDays(milestone.targetDate, actualCompletedDate),
-    })
-    .where(eq(compassMilestones.id, milestone.id))
-    .run();
-  return actualCompletedDate;
-}
-
-/**
- * Recompute and persist the goal's own projection. Called from every write that
- * moves goal-level progress — a night check-in AND a milestone completion — so
- * the stored date can't go stale across a milestone boundary.
- */
-function refreshGoalProjection(
-  goal: CompassGoalRow,
-  args: {
-    currentMilestoneProgress: number;
-    today: string;
-    lastReportedDate?: string | null;
-  },
-): void {
-  if (!goal.startDate || !goal.targetDate || !goal.estimatedMilestones) return;
-  const track = computeGoalTrack({
-    startDate: goal.startDate,
-    targetDate: goal.targetDate,
-    estimatedMilestones: goal.estimatedMilestones,
-    completedMilestones: completedMilestonesFor(goal.id).length,
-    currentMilestoneProgress: args.currentMilestoneProgress,
-    today: args.today,
-    lastReportedDate: args.lastReportedDate,
-  });
-  db.update(compassGoals)
-    .set({ currentProjectedDate: track.currentProjectedDate })
-    .where(eq(compassGoals.id, goal.id))
-    .run();
-}
-
-function morningPlanFrom(checkin: CompassCheckinRow | null): CompassMorningPlan | null {
-  if (!checkin) return null;
+function parseSchedule(raw: string): Schedule | null {
   try {
-    const parsed = CompassMorningAnalysisSchema.safeParse(JSON.parse(checkin.analysisJson));
-    if (!parsed.success) return null;
-    return {
-      missionSummary: parsed.data.mission.map((m) => m.title).join('; '),
-      actions: parsed.data.actions.map((a) => ({
-        description: a.description,
-        category: a.category,
-        alignment: a.alignment,
-      })),
-    };
+    const parsed = ScheduleSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
 }
 
+function parseMeasurement(raw: string): Measurement | null {
+  try {
+    const parsed = MeasurementSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The window consistency is measured over: the goal so far, never the future. */
+function goalWindow(goal: GoalRow, today: string) {
+  return { from: goal.startDate, to: minYmd(today, goal.endDate) };
+}
+
+function computeDerived(
+  goal: GoalRow | null,
+  views: TrackableView[],
+  logsByTrackable: Map<string, LogView[]>,
+  today: string,
+): { due: DueItem[]; consistency: GoalConsistency | null } {
+  if (!goal) return { due: [], consistency: null };
+
+  const range = goalWindow(goal, today);
+  const results: ConsistencyResult[] = views.map((trackable) =>
+    trackableConsistency({
+      trackable,
+      logs: logsByTrackable.get(trackable.id) ?? [],
+      range,
+    }),
+  );
+
+  return {
+    due: dueOn(today, views, logsByTrackable),
+    consistency: {
+      execution: goalExecution(results),
+      outcome: goalOutcome(goal, views, logsByTrackable),
+    },
+  };
+}
+
+/** Read one goal's trackables, pauses and logs, and fold them into views. */
+function readGoal(goalId: string): {
+  views: TrackableView[];
+  logsByTrackable: Map<string, LogView[]>;
+} {
+  const rows = db.select().from(trackables).where(eq(trackables.goalId, goalId)).all();
+  const ids = rows.map((r) => r.id);
+
+  const pauseRows =
+    ids.length > 0
+      ? db.select().from(trackablePauses).where(inArray(trackablePauses.trackableId, ids)).all()
+      : [];
+  const logRows =
+    ids.length > 0
+      ? db.select().from(trackableLogs).where(inArray(trackableLogs.trackableId, ids)).all()
+      : [];
+
+  const pausesByTrackable = new Map<string, PauseWindow[]>();
+  for (const row of pauseRows) {
+    const list = pausesByTrackable.get(row.trackableId) ?? [];
+    list.push({ startDate: row.startDate, endDate: row.endDate });
+    pausesByTrackable.set(row.trackableId, list);
+  }
+
+  const logsByTrackable = new Map<string, LogView[]>();
+  for (const row of logRows) {
+    const list = logsByTrackable.get(row.trackableId) ?? [];
+    list.push({
+      id: row.id,
+      trackableId: row.trackableId,
+      date: row.date,
+      completed: row.completed,
+      value: row.value,
+      note: row.note,
+    });
+    logsByTrackable.set(row.trackableId, list);
+  }
+
+  const views: TrackableView[] = [];
+  for (const row of rows) {
+    const schedule = parseSchedule(row.schedule);
+    const measurement = parseMeasurement(row.measurement);
+    if (!schedule || !measurement) {
+      console.warn(`[Compass] Skipping trackable ${row.id}: unreadable schedule or measurement.`);
+      continue;
+    }
+    views.push({
+      id: row.id,
+      goalId: row.goalId,
+      title: row.title,
+      description: row.description,
+      timeOfDay: row.timeOfDay,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      status: row.status,
+      schedule,
+      measurement,
+      pauses: pausesByTrackable.get(row.id) ?? [],
+    });
+  }
+
+  return { views, logsByTrackable };
+}
+
 export const useCompassStore = create<CompassState>((set, get) => ({
-  goal: null,
-  milestone: null,
-  lastCompletedMilestone: null,
-  todayMorning: null,
-  todayNight: null,
-  recentCheckins: [],
-  telemetry: null,
+  goals: [],
+  activeGoalId: null,
+  trackables: [],
+  logsByTrackable: new Map(),
+  due: [],
+  consistency: null,
   isLoaded: false,
   submitting: null,
+  committing: false,
   error: null,
 
   loadCompass: async () => {
-    const goal =
-      db.select().from(compassGoals).where(eq(compassGoals.status, 'active')).get() ?? null;
+    const allGoals = db.select().from(goals).orderBy(desc(goals.createdAt)).all();
+    const active =
+      allGoals.find((g) => g.id === get().activeGoalId) ??
+      allGoals.find((g) => g.status === 'ACTIVE') ??
+      allGoals[0] ??
+      null;
 
-    let milestone: CompassMilestoneRow | null = null;
-    let lastCompletedMilestone: CompassMilestoneRow | null = null;
-    let todayMorning: CompassCheckinRow | null = null;
-    let todayNight: CompassCheckinRow | null = null;
-    let recentCheckins: CompassCheckinRow[] = [];
-    let telemetry: CompassTelemetry | null = null;
-
-    if (goal) {
-      milestone =
-        db
-          .select()
-          .from(compassMilestones)
-          .where(
-            and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'active')),
-          )
-          .orderBy(desc(compassMilestones.sortOrder))
-          .get() ?? null;
-
-      const completedMilestones = db
-        .select()
-        .from(compassMilestones)
-        .where(
-          and(eq(compassMilestones.goalId, goal.id), eq(compassMilestones.status, 'completed')),
-        )
-        .orderBy(desc(compassMilestones.sortOrder))
-        .all();
-      lastCompletedMilestone = completedMilestones[0] ?? null;
-
-      const compassDay = currentCompassDay();
-      todayMorning =
-        db
-          .select()
-          .from(compassCheckins)
-          .where(
-            and(
-              eq(compassCheckins.goalId, goal.id),
-              eq(compassCheckins.localDate, compassDay),
-              eq(compassCheckins.kind, 'morning'),
-            ),
-          )
-          .get() ?? null;
-      todayNight =
-        db
-          .select()
-          .from(compassCheckins)
-          .where(
-            and(
-              eq(compassCheckins.goalId, goal.id),
-              eq(compassCheckins.localDate, compassDay),
-              eq(compassCheckins.kind, 'night'),
-            ),
-          )
-          .get() ?? null;
-
-      recentCheckins = db
-        .select()
-        .from(compassCheckins)
-        .where(eq(compassCheckins.goalId, goal.id))
-        .orderBy(desc(compassCheckins.localDate), desc(compassCheckins.createdAt))
-        .limit(7)
-        .all();
-
-      if (milestone) {
-        telemetry = buildTelemetry(
-          { ...goal, completedMilestones: completedMilestones.length },
-          milestone,
-          compassDay,
-        );
-      }
+    if (!active) {
+      set({
+        goals: allGoals,
+        activeGoalId: null,
+        trackables: [],
+        logsByTrackable: new Map(),
+        due: [],
+        consistency: null,
+        isLoaded: true,
+      });
+      return;
     }
 
+    const { views, logsByTrackable } = readGoal(active.id);
+    const derived = computeDerived(active, views, logsByTrackable, localDayString());
+
     set({
-      goal,
-      milestone,
-      lastCompletedMilestone,
-      todayMorning,
-      todayNight,
-      recentCheckins,
-      telemetry,
+      goals: allGoals,
+      activeGoalId: active.id,
+      trackables: views,
+      logsByTrackable,
+      ...derived,
       isLoaded: true,
     });
   },
 
-  sendSetupTurn: async (messages) => {
-    set({ submitting: 'setup', error: null });
+  selectGoal: async (goalId) => {
+    set({ activeGoalId: goalId });
+    await get().loadCompass();
+  },
+
+  sendPlanTurn: async (messages) => {
+    set({ submitting: 'plan', error: null });
     try {
-      const { goal } = get();
-      const turn = await requestSetupTurn({
+      const turn = await requestPlanTurn({
         ...(await cloudArgs()),
         body: {
           messages,
-          existingGoal: goal ? { title: goal.title, description: goal.description } : undefined,
-          readingContext: selectReadingContext(
-            goal ? `${goal.title} ${userText(messages)}` : userText(messages),
-          ),
+          context: {
+            today: localDayString(),
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          },
+          readingContext: selectReadingContext(userText(messages)),
           journey: buildJourneySnapshot() || undefined,
         },
       });
@@ -358,21 +308,19 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     }
   },
 
-  sendMorningTurn: async (messages) => {
-    const { goal, milestone } = get();
-    if (!goal || !milestone) return null;
-
-    set({ submitting: 'morning', error: null });
+  sendCheckinTurn: async (messages) => {
+    set({ submitting: 'checkin', error: null });
     try {
-      const telemetry = buildTelemetry(goal, milestone, currentCompassDay());
-      const turn = await requestMorningTurn({
+      const { goals: allGoals, activeGoalId, trackables: views, logsByTrackable } = get();
+      const goal = allGoals.find((g) => g.id === activeGoalId);
+      if (!goal) throw new CompassApiError('server', 'No goal is active.');
+
+      const turn = await requestCheckinTurn({
         ...(await cloudArgs()),
         body: {
           messages,
-          telemetry,
-          readingContext: selectReadingContext(
-            `${goal.title} ${milestone.title} ${userText(messages)}`,
-          ),
+          context: buildCheckinContext(goal, views, logsByTrackable),
+          readingContext: selectReadingContext(`${goal.title} ${userText(messages)}`),
           journey: buildJourneySnapshot() || undefined,
         },
       });
@@ -384,384 +332,314 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     }
   },
 
-  sendNightTurn: async (messages) => {
-    const { goal, milestone } = get();
-    if (!goal || !milestone) return null;
-
-    set({ submitting: 'night', error: null });
+  commitProposal: async (proposal) => {
+    set({ committing: true, error: null });
     try {
-      const telemetry = buildTelemetry(goal, milestone, currentCompassDay());
-      const turn = await requestNightTurn({
-        ...(await cloudArgs()),
-        body: {
-          messages,
-          telemetry,
-          morningPlan: morningPlanFrom(get().todayMorning),
-          readingContext: selectReadingContext(
-            `${goal.title} ${milestone.title} ${userText(messages)}`,
-          ),
-          journey: buildJourneySnapshot() || undefined,
-        },
-      });
-      set({ submitting: null });
-      return turn;
-    } catch (err) {
-      set({ error: friendlyError(err), submitting: null });
-      return null;
-    }
-  },
+      const now = new Date().toISOString();
+      const startDate = localDayString();
+      const endDate = addDaysYmd(startDate, proposal.durationDays);
+      const goalId = createId('goal');
 
-  finalizeSetup: async ({
-    proposal,
-    milestoneTargetDate,
-    goalTargetDate,
-    goalTitle,
-    milestoneTitle,
-    estimatedEffortUnits,
-  }) => {
-    const now = new Date().toISOString();
-    const startDate = currentCompassDay();
-    if (daysBetween(startDate, milestoneTargetDate) <= 0) {
-      set({ error: 'The milestone date must be after today.' });
-      return false;
-    }
-
-    let goal = get().goal;
-
-    // A milestone may never outlive the goal it serves. This has to guard every
-    // milestone, not just the first: the check used to sit inside the
-    // goal-creation branch, so milestone two onwards could be dated past the
-    // goal's own deadline — a state updateTargetDates would refuse to create.
-    const effectiveGoalDate = goal?.targetDate ?? goalTargetDate;
-    if (effectiveGoalDate && daysBetween(milestoneTargetDate, effectiveGoalDate) < 0) {
-      set({
-        error: goal
-          ? "This milestone is due after the goal's own target date."
-          : 'The goal date cannot be before the milestone date.',
-      });
-      return false;
-    }
-
-    if (!goal) {
-      if (!goalTargetDate) {
-        set({ error: 'Pick a target date for the goal.' });
-        return false;
-      }
-      const goalId = createId('cgoal');
-      db.insert(compassGoals)
+      db.insert(goals)
         .values({
           id: goalId,
-          title: goalTitle?.trim() || proposal.goalTitle,
-          description: proposal.goalSummary,
-          status: 'active',
+          title: proposal.title,
+          description: proposal.summary,
           startDate,
-          targetDate: goalTargetDate,
-          estimatedMilestones: proposal.estimatedMilestones ?? 1,
-          createdAt: now,
-        })
-        .run();
-      goal = db.select().from(compassGoals).where(eq(compassGoals.id, goalId)).get() ?? null;
-      if (!goal) return false;
-    }
-
-    const priorMilestones = db
-      .select()
-      .from(compassMilestones)
-      .where(eq(compassMilestones.goalId, goal.id))
-      .all();
-
-    db.insert(compassMilestones)
-      .values({
-        id: createId('cmile'),
-        goalId: goal.id,
-        title: milestoneTitle?.trim() || proposal.milestoneTitle,
-        effortUnitDefinition: proposal.effortUnitDefinition,
-        status: 'active',
-        estimatedEffortUnits: estimatedEffortUnits ?? proposal.estimatedEffortUnits,
-        completedEffortUnits: 0,
-        startDate,
-        targetDate: milestoneTargetDate,
-        originalEstimateDays: daysBetween(startDate, milestoneTargetDate),
-        sortOrder: priorMilestones.length,
-        createdAt: now,
-      })
-      .run();
-
-    const { compassMorningTime, compassNightTime } = useSettingsStore.getState();
-    await syncCompassReminders({
-      morningTime: compassMorningTime,
-      nightTime: compassNightTime,
-      hasActiveGoal: true,
-    });
-
-    set({ error: null });
-    await get().loadCompass();
-    return true;
-  },
-
-  updateTargetDates: async ({ milestoneTargetDate, goalTargetDate }) => {
-    const { goal, milestone } = get();
-    if (!goal) return false;
-
-    const today = currentCompassDay();
-    if (milestoneTargetDate && daysBetween(today, milestoneTargetDate) <= 0) {
-      set({ error: 'The milestone date must be after today.' });
-      return false;
-    }
-    if (goalTargetDate && daysBetween(today, goalTargetDate) <= 0) {
-      set({ error: 'The goal date must be after today.' });
-      return false;
-    }
-
-    // Validate both dates together against whichever one isn't being changed
-    // right now — editing just one field independently (the only path this
-    // action supports) must not leave the goal's own deadline earlier than
-    // its current milestone's, the same invariant finalizeSetup enforces.
-    const effectiveMilestoneDate = milestoneTargetDate ?? milestone?.targetDate ?? null;
-    const effectiveGoalDate = goalTargetDate ?? goal.targetDate ?? null;
-    if (
-      effectiveMilestoneDate &&
-      effectiveGoalDate &&
-      daysBetween(effectiveMilestoneDate, effectiveGoalDate) < 0
-    ) {
-      set({ error: 'The goal date cannot be before the milestone date.' });
-      return false;
-    }
-
-    if (milestoneTargetDate && milestone) {
-      db.update(compassMilestones)
-        .set({
-          targetDate: milestoneTargetDate,
-          originalEstimateDays: daysBetween(milestone.startDate, milestoneTargetDate),
-        })
-        .where(eq(compassMilestones.id, milestone.id))
-        .run();
-    }
-
-    if (goalTargetDate) {
-      // Backfill a missing startDate from the earliest milestone rather than
-      // from today: defaulting to today would reset the goal's elapsed clock and
-      // make an old goal's projection read far more optimistic than it is.
-      const startDate =
-        goal.startDate ??
-        earliestYmd(
-          db
-            .select({ startDate: compassMilestones.startDate })
-            .from(compassMilestones)
-            .where(eq(compassMilestones.goalId, goal.id))
-            .all()
-            .map((m) => m.startDate),
-        ) ??
-        today;
-      db.update(compassGoals)
-        .set({ targetDate: goalTargetDate, startDate })
-        .where(eq(compassGoals.id, goal.id))
-        .run();
-    }
-
-    set({ error: null });
-    await get().loadCompass();
-    return true;
-  },
-
-  finalizeMorning: async ({ analysis, transcript }) => {
-    const { goal, milestone } = get();
-    if (!goal || !milestone) return false;
-
-    try {
-      const compassDay = currentCompassDay();
-      const now = new Date().toISOString();
-      const existing = get().todayMorning;
-      if (existing) deleteCheckin(existing.id);
-
-      const checkinId = createId('cchk');
-      db.insert(compassCheckins)
-        .values({
-          id: checkinId,
-          goalId: goal.id,
-          milestoneId: milestone.id,
-          localDate: compassDay,
-          kind: 'morning',
-          rawText: transcript,
-          missionSummary: analysis.mission.map((m) => m.title).join('\n'),
-          focusScore: computeFocusScore(analysis.actions),
-          pitWallMessage: analysis.pitWallMessage,
-          analysisJson: JSON.stringify(analysis),
+          endDate,
+          category: proposal.category,
+          priority: proposal.priority,
+          status: 'ACTIVE',
+          outcomeTarget: proposal.outcomeTarget,
+          outcomeUnit: proposal.outcomeUnit,
           createdAt: now,
           updatedAt: now,
         })
         .run();
-      insertActions(checkinId, analysis.actions, true, now);
 
-      await get().loadCompass();
-      return true;
-    } catch (err) {
-      set({ error: friendlyError(err) });
-      return false;
-    }
-  },
-
-  finalizeNight: async ({ analysis, transcript }) => {
-    const { goal, milestone } = get();
-    if (!goal || !milestone) return false;
-
-    try {
-      const compassDay = currentCompassDay();
-      const now = new Date().toISOString();
-      const existing = get().todayNight;
-      const previousUnits = existing?.effortUnitsCompleted ?? 0;
-      if (existing) deleteCheckin(existing.id);
-
-      const checkinId = createId('cchk');
-      db.insert(compassCheckins)
-        .values({
-          id: checkinId,
-          goalId: goal.id,
-          milestoneId: milestone.id,
-          localDate: compassDay,
-          kind: 'night',
-          rawText: transcript,
-          focusScore: computeFocusScore(analysis.actions),
-          effortUnitsCompleted: analysis.effortUnitsCompleted,
-          pitWallMessage: analysis.pitWallMessage,
-          analysisJson: JSON.stringify(analysis),
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      insertActions(checkinId, analysis.actions, false, now);
-
-      const completedEffortUnits = Math.max(
-        0,
-        milestone.completedEffortUnits - previousUnits + analysis.effortUnitsCompleted,
-      );
-      // This night check-in IS the newest data point, so it becomes the anchor
-      // the pace is measured to from here on.
-      const { projectedDate } = computeProjection({
-        completedUnits: completedEffortUnits,
-        estimatedUnits: milestone.estimatedEffortUnits,
-        startDate: milestone.startDate,
-        today: compassDay,
-        lastReportedDate: compassDay,
-      });
-      db.update(compassMilestones)
-        .set({
-          completedEffortUnits,
-          currentProjectedDate: projectedDate,
-          lastReportedDate: compassDay,
-        })
-        .where(eq(compassMilestones.id, milestone.id))
-        .run();
-
-      // Keep the goal's own projection in step with the milestone that just moved.
-      refreshGoalProjection(goal, {
-        currentMilestoneProgress: computeProgress(
-          completedEffortUnits,
-          milestone.estimatedEffortUnits,
-        ),
-        today: compassDay,
-        lastReportedDate: compassDay,
-      });
-
-      // Persist a journey reflection (distilled at zero extra cost from the analysis).
-      if (analysis.journeyNote) {
-        saveJourneyReflection(analysis.journeyNote, checkinId);
+      for (const t of proposal.trackables) {
+        // The model proposes durations; the calendar is resolved here, where
+        // the arithmetic is exact and the timezone is the device's own.
+        const tStart = addDaysYmd(startDate, t.startOffsetDays);
+        const tEnd = t.durationDays == null ? endDate : addDaysYmd(tStart, t.durationDays);
+        db.insert(trackables)
+          .values({
+            id: createId('trk'),
+            goalId,
+            title: t.title,
+            description: t.description,
+            startDate: tStart,
+            endDate: minYmd(tEnd, endDate),
+            timeOfDay: t.timeOfDay,
+            schedule: JSON.stringify(t.schedule),
+            measurement: JSON.stringify(t.measurement),
+            status: 'ACTIVE',
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
       }
 
+      set({ activeGoalId: goalId, committing: false });
       await get().loadCompass();
-      return true;
+      return goalId;
     } catch (err) {
-      set({ error: friendlyError(err) });
-      return false;
+      set({ error: friendlyError(err), committing: false });
+      return null;
     }
   },
 
-  completeMilestone: async () => {
-    const { goal, milestone } = get();
-    if (!milestone) return;
+  applyCheckinDraft: async (draft) => {
+    const today = localDayString();
+    const now = new Date().toISOString();
+    const { activeGoalId } = get();
 
-    const today = currentCompassDay();
-    completeMilestoneRow(milestone, today);
+    for (const adjustment of draft.adjustments) {
+      const trackable = get().trackables.find((t) => t.id === adjustment.trackableId);
+      if (!trackable) continue;
 
-    // The goal just gained a whole milestone, so its projection moved too. The
-    // next milestone has no progress yet, hence 0.
-    if (goal) {
-      refreshGoalProjection(goal, {
-        currentMilestoneProgress: 0,
-        today,
-        lastReportedDate: milestone.lastReportedDate,
-      });
+      switch (adjustment.action) {
+        case 'PAUSE':
+          await get().pauseTrackable(adjustment.trackableId);
+          break;
+        case 'RESUME':
+          await get().resumeTrackable(adjustment.trackableId);
+          break;
+        case 'RETARGET': {
+          if (adjustment.target == null) break;
+          // Retargeting rewrites the schedule from here on. Past periods keep
+          // the target they were judged against, because they are already in
+          // the logs — history is not re-scored by a later decision.
+          const schedule = trackable.schedule;
+          if (schedule.type !== 'WEEKLY_TARGET' && schedule.type !== 'MONTHLY_TARGET') break;
+          const next = { ...schedule, target: Math.round(adjustment.target) };
+          db.update(trackables)
+            .set({ schedule: JSON.stringify(next), updatedAt: now })
+            .where(eq(trackables.id, adjustment.trackableId))
+            .run();
+          break;
+        }
+        case 'RETIRE':
+          db.update(trackables)
+            .set({ status: 'COMPLETED', endDate: today, updatedAt: now })
+            .where(eq(trackables.id, adjustment.trackableId))
+            .run();
+          break;
+      }
     }
 
-    // The GOAL is still active — completing a milestone just means the next
-    // one needs planning. Reminders are scoped to the goal, not the
-    // milestone, so they must stay on or the driver gets zero nudge to come
-    // back and the goal quietly stalls.
-    const { compassMorningTime, compassNightTime } = useSettingsStore.getState();
-    await syncCompassReminders({
-      morningTime: compassMorningTime,
-      nightTime: compassNightTime,
-      hasActiveGoal: true,
-    });
+    if (draft.journeyNote) {
+      saveJourneyReflection(draft.journeyNote, activeGoalId ? `goal:${activeGoalId}` : 'compass');
+    }
 
     await get().loadCompass();
   },
 
-  archiveGoal: async () => {
-    const { goal, milestone } = get();
-    if (!goal) return;
+  logDone: async (trackableId, value, note) => {
+    const trackable = get().trackables.find((t) => t.id === trackableId);
+    if (!trackable) return;
+    // A COMPLETION log says so with a 1; everything else carries its number and
+    // leaves `completed` null, so whether it met the target stays derivable.
+    const completed = trackable.measurement.type === 'COMPLETION' ? 1 : null;
+    writeLog(trackableId, { completed, value, note });
+    patchAfterWrite(set, get);
+  },
 
-    const today = currentCompassDay();
+  logMissed: async (trackableId, note) => {
+    writeLog(trackableId, { completed: 0, value: null, note });
+    patchAfterWrite(set, get);
+  },
 
-    // Close out a final milestone whose steps are all logged. It is finished by
-    // the only measure the app can verify, and the driver should not lose the
-    // rank they earned because "mark complete" lives on a different card.
-    if (milestone && isMilestoneFullyStepped(milestone)) {
-      completeMilestoneRow(milestone, today);
+  undoLastLog: async () => {
+    const ids = get()
+      .trackables.map((t) => t.id);
+    if (ids.length === 0) return;
+    const last = db
+      .select()
+      .from(trackableLogs)
+      .where(inArray(trackableLogs.trackableId, ids))
+      .orderBy(desc(trackableLogs.createdAt))
+      .limit(1)
+      .get();
+    if (!last) return;
+    db.delete(trackableLogs).where(eq(trackableLogs.id, last.id)).run();
+    patchAfterWrite(set, get);
+  },
+
+  pauseTrackable: async (trackableId) => {
+    const today = localDayString();
+    const now = new Date().toISOString();
+    const open = db
+      .select()
+      .from(trackablePauses)
+      .where(eq(trackablePauses.trackableId, trackableId))
+      .all()
+      .find((p) => p.endDate === null);
+    if (!open) {
+      db.insert(trackablePauses)
+        .values({ id: createId('pause'), trackableId, startDate: today, endDate: null, createdAt: now })
+        .run();
     }
-
-    const completedRows = completedMilestonesFor(goal.id);
-    const completedMilestones = completedRows.length;
-    const completed = isGoalComplete(completedMilestones, goal.estimatedMilestones);
-
-    // Date the finish by when the work actually landed, not by when archive was
-    // tapped. Archiving weeks after finishing on time used to grade as a C, and
-    // that C is fed back into future sizing through the journey note below.
-    const finishDate = latestYmd(completedRows.map((m) => m.actualCompletedDate)) ?? today;
-    // Only a goal that actually reached its planned scope earns a rank —
-    // archiving early to quit isn't a finish, so it isn't graded as one.
-    const finalVarianceDays =
-      completed && goal.targetDate ? computeFinalVarianceDays(goal.targetDate, finishDate) : null;
-    const rank = completed ? deriveGoalRank(finalVarianceDays) : null;
-
-    db.update(compassGoals)
-      .set({
-        status: 'archived',
-        completedAt: new Date().toISOString(),
-        rank,
-        finalVarianceDays,
-      })
-      .where(eq(compassGoals.id, goal.id))
+    db.update(trackables)
+      .set({ status: 'PAUSED', updatedAt: now })
+      .where(eq(trackables.id, trackableId))
       .run();
+    await get().loadCompass();
+  },
 
-    saveGoalFinishedNote(goal.id, goal.title, {
-      completed,
-      rank,
-      varianceDays: finalVarianceDays,
-      completedMilestones,
-      estimatedMilestones: goal.estimatedMilestones,
-    });
+  resumeTrackable: async (trackableId) => {
+    const now = new Date().toISOString();
+    // The pause closed YESTERDAY, so today is already active again — closing it
+    // on today would leave today paused and quietly excused.
+    const closedOn = addDaysYmd(localDayString(), -1);
+    const open = db
+      .select()
+      .from(trackablePauses)
+      .where(eq(trackablePauses.trackableId, trackableId))
+      .all()
+      .find((p) => p.endDate === null);
+    if (open) {
+      db.update(trackablePauses)
+        .set({ endDate: closedOn < open.startDate ? open.startDate : closedOn })
+        .where(eq(trackablePauses.id, open.id))
+        .run();
+    }
+    db.update(trackables)
+      .set({ status: 'ACTIVE', updatedAt: now })
+      .where(eq(trackables.id, trackableId))
+      .run();
+    await get().loadCompass();
+  },
 
-    const { compassMorningTime, compassNightTime } = useSettingsStore.getState();
-    await syncCompassReminders({
-      morningTime: compassMorningTime,
-      nightTime: compassNightTime,
-      hasActiveGoal: false,
-    });
+  completeGoal: async (goalId) => {
+    const now = new Date().toISOString();
+    db.update(goals).set({ status: 'COMPLETED', updatedAt: now }).where(eq(goals.id, goalId)).run();
+    await get().loadCompass();
+  },
 
-    set({ error: null });
+  cancelGoal: async (goalId) => {
+    const now = new Date().toISOString();
+    db.update(goals).set({ status: 'CANCELLED', updatedAt: now }).where(eq(goals.id, goalId)).run();
     await get().loadCompass();
   },
 
   clearError: () => set({ error: null }),
 }));
+
+function writeLog(
+  trackableId: string,
+  fields: { completed: number | null; value: number | null; note: string | null },
+): void {
+  db.insert(trackableLogs)
+    .values({
+      id: createId('log'),
+      trackableId,
+      date: localDayString(),
+      completed: fields.completed,
+      value: fields.value,
+      note: fields.note?.trim() || null,
+      createdAt: new Date().toISOString(),
+    })
+    .run();
+}
+
+/**
+ * Re-read this goal's rows and recompute after a log.
+ *
+ * Not `loadCompass()`: the deck is on screen while the user is logging, and a
+ * full reload rebuilds the goal list and the active-goal choice underneath it,
+ * which flashes the card that is mid-animation.
+ */
+function patchAfterWrite(
+  set: (patch: Partial<CompassState>) => void,
+  get: () => CompassState,
+): void {
+  const { activeGoalId, goals: allGoals } = get();
+  if (!activeGoalId) return;
+  const goal = allGoals.find((g) => g.id === activeGoalId) ?? null;
+
+  const { views, logsByTrackable } = readGoal(activeGoalId);
+  set({
+    trackables: views,
+    logsByTrackable,
+    ...computeDerived(goal, views, logsByTrackable, localDayString()),
+  });
+}
+
+/** The picture of the goal that a check-in conversation is grounded in. */
+function buildCheckinContext(
+  goal: GoalRow,
+  views: TrackableView[],
+  logsByTrackable: Map<string, LogView[]>,
+): CompassCheckinContext {
+  const today = localDayString();
+  const range = goalWindow(goal, today);
+
+  const results = views.map((trackable) =>
+    trackableConsistency({ trackable, logs: logsByTrackable.get(trackable.id) ?? [], range }),
+  );
+  const execution = goalExecution(results);
+  const outcome = goalOutcome(goal, views, logsByTrackable);
+
+  const byId = new Map(results.map((r) => [r.trackableId, r]));
+
+  // The journal: what the user wrote when they logged, wins and misses alike.
+  // Newest first and capped, because this is the material the conversation is
+  // actually about and the oldest note is the least likely to still matter.
+  const titles = new Map(views.map((t) => [t.id, t.title]));
+  const recentNotes = [...logsByTrackable.values()]
+    .flat()
+    .filter((log) => log.note != null && log.note.length > 0)
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .slice(0, 30)
+    .map((log) => ({
+      date: log.date,
+      trackableTitle: titles.get(log.trackableId) ?? 'Unknown',
+      completed: log.completed !== 0,
+      note: (log.note ?? '').slice(0, 1000),
+    }));
+
+  return {
+    today,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    goalTitle: goal.title,
+    goalSummary: goal.description,
+    startDate: goal.startDate,
+    endDate: goal.endDate,
+    daysRemaining: Math.max(
+      0,
+      Math.round(
+        (new Date(`${goal.endDate}T00:00:00Z`).getTime() -
+          new Date(`${today}T00:00:00Z`).getTime()) /
+          86_400_000,
+      ),
+    ),
+    executionRatio: execution.ratio,
+    outcome,
+    trackables: views.slice(0, 5).map((t) => {
+      const result = byId.get(t.id);
+      return {
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        scheduleSummary: scheduleSummary(t.schedule),
+        expected: result?.expected ?? 0,
+        completed: result?.completed ?? 0,
+        ratio: result?.ratio ?? null,
+      };
+    }),
+    recentNotes,
+  };
+}
+
+// ── Narrow selectors ─────────────────────────────────────────────────────────
+// Components subscribe through these rather than calling the store bare: the
+// whole-store form re-renders a chat screen on every streamed token.
+
+export const useCompassDue = () => useCompassStore((s) => s.due);
+export const useCompassConsistency = () => useCompassStore((s) => s.consistency);
+export const useCompassTrackables = () => useCompassStore((s) => s.trackables);
+export const useCompassError = () => useCompassStore((s) => s.error);
+export const useCompassSubmitting = () => useCompassStore((s) => s.submitting);
+export const useActiveGoal = () =>
+  useCompassStore((s) => s.goals.find((g) => g.id === s.activeGoalId) ?? null);

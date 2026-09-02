@@ -5,8 +5,9 @@ import { useCSSVariable } from "uniwind";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/themed-text";
+import { Card } from "@/components/ui/card";
 import { Touchable } from "@/components/ui/touchable";
-import { easing, elevation, fontFamily, motion } from "@/constants/theme";
+import { easing, fontFamily, motion } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
 import type { TimelineItem } from "@/stores/timeline";
 
@@ -64,7 +65,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
 
       {/* Quote card */}
       <Touchable onPress={onPress} onLongPress={onLongPress}>
-        <View className="bg-card py-6 pl-8 pr-5" style={elevation.soft}>
+        <Card className="py-6 pl-8 pr-5">
           <ThemedText
             type="bodyLg"
             style={
@@ -90,7 +91,7 @@ export function TimelineEntry({ entry, isLast, onPress, onLongPress }: TimelineE
               ))}
             </View>
           )}
-        </View>
+        </Card>
       </Touchable>
 
       {/* Notes — single or carousel */}

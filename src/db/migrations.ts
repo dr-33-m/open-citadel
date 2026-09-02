@@ -169,6 +169,101 @@ async function ensureReadingDaysSchema(): Promise<void> {
   );
 }
 
+/**
+ * Compass's rebuilt domain: Goal → Trackable → Schedule → Measurement → Log.
+ *
+ * The four `compass_*` tables this replaces are dropped unconditionally. They
+ * held a different model entirely — milestones, effort units, morning/night
+ * check-ins — and nothing in them maps onto the new shape, so there is no
+ * migration to write, only a deletion.
+ *
+ * The new tables are created under fresh, unprefixed names. Reusing
+ * `compass_goals` for a different shape would make this function ambiguous:
+ * `CREATE TABLE IF NOT EXISTS compass_goals` would silently leave the OLD
+ * shape in place on a device where migration 0018 half-applied, which is the
+ * exact failure class the hand-written migration workflow exists to prevent.
+ */
+async function ensureCompassSchema(): Promise<void> {
+  db.run(sql`DROP TABLE IF EXISTS \`compass_actions\``);
+  db.run(sql`DROP TABLE IF EXISTS \`compass_checkins\``);
+  db.run(sql`DROP TABLE IF EXISTS \`compass_milestones\``);
+  db.run(sql`DROP TABLE IF EXISTS \`compass_goals\``);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`goals\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`title\` text NOT NULL,
+    \`description\` text,
+    \`start_date\` text NOT NULL,
+    \`end_date\` text NOT NULL,
+    \`category\` text NOT NULL,
+    \`priority\` text NOT NULL DEFAULT 'MEDIUM',
+    \`status\` text NOT NULL DEFAULT 'ACTIVE',
+    \`outcome_target\` real,
+    \`outcome_unit\` text,
+    \`created_at\` text NOT NULL,
+    \`updated_at\` text NOT NULL
+  )`);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`trackables\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`goal_id\` text NOT NULL REFERENCES \`goals\`(\`id\`) ON DELETE cascade,
+    \`title\` text NOT NULL,
+    \`description\` text,
+    \`start_date\` text NOT NULL,
+    \`end_date\` text NOT NULL,
+    \`time_of_day\` text,
+    \`schedule\` text NOT NULL,
+    \`measurement\` text NOT NULL,
+    \`status\` text NOT NULL DEFAULT 'ACTIVE',
+    \`created_at\` text NOT NULL,
+    \`updated_at\` text NOT NULL
+  )`);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`trackable_pauses\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`trackable_id\` text NOT NULL REFERENCES \`trackables\`(\`id\`) ON DELETE cascade,
+    \`start_date\` text NOT NULL,
+    \`end_date\` text,
+    \`created_at\` text NOT NULL
+  )`);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`trackable_logs\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`trackable_id\` text NOT NULL REFERENCES \`trackables\`(\`id\`) ON DELETE cascade,
+    \`date\` text NOT NULL,
+    \`completed\` integer,
+    \`value\` real,
+    \`note\` text,
+    \`created_at\` text NOT NULL
+  )`);
+
+  db.run(
+    sql`CREATE INDEX IF NOT EXISTS \`trackables_goal_idx\` ON \`trackables\` (\`goal_id\`)`,
+  );
+  db.run(
+    sql`CREATE INDEX IF NOT EXISTS \`trackable_pauses_trackable_idx\` ON \`trackable_pauses\` (\`trackable_id\`)`,
+  );
+  // The deck asks "what is due today" and consistency asks for a window, so
+  // every read of this table is by trackable and date together.
+  db.run(sql`CREATE INDEX IF NOT EXISTS \`trackable_logs_trackable_date_idx\`
+    ON \`trackable_logs\` (\`trackable_id\`, \`date\`)`);
+
+  // A Compass conversation is an ordinary chat session pointed at a goal.
+  const sessionInfo: { name: string }[] = db.all(
+    sql`PRAGMA table_info(chat_sessions)`,
+  ) as { name: string }[];
+  const sessionCols = new Set(sessionInfo.map((r) => r.name));
+
+  if (!sessionCols.has("goal_id")) {
+    db.run(sql`ALTER TABLE \`chat_sessions\` ADD \`goal_id\` text REFERENCES \`goals\`(\`id\`)`);
+  }
+  if (!sessionCols.has("kind")) {
+    db.run(
+      sql`ALTER TABLE \`chat_sessions\` ADD \`kind\` text NOT NULL DEFAULT 'reading'`,
+    );
+  }
+}
+
 export async function runMigrations() {
   await migrate(db, migrations);
   // Self-heal: ensure sync pipeline tables exist regardless of migration history
@@ -177,4 +272,6 @@ export async function runMigrations() {
   await ensureChatSchema();
   // Self-heal: ensure daily reading history exists
   await ensureReadingDaysSchema();
+  // Self-heal: drop the old Compass model and ensure the new one exists
+  await ensureCompassSchema();
 }

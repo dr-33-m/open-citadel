@@ -14,7 +14,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ArrowLeft, Settings } from 'lucide-react-native';
 import React from 'react';
-import { Keyboard, View, type ViewStyle } from 'react-native';
+import { Keyboard, View, type TextInput, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCSSVariable } from 'uniwind';
@@ -35,8 +35,11 @@ import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness
 import { useSamwellStatus } from '@/features/chat/hooks/use-samwell-status';
 import { agentActivity } from '@/features/chat/utils/agent-activity';
 import { CompassBody } from '@/features/compass/components/compass-body';
-import { CompassOverlays } from '@/features/compass/components/compass-overlays';
-import { useCompassFlow } from '@/features/compass/hooks/use-compass-flow';
+import { InsightsSheet } from '@/features/compass/components/insights-sheet';
+import { LogDeckSheet } from '@/features/compass/components/log-deck-sheet';
+import { PlannerSheet } from '@/features/compass/components/planner-sheet';
+import { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
+import { useCompassStore } from '@/stores/compass';
 import { useAfterFirstPaint } from '@/navigation/use-after-first-paint';
 import { isVisibleChatMessage } from '@/services/chat-transcript';
 import { useAllBooks, useBooksStore } from '@/stores/books';
@@ -71,6 +74,17 @@ export function SamwellPage() {
   const KEYBOARD_GAP = spacing[3];
 
   const openSettings = React.useCallback(() => router.push('/settings'), [router]);
+  /**
+   * Settings, landing on the Samwell section.
+   *
+   * A separate callback rather than an optional argument on `openSettings`:
+   * that one is wired straight to `onPress` handlers, which would hand the
+   * press event in as the section.
+   */
+  const openSamwellSettings = React.useCallback(
+    () => router.push({ pathname: '/settings', params: { section: 'samwell' } }),
+    [router],
+  );
 
   // Field-by-field selectors rather than one whole-store subscription: this
   // screen is the app's largest render, and a single unrelated field change
@@ -96,12 +110,28 @@ export function SamwellPage() {
 
   const readiness = useSamwellReadiness();
   const chat = useChatSessions();
-  const compass = useCompassFlow();
+  // The composer's input, so "work on it more" can put the cursor in it with
+  // the draft still on screen. This is the wire the old REFINE button lacked.
+  const composerRef = React.useRef<TextInput>(null);
+  const compass = useCompassConversation(composerRef);
+
+  const loadCompass = useCompassStore((s) => s.loadCompass);
+  const activeGoal = useCompassStore((s) => s.goals.find((g) => g.id === s.activeGoalId) ?? null);
+  const compassTrackables = useCompassStore((s) => s.trackables);
+  const compassLogs = useCompassStore((s) => s.logsByTrackable);
+  const compassDue = useCompassStore((s) => s.due);
+  const compassConsistency = useCompassStore((s) => s.consistency);
+  const compassError = useCompassStore((s) => s.error);
+
+  const trackableTitles = React.useMemo(
+    () => Object.fromEntries(compassTrackables.map((t) => [t.id, t.title])),
+    [compassTrackables],
+  );
 
   const { newChat } = chat;
   const status = useSamwellStatus({
     readiness,
-    onOpenSettings: openSettings,
+    onOpenSettings: openSamwellSettings,
     onNewChat: React.useCallback(() => void newChat(), [newChat]),
   });
 
@@ -123,7 +153,9 @@ export function SamwellPage() {
   const [confirmDelete, setConfirmDelete] = React.useState<ChatSession | null>(null);
   const [showBookPicker, setShowBookPicker] = React.useState(false);
   const [showHistory, setShowHistory] = React.useState(false);
-  const [showProgress, setShowProgress] = React.useState(false);
+  const [showDeck, setShowDeck] = React.useState(false);
+  const [showPlanner, setShowPlanner] = React.useState(false);
+  const [showInsights, setShowInsights] = React.useState(false);
 
   // The input card and nav float over the transcript so messages stay visible
   // through the gaps around them. Their combined height is measured rather
@@ -181,9 +213,8 @@ export function SamwellPage() {
     }
   }, [painted, loadSessions]);
 
-  const { loadCompass } = compass;
   React.useEffect(() => {
-    if (painted && cloudReady) loadCompass();
+    if (painted && cloudReady) void loadCompass();
   }, [painted, cloudReady, loadCompass]);
 
   const visibleChatMessages = React.useMemo(
@@ -264,8 +295,8 @@ export function SamwellPage() {
     open(true);
   }
 
-  const busy = mode === 'chat' ? chatInputBusy : compass.busy;
-  const locked = isGenerating || chat.switching !== null || compass.busy;
+  const busy = mode === 'chat' ? chatInputBusy : compass.isBusy;
+  const locked = isGenerating || chat.switching !== null || compass.isBusy;
 
   return (
     <View className="flex-1 bg-background">
@@ -339,10 +370,11 @@ export function SamwellPage() {
               />
             ) : (
               <CompassBody
-                compass={compass}
+                conversation={compass}
                 cloudReady={cloudReady}
                 notConfigured={notConfigured}
-                onOpenSettings={openSettings}
+                onOpenSettings={openSamwellSettings}
+                trackableTitles={trackableTitles}
                 contentColumn={contentColumn}
                 floatingClearance={floatingClearance}
               />
@@ -360,7 +392,7 @@ export function SamwellPage() {
             >
               {/* Inside the floating stack rather than above it — left in
                   normal flow it would end up hidden behind the card. */}
-              {compass.error != null && (
+              {compassError != null && (
                 <ThemedText
                   type="bodySm"
                   color={asColor(destructive)}
@@ -369,25 +401,29 @@ export function SamwellPage() {
                   // TextStyle, and the shared const is typed as a ViewStyle.
                   style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
                 >
-                  {compass.error}
+                  {compassError}
                 </ThemedText>
               )}
 
               <View className="px-4 pt-2" style={contentColumn}>
                 <SamwellControlCenter
                   mode={mode}
-                  compassOpen={compass.open}
-                  compassPeek={compass.peek}
                   onSelectMode={setMode}
                   lockMode={locked}
-                  onTogglePeek={() => setSession({ compassPeek: !compass.peek })}
+                  inputRef={composerRef}
                   text={text}
                   onChangeText={setText}
                   onSend={handleSend}
                   busy={busy}
                   showStop={mode === 'chat' && isGenerating}
                   onStop={stopGeneration}
-                  placeholder={mode === 'chat' ? 'Message Samwell…' : compass.placeholder}
+                  placeholder={
+                    mode === 'chat'
+                      ? 'Message Samwell…'
+                      : compass.kind === 'plan'
+                        ? 'What do you want to work on?'
+                        : 'Talk to Samwell about it…'
+                  }
                   showBookButton={showBookButton}
                   pendingBookTitle={displayedBookTitle}
                   pendingBookCover={displayedBookCover}
@@ -406,9 +442,15 @@ export function SamwellPage() {
                   onOpenHistory={
                     isGenerating || chat.switching ? undefined : () => openSheet(setShowHistory)
                   }
-                  hasGoal={compass.goal != null}
-                  onOpenGoal={() => setShowProgress(true)}
-                  onOpenMilestone={() => setShowProgress(true)}
+                  /* Offline, Compass has no server to reach, so its three
+                      controls would open sheets onto an empty store and the
+                      field would take a message nothing can answer. */
+                  unavailable={mode === 'compass' && !cloudReady}
+                  hasGoal={activeGoal != null}
+                  dueCount={compassDue.length}
+                  onOpenDeck={() => openSheet(setShowDeck)}
+                  onOpenPlanner={() => openSheet(setShowPlanner)}
+                  onOpenInsights={() => openSheet(setShowInsights)}
                 />
               </View>
             </Reveal>
@@ -463,10 +505,22 @@ export function SamwellPage() {
             ]}
           />
 
-          <CompassOverlays
-            compass={compass}
-            showProgress={showProgress}
-            onCloseProgress={() => setShowProgress(false)}
+          <LogDeckSheet visible={showDeck} onClose={() => setShowDeck(false)} />
+
+          <PlannerSheet
+            visible={showPlanner}
+            onClose={() => setShowPlanner(false)}
+            trackables={compassTrackables}
+            logsByTrackable={compassLogs}
+          />
+
+          <InsightsSheet
+            visible={showInsights}
+            onClose={() => setShowInsights(false)}
+            goal={activeGoal}
+            consistency={compassConsistency}
+            trackables={compassTrackables}
+            logsByTrackable={compassLogs}
           />
         </>
       </DeferredBody>
