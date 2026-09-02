@@ -246,8 +246,14 @@ app.post('/admin/models', async (c) => {
   return adminModelState(c);
 });
 
+/*
+ * Model IDs contain a slash ("openai/gpt-5.6-luna"), so these params use
+ * `{.+}` to capture across slashes; a plain `:id` stops at the first slash
+ * and every lookup would 404.
+ */
+
 /** Re-pull a stored model's metadata from OpenRouter. */
-app.patch('/admin/models/:id', async (c) => {
+app.patch('/admin/models/:id{.+}', async (c) => {
   requireAdminKey(c);
 
   const id = c.req.param('id');
@@ -261,7 +267,7 @@ app.patch('/admin/models/:id', async (c) => {
   return adminModelState(c);
 });
 
-app.delete('/admin/models/:id', async (c) => {
+app.delete('/admin/models/:id{.+}', async (c) => {
   requireAdminKey(c);
 
   const id = c.req.param('id');
