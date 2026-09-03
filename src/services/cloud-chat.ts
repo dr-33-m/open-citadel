@@ -1,6 +1,7 @@
 import { ChatClient, clientTools, xhrHttpStream, type UIMessage } from '@tanstack/ai-client';
 import type { StreamChunk } from '@tanstack/ai/client';
 import {
+  COMPASS_APPROVAL_REQUIRED_TOOLS,
   addBookToCollectionTool,
   addToQueueTool,
   createCollectionTool,
@@ -15,6 +16,7 @@ import {
   removeFromQueueTool,
   reorderQueueTool,
   searchHighlightsTool,
+  searchJourneyTool,
   searchReadingTool,
   searchThoughtsTool,
   suggestHighlightTool,
@@ -22,6 +24,12 @@ import {
   suggestThoughtTool,
   tagHighlightTool,
   tagThoughtTool,
+  getCompassStatusTool,
+  getTodayTool,
+  getTrackableHistoryTool,
+  logTrackableTool,
+  proposeAdjustmentsTool,
+  proposeGoalTool,
   toggleFavoriteTool,
 } from 'samwell-shared';
 
@@ -37,6 +45,15 @@ import {
   type ToolCallContext,
 } from '@/services/chat-tools';
 import { isToolCallMessage } from '@/services/chat-transcript';
+import { buildJourneySnapshot } from '@/services/journey';
+import {
+  formatCompassStatus,
+  formatToday,
+  formatTrackableHistory,
+  runLogTrackable,
+  runProposeAdjustments,
+  runProposeGoal,
+} from '@/services/compass-tools';
 import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useApprovalStore } from '@/stores/approval';
 
@@ -59,6 +76,16 @@ export interface CloudChatTurnOptions {
   modelId: string;
   sessionId: string;
   bookId: string | null;
+  /**
+   * Which Samwell is answering.
+   *
+   * `reading` is the library companion; `compass` is the same person turned
+   * toward the user's goal, carrying the Compass tools instead of the library
+   * ones. Everything else about the turn — the transport, the streaming, the
+   * approvals, the reasoning — is deliberately identical, because the two
+   * surfaces were only ever supposed to differ by what he is focused on.
+   */
+  mode?: 'reading' | 'compass';
   history: StoredChatMessage[];
   content: string;
   onStreamingContent: (content: string) => void;
@@ -72,6 +99,58 @@ export interface CloudChatTurnOptions {
   /** `name` is the tool the status describes, so the caller can pick a
    *  matching indicator; both are null when the run ends. */
   onToolStatus: (status: string | null, name: string | null) => void;
+}
+
+/**
+ * Who they are, refreshed every turn.
+ *
+ * Built here rather than by each caller so both surfaces send the same thing,
+ * and rebuilt per turn rather than persisted into the transcript, because it
+ * is a synthesis of the library and the logs as they are NOW. A copy frozen
+ * into a session at creation would still be describing a book they finished
+ * months ago as "currently reading".
+ *
+ * This is the whole of what travels automatically. Everything else Samwell
+ * knows about them he has to ask for, which is what keeps a request the size
+ * of the question rather than the size of their history.
+ *
+ * Cloud only, and only ever from here: the on-device path sends no journey at
+ * all, and carries no tool that could fetch one.
+ */
+function journeyMessages(mode: 'reading' | 'compass'): UIMessage[] {
+  let snapshot = '';
+  try {
+    /*
+     * Compass gets the reading half only. Its own tools report the goal, the
+     * trackables and the consistency properly — with ids, schedules, pauses
+     * and the real ratio — and a second, cruder description of the same
+     * numbers in the system prompt is how Samwell ends up quoting a figure
+     * that disagrees with the Insights screen. Reading chat keeps the goal
+     * lines, since it has no Compass tools to ask with and orientation is all
+     * it needs them for.
+     */
+    snapshot = buildJourneySnapshot({ includeCompass: mode === 'reading' });
+  } catch {
+    // A journey that cannot be built is not a reason to lose the turn.
+    return [];
+  }
+  if (!snapshot) return [];
+
+  return [
+    {
+      id: 'samwell-journey',
+      role: 'system',
+      createdAt: new Date(),
+      parts: [
+        {
+          type: 'text',
+          content:
+            'The user\'s journey so far (use it for continuity and to ground what you ' +
+            `suggest; never assume beyond it):\n${snapshot}`,
+        },
+      ],
+    },
+  ];
 }
 
 function toUIMessage(message: StoredChatMessage): UIMessage | null {
@@ -122,7 +201,69 @@ function latestAssistantText(messages: UIMessage[]): string {
 function statusForTool(toolName: string): string {
   if (toolName.startsWith('delete_')) return 'Waiting for delete approval…';
   if (toolName.startsWith('tag_')) return 'Waiting for tag approval…';
+  if (COMPASS_APPROVAL_REQUIRED_TOOLS.has(toolName)) return 'Waiting for your confirmation…';
   return toolStatus(toolName);
+}
+
+/**
+ * Compass's tools.
+ *
+ * Thin on purpose: the work is in `compass-tools.ts`, which reads the same
+ * engines the Compass screens read, so a number Samwell quotes and a number on
+ * the Insights sheet cannot disagree.
+ */
+/**
+ * The journey-notes tool, defined once and handed to both factories.
+ *
+ * Cloud only, by construction: it exists nowhere in the on-device tool
+ * catalogue, so there is no window size at which an offline model can reach
+ * the user's journey memory.
+ */
+function journeyTool(ctx: ToolCallContext) {
+  return searchJourneyTool.client(async (input) => {
+    const { result } = await executeToolCall('search_journey', input, ctx);
+    return { formatted: typeof result === 'string' ? result : '' };
+  });
+}
+
+function createCompassClientTools(ctx: ToolCallContext) {
+  return clientTools(
+    getCompassStatusTool.client(async () => ({ formatted: formatCompassStatus() })),
+    getTodayTool.client(async () => ({ formatted: formatToday() })),
+    getTrackableHistoryTool.client(async (input) => ({
+      formatted: formatTrackableHistory(input.trackable_id, input.days),
+    })),
+    logTrackableTool.client(async (input) => runLogTrackable(input)),
+    proposeGoalTool.client(async (input) => runProposeGoal(input)),
+    proposeAdjustmentsTool.client(async (input) => runProposeAdjustments(input)),
+    // The same three executors reading chat uses. Two copies of "what does
+    // searching the library mean" is exactly the drift CLAUDE.md warns about.
+    searchHighlightsTool.client(async (input) => {
+      const { result } = await executeToolCall('search_highlights', input, ctx);
+      const results = Array.isArray(result) ? (result as SearchResult[]) : [];
+      return {
+        results,
+        formatted: formatToolResultForLLM('search_highlights', results, TOOL_RESULT_TOKEN_BUDGET.cloud),
+      };
+    }),
+    searchThoughtsTool.client(async (input) => {
+      const { result } = await executeToolCall('search_thoughts', input, ctx);
+      const results = Array.isArray(result) ? (result as SearchResult[]) : [];
+      return {
+        results,
+        formatted: formatToolResultForLLM('search_thoughts', results, TOOL_RESULT_TOKEN_BUDGET.cloud),
+      };
+    }),
+    searchReadingTool.client(async (input) => {
+      const { result } = await executeToolCall('search_reading', input, ctx);
+      const reading = (result ?? { snippets: [], chapters: [] }) as ReadingSearchResult;
+      return {
+        results: reading.snippets,
+        formatted: formatToolResultForLLM('search_reading', reading, TOOL_RESULT_TOKEN_BUDGET.cloud),
+      };
+    }),
+    journeyTool(ctx),
+  );
 }
 
 function createSamwellClientTools(ctx: ToolCallContext) {
@@ -289,6 +430,7 @@ function createSamwellClientTools(ctx: ToolCallContext) {
         formatted: formatToolResultForLLM('list_collections', collectionList, TOOL_RESULT_TOKEN_BUDGET.cloud),
       };
     }),
+    journeyTool(ctx),
   );
 }
 
@@ -362,6 +504,7 @@ export async function sendCloudChatTurn({
   modelId,
   sessionId,
   bookId,
+  mode = 'reading',
   history,
   content,
   onStreamingContent,
@@ -377,9 +520,10 @@ export async function sendCloudChatTurn({
   await preflightCloudServer(baseUrl);
 
   const approvals: ApprovalRequest[] = [];
-  const initialMessages = history
-    .map(toUIMessage)
-    .filter((message): message is UIMessage => message !== null);
+  const initialMessages = [
+    ...journeyMessages(mode),
+    ...history.map(toUIMessage).filter((message): message is UIMessage => message !== null),
+  ];
 
   const client = new ChatClient({
     id: `samwell-cloud-${sessionId}`,
@@ -388,8 +532,11 @@ export async function sendCloudChatTurn({
     connection: xhrHttpStream(`${baseUrl}/chat/http`, {
       headers: { 'x-samwell-device-id': deviceId },
     }),
-    forwardedProps: { modelId },
-    tools: createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
+    forwardedProps: { modelId, mode },
+    tools:
+      mode === 'compass'
+        ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
+        : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
     onChunk: (chunk) => {
       const approval = collectApproval(chunk);
       if (approval) approvals.push(approval);
@@ -421,7 +568,7 @@ export async function sendCloudChatTurn({
   });
 
   try {
-    console.log(`[Samwell Cloud] Sending chat request to ${baseUrl}/chat/http`);
+    console.log(`[Samwell Cloud] Sending ${mode} request to ${baseUrl}/chat/http`);
     try {
       await client.sendMessage(content);
     } catch (err) {

@@ -16,9 +16,16 @@ import { addDaysYmd, localDayString } from '@/utils/day';
 /**
  * Journey memory, the arc of the user's reading and execution, synthesized
  * on-device from data that already lives here (finished books, highlight tags,
- * Compass history) plus a small store of distilled reflections. Recall returns
- * a compact text block; for cloud requests only that slice travels, exactly
- * like reading-context. Nothing new is stored off-device.
+ * Compass history) plus a small store of distilled reflections.
+ *
+ * Two shapes, deliberately: the SNAPSHOT is orientation and rides along with
+ * every cloud turn, because knowing who they are should never cost a round
+ * trip. The NOTES are detail and are fetched on demand through the
+ * `search_journey` tool, because handing over every reflection someone has
+ * ever had, on the chance one is relevant, is how a context window is wasted.
+ *
+ * Only the slice actually used travels with a request the user is already
+ * making. Nothing new is stored off-device.
  */
 
 const MAX_SNAPSHOT_CHARS = 1600;
@@ -27,6 +34,9 @@ const RECENT_FINISHED = 6;
 /** How far back the snapshot looks to say whether the work is happening. */
 const RECENT_LOG_DAYS = 14;
 const TOP_TAGS = 8;
+/** How many notes are considered, and how many come back. */
+const JOURNEY_NOTE_POOL = 80;
+const JOURNEY_NOTE_RESULTS = 5;
 
 function parseTags(raw: string | null): string[] {
   if (!raw) return [];
@@ -153,44 +163,72 @@ export function buildJourneySnapshot(options?: { includeCompass?: boolean }): st
 }
 
 /**
- * Full journey slice for injection: the deterministic snapshot plus the
- * distilled reflections most relevant to `query`.
+ * The reflections Samwell has distilled, ranked against what is being
+ * discussed.
+ *
+ * This closes a loop that was open: `saveJourneyReflection` (from an approved
+ * Compass adjustment) and `saveBookFinishedNote` both write here, and until
+ * this existed nothing read them back. A note worth handing someone in two
+ * months is worthless if the only thing that can retrieve it is a `SELECT`
+ * nobody runs.
+ *
+ * Keyword-ranked rather than semantic: the notes are few and short, the
+ * device has no embedding index, and a keyword hit on someone's own words is
+ * a good enough match at this size. Falls back to the most recent when
+ * nothing scores, since "what has he been noticing lately" is a fair reading
+ * of a vague question.
  */
-export function recallJourney(query: string): string {
-  const snapshot = buildJourneySnapshot();
-
+export function searchJourneyNotes(query: string, limit = JOURNEY_NOTE_RESULTS): JourneyNote[] {
   const notes = db
-    .select({ text: journeyNotes.text, tags: journeyNotes.tags, createdAt: journeyNotes.createdAt })
+    .select({
+      text: journeyNotes.text,
+      kind: journeyNotes.kind,
+      tags: journeyNotes.tags,
+      createdAt: journeyNotes.createdAt,
+    })
     .from(journeyNotes)
     .orderBy(desc(journeyNotes.createdAt))
-    .limit(50)
+    .limit(JOURNEY_NOTE_POOL)
     .all();
 
-  let relevant: string[] = [];
-  const keywords = extractKeywords(query);
-  if (keywords.length > 0 && notes.length > 0) {
-    relevant = notes
-      .map((n) => {
-        const hay = `${n.text} ${parseTags(n.tags).join(' ')}`.toLowerCase();
-        const score = keywords.reduce((s, k) => s + (hay.includes(k) ? 1 : 0), 0);
-        return { text: n.text, score };
-      })
-      .filter((n) => n.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 4)
-      .map((n) => n.text);
-  }
-  // Fall back to the most recent reflections when nothing keyword-matches.
-  if (relevant.length === 0) {
-    relevant = notes.slice(0, 3).map((n) => n.text);
-  }
+  if (notes.length === 0) return [];
 
-  const parts: string[] = [];
-  if (snapshot) parts.push(snapshot);
-  if (relevant.length > 0) {
-    parts.push('Reflections from the journey:\n' + relevant.map((r) => `- ${r}`).join('\n').slice(0, MAX_NOTES_CHARS));
+  const keywords = extractKeywords(query);
+  if (keywords.length === 0) return notes.slice(0, limit);
+
+  const scored = notes
+    .map((note) => {
+      const hay = `${note.text} ${parseTags(note.tags).join(' ')}`.toLowerCase();
+      return { note, score: keywords.reduce((sum, k) => sum + (hay.includes(k) ? 1 : 0), 0) };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((entry) => entry.note);
+
+  return scored.length > 0 ? scored : notes.slice(0, limit);
+}
+
+export type JourneyNote = {
+  text: string;
+  kind: 'reflection' | 'book_finished' | 'goal_finished';
+  tags: string | null;
+  createdAt: string;
+};
+
+/** Prose for the model, with the date, since "when" is half of what a
+ *  reflection means. */
+export function formatJourneyNotes(notes: JourneyNote[]): string {
+  if (notes.length === 0) {
+    return 'Nothing has been written down on their journey yet that matches this.';
   }
-  return parts.join('\n\n');
+  return (
+    'Reflections from their journey, newest first:\n' +
+    notes
+      .map((note) => `${note.createdAt.slice(0, 10)} — ${note.text}`)
+      .join('\n')
+      .slice(0, MAX_NOTES_CHARS)
+  );
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ import { PageFade } from '@/components/scroll-fades';
 import { Reasoning } from '@/components/ui/reasoning';
 import { AgentStatus } from '@/features/chat/components/agent-status';
 import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
-import { COMPASS_ACTIVITY } from '@/features/chat/utils/agent-activity';
+import { agentActivity } from '@/features/chat/utils/agent-activity';
 import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
 import { GoalProposalCard } from '@/features/compass/components/goal-proposal-card';
 import type { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
@@ -57,6 +57,8 @@ export function CompassBody({
     submitting,
     streamingReply,
     streamingThinking,
+    toolStatus,
+    toolName,
     committing,
   } = conversation;
 
@@ -70,14 +72,33 @@ export function CompassBody({
    * written under you should do anyway, and the animation is for the one case
    * it reads as motion: a message the reader just sent.
    */
-  const streaming = submitting !== null && streamingReply.length > 0;
+  const streaming = submitting && streamingReply.length > 0;
   /*
    * The reasoning is live only until the reply starts. Measured against the
    * server, that is nearly the whole turn: a plan turn thought for 3.8s and
    * then wrote its reply in 220ms, so this panel is what covers the wait and
    * the reply is the short part at the end.
    */
-  const thinking = submitting !== null && !streaming;
+  const thinking = submitting && !streaming;
+  /*
+   * The same function the reading surface uses, now that Compass genuinely
+   * calls tools. It used to be a two-entry lookup, which was honest while a
+   * Compass turn was one structured answer and became a lie the moment
+   * Samwell could search the library or write a log mid-turn.
+   */
+  const activity = React.useMemo(
+    () =>
+      agentActivity({
+        isGenerating: submitting,
+        isToolCalling: toolStatus !== null,
+        toolCallName: toolName,
+        toolCallStatus: toolStatus,
+        isThinking: streamingThinking.length > 0,
+        isStreaming: streaming,
+      }),
+    [submitting, toolStatus, toolName, streamingThinking.length, streaming],
+  );
+
   const followContent = React.useCallback(() => {
     scrollRef.current?.scrollToEnd({ animated: !streaming });
   }, [streaming]);
@@ -137,12 +158,14 @@ export function CompassBody({
         contentContainerStyle={scrollContentStyle}
         onContentSizeChange={followContent}
       >
-        {messages.map((m, i) => (
-          // Index keys: these turns have no ids — they are a transient
-          // transcript in the session store, and the list only ever grows at
-          // the end, so an index is stable for every row that already exists.
-          <ChatBubble key={i} role={m.role} content={m.content} animateEntry />
-        ))}
+        {/* Only what was actually said. A Compass transcript can carry a
+            system row (the journey summary) and, once tools write to it, tool
+            rows; neither is a turn anybody had. */}
+        {messages.map((m) =>
+          m.role === 'user' || m.role === 'assistant' ? (
+            <ChatBubble key={m.id} role={m.role} content={m.content} animateEntry />
+          ) : null,
+        )}
 
         {/* Once the reply starts arriving the bubble is the status, exactly as
             in chat: two things claiming to report the same wait is how the
@@ -159,14 +182,17 @@ export function CompassBody({
           </View>
         ) : null}
 
-        {submitting === null ? null : streaming ? (
+        {submitting && streaming ? (
           <ChatBubble role="assistant" content={streamingReply} streaming />
-        ) : streamingThinking.length > 0 ? null : (
-          // Only until the model says something. Once the trace is arriving it
-          // is the better answer to "what is happening", and two indicators
-          // claiming the same wait is what the chat surface already learned.
-          <AgentStatus activity={COMPASS_ACTIVITY[submitting]} />
-        )}
+        ) : null}
+
+        {/* Not an else. A tool can start after Samwell has already written a
+            sentence, and when it does the bubble and the status are reporting
+            two different things: what he has said, and what he is doing right
+            now. `agentActivity` returns null whenever the bubble alone is the
+            honest answer, so this renders exactly when there is something the
+            bubble is not already saying. */}
+        {submitting && activity !== null ? <AgentStatus activity={activity} /> : null}
 
         {draft?.kind === 'plan' && (
           <View className="px-1 py-2">

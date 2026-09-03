@@ -12,7 +12,6 @@
  * date pickers meant scrolling past the chat transcript to find them.
  */
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ArrowLeft, Settings } from '@/components/icons';
 import React from 'react';
 import { Keyboard, View, type TextInput, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
@@ -24,8 +23,7 @@ import { Reveal } from '@/components/navigation/reveal';
 import { SamwellControlCenter } from '@/components/samwell/samwell-control-center';
 import { ThemedText } from '@/components/themed-text';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { ScreenHeader } from '@/components/ui/screen-header';
-import { iconSize, MaxContentWidth, spacing } from '@/constants/theme';
+import { MaxContentWidth, spacing } from '@/constants/theme';
 import { BookPickerSheet } from '@/features/chat/components/book-picker-sheet';
 import { ChatHeader } from '@/features/chat/components/chat-header';
 import { ChatHistorySheet } from '@/features/chat/components/chat-history-sheet';
@@ -39,6 +37,7 @@ import { InsightsSheet } from '@/features/compass/components/insights-sheet';
 import { LogDeckSheet } from '@/features/compass/components/log-deck-sheet';
 import { PlannerSheet } from '@/features/compass/components/planner-sheet';
 import { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
+import { useCompassChatStore } from '@/stores/compass-chat';
 import { useCompassStore } from '@/stores/compass';
 import { useAfterFirstPaint } from '@/navigation/use-after-first-paint';
 import { isVisibleChatMessage } from '@/services/chat-transcript';
@@ -65,7 +64,7 @@ export function SamwellPage() {
   const goTo = useHubStore((s) => s.goTo);
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [foreground, destructive] = useCSSVariable(['--color-foreground', '--color-destructive']);
+  const [destructive] = useCSSVariable(['--color-destructive']);
 
   /** Paid once by the floating bottom stack, and covered by the keyboard when
    * one is up — so the reserve below only ever adds what sits above it. */
@@ -114,6 +113,10 @@ export function SamwellPage() {
   // the draft still on screen. This is the wire the old REFINE button lacked.
   const composerRef = React.useRef<TextInput>(null);
   const compass = useCompassConversation(composerRef);
+  // Read from the session list rather than held separately, so a re-title
+  // lands on the bar the moment the list refreshes.
+  const compassTitle =
+    compass.sessions.find((session) => session.id === compass.activeSessionId)?.title ?? null;
 
   const loadCompass = useCompassStore((s) => s.loadCompass);
   const activeGoal = useCompassStore((s) => s.goals.find((g) => g.id === s.activeGoalId) ?? null);
@@ -153,6 +156,8 @@ export function SamwellPage() {
   const [confirmDelete, setConfirmDelete] = React.useState<ChatSession | null>(null);
   const [showBookPicker, setShowBookPicker] = React.useState(false);
   const [showHistory, setShowHistory] = React.useState(false);
+  const [showCompassHistory, setShowCompassHistory] = React.useState(false);
+  const [confirmDeleteCompass, setConfirmDeleteCompass] = React.useState<ChatSession | null>(null);
   const [showDeck, setShowDeck] = React.useState(false);
   const [showPlanner, setShowPlanner] = React.useState(false);
   const [showInsights, setShowInsights] = React.useState(false);
@@ -163,13 +168,15 @@ export function SamwellPage() {
   // collapses when dragged away.
   const [floatingBottomHeight, setFloatingBottomHeight] = React.useState(0);
 
-  // Leaving this screen is where a bookless chat gets its last chance to pick
+  // Leaving this screen is where a conversation gets its last chance to pick
   // up a better title from its full transcript — the same thing `chat/[id]`
-  // does on its own blur.
+  // does on its own blur. Both modes, since both keep named history and only
+  // the mode you were actually in has anything to re-title.
   useFocusEffect(
     React.useCallback(() => {
       return () => {
         void useChatStore.getState().refineSessionTitleOnExit();
+        void useCompassChatStore.getState().refineTitleOnExit();
       };
     }, []),
   );
@@ -214,7 +221,9 @@ export function SamwellPage() {
   }, [painted, loadSessions]);
 
   React.useEffect(() => {
-    if (painted && cloudReady) void loadCompass();
+    if (!painted || !cloudReady) return;
+    void loadCompass();
+    void useCompassChatStore.getState().loadSessions();
   }, [painted, cloudReady, loadCompass]);
 
   const visibleChatMessages = React.useMemo(
@@ -306,14 +315,16 @@ export function SamwellPage() {
             back button's. Compass keeps the centred bar: its name is fixed, so
             there is nothing to truncate and nothing to align to. */}
         {mode === 'compass' ? (
-          <ScreenHeader
-            title="Compass"
-            leftIcon={<ArrowLeft size={iconSize.default} color={asColor(foreground)} />}
-            leftLabel="Library"
-            onLeftPress={() => goTo(HUB.library)}
-            rightIcon={<Settings size={iconSize.default} color={asColor(foreground)} />}
-            rightLabel="Settings"
-            onRightPress={openSettings}
+          <ChatHeader
+            // Named once Samwell has titled it, exactly as a reading chat is.
+            // A Compass conversation is one you can leave and come back to, so
+            // "Compass" is the name of the surface, not of the conversation.
+            title={compassTitle}
+            fallbackTitle="Compass"
+            onBack={() => goTo(HUB.library)}
+            backLabel="Library"
+            onWakeSamwell={readiness.initContext}
+            onOpenSettings={openSettings}
           />
         ) : (
           <ChatHeader
@@ -439,8 +450,17 @@ export function SamwellPage() {
                   }
                   // Disabled while generating or switching — selecting a
                   // session while either is happening is what raced the engine.
+                  // Disabled while a turn or a switch is in flight on the
+                  // mode being asked: picking a conversation mid-turn is what
+                  // used to race the engine.
                   onOpenHistory={
-                    isGenerating || chat.switching ? undefined : () => openSheet(setShowHistory)
+                    mode === 'compass'
+                      ? compass.submitting || compass.switching
+                        ? undefined
+                        : () => openSheet(setShowCompassHistory)
+                      : isGenerating || chat.switching
+                        ? undefined
+                        : () => openSheet(setShowHistory)
                   }
                   /* Offline, Compass has no server to reach, so its three
                       controls would open sheets onto an empty store and the
@@ -485,6 +505,49 @@ export function SamwellPage() {
               setConfirmDelete(session);
             }}
             onClose={() => setShowHistory(false)}
+          />
+
+          {/* The same sheet the reading history uses. A Compass conversation is
+              a chat, so the way back into an earlier one should not be a
+              different-looking list that behaves differently. */}
+          <ChatHistorySheet
+            visible={showCompassHistory}
+            heading="Past conversations"
+            newLabel="New conversation"
+            sessions={compass.sessions}
+            switching={compass.switching}
+            onSelect={(id) => {
+              setShowCompassHistory(false);
+              void compass.openSession(id);
+            }}
+            onNewChat={() => {
+              setShowCompassHistory(false);
+              void compass.newSession();
+            }}
+            onRequestDelete={(session) => {
+              setShowCompassHistory(false);
+              setConfirmDeleteCompass(session);
+            }}
+            onClose={() => setShowCompassHistory(false)}
+          />
+
+          <ConfirmDialog
+            visible={confirmDeleteCompass !== null}
+            title="Delete conversation?"
+            message={confirmDeleteCompass?.title}
+            onClose={() => setConfirmDeleteCompass(null)}
+            actions={[
+              { label: 'CANCEL', onPress: () => setConfirmDeleteCompass(null) },
+              {
+                label: 'DELETE',
+                destructive: true,
+                onPress: () => {
+                  const target = confirmDeleteCompass;
+                  setConfirmDeleteCompass(null);
+                  if (target) void compass.deleteSession(target.id);
+                },
+              },
+            ]}
           />
 
           <ConfirmDialog

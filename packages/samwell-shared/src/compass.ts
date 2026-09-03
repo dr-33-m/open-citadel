@@ -168,16 +168,6 @@ export const CompassReadingRefSchema = z.object({
 });
 export type CompassReadingRef = z.infer<typeof CompassReadingRefSchema>;
 
-const ReadingContextSchema = z.array(CompassReadingRefSchema).max(12).optional();
-
-export const CompassChatMessageSchema = z.object({
-  role: z.enum(['user', 'assistant']),
-  content: z.string().min(1).max(4000),
-});
-export type CompassChatMessage = z.infer<typeof CompassChatMessageSchema>;
-
-const ChatMessagesSchema = z.array(CompassChatMessageSchema).min(1).max(40);
-
 // ── The proposal ─────────────────────────────────────────────────────────────
 
 /**
@@ -220,7 +210,7 @@ export const TrackableProposalSchema = z.object({
 });
 export type TrackableProposal = z.infer<typeof TrackableProposalSchema>;
 
-const TrackableProposalModelSchema = z.object({
+export const TrackableProposalModelSchema = z.object({
   ...TrackableProposalCore,
   schedule: ScheduleModelSchema,
   measurement: MeasurementModelSchema,
@@ -251,42 +241,11 @@ export const GoalProposalSchema = z.object({
 });
 export type GoalProposal = z.infer<typeof GoalProposalSchema>;
 
-const GoalProposalModelSchema = z.object({
+export const GoalProposalModelSchema = z.object({
   ...GoalProposalCore,
   trackables: z.array(TrackableProposalModelSchema).min(1).max(10),
 });
-
-// ── Plan turn (the goal brainstorm) ──────────────────────────────────────────
-
-export const CompassPlanTurnRequestSchema = z.object({
-  messages: ChatMessagesSchema,
-  modelId: z.string().optional(),
-  context: z.object({
-    today: YmdSchema,
-    timezone: TimezoneSchema,
-  }),
-  existingGoal: z
-    .object({
-      title: z.string(),
-      summary: z.string().nullable(),
-    })
-    .optional(),
-  readingContext: ReadingContextSchema,
-  journey: z.string().max(4000).optional(),
-});
-export type CompassPlanTurnRequest = z.infer<typeof CompassPlanTurnRequestSchema>;
-
-export const CompassPlanTurnSchema = z.object({
-  reply: z.string().min(1),
-  draft: GoalProposalSchema.nullable(),
-});
-export type CompassPlanTurn = z.infer<typeof CompassPlanTurnSchema>;
-
-export const CompassPlanTurnModelSchema = z.object({
-  reply: z.string().min(1),
-  draft: GoalProposalModelSchema.nullable(),
-});
-export type CompassPlanTurnModel = z.infer<typeof CompassPlanTurnModelSchema>;
+export type GoalProposalModel = z.infer<typeof GoalProposalModelSchema>;
 
 // ── Check-in turn ────────────────────────────────────────────────────────────
 
@@ -314,66 +273,6 @@ export type Adjustment = z.infer<typeof AdjustmentSchema>;
 
 export const MAX_ADJUSTMENTS = 3;
 
-/** What the client tells the server about how the goal is actually going. */
-export const CompassCheckinContextSchema = z.object({
-  today: YmdSchema,
-  timezone: TimezoneSchema,
-  goalTitle: z.string(),
-  goalSummary: z.string().nullable(),
-  startDate: YmdSchema,
-  endDate: YmdSchema,
-  daysRemaining: z.number().int(),
-  /** 0..1, or null when nothing has been expected yet. Never 0 on day one. */
-  executionRatio: z.number().min(0).max(1).nullable(),
-  outcome: z
-    .object({
-      value: z.number(),
-      target: z.number(),
-      unit: z.string(),
-    })
-    .nullable(),
-  trackables: z
-    .array(
-      z.object({
-        id: z.string(),
-        title: z.string(),
-        status: z.enum(LIFECYCLE_STATUSES),
-        scheduleSummary: z.string(),
-        expected: z.number().int(),
-        completed: z.number().int(),
-        ratio: z.number().min(0).max(1).nullable(),
-      }),
-    )
-    .max(MAX_TRACKABLES),
-  /**
-   * The journal: what the user wrote when they logged, wins and misses alike.
-   *
-   * This is the material the conversation is actually about. A miss that says
-   * "editing is the bottleneck" three weeks running is a workflow problem, and
-   * only the notes can say so.
-   */
-  recentNotes: z
-    .array(
-      z.object({
-        date: YmdSchema,
-        trackableTitle: z.string(),
-        completed: z.boolean(),
-        note: z.string().max(1000),
-      }),
-    )
-    .max(30),
-});
-export type CompassCheckinContext = z.infer<typeof CompassCheckinContextSchema>;
-
-export const CompassCheckinTurnRequestSchema = z.object({
-  messages: ChatMessagesSchema,
-  modelId: z.string().optional(),
-  context: CompassCheckinContextSchema,
-  readingContext: ReadingContextSchema,
-  journey: z.string().max(4000).optional(),
-});
-export type CompassCheckinTurnRequest = z.infer<typeof CompassCheckinTurnRequestSchema>;
-
 export const CompassCheckinDraftSchema = z.object({
   /** One line worth remembering, distilled. Feeds `journeyNotes`. */
   journeyNote: z.string().max(300).nullable(),
@@ -381,22 +280,11 @@ export const CompassCheckinDraftSchema = z.object({
 });
 export type CompassCheckinDraft = z.infer<typeof CompassCheckinDraftSchema>;
 
-export const CompassCheckinTurnSchema = z.object({
-  reply: z.string().min(1),
-  draft: CompassCheckinDraftSchema.nullable(),
-});
-export type CompassCheckinTurn = z.infer<typeof CompassCheckinTurnSchema>;
-
-const CompassCheckinDraftModelSchema = z.object({
+export const CompassCheckinDraftModelSchema = z.object({
   journeyNote: z.string().nullable(),
   adjustments: z.array(AdjustmentSchema).max(10),
 });
-
-export const CompassCheckinTurnModelSchema = z.object({
-  reply: z.string().min(1),
-  draft: CompassCheckinDraftModelSchema.nullable(),
-});
-export type CompassCheckinTurnModel = z.infer<typeof CompassCheckinTurnModelSchema>;
+export type CompassCheckinDraftModel = z.infer<typeof CompassCheckinDraftModelSchema>;
 
 // ── Normalization: loose model output → strict wire shape ────────────────────
 
@@ -491,13 +379,18 @@ export function normalizeMeasurement(raw: MeasurementModel): Measurement {
   }
 }
 
-export function normalizeCompassPlanTurn(
-  turn: CompassPlanTurnModel,
+/**
+ * A model-shaped goal proposal, trimmed down to the strict wire contract.
+ *
+ * Split out from the turn normalizer because the proposal now arrives as the
+ * arguments of a `propose_goal` tool call rather than as half of a `{ reply,
+ * draft }` document. The trimming rules are identical either way, so they live
+ * here once and both callers use them.
+ */
+export function normalizeGoalProposal(
+  draft: GoalProposalModel,
   ctx: NormalizeContext,
-): CompassPlanTurn {
-  if (turn.draft === null) return { reply: turn.reply, draft: null };
-
-  const draft = turn.draft;
+): GoalProposal {
   const trackables = draft.trackables.slice(0, MAX_TRACKABLES).map((t) => ({
     title: t.title,
     description: t.description,
@@ -512,38 +405,36 @@ export function normalizeCompassPlanTurn(
   const hasOutcome = draft.outcomeTarget != null && draft.outcomeUnit != null;
 
   return {
-    reply: turn.reply,
-    draft: {
-      title: draft.title,
-      summary: draft.summary,
-      category: draft.category,
-      priority: draft.priority,
-      durationDays: draft.durationDays,
-      outcomeTarget: hasOutcome ? draft.outcomeTarget : null,
-      outcomeUnit: hasOutcome ? draft.outcomeUnit : null,
-      rationale: draft.rationale,
-      trackables,
-    },
+    title: draft.title,
+    summary: draft.summary,
+    category: draft.category,
+    priority: draft.priority,
+    durationDays: draft.durationDays,
+    outcomeTarget: hasOutcome ? draft.outcomeTarget : null,
+    outcomeUnit: hasOutcome ? draft.outcomeUnit : null,
+    rationale: draft.rationale,
+    trackables,
   };
 }
 
-export function normalizeCompassCheckinTurn(
-  turn: CompassCheckinTurnModel,
+/**
+ * A model-shaped check-in draft, trimmed to the wire contract. Returns null
+ * when nothing survives the trim, since a draft with nothing in it is not a
+ * draft and showing it offers a button that does nothing.
+ */
+export function normalizeCheckinDraft(
+  draft: CompassCheckinDraftModel,
   knownTrackableIds: readonly string[],
-): CompassCheckinTurn {
-  if (turn.draft === null) return { reply: turn.reply, draft: null };
-
+): CompassCheckinDraft | null {
   const known = new Set(knownTrackableIds);
-  // A proposal against a trackable that does not exist cannot be approved, and
-  // showing it would offer the user a button that does nothing.
-  const adjustments = turn.draft.adjustments
+  // A proposal against a trackable that does not exist cannot be approved.
+  const adjustments = draft.adjustments
     .filter((a) => known.has(a.trackableId))
     .slice(0, MAX_ADJUSTMENTS);
 
-  const journeyNote = turn.draft.journeyNote?.slice(0, 300) ?? null;
+  const journeyNote = draft.journeyNote?.slice(0, 300) ?? null;
 
-  // A draft with nothing left in it is not a draft.
-  if (adjustments.length === 0 && !journeyNote) return { reply: turn.reply, draft: null };
-
-  return { reply: turn.reply, draft: { journeyNote, adjustments } };
+  if (adjustments.length === 0 && !journeyNote) return null;
+  return { journeyNote, adjustments };
 }
+

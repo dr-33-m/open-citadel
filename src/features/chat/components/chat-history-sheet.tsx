@@ -44,6 +44,8 @@ function RowSeparator() {
 export function ChatHistorySheet({
   visible,
   sessions,
+  heading = 'Past chats',
+  newLabel = 'New chat',
   switching,
   onSelect,
   onRequestDelete,
@@ -52,6 +54,10 @@ export function ChatHistorySheet({
 }: {
   visible: boolean;
   sessions: ChatSession[];
+  /** What this history is of. Compass keeps its own list of the same shape,
+   *  and calling both "chats" would blur the only line between them. */
+  heading?: string;
+  newLabel?: string;
   /** Non-null while a switch (to this id, or 'new') is in flight — switching
    * does its own slow engine work (re-title the outgoing session, re-prime
    * the incoming one), so rows stay open and disabled with a spinner rather
@@ -74,7 +80,7 @@ export function ChatHistorySheet({
   return (
     <Sheet visible={visible} onClose={onClose} fixedHeightRatio={0.75}>
       <View className="px-6 pb-6">
-        <ThemedText type="headlineSm">Past chats</ThemedText>
+        <ThemedText type="headlineSm">{heading}</ThemedText>
       </View>
 
       <Item
@@ -94,7 +100,7 @@ export function ChatHistorySheet({
           )}
         </Item.Media>
         <Item.Content>
-          <Item.Title>New chat</Item.Title>
+          <Item.Title>{newLabel}</Item.Title>
         </Item.Content>
       </Item>
 

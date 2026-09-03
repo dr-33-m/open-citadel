@@ -3,6 +3,8 @@ import React from 'react';
 import { ConfirmDialog, type DialogAction } from '@/components/ui/confirm-dialog';
 import { useApprovalStore, type PendingApproval } from '@/stores/approval';
 import { useChatStore } from '@/stores/chat';
+import { useCompassChatStore } from '@/stores/compass-chat';
+import { useCompassStore } from '@/stores/compass';
 
 type ApprovalCopy = {
   title: string;
@@ -29,7 +31,43 @@ function approve(title: string, body: string): ApprovalCopy {
   return { title, body, confirmLabel: 'APPROVE', destructive: false };
 }
 
+/**
+ * What a log is about to write, in the user's terms rather than the model's.
+ *
+ * The tool call carries a trackable id, and confirming "log tr_k3f9x2?" asks
+ * someone to vouch for something they cannot read. The title comes from the
+ * same store the deck reads, so the dialog and the card cannot disagree about
+ * what is being logged.
+ */
+function logApprovalCopy(input: unknown): ApprovalCopy {
+  const trackableId = stringField(input, 'trackable_id');
+  const trackable = useCompassStore
+    .getState()
+    .trackables.find((t) => t.id === trackableId);
+  const title = trackable?.title ?? 'this';
+
+  const outcome = stringField(input, 'outcome');
+  const note = stringField(input, 'note');
+  const date = stringField(input, 'date');
+  const value =
+    input && typeof input === 'object' && typeof (input as { value?: unknown }).value === 'number'
+      ? String((input as { value: number }).value)
+      : undefined;
+
+  const when = date ? ` on ${date}` : ' today';
+  const body =
+    outcome === 'MISSED'
+      ? `Samwell wants to record that ${title} did not happen${when}.${note ? ` Note: "${note}"` : ''}`
+      : `Samwell wants to record ${title} as done${when}${value ? `, ${value}` : ''}.${
+          note ? ` Note: "${note}"` : ''
+        }`;
+
+  return { title: 'Log this?', body, confirmLabel: 'LOG IT', destructive: false };
+}
+
 function getApprovalCopy({ toolName, input }: PendingApproval): ApprovalCopy {
+  if (toolName === 'log_trackable') return logApprovalCopy(input);
+
   if (toolName === 'delete_highlight' || toolName === 'delete_thought') {
     const entryType = toolName.endsWith('_highlight') ? 'highlight' : 'thought';
     return {
@@ -87,13 +125,26 @@ function getApprovalCopy({ toolName, input }: PendingApproval): ApprovalCopy {
 
 export function ApprovalDialog() {
   const activeSessionId = useChatStore((s) => s.activeSession?.id);
-  // Only ever show the approval that belongs to the session the user is
+  /*
+   * Compass talks on its own thread, and its turn is on screen exactly while
+   * it is in flight — there is no background Compass conversation to be
+   * interrupted by. Without this the approval would sit in the store unseen
+   * and the turn would hang until the client's settle timeout, which is the
+   * shape of a hang rather than a question.
+   */
+  const compassRunning = useCompassChatStore((s) => s.submitting);
+  const compassSessionId = useCompassChatStore((s) => s.activeSessionId);
+  // Only ever show the approval that belongs to the conversation the user is
   // currently looking at — a tool call awaiting approval in a session they've
   // since navigated away from stays pending in the store, but must not float
   // over an unrelated screen.
-  const pending = useApprovalStore((s) =>
-    activeSessionId ? (s.pendingBySession.get(activeSessionId)?.request ?? null) : null,
-  );
+  const pending = useApprovalStore((s) => {
+    if (compassRunning && compassSessionId) {
+      const compass = s.pendingBySession.get(compassSessionId)?.request ?? null;
+      if (compass) return compass;
+    }
+    return activeSessionId ? (s.pendingBySession.get(activeSessionId)?.request ?? null) : null;
+  });
   const respondRaw = useApprovalStore((s) => s.respond);
   const respond = (approved: boolean, options?: { rememberForSession?: boolean }) => {
     if (pending) respondRaw(pending.sessionId, approved, options);

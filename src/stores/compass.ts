@@ -4,10 +4,6 @@ import {
   MeasurementSchema,
   ScheduleSchema,
   type Adjustment,
-  type CompassChatMessage,
-  type CompassCheckinContext,
-  type CompassCheckinTurn,
-  type CompassPlanTurn,
   type GoalProposal,
   type Measurement,
   type Schedule,
@@ -15,8 +11,6 @@ import {
 
 import { db } from '@/db/client';
 import { goals, trackableLogs, trackablePauses, trackables } from '@/db/schema';
-import { CompassApiError, requestCheckinTurn, requestPlanTurn } from '@/services/compass-api';
-import { selectReadingContext } from '@/services/compass-reading';
 import {
   goalExecution,
   goalOutcome,
@@ -25,17 +19,15 @@ import {
   type GoalExecution,
   type GoalOutcome,
 } from '@/services/consistency';
-import { buildJourneySnapshot, saveJourneyReflection } from '@/services/journey';
+import { saveJourneyReflection } from '@/services/journey';
 import {
   dueOn,
-  scheduleSummary,
   type DueItem,
   type LogView,
   type PauseWindow,
   type TrackableView,
 } from '@/services/occurrences';
-import { useSettingsStore } from '@/stores/settings';
-import { addDaysYmd, localDayString, minYmd } from '@/utils/day';
+import { addDaysYmd, localDayString, minYmd, type Ymd } from '@/utils/day';
 
 export type GoalRow = typeof goals.$inferSelect;
 
@@ -63,39 +55,25 @@ type CompassState = {
   consistency: GoalConsistency | null;
 
   isLoaded: boolean;
-  submitting: 'plan' | 'checkin' | null;
-  /**
-   * Samwell's reply while it is still being written.
-   *
-   * A stored field rather than something derived in a selector, and cleared
-   * the moment the turn lands so the finished message is rendered once, by the
-   * transcript, rather than twice.
-   */
-  streamingReply: string;
-  /**
-   * The model's reasoning for the turn in flight.
-   *
-   * Kept after the turn lands rather than cleared with the reply, so the
-   * folded "Thought for 8 seconds" row stays with the answer it produced. The
-   * next turn is what clears it.
-   */
-  streamingThinking: string;
   committing: boolean;
   error: string | null;
 
   loadCompass: () => Promise<void>;
   selectGoal: (goalId: string) => Promise<void>;
 
-  sendPlanTurn: (messages: CompassChatMessage[]) => Promise<CompassPlanTurn | null>;
-  sendCheckinTurn: (messages: CompassChatMessage[]) => Promise<CompassCheckinTurn | null>;
   commitProposal: (proposal: GoalProposal) => Promise<string | null>;
   applyCheckinDraft: (draft: {
     journeyNote: string | null;
     adjustments: Adjustment[];
   }) => Promise<void>;
 
-  logDone: (trackableId: string, value: number | null, note: string | null) => Promise<void>;
-  logMissed: (trackableId: string, note: string | null) => Promise<void>;
+  logDone: (
+    trackableId: string,
+    value: number | null,
+    note: string | null,
+    date?: Ymd,
+  ) => Promise<void>;
+  logMissed: (trackableId: string, note: string | null, date?: Ymd) => Promise<void>;
   undoLastLog: () => Promise<void>;
 
   pauseTrackable: (trackableId: string) => Promise<void>;
@@ -111,25 +89,9 @@ function createId(prefix: string): string {
 }
 
 function friendlyError(err: unknown): string {
-  if (err instanceof CompassApiError) return err.message;
   return err instanceof Error ? err.message : 'Something went wrong. Try again.';
 }
 
-async function cloudArgs(): Promise<{ baseUrl: string; deviceId: string }> {
-  const { cloudBaseUrl, getCloudDeviceId } = useSettingsStore.getState();
-  if (!cloudBaseUrl) {
-    throw new CompassApiError('network', 'Samwell Cloud is not configured for this build.');
-  }
-  return { baseUrl: cloudBaseUrl, deviceId: await getCloudDeviceId() };
-}
-
-function userText(messages: CompassChatMessage[]): string {
-  return messages
-    .filter((m) => m.role === 'user')
-    .map((m) => m.content)
-    .join(' ')
-    .slice(0, 600);
-}
 
 /**
  * Parse a JSON column, or give up on this one row.
@@ -258,9 +220,6 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   due: [],
   consistency: null,
   isLoaded: false,
-  submitting: null,
-  streamingReply: '',
-  streamingThinking: '',
   committing: false,
   error: null,
 
@@ -301,75 +260,6 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   selectGoal: async (goalId) => {
     set({ activeGoalId: goalId });
     await get().loadCompass();
-  },
-
-  sendPlanTurn: async (messages) => {
-    set({ submitting: 'plan', streamingReply: '', streamingThinking: '', error: null });
-    try {
-      // Appended rather than replaced, so a render only ever sees the reply
-      // grow. `restart` is the one case where it goes back, and it only fires
-      // while the reply is unfinished: what is dropped was never a message.
-      const handlers = {
-        onThinkingDelta: (delta: string) =>
-          set((state) => ({ streamingThinking: state.streamingThinking + delta })),
-        onReplyDelta: (delta: string) =>
-          set((state) => ({ streamingReply: state.streamingReply + delta })),
-        onRestart: () => set({ streamingReply: '', streamingThinking: '' }),
-      };
-      const turn = await requestPlanTurn({
-        ...(await cloudArgs()),
-        handlers,
-        body: {
-          messages,
-          context: {
-            today: localDayString(),
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-          },
-          readingContext: selectReadingContext(userText(messages)),
-          journey: buildJourneySnapshot() || undefined,
-        },
-      });
-      set({ submitting: null, streamingReply: '' });
-      return turn;
-    } catch (err) {
-      set({ error: friendlyError(err), submitting: null, streamingReply: '' });
-      return null;
-    }
-  },
-
-  sendCheckinTurn: async (messages) => {
-    set({ submitting: 'checkin', streamingReply: '', streamingThinking: '', error: null });
-    try {
-      const { goals: allGoals, activeGoalId, trackables: views, logsByTrackable } = get();
-      const goal = allGoals.find((g) => g.id === activeGoalId);
-      if (!goal) throw new CompassApiError('server', 'No goal is active.');
-
-      // Appended rather than replaced, so a render only ever sees the reply
-      // grow. `restart` is the one case where it goes back, and it only fires
-      // while the reply is unfinished: what is dropped was never a message.
-      const handlers = {
-        onThinkingDelta: (delta: string) =>
-          set((state) => ({ streamingThinking: state.streamingThinking + delta })),
-        onReplyDelta: (delta: string) =>
-          set((state) => ({ streamingReply: state.streamingReply + delta })),
-        onRestart: () => set({ streamingReply: '', streamingThinking: '' }),
-      };
-      const turn = await requestCheckinTurn({
-        ...(await cloudArgs()),
-        handlers,
-        body: {
-          messages,
-          context: buildCheckinContext(goal, views, logsByTrackable),
-          readingContext: selectReadingContext(`${goal.title} ${userText(messages)}`),
-          journey: buildJourneySnapshot() || undefined,
-        },
-      });
-      set({ submitting: null, streamingReply: '' });
-      return turn;
-    } catch (err) {
-      set({ error: friendlyError(err), submitting: null, streamingReply: '' });
-      return null;
-    }
   },
 
   commitProposal: async (proposal) => {
@@ -475,18 +365,18 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     await get().loadCompass();
   },
 
-  logDone: async (trackableId, value, note) => {
+  logDone: async (trackableId, value, note, date) => {
     const trackable = get().trackables.find((t) => t.id === trackableId);
     if (!trackable) return;
     // A COMPLETION log says so with a 1; everything else carries its number and
     // leaves `completed` null, so whether it met the target stays derivable.
     const completed = trackable.measurement.type === 'COMPLETION' ? 1 : null;
-    writeLog(trackableId, { completed, value, note });
+    writeLog(trackableId, { completed, value, note }, date);
     patchAfterWrite(set, get);
   },
 
-  logMissed: async (trackableId, note) => {
-    writeLog(trackableId, { completed: 0, value: null, note });
+  logMissed: async (trackableId, note, date) => {
+    writeLog(trackableId, { completed: 0, value: null, note }, date);
     patchAfterWrite(set, get);
   },
 
@@ -569,12 +459,15 @@ export const useCompassStore = create<CompassState>((set, get) => ({
 function writeLog(
   trackableId: string,
   fields: { completed: number | null; value: number | null; note: string | null },
+  /** The day being logged. Defaults to today, which is every case but Samwell
+   *  catching up on a day the user forgot to log. */
+  date?: Ymd,
 ): void {
   db.insert(trackableLogs)
     .values({
       id: createId('log'),
       trackableId,
-      date: localDayString(),
+      date: date ?? localDayString(),
       completed: fields.completed,
       value: fields.value,
       note: fields.note?.trim() || null,
@@ -607,70 +500,6 @@ function patchAfterWrite(
 }
 
 /** The picture of the goal that a check-in conversation is grounded in. */
-function buildCheckinContext(
-  goal: GoalRow,
-  views: TrackableView[],
-  logsByTrackable: Map<string, LogView[]>,
-): CompassCheckinContext {
-  const today = localDayString();
-  const range = goalWindow(goal, today);
-
-  const results = views.map((trackable) =>
-    trackableConsistency({ trackable, logs: logsByTrackable.get(trackable.id) ?? [], range }),
-  );
-  const execution = goalExecution(results);
-  const outcome = goalOutcome(goal, views, logsByTrackable);
-
-  const byId = new Map(results.map((r) => [r.trackableId, r]));
-
-  // The journal: what the user wrote when they logged, wins and misses alike.
-  // Newest first and capped, because this is the material the conversation is
-  // actually about and the oldest note is the least likely to still matter.
-  const titles = new Map(views.map((t) => [t.id, t.title]));
-  const recentNotes = [...logsByTrackable.values()]
-    .flat()
-    .filter((log) => log.note != null && log.note.length > 0)
-    .sort((a, b) => (a.date < b.date ? 1 : -1))
-    .slice(0, 30)
-    .map((log) => ({
-      date: log.date,
-      trackableTitle: titles.get(log.trackableId) ?? 'Unknown',
-      completed: log.completed !== 0,
-      note: (log.note ?? '').slice(0, 1000),
-    }));
-
-  return {
-    today,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-    goalTitle: goal.title,
-    goalSummary: goal.description,
-    startDate: goal.startDate,
-    endDate: goal.endDate,
-    daysRemaining: Math.max(
-      0,
-      Math.round(
-        (new Date(`${goal.endDate}T00:00:00Z`).getTime() -
-          new Date(`${today}T00:00:00Z`).getTime()) /
-          86_400_000,
-      ),
-    ),
-    executionRatio: execution.ratio,
-    outcome,
-    trackables: views.slice(0, 5).map((t) => {
-      const result = byId.get(t.id);
-      return {
-        id: t.id,
-        title: t.title,
-        status: t.status,
-        scheduleSummary: scheduleSummary(t.schedule),
-        expected: result?.expected ?? 0,
-        completed: result?.completed ?? 0,
-        ratio: result?.ratio ?? null,
-      };
-    }),
-    recentNotes,
-  };
-}
 
 // ── Narrow selectors ─────────────────────────────────────────────────────────
 // Components subscribe through these rather than calling the store bare: the
@@ -680,6 +509,5 @@ export const useCompassDue = () => useCompassStore((s) => s.due);
 export const useCompassConsistency = () => useCompassStore((s) => s.consistency);
 export const useCompassTrackables = () => useCompassStore((s) => s.trackables);
 export const useCompassError = () => useCompassStore((s) => s.error);
-export const useCompassSubmitting = () => useCompassStore((s) => s.submitting);
 export const useActiveGoal = () =>
   useCompassStore((s) => s.goals.find((g) => g.id === s.activeGoalId) ?? null);

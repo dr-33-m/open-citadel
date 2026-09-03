@@ -32,6 +32,27 @@ export function localDayString(date: Date = new Date()): Ymd {
 
 // ── Parsing and formatting ───────────────────────────────────────────────────
 
+/**
+ * The device's IANA timezone, resolved once.
+ *
+ * `Intl.DateTimeFormat()` parses locale data and builds lookup tables on every
+ * construction, which is why the house rule is to hoist formatters rather than
+ * build them at the call site. The zone cannot change without the app being
+ * backgrounded and reopened, so once is enough.
+ */
+let cachedTimezone: string | null = null;
+
+export function deviceTimezone(): string {
+  if (cachedTimezone === null) {
+    try {
+      cachedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch {
+      cachedTimezone = 'UTC';
+    }
+  }
+  return cachedTimezone;
+}
+
 export function parseYmd(ymd: Ymd): { year: number; month: number; day: number } {
   const [year, month, day] = ymd.split('-').map(Number);
   return { year, month, day };

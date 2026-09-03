@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CompassChatMessage, CompassCheckinDraft, GoalProposal } from 'samwell-shared';
+import type { CompassCheckinDraft, GoalProposal } from 'samwell-shared';
 
 export type SamwellMode = 'chat' | 'compass';
 
@@ -18,7 +18,6 @@ type SamwellSessionStore = {
   pendingBook: { id: string; title: string } | null;
 
   /** The Compass conversation in progress, and the proposal it has reached. */
-  compassMessages: CompassChatMessage[];
   compassDraft: CompassDraft;
   /**
    * The user asked to work on the draft some more.
@@ -41,8 +40,6 @@ type SamwellSessionStore = {
   skippedTrackableIds: string[];
 
   set: (patch: Partial<SamwellSessionStore>) => void;
-  /** Everything a finished conversation or a fresh one should clear. */
-  resetCompass: () => void;
 };
 
 /**
@@ -52,9 +49,10 @@ type SamwellSessionStore = {
  * looks at. It is a pushed screen now, so leaving it — by the back button, by
  * the swipe, or by opening a book from a recommendation — unmounts it, and
  * anything held in `useState` there would go with it. Most of what the screen
- * shows already lives in a store (`useChatStore`, `useCompassStore`); this is
- * the rest, and it is the part that would hurt most to lose: a half-finished
- * conversation is one the user has already had once.
+ * shows already lives in a store (`useChatStore`, `useCompassStore`,
+ * `useCompassChatStore`); this is the rest: the composer's text, the picked
+ * book, the proposal on screen, and which trackables were waved off today.
+ * Transcripts are not here — both surfaces persist theirs as chat sessions.
  *
  * Deliberately not persisted to disk. This survives navigation, not a
  * relaunch.
@@ -63,17 +61,9 @@ export const useSamwellSessionStore = create<SamwellSessionStore>((set) => ({
   mode: 'chat',
   draft: '',
   pendingBook: null,
-  compassMessages: [],
   compassDraft: null,
   refining: false,
   skippedTrackableIds: [],
 
   set: (patch) => set(patch),
-  resetCompass: () =>
-    set({
-      compassMessages: [],
-      compassDraft: null,
-      refining: false,
-      skippedTrackableIds: [],
-    }),
 }));

@@ -1,10 +1,9 @@
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
 import { db } from '@/db/client';
-import { books, chatMessages, chatSessions, chatSuggestions, readingProgress } from '@/db/schema';
+import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
 import { extractChapterTextToLocator } from '@/services/book-context';
-import { buildJourneySnapshot } from '@/services/journey';
 import {
   APPROVAL_REQUIRED_TOOLS,
   executeToolCall,
@@ -14,6 +13,13 @@ import {
   type BookCandidate,
   type ToolCallContext,
 } from '@/services/chat-tools';
+import {
+  listSessions,
+  removeSession,
+  renameSession,
+  type ChatMessage,
+  type ChatSession,
+} from '@/services/chat-sessions';
 import { suggestChatTitle } from '@/services/chat-title';
 import { sendCloudChatTurn } from '@/services/cloud-chat';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
@@ -24,25 +30,12 @@ import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
 
-export interface ChatSession {
-  id: string;
-  bookId: string | null;
-  bookTitle: string | null;
-  title: string;
-  contextText: string | null;
-  contextLocator: string | null;
-  createdAt: string;
-  updatedAt: string;
-  lastMessage: string | null;
-}
-
-export interface ChatMessage {
-  id: string;
-  sessionId: string;
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
-  createdAt: string;
-}
+/**
+ * Re-exported rather than redefined: a session is a session whichever surface
+ * opened it, and the many call sites that already import these from here keep
+ * working while the shapes live with the queries that produce them.
+ */
+export type { ChatMessage, ChatSession };
 
 interface ChatStore {
   sessions: ChatSession[];
@@ -127,23 +120,21 @@ const BASE_SYSTEM_PROMPT =
   'what they read to their goals. Be precise, direct, and concise. Match your ' +
   'response length to the question and never pad.';
 
-// The user's journey (finished books, recurring themes, goal history) synthesized
-// on-device. Only this compact slice travels with a cloud request the user is
-// already making; the full history never leaves the device.
-//
-// Compass is a paid, cloud-only feature. `includeCompass` must be false for
-// an offline session so its goal/milestone/focus-score analysis doesn't
-// reach the free tier as a side channel through journey context.
-function journeyBlock(includeCompass: boolean): string {
-  try {
-    const snapshot = buildJourneySnapshot({ includeCompass });
-    return snapshot
-      ? `\n\nThe user's journey so far (use it to give continuity and to ground what you suggest; never assume beyond it):\n${snapshot}`
-      : '';
-  } catch {
-    return '';
-  }
-}
+/*
+ * No journey block here any more, and that is the point.
+ *
+ * It used to be concatenated into this seed at session creation, which froze
+ * it: a chat started in March kept telling Samwell about the book you were
+ * reading in March, forever. The live snapshot now travels with each cloud
+ * turn from `cloud-chat.ts`, so both surfaces send the same thing and both
+ * send it fresh.
+ *
+ * The on-device path sends none at all. Journey memory is cloud-only, and
+ * removing it from the seed is what makes that true rather than nearly true:
+ * an offline session used to get the reading half baked in here, and its
+ * ~400 tokens were charged against a 4096-token window on every conversation.
+ */
+
 
 function uuid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -222,57 +213,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   titleRefreshing: false,
 
   async loadSessions() {
-    const rows = db
-      .select({
-        id: chatSessions.id,
-        bookId: chatSessions.bookId,
-        bookTitle: books.title,
-        title: chatSessions.title,
-        contextText: chatSessions.contextText,
-        contextLocator: chatSessions.contextLocator,
-        createdAt: chatSessions.createdAt,
-        updatedAt: chatSessions.updatedAt,
-      })
-      .from(chatSessions)
-      .leftJoin(books, eq(chatSessions.bookId, books.id))
-      .orderBy(desc(chatSessions.updatedAt))
-      .all();
-
-    // Fetch last user/assistant message per session
-    const sessions: ChatSession[] = await Promise.all(
-      rows.map(async (row) => {
-        const lastMsg = db
-          .select({ content: chatMessages.content, role: chatMessages.role })
-          .from(chatMessages)
-          .where(eq(chatMessages.sessionId, row.id))
-          .orderBy(desc(chatMessages.createdAt))
-          .limit(1)
-          .all();
-
-        const visible = lastMsg.find((m) => m.role !== 'system');
-        return {
-          id: row.id,
-          bookId: row.bookId ?? null,
-          bookTitle: row.bookTitle ?? null,
-          title: row.title,
-          contextText: row.contextText ?? null,
-          contextLocator: row.contextLocator ?? null,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          lastMessage: visible?.content.slice(0, 80) ?? null,
-        };
-      }),
-    );
-
-    set({ sessions });
+    // Reading only. Compass conversations live in the same two tables and are
+    // listed by their own surface; mixing them would put a goal check-in in
+    // the reading history, where it answers nobody's question.
+    set({ sessions: listSessions('reading') });
   },
 
   async createSession({ bookId, title, contextText, passageText, contextLocator }) {
     const id = uuid();
     const ts = now();
-    // Compass data may only reach a cloud session — see journeyBlock's comment.
-    const includeCompass = useSettingsStore.getState().samwellMode === 'cloud';
-
     // Spoiler boundary: Samwell may only discuss what the user has read.
     const progress = bookId
       ? db
@@ -297,6 +246,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       .values({
         id,
         bookId: bookId ?? null,
+        kind: 'reading',
         title,
         contextText: contextText ?? null,
         contextLocator: contextLocator ?? null,
@@ -375,8 +325,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             content:
               `You are a reading assistant for "${bookRow.title}" by ${bookRow.author}. Help the user understand, analyse, and discuss the book. Be concise and insightful.` +
               readExcerpt +
-              (boundaryLine ? `\n\n${boundaryLine}` : '') +
-              journeyBlock(includeCompass),
+              (boundaryLine ? `\n\n${boundaryLine}` : ''),
             createdAt: ts,
           })
           .run();
@@ -390,7 +339,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           id: uuid(),
           sessionId: id,
           role: 'system',
-          content: BASE_SYSTEM_PROMPT + journeyBlock(includeCompass),
+          content: BASE_SYSTEM_PROMPT,
           createdAt: ts,
         })
         .run();
@@ -842,9 +791,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   async deleteSession(id) {
-    db.delete(chatMessages).where(eq(chatMessages.sessionId, id)).run();
-    db.delete(chatSuggestions).where(eq(chatSuggestions.sessionId, id)).run();
-    db.delete(chatSessions).where(eq(chatSessions.id, id)).run();
+    removeSession(id);
     // Any approval still awaiting a response for this session would otherwise
     // leak an unresolved promise once the session it belongs to is gone.
     useApprovalStore.getState().clearSession(id);
@@ -856,7 +803,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   async updateSessionTitle(id, title) {
-    db.update(chatSessions).set({ title }).where(eq(chatSessions.id, id)).run();
+    renameSession(id, title);
     set((s) => ({
       sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, title } : sess)),
       activeSession:

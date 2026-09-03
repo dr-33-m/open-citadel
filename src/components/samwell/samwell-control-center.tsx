@@ -187,16 +187,6 @@ export function SamwellControlCenter({
                 )}
               </Touchable>
             )}
-            <Touchable
-              className="h-10 w-10 items-center justify-center border border-border"
-              onPress={onOpenHistory}
-            >
-              <History
-                size={iconSize.default}
-                color={asColor(onOpenHistory ? mutedForeground : surfaceTertiary)}
-                strokeWidth={2}
-              />
-            </Touchable>
           </>
         )}
 
@@ -247,6 +237,26 @@ export function SamwellControlCenter({
               />
             </Touchable>
           </>
+        )}
+
+        {/* Both modes. A Compass conversation is a chat with its own history,
+            so the way back into an earlier one is the same control in the
+            same place rather than something Compass invents for itself.
+            Hidden only where Compass has no server to reach, alongside the
+            three controls above it, since none of them can do anything then. */}
+        {mode === 'compass' && unavailable ? null : (
+          <Touchable
+            className="h-10 w-10 items-center justify-center border border-border"
+            onPress={onOpenHistory}
+            accessibilityRole="button"
+            accessibilityLabel={mode === 'compass' ? 'Past conversations' : 'Chat history'}
+          >
+            <History
+              size={iconSize.default}
+              color={asColor(onOpenHistory ? mutedForeground : surfaceTertiary)}
+              strokeWidth={2}
+            />
+          </Touchable>
         )}
 
         <View className="flex-1" />

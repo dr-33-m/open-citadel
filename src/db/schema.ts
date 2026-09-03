@@ -138,17 +138,29 @@ export const chatSessions = sqliteTable("chat_sessions", {
   id: text("id").primaryKey(),
   bookId: text("book_id").references(() => books.id, { onDelete: "set null" }),
   /**
-   * The goal a Compass conversation belongs to.
+   * The goal a Compass conversation belonged to when it started, or null when
+   * it started before there was one.
    *
-   * A check-in is a chat — transcript, streaming, markdown, cited highlights —
-   * so it lives here rather than in a second thread system that would drift
-   * from this one. `kind` is what keeps the two apart in the history sheets.
+   * Nullable, and deliberately not a filter: a conversation that talked
+   * someone into their goal is part of that goal's history and should not
+   * vanish from the list the moment the goal is created.
+   *
+   * No `onDelete` here on purpose, matching the DDL that actually shipped
+   * (`0018_trackables.sql` and the self-heal both add it bare). Goals are
+   * retired by status and never hard-deleted, so the action would be
+   * unreachable, and declaring one drizzle has not written to the device
+   * would only make this file a less reliable description of it.
    */
-  goalId: text("goal_id").references(() => goals.id, { onDelete: "cascade" }),
-  kind: text("kind")
-    .$type<"reading" | "compass_plan" | "compass_checkin">()
-    .notNull()
-    .default("reading"),
+  goalId: text("goal_id").references(() => goals.id),
+  /**
+   * Which surface the conversation belongs to.
+   *
+   * A Compass conversation is a chat — transcript, streaming, markdown, cited
+   * highlights, a title, a place in history — so it lives in these tables
+   * rather than in a second thread system that would drift from this one.
+   * This column is the only thing keeping the two histories apart.
+   */
+  kind: text("kind").$type<"reading" | "compass">().notNull().default("reading"),
   title: text("title").notNull(),
   contextText: text("context_text"),
   contextLocator: text("context_locator"),

@@ -8,7 +8,10 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import {
+  COMPASS_CLIENT_TOOL_DEFINITIONS,
+  COMPASS_SYSTEM_PROMPT,
   SAMWELL_CLIENT_TOOL_DEFINITIONS,
+  SAMWELL_JOURNEY_TOOL_PROMPT,
   SAMWELL_SYSTEM_PROMPT,
   resolveContextTokens,
   type CloudModelOption,
@@ -23,7 +26,7 @@ import {
   summarizeOldest,
   withCompaction,
 } from './compaction.js';
-import { compassRoutes, runStructuredAnalysis } from './compass.js';
+import { runStructuredAnalysis } from './structured-analysis.js';
 import { fetchOpenRouterModel, startModelContextRefresh } from './model-context.js';
 import { tagsRoutes } from './tags.js';
 import {
@@ -64,6 +67,21 @@ function requireAdminKey(c: Context): void {
 function readModelId(body: RunAgentInput, knownModelIds: string[]): string {
   const raw = body.forwardedProps?.modelId ?? body.data?.modelId;
   return resolveModelId(typeof raw === 'string' ? raw : undefined, knownModelIds);
+}
+
+/**
+ * Which Samwell is answering: the reading companion, or Compass.
+ *
+ * Sent as a forwarded prop rather than inferred from the messages, because
+ * the two surfaces can carry identical text and only the caller knows which
+ * one it is. Anything unrecognised is reading chat, so a stale client that
+ * predates Compass-over-chat still gets a working assistant.
+ */
+type SamwellMode = 'reading' | 'compass';
+
+function readMode(body: RunAgentInput): SamwellMode {
+  const raw = body.forwardedProps?.mode ?? body.data?.mode;
+  return raw === 'compass' ? 'compass' : 'reading';
 }
 
 function isCountableUserTurn(messages: unknown[]): boolean {
@@ -303,7 +321,6 @@ app.get('/usage', async (c) => {
   return c.json(await getUsageState(deviceId));
 });
 
-app.route('/compass', compassRoutes);
 app.route('/tags', tagsRoutes);
 app.route('/chat', chatTitleRoutes);
 
@@ -317,6 +334,7 @@ app.post('/chat/http', async (c) => {
   }
 
   const countsTowardLimit = isCountableUserTurn(body.messages);
+  const mode = readMode(body);
 
   const rawMessages = body.messages as { role?: string; content?: unknown }[];
   const sessionSystemPrompts = rawMessages
@@ -335,6 +353,9 @@ app.post('/chat/http', async (c) => {
     deviceId,
     modelId,
     countsTowardLimit,
+    // Metered separately so Compass spend is legible in the usage record,
+    // even though it now travels the same route as reading chat.
+    ...(mode === 'compass' ? { kind: 'compass_chat' } : {}),
   });
   if (!reservation.allowed) {
     return c.json(
@@ -385,8 +406,26 @@ app.post('/chat/http', async (c) => {
       appTitle: process.env.OPENROUTER_APP_TITLE ?? 'Open Citadel',
     }),
     messages: conversationMessages as any,
-    systemPrompts: [SAMWELL_SYSTEM_PROMPT, ...sessionSystemPrompts],
-    tools: SAMWELL_CLIENT_TOOL_DEFINITIONS,
+    /*
+     * The only difference between reading chat and Compass.
+     *
+     * Same transport, same streaming, same compaction, same fallback chain,
+     * same reasoning. What changes is which part of the user's life Samwell is
+     * turned toward and which tools he can reach for, which is what the two
+     * surfaces were always supposed to differ by. Compass used to be a
+     * separate structured-output route, and everything unstable about it came
+     * from that separation rather than from anything Compass does.
+     */
+    systemPrompts: [
+      // Compass names search_journey in its own prompt, since Compass only
+      // ever runs here. The reading persona is shared with the on-device
+      // engine, so the journey paragraph is added on this route alone.
+      ...(mode === 'compass'
+        ? [COMPASS_SYSTEM_PROMPT]
+        : [SAMWELL_SYSTEM_PROMPT, SAMWELL_JOURNEY_TOOL_PROMPT]),
+      ...sessionSystemPrompts,
+    ],
+    tools: mode === 'compass' ? COMPASS_CLIENT_TOOL_DEFINITIONS : SAMWELL_CLIENT_TOOL_DEFINITIONS,
     threadId: body.threadId,
     runId: body.runId ?? usageEventId,
     middleware: [

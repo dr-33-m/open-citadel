@@ -358,13 +358,24 @@ export function dueOn(
  * Timed trackables first, in clock order; untimed ones fall to the bottom.
  * This is the order the planner's day dialog reads in, and the deck deals in.
  */
-export function byTimeThenTitle(a: DueItem, b: DueItem): number {
-  const at = a.trackable.timeOfDay;
-  const bt = b.trackable.timeOfDay;
+export function byTrackableTime(a: TrackableView, b: TrackableView): number {
+  const at = a.timeOfDay;
+  const bt = b.timeOfDay;
   if (at && bt && at !== bt) return at < bt ? -1 : 1;
   if (at && !bt) return -1;
   if (!at && bt) return 1;
-  return a.trackable.title.localeCompare(b.trackable.title);
+  return a.title.localeCompare(b.title);
+}
+
+/**
+ * The same order over due items.
+ *
+ * Split from {@link byTrackableTime} so callers that hold plain trackables can
+ * sort without inventing a `DueItem` around each one purely to satisfy the
+ * comparator.
+ */
+export function byTimeThenTitle(a: DueItem, b: DueItem): number {
+  return byTrackableTime(a.trackable, b.trackable);
 }
 
 /** A human reading of a schedule, for a card's subtitle. */

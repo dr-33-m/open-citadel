@@ -2,84 +2,62 @@ import React from 'react';
 import type { TextInput } from 'react-native';
 
 import { useCompassStore } from '@/stores/compass';
+import { useCompassChatStore } from '@/stores/compass-chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 
 export type CompassConversationKind = 'plan' | 'checkin';
 
 /**
- * The Compass conversation: brainstorming a goal, or talking through one.
+ * The Compass conversation.
  *
- * Which of the two it is comes from whether a goal exists, not from a clock.
- * The old Compass decided between three conversations by the time of day, so
- * the reader could only talk to Samwell in a window he chose; now they open a
- * conversation when they need one, which is usually the moment they are stuck
- * rather than at 21:00.
+ * One conversation now, not two. It used to branch between a plan endpoint and
+ * a check-in endpoint, each asking the model for a structured document;
+ * Samwell finds out for himself whether a goal exists by calling
+ * `get_compass_status`, and reaches for `propose_goal` or `propose_adjustments`
+ * when the conversation has produced something worth putting on screen. `kind`
+ * survives only so the empty state can say the right thing before anyone has
+ * spoken.
  *
- * Each conversation starts fresh. A check-in is its own thread rather than a
- * continuation of the last one, so what Samwell knows comes from the logs and
- * the notes rather than from an ever-growing transcript.
+ * The transcript is persisted and titled like any other chat, so a
+ * conversation can be left and come back to. What Samwell knows about the goal
+ * still comes from the logs and the notes through his tools, not from the
+ * transcript, so an old conversation reopened today reads today's numbers.
  */
 export function useCompassConversation(inputRef?: React.RefObject<TextInput | null>) {
-  const messages = useSamwellSessionStore((s) => s.compassMessages);
   const draft = useSamwellSessionStore((s) => s.compassDraft);
   const setSession = useSamwellSessionStore((s) => s.set);
-  const resetCompass = useSamwellSessionStore((s) => s.resetCompass);
 
   const activeGoalId = useCompassStore((s) => s.activeGoalId);
-  const submitting = useCompassStore((s) => s.submitting);
-  const streamingReply = useCompassStore((s) => s.streamingReply);
-  const streamingThinking = useCompassStore((s) => s.streamingThinking);
   const committing = useCompassStore((s) => s.committing);
-  const sendPlanTurn = useCompassStore((s) => s.sendPlanTurn);
-  const sendCheckinTurn = useCompassStore((s) => s.sendCheckinTurn);
   const commitProposal = useCompassStore((s) => s.commitProposal);
   const applyCheckinDraft = useCompassStore((s) => s.applyCheckinDraft);
 
+  const messages = useCompassChatStore((s) => s.messages);
+  const sessions = useCompassChatStore((s) => s.sessions);
+  const activeSessionId = useCompassChatStore((s) => s.activeSessionId);
+  const switching = useCompassChatStore((s) => s.switching);
+  const submitting = useCompassChatStore((s) => s.submitting);
+  const streamingReply = useCompassChatStore((s) => s.streamingReply);
+  const streamingThinking = useCompassChatStore((s) => s.streamingThinking);
+  const toolStatus = useCompassChatStore((s) => s.toolStatus);
+  const toolName = useCompassChatStore((s) => s.toolName);
+  const send = useCompassChatStore((s) => s.send);
+  const newSession = useCompassChatStore((s) => s.newSession);
+  const openSession = useCompassChatStore((s) => s.openSession);
+  const deleteSession = useCompassChatStore((s) => s.deleteSession);
+
   const kind: CompassConversationKind = activeGoalId ? 'checkin' : 'plan';
-
-  const send = React.useCallback(
-    async (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-
-      // Sending is what clears a draft: the reader has said something new, so
-      // whatever Samwell last proposed is now the previous version.
-      const next = [...messages, { role: 'user' as const, content: trimmed }];
-      setSession({ compassMessages: next, compassDraft: null, refining: false });
-
-      // Branch on the whole turn rather than on the draft: the two endpoints
-      // return different draft shapes, and keeping each path in its own arm is
-      // what lets the compiler check the shape instead of a cast asserting it.
-      if (kind === 'plan') {
-        const turn = await sendPlanTurn(next);
-        if (!turn) return;
-        setSession({
-          compassMessages: [...next, { role: 'assistant', content: turn.reply }],
-          compassDraft: turn.draft ? { kind: 'plan', proposal: turn.draft } : null,
-        });
-        return;
-      }
-
-      const turn = await sendCheckinTurn(next);
-      if (!turn) return;
-      setSession({
-        compassMessages: [...next, { role: 'assistant', content: turn.reply }],
-        compassDraft: turn.draft ? { kind: 'checkin', draft: turn.draft } : null,
-      });
-    },
-    [messages, kind, sendPlanTurn, sendCheckinTurn, setSession],
-  );
 
   const approve = React.useCallback(async () => {
     if (!draft) return;
     if (draft.kind === 'plan') {
       const goalId = await commitProposal(draft.proposal);
-      if (goalId) resetCompass();
+      if (goalId) setSession({ compassDraft: null, refining: false });
       return;
     }
     await applyCheckinDraft(draft.draft);
     setSession({ compassDraft: null });
-  }, [draft, commitProposal, applyCheckinDraft, resetCompass, setSession]);
+  }, [draft, commitProposal, applyCheckinDraft, setSession]);
 
   /**
    * Work on it more.
@@ -98,14 +76,22 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
   return {
     kind,
     messages,
+    sessions,
+    activeSessionId,
+    switching,
     draft,
     send,
+    newSession,
+    openSession,
+    deleteSession,
     approve,
     refine,
     submitting,
     streamingReply,
     streamingThinking,
+    toolStatus,
+    toolName,
     committing,
-    isBusy: submitting !== null || committing,
+    isBusy: submitting || committing,
   };
 }

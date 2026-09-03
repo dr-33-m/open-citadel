@@ -4,20 +4,22 @@
  * Two states, and which one shows is decided by whether the conversation has
  * a name yet:
  *
- * **Before there is a chat** there is nothing to name but the surface, so the
- * title is "Chat" and it sits centred — a short fixed string is what centring
- * is *for*, and centred is how the rest of the app's headers read. It names
- * the mode rather than Samwell because the other half of this screen is
- * "Compass", and he is on both.
+ * **Before there is a conversation** there is nothing to name but the surface,
+ * so the title is the mode's own name ("Chat", or "Compass") and it sits
+ * centred — a short fixed string is what centring is *for*, and centred is how
+ * the rest of the app's headers read. It names the mode rather than Samwell
+ * because he is on both halves of this screen.
  *
  * **Once a chat exists** the title becomes whatever it turned out to be
  * about, which is a sentence fragment that runs long and truncates. That
  * moves to the leading edge, where it starts at the same gutter as the
  * messages below it and clips at one end instead of two.
  *
- * Both chat surfaces render this. They previously kept their own copies that
- * had already drifted apart in title fallbacks and in whether the status line
- * was centred, which is the drift this file exists to stop.
+ * Both surfaces render this. They previously kept their own copies that had
+ * already drifted apart in title fallbacks and in whether the status line was
+ * centred, which is the drift this file exists to stop. Compass used to sit
+ * outside it on a fixed "Compass" bar, from back when a Compass conversation
+ * was not something you could name or return to.
  */
 import { ArrowLeft, Settings } from '@/components/icons';
 import React from 'react';
@@ -34,6 +36,8 @@ import { asColor } from '@/utils/colors';
 export interface ChatHeaderProps {
   /** The conversation's name, or null before it has one. */
   title: string | null;
+  /** What the bar says before the conversation has a name of its own. */
+  fallbackTitle?: string;
   /** The book this chat is grounded in, if any. */
   bookTitle?: string | null;
   /** Where back goes, named for the screen reader. */
@@ -49,6 +53,7 @@ export interface ChatHeaderProps {
 
 export function ChatHeader({
   title,
+  fallbackTitle = 'Chat',
   bookTitle,
   onBack,
   backLabel,
@@ -62,7 +67,7 @@ export function ChatHeader({
 
   return (
     <ScreenHeader
-      title={named ? title : 'Chat'}
+      title={named ? title : fallbackTitle}
       align={named ? 'start' : 'center'}
       leftIcon={<ArrowLeft size={iconSize.default} color={asColor(foreground)} />}
       leftLabel={backLabel}

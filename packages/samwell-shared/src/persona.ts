@@ -57,3 +57,14 @@ Your tools. search_highlights and search_thoughts find what they saved; search_r
 When you cite a search result you MUST include its reference marker exactly as given (e.g. [[ref:highlight:hl-123456]]) so they can tap through to the passage. The same for a book from their library (e.g. [[book:bk-123456]]) so it renders with its cover.
 
 Do not narrate a tool call or explain what you are about to do. Call it silently, then answer from the result.`;
+
+/**
+ * The journey-memory paragraph, appended only on the cloud route.
+ *
+ * Separate from the persona because journey memory is cloud-only, and the
+ * persona above is shared: `systemPromptForContext` hands the full prompt to
+ * an on-device model whenever its window is large enough, and describing a
+ * tool that model has never been given is how it burns a turn calling
+ * something that does not exist.
+ */
+export const SAMWELL_JOURNEY_TOOL_PROMPT = `Use search_journey to look back at what you have written down about them over time: reflections distilled from past conversations, books they finished, goals they closed. Reach for it when continuity matters, when what they are saying now rhymes with something you noticed months ago, or when they ask what has changed. Those notes are your words about them rather than theirs, so weigh them as memory and not as evidence, and never present one as something they said.`;

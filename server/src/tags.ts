@@ -8,7 +8,7 @@ import {
   SuggestTagsResponseSchema,
 } from 'samwell-shared';
 
-import { runStructuredAnalysis } from './compass.js';
+import { runStructuredAnalysis } from './structured-analysis.js';
 import { listCloudModels, reserveUsageEvent, resolveModelId } from './db.js';
 import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
 

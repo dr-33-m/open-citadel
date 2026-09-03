@@ -5,6 +5,7 @@ import { SAMWELL_SYSTEM_PROMPT, SAMWELL_SYSTEM_PROMPT_COMPACT } from 'samwell-sh
 import { db } from '@/db/client';
 import { books, chatSuggestions, collections, highlights, notes, readingProgress, thoughts } from '@/db/schema';
 import { extractReadSections } from '@/services/book-context';
+import { formatJourneyNotes, searchJourneyNotes } from '@/services/journey';
 import { CHARS_PER_TOKEN, estimateTokens } from '@/services/context-budget';
 import {
   READING_LIMITS,
@@ -17,6 +18,17 @@ import { useCollectionsStore } from '@/stores/collections';
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
+/*
+ * The tool catalogue in the on-device engine's format.
+ *
+ * `search_journey` is deliberately absent, and absent from here rather than
+ * merely absent from `DEVICE_TOOL_NAMES`: this array is what a device with a
+ * large enough window loads in full, so leaving it out of the allowlist alone
+ * would still hand the journey to any on-device model past
+ * `FULL_TOOLSET_MIN_CONTEXT_TOKENS`. Journey memory is cloud-only, so it is
+ * defined once, in the cloud tool definitions, and there is no path from here
+ * to the engine.
+ */
 export const SAMWELL_TOOLS = [
   {
     type: 'function' as const,
@@ -487,10 +499,10 @@ export const APPROVAL_REQUIRED_TOOLS = new Set([
  * 4096-token window's usable space before a single message, which is exactly
  * the overflow that used to crash the app mid-conversation.
  *
- * The cut here is not about capability — nothing in this file is compass
- * related; Compass runs through its own prompt/endpoint system entirely
- * outside tool-calling. It is a pure budget decision: which tools earn their
- * ~100-300 recurring tokens. Search (the core of "reading companion") and the
+ * The cut here is not about capability. It is a pure budget decision: which
+ * tools earn their ~100-300 recurring tokens. Compass's own tools are absent
+ * for a harder reason than budget: Compass is cloud-only, so they are never
+ * offered to the on-device engine at all. Search (the core of "reading companion") and the
  * cheapest, most-requested library actions make the cut; collections,
  * suggest_*, and reorder_queue (by far the priciest single schema) stay
  * cloud-only, where the window is orders of magnitude larger. Included
@@ -631,6 +643,16 @@ export const TOOL_STATUS: Record<string, string> = {
   add_book_to_collection: 'Adding to collection…',
   remove_book_from_collection: 'Updating collection…',
   list_collections: 'Looking over your collections…',
+
+  // Compass. Same table as the library tools, because the status line is the
+  // same question ("what is he doing right now") whichever surface is asking.
+  get_compass_status: 'Looking at where you are…',
+  get_today: 'Checking what is due today…',
+  get_trackable_history: 'Reading back your logs…',
+  log_trackable: 'Writing that down…',
+  propose_goal: 'Putting a plan together…',
+  propose_adjustments: 'Working out what to change…',
+  search_journey: 'Remembering…',
 };
 
 /** Falls back to a neutral line rather than naming the wrong tool. */
@@ -667,6 +689,11 @@ export async function executeToolCall(
     case 'search_reading':
       return {
         result: await searchReading((args.query as string) ?? '', ctx.runtime),
+        status: toolStatus(name),
+      };
+    case 'search_journey':
+      return {
+        result: formatJourneyNotes(searchJourneyNotes((args.query as string) ?? '')),
         status: toolStatus(name),
       };
     case 'list_chapters':

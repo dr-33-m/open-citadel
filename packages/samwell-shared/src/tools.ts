@@ -191,6 +191,14 @@ export const CollectionBatchActionResultSchema = z.object({
   error: z.string().optional(),
 });
 
+export const SearchJourneyInputSchema = z.object({
+  query: z.string().min(1),
+});
+
+export const SearchJourneyOutputSchema = z.object({
+  formatted: z.string(),
+});
+
 export const ListCollectionsInputSchema = z.object({});
 
 export const CollectionSummarySchema = z.object({
@@ -391,6 +399,21 @@ export const listCollectionsTool = toolDefinition({
   outputSchema: ListCollectionsOutputSchema,
 });
 
+/**
+ * The notes Samwell has written down over time, searchable.
+ *
+ * On both surfaces, because a reflection from a Compass conversation is worth
+ * as much in a book chat as in the one that produced it. That crossing over is
+ * the point of keeping one journey rather than two.
+ */
+export const searchJourneyTool = toolDefinition({
+  name: 'search_journey',
+  description:
+    "Search the notes you have written down about the user over time: reflections distilled from past conversations, books they finished, goals they closed. Use this when continuity matters — when something they are saying now rhymes with something you noticed months ago, or when they ask what has changed. These are your own words about them, not theirs, so weigh them as memory rather than evidence.",
+  inputSchema: SearchJourneyInputSchema,
+  outputSchema: SearchJourneyOutputSchema,
+});
+
 export const SAMWELL_TOOL_DEFINITIONS = [
   searchHighlightsTool,
   searchThoughtsTool,
@@ -414,6 +437,7 @@ export const SAMWELL_TOOL_DEFINITIONS = [
   addBookToCollectionTool,
   removeBookFromCollectionTool,
   listCollectionsTool,
+  searchJourneyTool,
 ] as const;
 
 export const SAMWELL_CLIENT_TOOL_DEFINITIONS = SAMWELL_TOOL_DEFINITIONS.map((tool) =>

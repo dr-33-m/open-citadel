@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   GoalProposalSchema,
   MAX_TRACKABLES,
-  normalizeCompassCheckinTurn,
-  normalizeCompassPlanTurn,
+  normalizeCheckinDraft,
+  normalizeGoalProposal,
   normalizeMeasurement,
   normalizeSchedule,
-  type CompassPlanTurnModel,
+  type GoalProposalModel,
 } from 'samwell-shared';
 
 /**
@@ -14,6 +14,12 @@ import {
  * rebuilds the strict contract from it. This is where that promise is kept or
  * broken, and it is a far better reliability test than calling the live route
  * and hoping the model misbehaves on cue.
+ *
+ * These shapes now arrive as the arguments of a `propose_goal` /
+ * `propose_adjustments` tool call rather than as half of a structured
+ * document, which changes nothing here: the model is still free to send a
+ * DAILY schedule carrying `daysOfWeek`, and one bad field must still not cost
+ * someone the whole conversation.
  */
 
 const CTX = { today: '2026-09-01', timezone: 'Africa/Harare' };
@@ -46,25 +52,19 @@ function trackable(over: Record<string, unknown> = {}) {
   };
 }
 
-function planTurn(draft: Record<string, unknown> | null): CompassPlanTurnModel {
+function proposal(over: Record<string, unknown> = {}): GoalProposalModel {
   return {
-    reply: 'Here is what I would track.',
-    draft:
-      draft === null
-        ? null
-        : ({
-            title: 'Make $4,000',
-            summary: 'Four thousand dollars from Open Citadel by December.',
-            category: 'BUSINESS',
-            priority: 'HIGH',
-            durationDays: 120,
-            outcomeTarget: null,
-            outcomeUnit: null,
-            rationale: null,
-            trackables: [trackable()],
-            ...draft,
-          } as never),
-  } as CompassPlanTurnModel;
+    title: 'Make $4,000',
+    summary: 'Four thousand dollars from Open Citadel by December.',
+    category: 'BUSINESS',
+    priority: 'HIGH',
+    durationDays: 120,
+    outcomeTarget: null,
+    outcomeUnit: null,
+    rationale: null,
+    trackables: [trackable()],
+    ...over,
+  } as never;
 }
 
 describe('normalizeSchedule', () => {
@@ -178,18 +178,12 @@ function measurementOf(over: Record<string, unknown>) {
   return normalizeMeasurement(measurement(over));
 }
 
-describe('normalizeCompassPlanTurn', () => {
-  it('passes a null draft through untouched', () => {
-    const result = normalizeCompassPlanTurn(planTurn(null), CTX);
-    expect(result.draft).toBeNull();
-    expect(result.reply).toBe('Here is what I would track.');
-  });
-
+describe('normalizeGoalProposal', () => {
   it('produces something the STRICT schema accepts, from thoroughly wrong input', () => {
     // Every failure mode at once. The point is that one bad field must not
     // cost the reader the whole conversation.
-    const result = normalizeCompassPlanTurn(
-      planTurn({
+    const result = normalizeGoalProposal(
+      proposal({
         trackables: [
           trackable({ schedule: schedule({ type: 'DAILY', daysOfWeek: [1, 2], target: 9 }) }),
           trackable({ schedule: schedule({ type: 'WEEKLY_DAYS', daysOfWeek: [] }) }),
@@ -201,39 +195,36 @@ describe('normalizeCompassPlanTurn', () => {
       }),
       CTX,
     );
-    expect(GoalProposalSchema.safeParse(result.draft).success).toBe(true);
+    expect(GoalProposalSchema.safeParse(result).success).toBe(true);
   });
 
   it('caps the trackables at five, however many the model sent', () => {
-    const result = normalizeCompassPlanTurn(
-      planTurn({ trackables: Array.from({ length: 9 }, () => trackable()) }),
+    const result = normalizeGoalProposal(
+      proposal({ trackables: Array.from({ length: 9 }, () => trackable()) }),
       CTX,
     );
-    expect(result.draft?.trackables).toHaveLength(MAX_TRACKABLES);
-    expect(GoalProposalSchema.safeParse(result.draft).success).toBe(true);
+    expect(result.trackables).toHaveLength(MAX_TRACKABLES);
+    expect(GoalProposalSchema.safeParse(result).success).toBe(true);
   });
 
   it('keeps an outcome only when both halves are present', () => {
-    const both = normalizeCompassPlanTurn(
-      planTurn({ outcomeTarget: 4000, outcomeUnit: 'USD' }),
-      CTX,
-    );
-    expect(both.draft).toMatchObject({ outcomeTarget: 4000, outcomeUnit: 'USD' });
+    const both = normalizeGoalProposal(proposal({ outcomeTarget: 4000, outcomeUnit: 'USD' }), CTX);
+    expect(both).toMatchObject({ outcomeTarget: 4000, outcomeUnit: 'USD' });
 
     // Half an outcome is noise: a number with no unit cannot be rendered and
     // cannot be summed against anything.
-    const half = normalizeCompassPlanTurn(planTurn({ outcomeTarget: 4000, outcomeUnit: null }), CTX);
-    expect(half.draft?.outcomeTarget).toBeNull();
-    expect(half.draft?.outcomeUnit).toBeNull();
+    const half = normalizeGoalProposal(proposal({ outcomeTarget: 4000, outcomeUnit: null }), CTX);
+    expect(half.outcomeTarget).toBeNull();
+    expect(half.outcomeUnit).toBeNull();
   });
 
   it('fills the timezone into every trackable schedule', () => {
-    const result = normalizeCompassPlanTurn(planTurn({}), CTX);
-    expect(result.draft?.trackables[0].schedule.timezone).toBe('Africa/Harare');
+    const result = normalizeGoalProposal(proposal(), CTX);
+    expect(result.trackables[0].schedule.timezone).toBe('Africa/Harare');
   });
 });
 
-describe('normalizeCompassCheckinTurn', () => {
+describe('normalizeCheckinDraft', () => {
   const adjustment = (over: Record<string, unknown> = {}) => ({
     trackableId: 't1',
     action: 'PAUSE' as const,
@@ -244,45 +235,39 @@ describe('normalizeCompassCheckinTurn', () => {
 
   it('drops an adjustment naming a trackable that does not exist', () => {
     // Otherwise the reader is shown a button that cannot do anything.
-    const result = normalizeCompassCheckinTurn(
-      { reply: 'ok', draft: { journeyNote: null, adjustments: [adjustment({ trackableId: 'ghost' })] } },
+    const result = normalizeCheckinDraft(
+      { journeyNote: null, adjustments: [adjustment({ trackableId: 'ghost' })] },
       ['t1'],
     );
-    expect(result.draft).toBeNull();
+    expect(result).toBeNull();
   });
 
   it('keeps the ones that do exist, capped at three', () => {
-    const result = normalizeCompassCheckinTurn(
+    const result = normalizeCheckinDraft(
       {
-        reply: 'ok',
-        draft: {
-          journeyNote: null,
-          adjustments: [
-            adjustment({ trackableId: 't1' }),
-            adjustment({ trackableId: 't2' }),
-            adjustment({ trackableId: 't3' }),
-            adjustment({ trackableId: 't4' }),
-          ],
-        },
+        journeyNote: null,
+        adjustments: [
+          adjustment({ trackableId: 't1' }),
+          adjustment({ trackableId: 't2' }),
+          adjustment({ trackableId: 't3' }),
+          adjustment({ trackableId: 't4' }),
+        ],
       },
       ['t1', 't2', 't3', 't4'],
     );
-    expect(result.draft?.adjustments).toHaveLength(3);
+    expect(result?.adjustments).toHaveLength(3);
   });
 
   it('keeps a note-only draft', () => {
-    const result = normalizeCompassCheckinTurn(
-      { reply: 'ok', draft: { journeyNote: 'Editing is the bottleneck, not ideas.', adjustments: [] } },
+    const result = normalizeCheckinDraft(
+      { journeyNote: 'Editing is the bottleneck, not ideas.', adjustments: [] },
       ['t1'],
     );
-    expect(result.draft?.journeyNote).toBe('Editing is the bottleneck, not ideas.');
+    expect(result?.journeyNote).toBe('Editing is the bottleneck, not ideas.');
   });
 
   it('returns no draft at all when nothing survived', () => {
-    const result = normalizeCompassCheckinTurn(
-      { reply: 'ok', draft: { journeyNote: null, adjustments: [] } },
-      ['t1'],
-    );
-    expect(result.draft).toBeNull();
+    const result = normalizeCheckinDraft({ journeyNote: null, adjustments: [] }, ['t1']);
+    expect(result).toBeNull();
   });
 });
