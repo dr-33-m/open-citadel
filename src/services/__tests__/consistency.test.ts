@@ -236,6 +236,92 @@ describe('flexibleConsistency', () => {
   });
 });
 
+describe('the current day or week does not score', () => {
+  it('is null, not zero, for a weekly target on the day the goal is created', () => {
+    // The bug this fixes: a goal set on Thursday reported "0 of 3 expected"
+    // by lunchtime, because the in-progress week was scored in full.
+    const t = trackable({
+      schedule: { type: 'WEEKLY_TARGET', target: 6, timezone: TZ },
+      startDate: '2026-09-03', // a Thursday
+      endDate: '2026-12-12',
+    });
+    const result = flexibleConsistency({
+      trackable: t,
+      logs: [],
+      range: { from: '2026-09-03', to: '2026-09-03' },
+      today: '2026-09-03',
+    });
+    expect(result.expected).toBe(0);
+    expect(result.completed).toBe(0);
+    expect(result.ratio).toBeNull();
+    expect(result.periods).toHaveLength(1);
+    expect(result.periods[0]).toMatchObject({ inProgress: true, done: 0 });
+  });
+
+  it('scores finished weeks and leaves the one in progress out of the ratio', () => {
+    const t = trackable({
+      schedule: { type: 'WEEKLY_TARGET', target: 6, timezone: TZ },
+      startDate: '2026-09-07', // a Monday
+      endDate: '2026-12-31',
+    });
+    const logs = [
+      // Week 1 (Mon 07 – Sun 13): 6 of 6, all fully in the past.
+      '2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12',
+      // Week 2 (Mon 14 – Sun 20), still running on the 16th: 2 so far.
+      '2026-09-15', '2026-09-16',
+    ].map((d, i) => log(d, { id: `l${i}` }));
+    const result = flexibleConsistency({
+      trackable: t,
+      logs,
+      range: { from: '2026-09-07', to: '2026-09-16' },
+      today: '2026-09-16',
+    });
+    expect(result).toMatchObject({ expected: 6, completed: 6 });
+    expect(result.ratio).toBe(1);
+    expect(result.periods).toHaveLength(2);
+    expect(result.periods[1]).toMatchObject({ inProgress: true, done: 2, target: 6 });
+  });
+
+  it('does not count today as missed on a fixed schedule until the day is over', () => {
+    const result = fixedConsistency({
+      trackable: trackable({ startDate: '2026-09-07', endDate: '2026-12-31' }),
+      logs: [log('2026-09-07'), log('2026-09-08')],
+      range: { from: '2026-09-07', to: '2026-09-09' },
+      today: '2026-09-09',
+    });
+    // Mon and Tue are settled and done; Wed is still today and untouched, so
+    // it is neither expected nor missed.
+    expect(result).toMatchObject({ expected: 2, completed: 2 });
+    expect(result.ratio).toBe(1);
+    expect(result.missed).toEqual([]);
+  });
+
+  it('counts today once the user has logged it', () => {
+    const result = fixedConsistency({
+      trackable: trackable({ startDate: '2026-09-07', endDate: '2026-12-31' }),
+      logs: [log('2026-09-09', { completed: 0, note: 'slept through it' })],
+      range: { from: '2026-09-07', to: '2026-09-09' },
+      today: '2026-09-09',
+    });
+    // Mon and Tue are settled misses; Wed is settled too because it was
+    // answered, and the answer was "didn't happen".
+    expect(result.expected).toBe(3);
+    expect(result.completed).toBe(0);
+    expect(result.missed).toEqual(['2026-09-07', '2026-09-08', '2026-09-09']);
+  });
+
+  it('is null on day one of a daily goal', () => {
+    const result = fixedConsistency({
+      trackable: trackable({ startDate: '2026-09-03', endDate: '2026-12-31' }),
+      logs: [],
+      range: { from: '2026-09-03', to: '2026-09-03' },
+      today: '2026-09-03',
+    });
+    expect(result.expected).toBe(0);
+    expect(result.ratio).toBeNull();
+  });
+});
+
 describe('goalExecution', () => {
   it('weights by expected occurrences rather than averaging trackables', () => {
     // A perfect month of daily work plus one missed monthly review is 30/31,

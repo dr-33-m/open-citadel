@@ -36,6 +36,7 @@ const LEGEND: { status: DayStatus; label: string }[] = [
   { status: 'done', label: 'Done' },
   { status: 'missed', label: 'Missed' },
   { status: 'expected', label: 'Due' },
+  { status: 'flexible', label: 'Any day' },
 ];
 
 /**
@@ -91,6 +92,7 @@ export function PlannerSheet({
     done: asColor(primary),
     missed: asColor(destructive),
     expected: asColor(border),
+    flexible: asColor(mutedForeground),
   };
 
   const onThisMonth = startOfMonthYmd(monthAnchor) === startOfMonthYmd(today);

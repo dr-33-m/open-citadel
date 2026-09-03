@@ -81,6 +81,7 @@ function consistencyFor(active: ActiveGoal): ConsistencyResult[] {
       trackable,
       logs: active.logsByTrackable.get(trackable.id) ?? [],
       range,
+      today: active.today,
     }),
   );
 }
@@ -226,6 +227,7 @@ export function formatTrackableHistory(trackableId: string, days: number | null)
     trackable,
     logs: active.logsByTrackable.get(trackableId) ?? [],
     range: { from, to },
+    today: active.today,
   });
 
   const lines = [

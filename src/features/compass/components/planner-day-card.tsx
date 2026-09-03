@@ -21,6 +21,7 @@ const STATUS_LABEL: Record<PlannerCell['status'], string> = {
   done: 'DONE',
   missed: 'MISSED',
   expected: 'DUE',
+  flexible: 'ANY DAY',
 };
 
 const WEEKDAYS = [
@@ -76,6 +77,7 @@ export function PlannerDayCard({
     done: asColor(primary),
     missed: asColor(destructive),
     expected: muted,
+    flexible: muted,
   };
 
   const { year, month, day } = parseYmd(date);

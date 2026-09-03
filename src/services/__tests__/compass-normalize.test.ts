@@ -222,6 +222,44 @@ describe('normalizeGoalProposal', () => {
     const result = normalizeGoalProposal(proposal(), CTX);
     expect(result.trackables[0].schedule.timezone).toBe('Africa/Harare');
   });
+
+  it('drops a per-log quantity that just restates a weekly target', () => {
+    // "Six videos a week" as WEEKLY_TARGET 6 + QUANTITY 6 means thirty-six a
+    // week. When the numbers match, the measurement is the model conflating
+    // the two, so it collapses to COMPLETION.
+    const result = normalizeGoalProposal(
+      proposal({
+        trackables: [
+          trackable({
+            schedule: schedule({ type: 'WEEKLY_TARGET', target: 6 }),
+            measurement: measurement({ type: 'QUANTITY', target: 6, unit: 'videos' }),
+          }),
+        ],
+      }),
+      CTX,
+    );
+    expect(result.trackables[0].measurement).toEqual({ type: 'COMPLETION' });
+  });
+
+  it('keeps a genuine per-log amount alongside a weekly target', () => {
+    // Three runs a week, five km each: different numbers, a real pairing.
+    const result = normalizeGoalProposal(
+      proposal({
+        trackables: [
+          trackable({
+            schedule: schedule({ type: 'WEEKLY_TARGET', target: 3 }),
+            measurement: measurement({ type: 'QUANTITY', target: 5, unit: 'km' }),
+          }),
+        ],
+      }),
+      CTX,
+    );
+    expect(result.trackables[0].measurement).toMatchObject({
+      type: 'QUANTITY',
+      target: 5,
+      unit: 'km',
+    });
+  });
 });
 
 describe('normalizeCheckinDraft', () => {

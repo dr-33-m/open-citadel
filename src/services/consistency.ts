@@ -36,6 +36,12 @@ export type PeriodResult = {
   done: number;
   /** Never null: `expandPeriods` drops any period whose target rounds to zero. */
   ratio: number;
+  /**
+   * The period's last day has not arrived yet. What was done in it is shown,
+   * but it is left out of the aggregate `expected`/`completed`/`ratio` — you
+   * cannot be behind on a week you are still in.
+   */
+  inProgress: boolean;
 };
 
 export type ConsistencyResult = {
@@ -58,6 +64,18 @@ export type ConsistencyInput = {
   trackable: TrackableView;
   logs: LogView[];
   range: DateRange;
+  /**
+   * The real current day. A scheduled day or a flexible period is scored only
+   * once it has fully passed — strictly before this — because a day still in
+   * progress is neither met nor missed, and counting it makes a goal set this
+   * morning read as 0% by lunchtime. A day the user has already logged counts
+   * now, whatever they logged.
+   *
+   * Omit it and nothing is treated as in progress (the whole range scores).
+   * Production always passes it; some unit tests over historical windows do
+   * not need it.
+   */
+  today?: Ymd;
 };
 
 /**
@@ -72,7 +90,7 @@ function ratioOf(completed: number, expected: number): number | null {
 }
 
 export function fixedConsistency(input: ConsistencyInput): ConsistencyResult {
-  const { trackable, logs, range } = input;
+  const { trackable, logs, range, today } = input;
 
   const occurrences = expandOccurrences({
     schedule: trackable.schedule,
@@ -83,23 +101,29 @@ export function fixedConsistency(input: ConsistencyInput): ConsistencyResult {
   });
   const scheduled = new Set(occurrences);
 
-  const satisfying = logs.filter(
-    (log) =>
-      log.date >= range.from &&
-      log.date <= range.to &&
-      isLogSatisfying(log, trackable.measurement),
-  );
+  const inRange = logs.filter((log) => log.date >= range.from && log.date <= range.to);
+  // Every day the user has already answered for, by either kind of answer.
+  const answered = new Set(inRange.map((log) => log.date));
 
   const byDate = new Map<Ymd, number>();
-  for (const log of satisfying) {
-    byDate.set(log.date, (byDate.get(log.date) ?? 0) + 1);
+  for (const log of inRange) {
+    if (isLogSatisfying(log, trackable.measurement)) {
+      byDate.set(log.date, (byDate.get(log.date) ?? 0) + 1);
+    }
   }
 
+  let expected = 0;
   let completed = 0;
   let bonus = 0;
   const missed: Ymd[] = [];
 
   for (const date of occurrences) {
+    // A day is settled once it is over, or once the user has logged it. An
+    // untouched day that is still today is not a miss yet.
+    const settled = today === undefined || date < today || answered.has(date);
+    if (!settled) continue;
+
+    expected += 1;
     const count = byDate.get(date) ?? 0;
     if (count > 0) {
       // One scheduled day can only be met once. Doing it twice on a Tuesday
@@ -122,17 +146,17 @@ export function fixedConsistency(input: ConsistencyInput): ConsistencyResult {
     trackableId: trackable.id,
     title: trackable.title,
     kind: 'fixed',
-    expected: occurrences.length,
+    expected,
     completed,
     bonus,
-    ratio: ratioOf(completed, occurrences.length),
+    ratio: ratioOf(completed, expected),
     missed,
     periods: [],
   };
 }
 
 export function flexibleConsistency(input: ConsistencyInput): ConsistencyResult {
-  const { trackable, logs, range } = input;
+  const { trackable, logs, range, today } = input;
 
   const periods = expandPeriods({
     schedule: trackable.schedule,
@@ -157,9 +181,16 @@ export function flexibleConsistency(input: ConsistencyInput): ConsistencyResult 
 
     // Eight videos in a six-video week is a six-video week, and two spare.
     const done = Math.min(count, period.target);
-    expected += period.target;
-    completed += done;
-    bonus += count - done;
+
+    // The week you are still in shows what you have done but is not yet part
+    // of the ratio: six-a-week means you have until Sunday, so nothing about
+    // Thursday is a shortfall.
+    const inProgress = today !== undefined && period.to >= today;
+    if (!inProgress) {
+      expected += period.target;
+      completed += done;
+      bonus += count - done;
+    }
 
     results.push({
       key: period.key,
@@ -168,6 +199,7 @@ export function flexibleConsistency(input: ConsistencyInput): ConsistencyResult 
       target: period.target,
       done,
       ratio: done / period.target,
+      inProgress,
     });
   }
 

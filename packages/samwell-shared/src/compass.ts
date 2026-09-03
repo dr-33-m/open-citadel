@@ -380,6 +380,30 @@ export function normalizeMeasurement(raw: MeasurementModel): Measurement {
 }
 
 /**
+ * Catch the one schedule/measurement pairing the model keeps getting wrong.
+ *
+ * A flexible schedule ALREADY counts occurrences per period — "six a week" is
+ * six logs. Layering a QUANTITY or AMOUNT measurement whose target is that
+ * same number on top means every one of those six logs must also clear six
+ * units, i.e. thirty-six a week, which is never what "six videos a week" was
+ * meant to say. When the two numbers match, the measurement is the model
+ * conflating "how many per week" with "how much per log", so drop it to
+ * COMPLETION — one tap per occurrence, which is what the schedule wants.
+ *
+ * A genuine pairing keeps different numbers ("run three times a week, five km
+ * each"), so it passes through untouched.
+ */
+function reconcileMeasurement(schedule: Schedule, measurement: Measurement): Measurement {
+  if (schedule.type !== 'WEEKLY_TARGET' && schedule.type !== 'MONTHLY_TARGET') {
+    return measurement;
+  }
+  if (measurement.type !== 'QUANTITY' && measurement.type !== 'AMOUNT') {
+    return measurement;
+  }
+  return measurement.target === schedule.target ? { type: 'COMPLETION' } : measurement;
+}
+
+/**
  * A model-shaped goal proposal, trimmed down to the strict wire contract.
  *
  * Split out from the turn normalizer because the proposal now arrives as the
@@ -391,15 +415,18 @@ export function normalizeGoalProposal(
   draft: GoalProposalModel,
   ctx: NormalizeContext,
 ): GoalProposal {
-  const trackables = draft.trackables.slice(0, MAX_TRACKABLES).map((t) => ({
-    title: t.title,
-    description: t.description,
-    startOffsetDays: t.startOffsetDays,
-    durationDays: t.durationDays,
-    timeOfDay: t.timeOfDay,
-    schedule: normalizeSchedule(t.schedule, ctx),
-    measurement: normalizeMeasurement(t.measurement),
-  }));
+  const trackables = draft.trackables.slice(0, MAX_TRACKABLES).map((t) => {
+    const schedule = normalizeSchedule(t.schedule, ctx);
+    return {
+      title: t.title,
+      description: t.description,
+      startOffsetDays: t.startOffsetDays,
+      durationDays: t.durationDays,
+      timeOfDay: t.timeOfDay,
+      schedule,
+      measurement: reconcileMeasurement(schedule, normalizeMeasurement(t.measurement)),
+    };
+  });
 
   // An outcome needs both halves to mean anything; half of one is noise.
   const hasOutcome = draft.outcomeTarget != null && draft.outcomeUnit != null;

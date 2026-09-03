@@ -72,6 +72,7 @@ export function PlannerDayCell({
     done: asColor(primary),
     missed: asColor(destructive),
     expected: asColor(border),
+    flexible: asColor(mutedForeground),
   };
 
   const numberColor = isSelected

@@ -136,6 +136,7 @@ function computeDerived(
       trackable,
       logs: logsByTrackable.get(trackable.id) ?? [],
       range,
+      today,
     }),
   );
 
