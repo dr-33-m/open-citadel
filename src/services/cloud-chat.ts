@@ -187,6 +187,13 @@ function textFromMessage(message: UIMessage | undefined): string {
     .join('');
 }
 
+/** Whether a message is still waiting on a tool it called. */
+function hasPendingToolCall(message: UIMessage): boolean {
+  return message.parts.some(
+    (part) => part.type === 'tool-call' && (part as { output?: unknown }).output === undefined,
+  );
+}
+
 /**
  * The text of the message being written right now.
  *
@@ -197,13 +204,20 @@ function textFromMessage(message: UIMessage | undefined): string {
  * line back into the bubble — so the orb blinked out the moment the model
  * started thinking again. Only the last assistant message is being written;
  * only its text is the stream.
+ *
+ * And a message that has called a tool and is waiting on it is not the answer
+ * being written — the tool is. Its narration ("Let me check where things
+ * stand") is not the reply and returning it here blanks the tool indicator
+ * and flashes a bubble that vanishes when the real answer arrives.
  */
 function activeAssistantText(messages: UIMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (!message) continue;
     if (message.role === 'user') return '';
-    if (message.role === 'assistant') return textFromMessage(message);
+    if (message.role === 'assistant') {
+      return hasPendingToolCall(message) ? '' : textFromMessage(message);
+    }
   }
   return '';
 }
@@ -624,6 +638,22 @@ export async function sendCloudChatTurn({
   // out of room can say so, instead of the generic "got stuck".
   let finishReason: string | null = null;
 
+  /*
+   * Tool phase: the stretch from the first tool chunk until the model picks
+   * up again. The tool itself runs in milliseconds, but a client tool then
+   * triggers a whole continuation request — another round trip to the model —
+   * and for those seconds nothing streams. Without a held indicator the chat
+   * reads as frozen, so the tool's orb and label stay on the row until a
+   * reasoning delta or an answer token proves the model is back.
+   */
+  let inToolPhase = false;
+  let lastToolName: string | null = null;
+  const endToolPhase = () => {
+    if (!inToolPhase) return;
+    inToolPhase = false;
+    onToolStatus(null, null);
+  };
+
   await preflightCloudServer(baseUrl);
 
   const { cloudThinkingBudget } = useSettingsStore.getState();
@@ -681,6 +711,8 @@ export async function sendCloudChatTurn({
       if (chunk.type === 'REASONING_MESSAGE_CONTENT') {
         const delta = (chunk as { delta?: unknown }).delta;
         if (typeof delta === 'string' && delta) {
+          // The model is thinking again: the tool phase is over.
+          endToolPhase();
           thinkingStartedAt ??= Date.now();
           thinking += delta;
           flushThinking(thinking);
@@ -689,25 +721,38 @@ export async function sendCloudChatTurn({
 
       if (chunk.type === 'RUN_FINISHED') {
         finishReason = (chunk as { finishReason?: string | null }).finishReason ?? null;
+        // A finish that is not itself another tool call means the model has
+        // stopped talking for this turn — release the held tool row even if
+        // the continuation produced no text of its own.
+        if (finishReason !== 'tool_calls' && finishReason !== null) endToolPhase();
       }
 
       const toolName = readToolName(chunk);
       if (toolName) {
         // Ordered ahead of the status: a trace update still in flight must
-        // not land after it and leave the row describing the wrong phase.
+        // not land after it and leave the row describing the wrong phase. Any
+        // half-written narration from before the call is dropped here (the
+        // stores blank the bubble on a non-null tool status), so a trailing
+        // throttled write must not resurrect it.
         flushThinking.flush();
-        flushStreaming.flush();
+        flushStreaming.cancel();
+        inToolPhase = true;
+        lastToolName = toolName;
         onToolStatus(statusForTool(toolName), toolName);
       }
-      if (chunk.type === 'TOOL_CALL_RESULT') onToolStatus(null, null);
+      // The tool has returned but the model has not resumed — hold the row on
+      // it through the continuation request rather than blanking it.
+      if (chunk.type === 'TOOL_CALL_RESULT' && inToolPhase) {
+        onToolStatus('Working through that…', lastToolName);
+      }
     },
     onMessagesChange: (messages) => {
       const text = activeAssistantText(messages);
       if (text) {
         // The answer is being written; the wait it was covering is over.
         reportThinkingDone();
+        endToolPhase();
         flushThinking.flush();
-        onToolStatus(null, null);
         flushStreaming(text);
       }
     },
@@ -777,7 +822,15 @@ export async function sendCloudChatTurn({
         lastProgressAt = Date.now();
       }
 
-      if (!client.getIsLoading() && !hasUnresolvedToolCalls(client.getMessages())) {
+      // `inToolPhase` covers the gap between a tool returning and the
+      // continuation request starting, where `isLoading` briefly drops and
+      // the only assistant text is the pre-tool narration — returning there
+      // ends the turn on "Let me check…" instead of the real answer.
+      if (
+        !inToolPhase &&
+        !client.getIsLoading() &&
+        !hasUnresolvedToolCalls(client.getMessages())
+      ) {
         const text = latestAssistantText(client.getMessages()).trim();
         if (text) {
           reportThinkingDone();
@@ -811,13 +864,5 @@ export async function sendCloudChatTurn({
 }
 
 function hasUnresolvedToolCalls(messages: UIMessage[]): boolean {
-  for (const message of messages) {
-    if (message.role !== 'assistant') continue;
-    for (const part of message.parts) {
-      if (part.type === 'tool-call' && (part as { output?: unknown }).output === undefined) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return messages.some((message) => message.role === 'assistant' && hasPendingToolCall(message));
 }

@@ -266,7 +266,14 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         onStreamingContent: (content) => set({ streamingReply: content }),
         onThinkingContent: (content) => set({ streamingThinking: content }),
         onThinkingDone: (seconds) => set({ streamingThinkingSeconds: seconds }),
-        onToolStatus: (status, name) => set({ toolStatus: status, toolName: name }),
+        onToolStatus: (status, name) =>
+          set({
+            toolStatus: status,
+            toolName: name,
+            // A tool taking the floor clears any pre-call narration so the
+            // tool row is the only thing on screen.
+            ...(status !== null ? { streamingReply: '' } : {}),
+          }),
       });
 
       // Nothing came back: the turn was called off, or it ended empty. Drop it

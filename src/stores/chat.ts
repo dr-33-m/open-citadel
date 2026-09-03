@@ -514,15 +514,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // through rather than a guess.
           onThinkingDone: (seconds) => set({ thinkingSeconds: seconds }),
           onToolStatus: (status, name) => {
-            set((s) => ({
+            set(() => ({
               isToolCalling: status !== null,
               toolCallStatus: status,
               toolCallName: name,
               // Thinking pauses while a tool runs. Clearing the flag on the
               // way OUT too turned the gap between a tool finishing and the
               // model thinking again into a false "Processing…" blink —
-              // resuming is the reasoning stream's own job.
-              ...(status !== null ? { isThinking: false } : {}),
+              // resuming is the reasoning stream's own job. A tool taking the
+              // floor also clears any pre-call narration from the bubble.
+              ...(status !== null ? { isThinking: false, streamingContent: '' } : {}),
             }));
           },
         });
