@@ -137,6 +137,27 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
 }
 
 /**
+ * The first complete JSON object in `text`, or null.
+ *
+ * From the first `{` to the last `}`, which is enough for a document that is
+ * one object with something written in front of it, and deliberately not a
+ * scan for every possible object: a turn carries exactly one, and picking a
+ * different one out of a malformed response is how a draft nobody proposed
+ * ends up on someone's screen.
+ */
+function parseEmbeddedObject(text: string): Record<string, unknown> | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  try {
+    const parsed: unknown = JSON.parse(text.slice(start, end + 1));
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * One streaming attempt at a structured turn.
  *
  * The reply is the first field of `{ reply, draft }` and the model writes the
@@ -239,18 +260,23 @@ async function streamAttempt(args: {
 
   if (object === undefined) {
     /*
-     * The terminal event never came, but the document might still be whole:
-     * the run can end without the library emitting `structured-output.complete`
-     * while the JSON it was accumulating is perfectly parseable. Salvaging it
-     * here turns a failed turn into a good one, and costs a parse of a string
-     * we already hold.
+     * The terminal event never came, but the document might still be whole.
+     *
+     * Two ways that happens. The run can end without the library emitting
+     * `structured-output.complete` while the JSON it accumulated is perfectly
+     * parseable. And the content channel can carry a prose preamble in front
+     * of the JSON: OpenRouter routes each request to whichever provider is
+     * free, and they do not agree on where reasoning goes — some return it in
+     * `reasoning_details`, some inline it in `content` — so the same prompt
+     * parses on one attempt and fails on the next with the model's own
+     * thinking pasted in front of the object.
+     *
+     * So parse from the first brace to the last, rather than the whole string.
+     * The incremental reader above already tolerates a preamble, since it
+     * only recognises a key at depth one and prose has no braces to open one.
      */
-    try {
-      const salvaged: unknown = JSON.parse(raw);
-      if (salvaged && typeof salvaged === 'object') return { object: salvaged, reply: sent };
-    } catch {
-      // Genuinely incomplete. Fall through and say why.
-    }
+    const salvaged = parseEmbeddedObject(raw);
+    if (salvaged) return { object: salvaged, reply: sent };
     throw new Error(
       runError ??
         `structured output never completed (finishReason=${finishReason ?? 'none'}, ` +
