@@ -266,6 +266,13 @@ export const goals = sqliteTable("goals", {
   priority: text("priority").$type<GoalPriority>().notNull().default("MEDIUM"),
   status: text("status").$type<LifecycleStatus>().notNull().default("ACTIVE"),
   /**
+   * The one goal that must not slip. At most one active goal is primary; the
+   * rest are tracked because the user wants to, but this is the one Samwell
+   * steers back toward and the one the overview marks. `0`/`1`, matching the
+   * other boolean columns here.
+   */
+  isPrimary: integer("is_primary").notNull().default(0),
+  /**
    * The numeric outcome, when there is one: 4000 / "USD".
    *
    * Execution and outcome are different facts — 92% consistent and $1,200 of

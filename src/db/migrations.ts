@@ -200,9 +200,31 @@ async function ensureCompassSchema(): Promise<void> {
     \`status\` text NOT NULL DEFAULT 'ACTIVE',
     \`outcome_target\` real,
     \`outcome_unit\` text,
+    \`is_primary\` integer NOT NULL DEFAULT 0,
     \`created_at\` text NOT NULL,
     \`updated_at\` text NOT NULL
   )`);
+
+  // Self-heal `is_primary` onto a `goals` table that predates it.
+  const goalsInfo: { name: string }[] = db.all(
+    sql`PRAGMA table_info(goals)`,
+  ) as { name: string }[];
+  if (!new Set(goalsInfo.map((r) => r.name)).has("is_primary")) {
+    db.run(sql`ALTER TABLE \`goals\` ADD \`is_primary\` integer NOT NULL DEFAULT 0`);
+  }
+
+  // Backfill: a device that already had goals gets its oldest active one as
+  // the primary, so an existing single-goal user is not left with no primary
+  // and a Samwell that never steers. Only runs while nothing is primary yet,
+  // so it is a one-time promotion the reader can override afterwards.
+  db.run(sql`
+    UPDATE \`goals\` SET \`is_primary\` = 1
+    WHERE \`id\` = (
+      SELECT \`id\` FROM \`goals\` WHERE \`status\` = 'ACTIVE'
+      ORDER BY \`created_at\` ASC LIMIT 1
+    )
+    AND NOT EXISTS (SELECT 1 FROM \`goals\` WHERE \`is_primary\` = 1)
+  `);
 
   db.run(sql`CREATE TABLE IF NOT EXISTS \`trackables\` (
     \`id\` text PRIMARY KEY NOT NULL,

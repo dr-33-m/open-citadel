@@ -21,6 +21,7 @@ import {
 } from '@/services/consistency';
 import { saveJourneyReflection } from '@/services/journey';
 import {
+  byTimeThenTitle,
   dueOn,
   type DueItem,
   type LogView,
@@ -28,6 +29,11 @@ import {
   type TrackableView,
 } from '@/services/occurrences';
 import { addDaysYmd, localDayString, minYmd, type Ymd } from '@/utils/day';
+
+/** Compass tracks at most this many goals at once. The overview radar reads
+ *  as a shape at 3–5 axes and stops reading past that; more than five running
+ *  goals is also more than anyone keeps up with. Enforced at creation. */
+export const MAX_ACTIVE_GOALS = 5;
 
 export type GoalRow = typeof goals.$inferSelect;
 
@@ -38,7 +44,15 @@ export type GoalConsistency = {
 
 type CompassState = {
   goals: GoalRow[];
+  /**
+   * The goals with `status === 'ACTIVE'`, primary first then newest — capped
+   * at {@link MAX_ACTIVE_GOALS}. This is the set the switcher lists, the deck
+   * merges over, and the overview charts.
+   */
+  activeGoals: GoalRow[];
   activeGoalId: string | null;
+  /** The one active goal marked `isPrimary`, or null when none is. */
+  primaryGoalId: string | null;
   /** Trackables of the active goal, with their JSON columns already parsed. */
   trackables: TrackableView[];
   logsByTrackable: Map<string, LogView[]>;
@@ -51,8 +65,16 @@ type CompassState = {
    * every subscriber re-renders on every keystroke of a streaming reply. The
    * old store made the same call with `telemetry`, and for the same reason.
    */
+  /**
+   * Everything due today across every active goal, one list, time-ordered.
+   * Each `DueItem` carries its `trackable.goalId`, so the deck can label the
+   * card with its goal.
+   */
   due: DueItem[];
+  /** Consistency + outcome for the active goal — the per-goal Insights view. */
   consistency: GoalConsistency | null;
+  /** The same, per active goal, for the overview. Keyed by goal id. */
+  consistencyByGoal: Map<string, GoalConsistency>;
 
   isLoaded: boolean;
   committing: boolean;
@@ -60,6 +82,9 @@ type CompassState = {
 
   loadCompass: () => Promise<void>;
   selectGoal: (goalId: string) => Promise<void>;
+  /** Move the primary mark to `goalId` (clearing it from wherever it was).
+   *  A no-op if that goal is already primary. */
+  setPrimaryGoal: (goalId: string) => Promise<void>;
 
   commitProposal: (proposal: GoalProposal) => Promise<string | null>;
   applyCheckinDraft: (draft: {
@@ -122,14 +147,13 @@ function goalWindow(goal: GoalRow, today: string) {
   return { from: goal.startDate, to: minYmd(today, goal.endDate) };
 }
 
-function computeDerived(
-  goal: GoalRow | null,
+/** One goal's consistency + outcome. */
+function goalConsistency(
+  goal: GoalRow,
   views: TrackableView[],
   logsByTrackable: Map<string, LogView[]>,
   today: string,
-): { due: DueItem[]; consistency: GoalConsistency | null } {
-  if (!goal) return { due: [], consistency: null };
-
+): GoalConsistency {
   const range = goalWindow(goal, today);
   const results: ConsistencyResult[] = views.map((trackable) =>
     trackableConsistency({
@@ -139,31 +163,84 @@ function computeDerived(
       today,
     }),
   );
-
   return {
-    due: dueOn(today, views, logsByTrackable),
-    consistency: {
-      execution: goalExecution(results),
-      outcome: goalOutcome(goal, views, logsByTrackable),
-    },
+    execution: goalExecution(results),
+    outcome: goalOutcome(goal, views, logsByTrackable),
   };
 }
 
-/** Read one goal's trackables, pauses and logs, and fold them into views. */
-function readGoal(goalId: string): {
-  views: TrackableView[];
+/** One goal's trackables + logs, as read by {@link readGoals}. */
+type GoalData = { views: TrackableView[]; logsByTrackable: Map<string, LogView[]> };
+
+function computeDerived(
+  activeGoal: GoalRow | null,
+  activeGoals: GoalRow[],
+  dataByGoal: Map<string, GoalData>,
+  today: string,
+): {
+  trackables: TrackableView[];
   logsByTrackable: Map<string, LogView[]>;
+  due: DueItem[];
+  consistency: GoalConsistency | null;
+  consistencyByGoal: Map<string, GoalConsistency>;
 } {
-  const rows = db.select().from(trackables).where(eq(trackables.goalId, goalId)).all();
-  const ids = rows.map((r) => r.id);
+  const consistencyByGoal = new Map<string, GoalConsistency>();
+  const dueItems: DueItem[] = [];
+
+  for (const goal of activeGoals) {
+    const data = dataByGoal.get(goal.id) ?? { views: [], logsByTrackable: new Map() };
+    consistencyByGoal.set(goal.id, goalConsistency(goal, data.views, data.logsByTrackable, today));
+    // Merged and re-sorted below, not per goal — the deck is one day, not one
+    // goal's day.
+    dueItems.push(...dueOn(today, data.views, data.logsByTrackable));
+  }
+  dueItems.sort(byTimeThenTitle);
+
+  const active = activeGoal ? dataByGoal.get(activeGoal.id) : undefined;
+
+  return {
+    trackables: active?.views ?? [],
+    logsByTrackable: active?.logsByTrackable ?? new Map(),
+    due: dueItems,
+    consistency:
+      activeGoal && active
+        ? (consistencyByGoal.get(activeGoal.id) ??
+          goalConsistency(activeGoal, active.views, active.logsByTrackable, today))
+        : null,
+    consistencyByGoal,
+  };
+}
+
+/**
+ * Read several goals' trackables, pauses and logs in three queries total, and
+ * fold each goal's rows into parsed views.
+ *
+ * Batched rather than one `readGoal` per goal: five active goals is fifteen
+ * round trips the naive way, and `loadCompass` runs on every write.
+ */
+function readGoals(goalIds: string[]): Map<string, GoalData> {
+  const result = new Map<string, GoalData>();
+  for (const id of goalIds) result.set(id, { views: [], logsByTrackable: new Map() });
+  if (goalIds.length === 0) return result;
+
+  const trackableRows = db
+    .select()
+    .from(trackables)
+    .where(inArray(trackables.goalId, goalIds))
+    .all();
+  const trackableIds = trackableRows.map((r) => r.id);
 
   const pauseRows =
-    ids.length > 0
-      ? db.select().from(trackablePauses).where(inArray(trackablePauses.trackableId, ids)).all()
+    trackableIds.length > 0
+      ? db
+          .select()
+          .from(trackablePauses)
+          .where(inArray(trackablePauses.trackableId, trackableIds))
+          .all()
       : [];
   const logRows =
-    ids.length > 0
-      ? db.select().from(trackableLogs).where(inArray(trackableLogs.trackableId, ids)).all()
+    trackableIds.length > 0
+      ? db.select().from(trackableLogs).where(inArray(trackableLogs.trackableId, trackableIds)).all()
       : [];
 
   const pausesByTrackable = new Map<string, PauseWindow[]>();
@@ -173,9 +250,9 @@ function readGoal(goalId: string): {
     pausesByTrackable.set(row.trackableId, list);
   }
 
-  const logsByTrackable = new Map<string, LogView[]>();
+  const logsByTrackableId = new Map<string, LogView[]>();
   for (const row of logRows) {
-    const list = logsByTrackable.get(row.trackableId) ?? [];
+    const list = logsByTrackableId.get(row.trackableId) ?? [];
     list.push({
       id: row.id,
       trackableId: row.trackableId,
@@ -184,18 +261,19 @@ function readGoal(goalId: string): {
       value: row.value,
       note: row.note,
     });
-    logsByTrackable.set(row.trackableId, list);
+    logsByTrackableId.set(row.trackableId, list);
   }
 
-  const views: TrackableView[] = [];
-  for (const row of rows) {
+  for (const row of trackableRows) {
+    const bucket = result.get(row.goalId);
+    if (!bucket) continue;
     const schedule = parseSchedule(row.schedule);
     const measurement = parseMeasurement(row.measurement);
     if (!schedule || !measurement) {
       console.warn(`[Compass] Skipping trackable ${row.id}: unreadable schedule or measurement.`);
       continue;
     }
-    views.push({
+    bucket.views.push({
       id: row.id,
       goalId: row.goalId,
       title: row.title,
@@ -208,52 +286,84 @@ function readGoal(goalId: string): {
       measurement,
       pauses: pausesByTrackable.get(row.id) ?? [],
     });
+    const logs = logsByTrackableId.get(row.id);
+    if (logs) bucket.logsByTrackable.set(row.id, logs);
   }
 
-  return { views, logsByTrackable };
+  return result;
+}
+
+/**
+ * The active goals, primary first then newest, capped at the max.
+ *
+ * `goals` arrives newest-first from `loadCompass`, so a stable partition keeps
+ * that order within each half.
+ */
+function orderActiveGoals(all: GoalRow[]): GoalRow[] {
+  const active = all.filter((g) => g.status === 'ACTIVE');
+  const primary = active.filter((g) => g.isPrimary);
+  const rest = active.filter((g) => !g.isPrimary);
+  return [...primary, ...rest].slice(0, MAX_ACTIVE_GOALS);
 }
 
 export const useCompassStore = create<CompassState>((set, get) => ({
   goals: [],
+  activeGoals: [],
   activeGoalId: null,
+  primaryGoalId: null,
   trackables: [],
   logsByTrackable: new Map(),
   due: [],
   consistency: null,
+  consistencyByGoal: new Map(),
   isLoaded: false,
   committing: false,
   error: null,
 
   loadCompass: async () => {
+    const today = localDayString();
     const allGoals = db.select().from(goals).orderBy(desc(goals.createdAt)).all();
-    const active =
+    const activeGoals = orderActiveGoals(allGoals);
+    const primaryGoalId = activeGoals.find((g) => g.isPrimary)?.id ?? null;
+
+    // What the per-goal surfaces (Insights, Planner, the conversation) point
+    // at: the goal the reader last chose if it is still around, else the
+    // primary, else the newest active one, else any goal at all.
+    const activeGoal =
       allGoals.find((g) => g.id === get().activeGoalId) ??
-      allGoals.find((g) => g.status === 'ACTIVE') ??
+      activeGoals.find((g) => g.id === primaryGoalId) ??
+      activeGoals[0] ??
       allGoals[0] ??
       null;
 
-    if (!active) {
+    if (!activeGoal && activeGoals.length === 0) {
       set({
         goals: allGoals,
+        activeGoals: [],
         activeGoalId: null,
+        primaryGoalId: null,
         trackables: [],
         logsByTrackable: new Map(),
         due: [],
         consistency: null,
+        consistencyByGoal: new Map(),
         isLoaded: true,
       });
       return;
     }
 
-    const { views, logsByTrackable } = readGoal(active.id);
-    const derived = computeDerived(active, views, logsByTrackable, localDayString());
+    // The viewed goal may not be active (an old goal's Insights), so read it
+    // alongside the active set rather than assuming it is in it.
+    const idsToRead = new Set(activeGoals.map((g) => g.id));
+    if (activeGoal) idsToRead.add(activeGoal.id);
+    const dataByGoal = readGoals([...idsToRead]);
 
     set({
       goals: allGoals,
-      activeGoalId: active.id,
-      trackables: views,
-      logsByTrackable,
-      ...derived,
+      activeGoals,
+      activeGoalId: activeGoal?.id ?? null,
+      primaryGoalId,
+      ...computeDerived(activeGoal, activeGoals, dataByGoal, today),
       isLoaded: true,
     });
   },
@@ -263,13 +373,38 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     await get().loadCompass();
   },
 
+  setPrimaryGoal: async (goalId) => {
+    if (get().primaryGoalId === goalId) return;
+    const now = new Date().toISOString();
+    // Two statements rather than a transaction, matching the rest of this
+    // store: the sub-millisecond window with no primary self-corrects on the
+    // reload below, and a half-applied primary is harmless (the reader picks
+    // one again).
+    db.update(goals).set({ isPrimary: 0, updatedAt: now }).where(eq(goals.isPrimary, 1)).run();
+    db.update(goals).set({ isPrimary: 1, updatedAt: now }).where(eq(goals.id, goalId)).run();
+    await get().loadCompass();
+  },
+
   commitProposal: async (proposal) => {
+    // A new goal joins the active set rather than replacing it, so the cap is
+    // real and has to be enforced here — the one place a goal is created.
+    if (get().activeGoals.length >= MAX_ACTIVE_GOALS) {
+      set({
+        error: `You can track ${MAX_ACTIVE_GOALS} goals at once. Finish or archive one to make room.`,
+      });
+      return null;
+    }
+
     set({ committing: true, error: null });
     try {
       const now = new Date().toISOString();
       const startDate = localDayString();
       const endDate = addDaysYmd(startDate, proposal.durationDays);
       const goalId = createId('goal');
+      // The first goal someone sets is their primary by default — there is
+      // nothing to weigh it against yet, and an unset primary means Samwell
+      // never steers.
+      const isPrimary = get().activeGoals.length === 0 ? 1 : 0;
 
       db.insert(goals)
         .values({
@@ -281,6 +416,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
           category: proposal.category,
           priority: proposal.priority,
           status: 'ACTIVE',
+          isPrimary,
           outcomeTarget: proposal.outcomeTarget,
           outcomeUnit: proposal.outcomeUnit,
           createdAt: now,
@@ -478,26 +614,27 @@ function writeLog(
 }
 
 /**
- * Re-read this goal's rows and recompute after a log.
+ * Re-read the rows and recompute the derived bundle after a log.
  *
  * Not `loadCompass()`: the deck is on screen while the user is logging, and a
  * full reload rebuilds the goal list and the active-goal choice underneath it,
- * which flashes the card that is mid-animation.
+ * which flashes the card that is mid-animation. This keeps the goal list, the
+ * active goal and the primary exactly as they are, and only refreshes the
+ * numbers — including the merged deck and every goal's consistency, since a
+ * log on any goal moves the overview too.
  */
 function patchAfterWrite(
   set: (patch: Partial<CompassState>) => void,
   get: () => CompassState,
 ): void {
-  const { activeGoalId, goals: allGoals } = get();
-  if (!activeGoalId) return;
-  const goal = allGoals.find((g) => g.id === activeGoalId) ?? null;
+  const { activeGoalId, activeGoals, goals: allGoals } = get();
+  const activeGoal = allGoals.find((g) => g.id === activeGoalId) ?? null;
 
-  const { views, logsByTrackable } = readGoal(activeGoalId);
-  set({
-    trackables: views,
-    logsByTrackable,
-    ...computeDerived(goal, views, logsByTrackable, localDayString()),
-  });
+  const ids = new Set(activeGoals.map((g) => g.id));
+  if (activeGoalId) ids.add(activeGoalId);
+  const dataByGoal = readGoals([...ids]);
+
+  set(computeDerived(activeGoal, activeGoals, dataByGoal, localDayString()));
 }
 
 /** The picture of the goal that a check-in conversation is grounded in. */
@@ -512,3 +649,8 @@ export const useCompassTrackables = () => useCompassStore((s) => s.trackables);
 export const useCompassError = () => useCompassStore((s) => s.error);
 export const useActiveGoal = () =>
   useCompassStore((s) => s.goals.find((g) => g.id === s.activeGoalId) ?? null);
+export const useCompassActiveGoals = () => useCompassStore((s) => s.activeGoals);
+export const usePrimaryGoal = () =>
+  useCompassStore((s) => s.activeGoals.find((g) => g.id === s.primaryGoalId) ?? null);
+export const useCompassConsistencyByGoal = () =>
+  useCompassStore((s) => s.consistencyByGoal);

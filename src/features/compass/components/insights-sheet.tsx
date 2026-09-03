@@ -377,7 +377,9 @@ export function InsightsSheet({
               </Card>
             )}
 
-            {execution && execution.breakdown.length > 0 && (
+            {/* Only worth its own section with more than one trackable —
+                otherwise it just restates the goal's execution number. */}
+            {execution && execution.breakdown.length > 1 && (
               <View className="gap-2">
                 <ThemedText type="labelSm" color={dim}>
                   BY ACTIVITY

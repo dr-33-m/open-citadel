@@ -134,6 +134,13 @@
       "when": 1788200000000,
       "tag": "0018_trackables",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1788400000000,
+      "tag": "0019_goal_primary",
+      "breakpoints": true
     }
   ]
 }

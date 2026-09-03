@@ -19,6 +19,7 @@ import m0015 from "./0015_chat_suggestions.js";
 import m0016 from "./0016_queue_order.js";
 import m0017 from "./0017_milestone_last_reported.js";
 import m0018 from "./0018_trackables.js";
+import m0019 from "./0019_goal_primary.js";
 import journal from "./meta/_journal.json";
 
 export default {
@@ -43,5 +44,6 @@ export default {
     m0016,
     m0017,
     m0018,
+    m0019,
   },
 };

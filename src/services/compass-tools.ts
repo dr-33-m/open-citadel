@@ -123,6 +123,11 @@ export function formatCompassStatus(): string {
     'TRACKABLES (use the id in square brackets when you call a tool):',
   ];
 
+  // With one trackable the goal's own EXECUTION line above already IS this
+  // trackable's number; repeating it per row is noise, and there is no weak
+  // link to name among a set of one.
+  const single = trackables.length === 1;
+
   for (const trackable of trackables) {
     const result = byId.get(trackable.id);
     const unit = measurementLabel(trackable.measurement);
@@ -130,12 +135,18 @@ export function formatCompassStatus(): string {
       `[${trackable.id}] ${trackable.title}`,
       scheduleSummary(trackable.schedule),
       `measured by ${trackable.measurement.type}${unit ? ` in ${unit}` : ''}`,
-      result
-        ? `${result.completed} of ${result.expected} (${percent(result.ratio)})`
-        : 'nothing expected yet',
     ];
+    if (!single) {
+      parts.push(
+        result
+          ? `${result.completed} of ${result.expected} (${percent(result.ratio)})`
+          : 'nothing expected yet',
+      );
+    }
     if (trackable.status !== 'ACTIVE') parts.push(trackable.status);
-    if (result && result.bonus > 0) parts.push(`${result.bonus} extra beyond what was asked`);
+    if (!single && result && result.bonus > 0) {
+      parts.push(`${result.bonus} extra beyond what was asked`);
+    }
     if (weakest && weakest.trackableId === trackable.id) parts.push('WEAKEST');
     lines.push(parts.join(' — '));
   }
