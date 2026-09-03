@@ -108,6 +108,18 @@ export function CompassBody({
   }, [streaming]);
   const scrollContentStyle = React.useMemo(() => [floatingClearance], [floatingClearance]);
 
+  /*
+   * A proposal turn reads card first, then Samwell's line about it. The reply
+   * lands in `messages` above the card, so hold it out of the list and render
+   * it below the card instead — otherwise the card shoves the message off the
+   * top of the view and you scroll up past a plan to read the sentence
+   * introducing it.
+   */
+  const lastMessage = messages[messages.length - 1];
+  const proposalReply =
+    draft != null && lastMessage?.role === 'assistant' ? lastMessage : null;
+  const listMessages = proposalReply ? messages.slice(0, -1) : messages;
+
   // Said before the empty prompt, not after: inviting someone to start typing
   // to something that cannot answer is worse than saying so up front.
   //
@@ -164,8 +176,9 @@ export function CompassBody({
       >
         {/* Only what was actually said. A Compass transcript can carry a
             system row (the journey summary) and, once tools write to it, tool
-            rows; neither is a turn anybody had. */}
-        {messages.map((m) =>
+            rows; neither is a turn anybody had. The proposal turn's own reply
+            is held out here and rendered below its card. */}
+        {listMessages.map((m) =>
           m.role === 'user' || m.role === 'assistant' ? (
             <ChatBubble
               key={m.id}
@@ -177,21 +190,6 @@ export function CompassBody({
             />
           ) : null,
         )}
-
-        {/* Once the reply starts arriving the bubble is the status, exactly as
-            in chat: two things claiming to report the same wait is how the
-            other surface ended up with a pill under a half-written answer.
-            The trace row sits below the bubble, where it rests once the turn
-            is over, so the handover from thinking to writing is a fold. */}
-        {submitting && streaming ? (
-          <ChatBubble role="assistant" content={streamingReply} streaming />
-        ) : null}
-
-        {/* One row for the whole turn: a plain status line on a model that
-            does not reason, or the reasoning panel with tool work folded into
-            its trigger. The panel is never unmounted mid-turn, so a tool call
-            does not reset its "thought for how long" clock. */}
-        <TurnStatus indicator={indicator} />
 
         {draft?.kind === 'plan' && (
           <View className="px-1 py-2">
@@ -215,6 +213,26 @@ export function CompassBody({
             />
           </View>
         )}
+
+        {/* The turn's reply, below its card: streaming bubble while it arrives,
+            the committed message once it lands. Without a draft on screen this
+            falls through and the normal flow above has already drawn it. */}
+        {submitting && streaming ? (
+          <ChatBubble role="assistant" content={streamingReply} streaming />
+        ) : proposalReply ? (
+          <ChatBubble
+            key={proposalReply.id}
+            role="assistant"
+            content={proposalReply.content}
+            animateEntry={proposalReply.id !== lastStreamedMessageId}
+          />
+        ) : null}
+
+        {/* One row for the whole turn: a plain status line on a model that
+            does not reason, or the reasoning panel with tool work folded into
+            its trigger. The panel is never unmounted mid-turn, so a tool call
+            does not reset its "thought for how long" clock. */}
+        <TurnStatus indicator={indicator} />
       </ScrollView>
     </PageFade>
   );
