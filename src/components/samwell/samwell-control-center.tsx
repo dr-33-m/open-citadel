@@ -47,6 +47,12 @@ type SamwellControlCenterProps = {
   onOpenHistory?: () => void;
   // Compass mode only.
   hasGoal?: boolean;
+  /**
+   * The goal-switcher chip — names the goal every Compass control here is
+   * scoped to, and opens the way to another. Built by the caller with the
+   * goal data and rendered above the field; nothing when there is no goal.
+   */
+  goalSwitcher?: React.ReactNode;
   /** How many activities are still owed today; badges the log button. */
   dueCount?: number;
   onOpenDeck?: () => void;
@@ -86,6 +92,7 @@ export function SamwellControlCenter({
   onClearBook,
   onOpenHistory,
   hasGoal,
+  goalSwitcher,
   dueCount = 0,
   onOpenDeck,
   onOpenPlanner,
@@ -102,16 +109,28 @@ export function SamwellControlCenter({
     '--color-foreground',
   ]);
   const canSend = text.trim().length > 0 && !busy && !unavailable;
+
+  // "Stop was tapped and the turn has not wound down." Reset on the edge where
+  // the Stop button goes away rather than in an effect — setState during
+  // render for a prop change is the sanctioned pattern and does not cascade.
   const [isStopping, setIsStopping] = React.useState(false);
-  React.useEffect(() => {
+  const [stopVisible, setStopVisible] = React.useState(showStop);
+  if (showStop !== stopVisible) {
+    setStopVisible(showStop);
     if (!showStop) setIsStopping(false);
-  }, [showStop]);
+  }
 
   return (
     // The drag handle that used to sit at the top of this card is gone with
     // the floating nav it collapsed: there is no bar under the card to hide
     // any more, so the card is just a card.
     <View className="gap-2 border border-border bg-card p-3" style={elevation.card}>
+      {/* The goal every Compass control below is scoped to, and the way to
+          another. Above the field because it is context, not an action. */}
+      {mode === 'compass' && !unavailable && goalSwitcher ? (
+        <View className="flex-row">{goalSwitcher}</View>
+      ) : null}
+
       {/* No border/background of its own — reads as part of the same card
           surface rather than a boxed field inside it. */}
       <TextInput

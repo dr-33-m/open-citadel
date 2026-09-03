@@ -33,6 +33,7 @@ import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness
 import { useSamwellStatus } from '@/features/chat/hooks/use-samwell-status';
 import { turnIndicator } from '@/features/chat/utils/agent-activity';
 import { CompassBody } from '@/features/compass/components/compass-body';
+import { GoalSwitcher } from '@/features/compass/components/goal-switcher';
 import { InsightsSheet } from '@/features/compass/components/insights-sheet';
 import { LogDeckSheet } from '@/features/compass/components/log-deck-sheet';
 import { PlannerSheet } from '@/features/compass/components/planner-sheet';
@@ -122,6 +123,10 @@ export function SamwellPage() {
 
   const loadCompass = useCompassStore((s) => s.loadCompass);
   const activeGoal = useCompassStore((s) => s.goals.find((g) => g.id === s.activeGoalId) ?? null);
+  const compassActiveGoals = useCompassStore((s) => s.activeGoals);
+  const compassActiveGoalId = useCompassStore((s) => s.activeGoalId);
+  const compassPrimaryGoalId = useCompassStore((s) => s.primaryGoalId);
+  const selectGoal = useCompassStore((s) => s.selectGoal);
   const compassTrackables = useCompassStore((s) => s.trackables);
   const compassLogs = useCompassStore((s) => s.logsByTrackable);
   const compassDue = useCompassStore((s) => s.due);
@@ -442,6 +447,18 @@ export function SamwellPage() {
                   mode={mode}
                   onSelectMode={setMode}
                   lockMode={locked}
+                  goalSwitcher={
+                    compassActiveGoals.length > 0 ? (
+                      <GoalSwitcher
+                        goals={compassActiveGoals}
+                        activeGoalId={compassActiveGoalId}
+                        primaryGoalId={compassPrimaryGoalId}
+                        onSelect={selectGoal}
+                        onNewGoal={() => void compass.newSession()}
+                        disabled={locked}
+                      />
+                    ) : undefined
+                  }
                   inputRef={composerRef}
                   text={text}
                   onChangeText={setText}
