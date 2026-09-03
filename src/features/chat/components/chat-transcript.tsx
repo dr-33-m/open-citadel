@@ -12,8 +12,8 @@ import { ScrollView, type ViewStyle } from 'react-native';
 
 import { PageFade } from '@/components/scroll-fades';
 import { ChatBubble } from '@/components/chat/chat-bubble';
-import { ThinkingSection } from '@/components/chat/thinking-section';
 import { AgentStatus } from '@/features/chat/components/agent-status';
+import { TurnStatus } from '@/features/chat/components/turn-status';
 import {
   SamwellStatusBanner,
   SamwellStatusEmptyState,
@@ -26,6 +26,8 @@ interface ChatTranscriptProps {
   messages: ChatMessage[];
   streamingContent: string;
   thinkingContent: string;
+  /** True while the reasoning trace itself is arriving. */
+  isThinking: boolean;
   /** True only while a reply is genuinely still owed. */
   isGenerating: boolean;
   activity: AgentActivity | null;
@@ -43,6 +45,7 @@ export function ChatTranscript({
   messages,
   streamingContent,
   thinkingContent,
+  isThinking,
   isGenerating,
   activity,
   status,
@@ -113,16 +116,18 @@ export function ChatTranscript({
             // so the handover is invisible rather than a spinner turning into
             // an orb.
             <AgentStatus activity={PENDING_ACTIVITY} />
-          ) : thinkingContent && !streamingContent ? (
-            // The trace outranks the orb while it is arriving: it answers
-            // "what is happening" with what is actually happening. Two things
-            // reporting one wait is the mistake this footer already made once.
-            <ThinkingSection content={thinkingContent} streaming={isGenerating} />
-          ) : activity ? (
-            <AgentStatus activity={activity} />
-          ) : !isGenerating && thinkingContent ? (
-            <ThinkingSection content={thinkingContent} />
-          ) : null}
+          ) : (
+            // The one live row: orb, label and foldable trace in a single
+            // piece that survives the whole turn. Thinking becomes tool work
+            // becomes "Thought for 12s" without anything unmounting, and it
+            // sits below the streaming bubble, which is where it rests once
+            // the turn is over — so the handover moves nothing.
+            <TurnStatus
+              trace={thinkingContent}
+              traceActive={isThinking && isGenerating}
+              activity={activity}
+            />
+          )}
         </ScrollView>
       </PageFade>
     </>

@@ -78,8 +78,9 @@ interface ChatStore {
    * Never throws — a failure just leaves the placeholder title in place. */
   maybeTitleFirstMessage(sessionId: string, userText: string, assistantText: string): Promise<void>;
   /** Called when the user leaves a bookless chat screen — re-titles from the
-   * whole conversation if it's grown since the last title update. */
-  refineSessionTitleOnExit(): Promise<void>;
+   * whole conversation if it's grown since the last title update. Resolves to
+   * the new title, or null when nothing was renamed. */
+  refineSessionTitleOnExit(): Promise<string | null>;
   /** Whether leaving now would run a summary pass worth waiting for. */
   needsTitleRefine(): boolean;
   clearDeviceLimit(): void;
@@ -487,15 +488,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // end, because on cloud the thinking IS the wait.
           onThinkingContent: (trace) => set({ isThinking: true, thinkingContent: trace }),
           onToolStatus: (status, name) => {
-            set({
+            set((s) => ({
               isToolCalling: status !== null,
               toolCallStatus: status,
               toolCallName: name,
-              isThinking: false,
-            });
+              // Thinking pauses while a tool runs. Clearing the flag on the
+              // way OUT too turned the gap between a tool finishing and the
+              // model thinking again into a false "Processing…" blink —
+              // resuming is the reasoning stream's own job.
+              ...(status !== null ? { isThinking: false } : {}),
+            }));
           },
         });
-        await loadCloudUsage();
+        // Not awaited: usage is a settings-panel concern, and sitting on it
+        // here held the finished reply out of the transcript for the length
+        // of a second HTTP call. Compass has always fired this and moved on.
+        void loadCloudUsage();
       } catch (err) {
         console.error('[Samwell Cloud] Generation error:', err);
         const message = err instanceof Error ? err.message : 'Cloud request failed';
@@ -832,9 +840,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     return !titleRefreshing && pendingTitleRefine(activeSession, messages);
   },
 
-  async refineSessionTitleOnExit() {
+  async refineSessionTitleOnExit(): Promise<string | null> {
     const { activeSession, messages } = get();
-    if (!pendingTitleRefine(activeSession, messages) || !activeSession) return;
+    if (!pendingTitleRefine(activeSession, messages) || !activeSession) return null;
 
     const count = realMessageCount(messages);
     set({ titleRefreshing: true });
@@ -844,12 +852,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
         .join('\n');
       const title = await suggestChatTitle(conversation);
-      if (title) {
-        await get().updateSessionTitle(activeSession.id, title);
-        titledMessageCounts.set(activeSession.id, count);
-      }
+      // Unchanged is not renamed: the background callers treat a null return
+      // as "nothing to report", and a toast for a title the reader already
+      // knows is noise.
+      if (!title || title === activeSession.title) return null;
+      await get().updateSessionTitle(activeSession.id, title);
+      titledMessageCounts.set(activeSession.id, count);
+      return title;
     } catch (err) {
       console.warn('[Chat] Could not refine session title:', err);
+      return null;
     } finally {
       set({ titleRefreshing: false });
     }

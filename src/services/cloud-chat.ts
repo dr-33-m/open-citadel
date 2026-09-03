@@ -56,6 +56,7 @@ import {
 } from '@/services/compass-tools';
 import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useApprovalStore } from '@/stores/approval';
+import { useSettingsStore } from '@/stores/settings';
 
 type StoredChatMessage = {
   id: string;
@@ -174,6 +175,27 @@ function textFromMessage(message: UIMessage | undefined): string {
     .join('');
 }
 
+/**
+ * The text of the message being written right now.
+ *
+ * The whole-transcript scan this replaces was the tool-status bug: mid-turn,
+ * after a model has narrated a line and then called a tool, every reasoning
+ * delta re-triggered a messages change, the scan kept finding the *earlier*
+ * narrated text, and each hit cleared the tool status and pushed the stale
+ * line back into the bubble — so the orb blinked out the moment the model
+ * started thinking again. Only the last assistant message is being written;
+ * only its text is the stream.
+ */
+function activeAssistantText(messages: UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (!message) continue;
+    if (message.role === 'user') return '';
+    if (message.role === 'assistant') return textFromMessage(message);
+  }
+  return '';
+}
+
 function latestAssistantText(messages: UIMessage[]): string {
   let lastUserIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -191,6 +213,60 @@ function latestAssistantText(messages: UIMessage[]): string {
     if (text.trim()) return text;
   }
   return '';
+}
+
+/**
+ * A leading-and-trailing throttle, for the two callbacks that fire per token.
+ *
+ * A minute-long reasoning trace is a big string, and rendering it on every
+ * delta saturated the JS thread — the "Compass hangs when the model thinks for
+ * a minute" report. Four to twenty updates a second is beyond what an eye can
+ * follow and costs a fraction of the frames. `flush` delivers the pending
+ * value immediately, at the moments ordering matters: a tool status must not
+ * land behind a trace update, and the final text must be on screen before the
+ * turn is committed into the transcript.
+ */
+function createThrottle(fn: (value: string) => void, intervalMs: number) {
+  let pending: string | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let lastRun = 0;
+
+  const run = () => {
+    timer = null;
+    lastRun = Date.now();
+    const value = pending;
+    pending = null;
+    if (value !== null) fn(value);
+  };
+
+  const throttled = (value: string) => {
+    pending = value;
+    if (timer) return;
+    const sinceLast = Date.now() - lastRun;
+    if (sinceLast >= intervalMs) run();
+    else timer = setTimeout(run, intervalMs - sinceLast);
+  };
+
+  throttled.flush = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (pending !== null) run();
+  };
+
+  /** Drops whatever is pending. A turn that has ended owns no more writes:
+   *  a trailing timer firing after the store committed the message would
+   *  push the text back into `streamingContent` as a ghost bubble. */
+  throttled.cancel = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    pending = null;
+  };
+
+  return throttled;
 }
 
 /**
@@ -519,11 +595,28 @@ export async function sendCloudChatTurn({
   let thinking = '';
   await preflightCloudServer(baseUrl);
 
+  const { cloudReasoningEffort, cloudMaxCompletionTokens } = useSettingsStore.getState();
+
   const approvals: ApprovalRequest[] = [];
   const initialMessages = [
     ...journeyMessages(mode),
     ...history.map(toUIMessage).filter((message): message is UIMessage => message !== null),
   ];
+
+  /*
+   * Progress is what the settle deadline measures, not wall clock. A reasoning
+   * model can spend minutes inside one run, and a tool continuation thinks
+   * all over again; a deadline set once at the start cut those turns off with
+   * "got stuck" while the model was still working. Chunks push the deadline
+   * out; a pending approval counts as progress too, since there the turn is
+   * waiting on a person, who may take as long as they like.
+   */
+  const SETTLE_INACTIVITY_MS = 120_000;
+  const SETTLE_ABSOLUTE_MS = 600_000;
+  let lastProgressAt = Date.now();
+
+  const flushThinking = createThrottle(onThinkingContent, 120);
+  const flushStreaming = createThrottle(onStreamingContent, 50);
 
   const client = new ChatClient({
     id: `samwell-cloud-${sessionId}`,
@@ -532,12 +625,19 @@ export async function sendCloudChatTurn({
     connection: xhrHttpStream(`${baseUrl}/chat/http`, {
       headers: { 'x-samwell-device-id': deviceId },
     }),
-    forwardedProps: { modelId, mode },
+    forwardedProps: {
+      modelId,
+      mode,
+      reasoningEffort: cloudReasoningEffort,
+      maxCompletionTokens: cloudMaxCompletionTokens,
+    },
     tools:
       mode === 'compass'
         ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
         : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
     onChunk: (chunk) => {
+      lastProgressAt = Date.now();
+
       const approval = collectApproval(chunk);
       if (approval) approvals.push(approval);
 
@@ -550,19 +650,27 @@ export async function sendCloudChatTurn({
         const delta = (chunk as { delta?: unknown }).delta;
         if (typeof delta === 'string' && delta) {
           thinking += delta;
-          onThinkingContent(thinking);
+          flushThinking(thinking);
         }
       }
 
       const toolName = readToolName(chunk);
-      if (toolName) onToolStatus(statusForTool(toolName), toolName);
+      if (toolName) {
+        // Ordered ahead of the status: a trace update still in flight must
+        // not land after it and leave the row describing the wrong phase.
+        flushThinking.flush();
+        flushStreaming.flush();
+        onToolStatus(statusForTool(toolName), toolName);
+      }
       if (chunk.type === 'TOOL_CALL_RESULT') onToolStatus(null, null);
     },
     onMessagesChange: (messages) => {
-      const text = latestAssistantText(messages);
+      const text = activeAssistantText(messages);
       if (text) {
+        // The answer is being written; the wait it was covering is over.
+        flushThinking.flush();
         onToolStatus(null, null);
-        onStreamingContent(text);
+        flushStreaming(text);
       }
     },
   });
@@ -586,8 +694,14 @@ export async function sendCloudChatTurn({
     // so the tool never runs and the turn stalls. Keep the client alive until
     // the conversation has fully settled: drain approval requests as they
     // arrive and wait for a final assistant text answer with nothing loading.
-    const settleDeadline = Date.now() + 120_000;
-    while (Date.now() < settleDeadline) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < SETTLE_ABSOLUTE_MS) {
+      if (approvals.length > 0) lastProgressAt = Date.now();
+      if (Date.now() - lastProgressAt > SETTLE_INACTIVITY_MS) {
+        console.warn('[Samwell Cloud] Turn went quiet; returning partial content.');
+        break;
+      }
+
       while (approvals.length > 0) {
         const approval = approvals.shift();
         if (!approval) continue;
@@ -595,11 +709,16 @@ export async function sendCloudChatTurn({
           .getState()
           .requestApproval({ sessionId, toolName: approval.toolName, input: approval.input });
         await client.addToolApprovalResponse({ id: approval.id, approved });
+        lastProgressAt = Date.now();
       }
 
       if (!client.getIsLoading() && !hasUnresolvedToolCalls(client.getMessages())) {
         const text = latestAssistantText(client.getMessages()).trim();
-        if (text) return text;
+        if (text) {
+          flushThinking.flush();
+          flushStreaming.flush();
+          return text;
+        }
       }
 
       await new Promise((resolve) => setTimeout(resolve, 60));
@@ -609,6 +728,8 @@ export async function sendCloudChatTurn({
     const partial = latestAssistantText(client.getMessages()).trim();
     return partial || "Samwell got stuck mid-response and couldn't finish. Try again.";
   } finally {
+    flushThinking.cancel();
+    flushStreaming.cancel();
     client.dispose();
   }
 }

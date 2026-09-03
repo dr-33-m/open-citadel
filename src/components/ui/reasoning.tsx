@@ -76,6 +76,12 @@ interface ReasoningContextValue {
   isStreaming: boolean;
   open: boolean;
   setOpen: (open: boolean) => void;
+  /*
+   * Citadel addition (the app's thinking row needed a tap the auto rules
+   * could not overrule): the reader's own toggle, which records their intent
+   * so auto-open and auto-close stand down once they have spoken.
+   */
+  toggle: () => void;
   /** Seconds the trace took, once it has finished. */
   duration: number | undefined;
 }
@@ -149,15 +155,33 @@ function ReasoningRoot({
   const everStreamed = useRef(isStreaming);
   const startedAt = useRef<number | null>(null);
   const [autoClosed, setAutoClosed] = useState(false);
+  /*
+   * Citadel addition, same reason as `toggle` above. `null` is "the reader has
+   * not touched it", `true`/`false` is what their last tap did. Without the
+   * record, a collapse mid-stream was undone by the auto-open on the next
+   * frame, and an open-for-reading was folded a second after the trace ended.
+   */
+  const interacted = useRef<boolean | null>(null);
+  const wasStreaming = useRef(isStreaming);
+
+  const toggle = useCallback(() => {
+    interacted.current = !open;
+    setOpen(!open);
+  }, [open, setOpen]);
 
   // Timed here rather than taken on trust: `duration` is optional, and the
   // honest number is the wall clock between the first token and the last.
   useEffect(() => {
     if (isStreaming) {
+      // A fresh stream wipes the slate: yesterday's collapse must not silence
+      // the auto-open of a trace that only starts now.
+      if (!wasStreaming.current) interacted.current = null;
+      wasStreaming.current = true;
       everStreamed.current = true;
       startedAt.current ??= Date.now();
       return;
     }
+    wasStreaming.current = false;
     if (startedAt.current !== null) {
       setMeasured(Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)));
       startedAt.current = null;
@@ -165,16 +189,18 @@ function ReasoningRoot({
   }, [isStreaming]);
 
   useEffect(() => {
-    if (isStreaming && !open && !optedOut) setOpen(true);
+    if (isStreaming && !open && !optedOut && interacted.current !== false) setOpen(true);
   }, [isStreaming, open, optedOut, setOpen]);
 
   /*
    * Once only. Without the latch, reopening a finished trace by hand would be
    * undone a second later by the same effect, and the panel would refuse to
-   * stay open for the one reader who wanted to read it.
+   * stay open for the one reader who wanted to read it. A trace the reader
+   * opened themselves while it was live stands down too — they asked for it.
    */
   useEffect(() => {
     if (!everStreamed.current || isStreaming || !open || autoClosed) return;
+    if (interacted.current === true) return;
     const timer = setTimeout(() => {
       setOpen(false);
       setAutoClosed(true);
@@ -183,8 +209,8 @@ function ReasoningRoot({
   }, [isStreaming, open, autoClosed, setOpen]);
 
   const context = useMemo(
-    () => ({ isStreaming, open, setOpen, duration: durationProp ?? measured }),
-    [isStreaming, open, setOpen, durationProp, measured]
+    () => ({ isStreaming, open, setOpen, toggle, duration: durationProp ?? measured }),
+    [isStreaming, open, setOpen, toggle, durationProp, measured]
   );
 
   return (
@@ -205,13 +231,19 @@ export interface ReasoningTriggerProps
    * a caller can put its own words to both without reimplementing the timing.
    */
   label?: (isStreaming: boolean, duration?: number) => ReactNode;
+  /*
+   * Citadel addition: replaces the leading glyph rather than the whole row,
+   * so a caller can put its own live indicator here (the app's thinking row
+   * puts its orb in this slot) and keep the trigger's toggle and chevron.
+   */
+  icon?: ReactNode;
   /** Replaces the whole row, icon and chevron included. */
   children?: ReactNode;
 }
 
 /** The row that says how long it thought, and folds the trace away. */
-function ReasoningTrigger({ className, label, children, onPress, ...props }: ReasoningTriggerProps) {
-  const { isStreaming, open, setOpen, duration } = useReasoning('Reasoning.Trigger');
+function ReasoningTrigger({ className, label, icon, children, onPress, ...props }: ReasoningTriggerProps) {
+  const { isStreaming, open, toggle, duration } = useReasoning('Reasoning.Trigger');
   const { trigger, label: labelClass } = reasoningVariants();
   const reducedMotion = useReducedMotion();
   const progress = useSharedValue(open ? 1 : 0);
@@ -252,14 +284,14 @@ function ReasoningTrigger({ className, label, children, onPress, ...props }: Rea
       accessibilityState={{ expanded: open }}
       onPress={(event) => {
         onPress?.(event);
-        setOpen(!open);
+        toggle();
       }}
       className={cn(trigger(), className)}
       {...props}
     >
       {children ?? (
         <>
-          <SparklesIcon size={12} color={asColor(mutedForeground)} />
+          {icon ?? <SparklesIcon size={12} color={asColor(mutedForeground)} />}
           <View className="flex-1">{body}</View>
           <Animated.View style={chevronStyle}>
             <ChevronDownIcon size={12} color={asColor(mutedForeground)} />

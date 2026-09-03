@@ -14,11 +14,10 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
-import { ThinkingSection } from '@/components/chat/thinking-section';
 import { MaxContentWidth, spacing } from '@/constants/theme';
-import { AgentStatus } from '@/features/chat/components/agent-status';
 import { ChatComposer } from '@/features/chat/components/chat-composer';
 import { ChatHeader } from '@/features/chat/components/chat-header';
+import { TurnStatus } from '@/features/chat/components/turn-status';
 import { SamwellBanner } from '@/features/chat/components/samwell-banner';
 import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
 import { useScrollToLatest } from '@/features/chat/hooks/use-scroll-to-latest';
@@ -161,39 +160,52 @@ export default function ChatSessionScreen() {
     [handleNavigateToHighlight, handleNavigateToTimeline, handleNavigateToBook],
   );
 
-  const activity = agentActivity({
-    isGenerating,
-    isToolCalling,
-    toolCallName,
-    toolCallStatus,
-    isThinking,
-    isStreaming: streamingContent.length > 0,
-  });
+  /*
+   * Keyed on primitives, not recomputed bare: a fresh activity object per
+   * render would defeat the footer's memo below and re-render the turn row
+   * on every streamed token.
+   */
+  const isStreamingText = streamingContent.length > 0;
+  const activity = useMemo(
+    () =>
+      agentActivity({
+        isGenerating,
+        isToolCalling,
+        toolCallName,
+        toolCallStatus,
+        isThinking,
+        isStreaming: isStreamingText,
+      }),
+    [isGenerating, isToolCalling, toolCallName, toolCallStatus, isThinking, isStreamingText],
+  );
 
   const listFooter = useMemo(() => {
-    // The trace, the live activity line, the streaming bubble, or nothing —
-    // in that order, and never two at once. The trace comes first while it is
-    // arriving because on a reasoning model it is the wait, and it outranks an
-    // orb that can only say "working".
-    if (thinkingContent && !streamingContent) {
-      return <ThinkingSection content={thinkingContent} streaming={isGenerating} />;
-    }
-    if (activity) return <AgentStatus activity={activity} />;
-    if (isGenerating && streamingContent) {
-      return (
-        <ChatBubble
-          role="assistant"
-          content={streamingContent}
-          streaming
-          onNavigateToHighlight={handleNavigateToHighlight}
-          onNavigateToTimeline={handleNavigateToTimeline}
-          onNavigateToBook={handleNavigateToBook}
+    // The streaming bubble first, then the one live row beneath it: the row
+    // that was the thinking trace stays exactly where it will rest once the
+    // turn is over, so the handover from thinking to writing is a fold, not a
+    // swap. It renders nothing when there is nothing to report.
+    return (
+      <>
+        {isGenerating && streamingContent ? (
+          <ChatBubble
+            role="assistant"
+            content={streamingContent}
+            streaming
+            onNavigateToHighlight={handleNavigateToHighlight}
+            onNavigateToTimeline={handleNavigateToTimeline}
+            onNavigateToBook={handleNavigateToBook}
+          />
+        ) : null}
+        <TurnStatus
+          trace={thinkingContent}
+          traceActive={isThinking && isGenerating}
+          activity={activity}
         />
-      );
-    }
-    return null;
+      </>
+    );
   }, [
     isGenerating,
+    isThinking,
     thinkingContent,
     activity,
     streamingContent,

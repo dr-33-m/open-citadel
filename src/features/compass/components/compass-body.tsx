@@ -13,9 +13,8 @@ import { ScrollView, View, type ViewStyle } from 'react-native';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { PageFade } from '@/components/scroll-fades';
-import { Reasoning } from '@/components/ui/reasoning';
-import { AgentStatus } from '@/features/chat/components/agent-status';
 import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
+import { TurnStatus } from '@/features/chat/components/turn-status';
 import { agentActivity } from '@/features/chat/utils/agent-activity';
 import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
 import { GoalProposalCard } from '@/features/compass/components/goal-proposal-card';
@@ -74,12 +73,14 @@ export function CompassBody({
    */
   const streaming = submitting && streamingReply.length > 0;
   /*
-   * The reasoning is live only until the reply starts. Measured against the
-   * server, that is nearly the whole turn: a plan turn thought for 3.8s and
-   * then wrote its reply in 220ms, so this panel is what covers the wait and
-   * the reply is the short part at the end.
+   * The reasoning is live only until the reply starts, and only when no tool
+   * is in flight — a tool call hands the row over to the tool's own orb and
+   * label, and the trace keeps growing behind the fold. Measured against the
+   * server, thinking is nearly the whole turn: a plan turn thought for 3.8s
+   * and then wrote its reply in 220ms.
    */
-  const thinking = submitting && !streaming;
+  const thinking =
+    submitting && !streaming && toolStatus === null && streamingThinking.length > 0;
   /*
    * The same function the reading surface uses, now that Compass genuinely
    * calls tools. It used to be a two-entry lookup, which was honest while a
@@ -169,30 +170,22 @@ export function CompassBody({
 
         {/* Once the reply starts arriving the bubble is the status, exactly as
             in chat: two things claiming to report the same wait is how the
-            other surface ended up with a pill under a half-written answer. */}
-        {/* Above the bubble, not inside it: the trace is about the answer
-            rather than part of it. It folds itself away once the reply
-            starts. */}
-        {streamingThinking.length > 0 ? (
-          <View className="px-4 pb-1">
-            <Reasoning isStreaming={thinking}>
-              <Reasoning.Trigger />
-              <Reasoning.Content>{streamingThinking}</Reasoning.Content>
-            </Reasoning>
-          </View>
-        ) : null}
-
+            other surface ended up with a pill under a half-written answer.
+            The trace row sits below the bubble, where it rests once the turn
+            is over, so the handover from thinking to writing is a fold. */}
         {submitting && streaming ? (
           <ChatBubble role="assistant" content={streamingReply} streaming />
         ) : null}
 
-        {/* Not an else. A tool can start after Samwell has already written a
-            sentence, and when it does the bubble and the status are reporting
-            two different things: what he has said, and what he is doing right
-            now. `agentActivity` returns null whenever the bubble alone is the
-            honest answer, so this renders exactly when there is something the
-            bubble is not already saying. */}
-        {submitting && activity !== null ? <AgentStatus activity={activity} /> : null}
+        {/* One row for the whole turn: orb, label and foldable trace. A tool
+            call mid-turn changes the orb's shape and the label's words instead
+            of swapping rows, which is the interleave the two-row version kept
+            getting wrong. */}
+        <TurnStatus
+          trace={streamingThinking}
+          traceActive={thinking}
+          activity={activity}
+        />
 
         {draft?.kind === 'plan' && (
           <View className="px-1 py-2">

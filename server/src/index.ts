@@ -84,6 +84,31 @@ function readMode(body: RunAgentInput): SamwellMode {
   return raw === 'compass' ? 'compass' : 'reading';
 }
 
+/*
+ * The two knobs the app's cloud tune sheet dials, read from the same
+ * forwarded props as the model id. Both are hints, not contract: a stale
+ * client that sends neither gets exactly what it always got.
+ */
+
+const REASONING_EFFORTS = ['off', 'low', 'medium', 'high'] as const;
+type ReasoningEffortSetting = (typeof REASONING_EFFORTS)[number];
+
+function readReasoningEffort(body: RunAgentInput): ReasoningEffortSetting {
+  const raw = body.forwardedProps?.reasoningEffort ?? body.data?.reasoningEffort;
+  return REASONING_EFFORTS.includes(raw as ReasoningEffortSetting)
+    ? (raw as ReasoningEffortSetting)
+    : 'medium';
+}
+
+const DEFAULT_MAX_COMPLETION_TOKENS = 1200;
+const MAX_COMPLETION_TOKENS_CAP = 8000;
+
+function readMaxCompletionTokens(body: RunAgentInput): number {
+  const raw = body.forwardedProps?.maxCompletionTokens ?? body.data?.maxCompletionTokens;
+  const value = typeof raw === 'number' ? Math.floor(raw) : DEFAULT_MAX_COMPLETION_TOKENS;
+  return Math.min(MAX_COMPLETION_TOKENS_CAP, Math.max(200, value));
+}
+
 function isCountableUserTurn(messages: unknown[]): boolean {
   const last = messages.at(-1);
   if (!last || typeof last !== 'object') return true;
@@ -345,6 +370,8 @@ app.post('/chat/http', async (c) => {
   const knownModels = await listCloudModels();
   const knownModelIds = knownModels.map((model) => model.id);
   const modelId = readModelId(body, knownModelIds);
+  const reasoningEffort = readReasoningEffort(body);
+  const maxCompletionTokens = readMaxCompletionTokens(body);
   const usageEventId =
     body.runId ?? `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -460,7 +487,7 @@ app.post('/chat/http', async (c) => {
     modelOptions: {
       models: fallbackModels.map((model) => model.id) as any,
       temperature: 0.7,
-      maxCompletionTokens: 1200,
+      maxCompletionTokens,
       toolChoice: 'auto',
       parallelToolCalls: false,
       /*
@@ -468,16 +495,23 @@ app.post('/chat/http', async (c) => {
        *
        * OpenRouter returns reasoning only when the request asks for it, so a
        * reasoning model's thinking was being spent and thrown away: the app
-       * has had a `ThinkingSection` since the on-device path landed, and on
+       * has had a thinking trace since the on-device path landed, and on
        * cloud it was always empty.
        *
-       * `enabled` rather than an `effort` level, so each model keeps its own
-       * default depth. A model that cannot reason ignores it and emits no
-       * reasoning deltas, which is what makes this safe to send to every
-       * model in the fallback chain rather than gating on a capability flag
-       * the catalogue does not carry.
+       * `medium` (and a stale client that sends nothing) means `enabled`
+       * without an `effort` level, so each model keeps its own default depth.
+       * Anything else carries the reader's choice from the tune sheet; a model
+       * that cannot reason ignores all of it and emits no reasoning deltas,
+       * which is what makes this safe to send to every model in the fallback
+       * chain rather than gating on a capability flag the catalogue does not
+       * carry.
        */
-      reasoning: { enabled: true },
+      reasoning:
+        reasoningEffort === 'off'
+          ? { enabled: false }
+          : reasoningEffort === 'medium'
+            ? { enabled: true }
+            : { enabled: true, effort: reasoningEffort },
     },
   });
 

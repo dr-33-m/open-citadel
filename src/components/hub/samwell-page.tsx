@@ -254,15 +254,23 @@ export function SamwellPage() {
   // reads as stuck rather than busy.
   const lastVisibleRole = visibleChatMessages[visibleChatMessages.length - 1]?.role;
   const stillWaitingForReply = isGenerating && lastVisibleRole !== 'assistant';
+  const isStreamingText = streamingContent.length > 0;
 
-  const activity = agentActivity({
-    isGenerating: stillWaitingForReply,
-    isToolCalling,
-    toolCallName,
-    toolCallStatus,
-    isThinking,
-    isStreaming: streamingContent.length > 0,
-  });
+  // Keyed on primitives: the activity object rides into the transcript and
+  // its turn-status row, both memoized, so a fresh object per render (this
+  // screen re-renders on every streamed token) would defeat them.
+  const activity = React.useMemo(
+    () =>
+      agentActivity({
+        isGenerating: stillWaitingForReply,
+        isToolCalling,
+        toolCallName,
+        toolCallStatus,
+        isThinking,
+        isStreaming: isStreamingText,
+      }),
+    [stillWaitingForReply, isToolCalling, toolCallName, toolCallStatus, isThinking, isStreamingText],
+  );
 
   // Tapping a referenced highlight opens it at its exact place in the reader;
   // a thought has no passage to open, so it goes to the timeline that holds it.
@@ -369,6 +377,7 @@ export function SamwellPage() {
                 messages={visibleChatMessages}
                 streamingContent={streamingContent}
                 thinkingContent={thinkingContent}
+                isThinking={isThinking}
                 isGenerating={isGenerating}
                 activity={activity}
                 status={status}

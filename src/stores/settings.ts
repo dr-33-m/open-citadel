@@ -9,12 +9,35 @@ import { appSettings } from '@/db/schema';
 export type AppTheme = 'dark' | 'light';
 export type SamwellMode = 'offline' | 'cloud';
 
+/**
+ * How hard the cloud model is asked to think, passed straight through to
+ * OpenRouter's reasoning config. `'off'` disables reasoning entirely; the
+ * levels map to the provider's own effort scale. `'medium'` is the default,
+ * which also means "each model keeps its own default depth" server-side.
+ */
+export type CloudReasoningEffort = 'off' | 'low' | 'medium' | 'high';
+
+export const CLOUD_REASONING_EFFORTS: CloudReasoningEffort[] = ['off', 'low', 'medium', 'high'];
+
+/**
+ * Cap on the tokens a cloud reply may spend. Longer is kinder to literary
+ * analysis, shorter is cheaper and quicker; the reply itself still ends when
+ * Samwell is done.
+ */
+export const CLOUD_MAX_COMPLETION_TOKENS = [600, 1200, 2400] as const;
+
+function isCloudReasoningEffort(value: unknown): value is CloudReasoningEffort {
+  return CLOUD_REASONING_EFFORTS.includes(value as CloudReasoningEffort);
+}
+
 type SettingsState = {
   username: string;
   theme: AppTheme;
   samwellMode: SamwellMode;
   cloudBaseUrl: string;
   cloudModelId: string;
+  cloudReasoningEffort: CloudReasoningEffort;
+  cloudMaxCompletionTokens: number;
   cloudDeviceId: string | null;
   cloudUsage: CloudUsageState | null;
   cloudUsageError: string | null;
@@ -28,6 +51,8 @@ type SettingsState = {
   setTheme: (theme: AppTheme) => Promise<void>;
   setSamwellMode: (mode: SamwellMode) => Promise<void>;
   setCloudModelId: (modelId: string) => Promise<void>;
+  setCloudReasoningEffort: (effort: CloudReasoningEffort) => Promise<void>;
+  setCloudMaxCompletionTokens: (tokens: number) => Promise<void>;
   getCloudDeviceId: () => Promise<string>;
   loadCloudUsage: () => Promise<void>;
   loadCloudModels: () => Promise<void>;
@@ -58,6 +83,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   samwellMode: 'offline',
   cloudBaseUrl: defaultCloudBaseUrl(),
   cloudModelId: DEFAULT_CLOUD_MODEL_ID,
+  cloudReasoningEffort: 'medium',
+  cloudMaxCompletionTokens: 1200,
   cloudDeviceId: null,
   cloudUsage: null,
   cloudUsageError: null,
@@ -82,6 +109,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       samwellMode: (map['samwell.mode'] as SamwellMode | undefined) ?? 'offline',
       cloudBaseUrl: defaultCloudBaseUrl(),
       cloudModelId: map['cloud.modelId'] ?? DEFAULT_CLOUD_MODEL_ID,
+      cloudReasoningEffort: isCloudReasoningEffort(map['cloud.reasoningEffort'])
+        ? map['cloud.reasoningEffort']
+        : 'medium',
+      cloudMaxCompletionTokens: CLOUD_MAX_COMPLETION_TOKENS.includes(
+        Number(map['cloud.maxCompletionTokens']) as (typeof CLOUD_MAX_COMPLETION_TOKENS)[number],
+      )
+        ? Number(map['cloud.maxCompletionTokens'])
+        : 1200,
       cloudDeviceId,
       ttsVoice: map['ttsVoice'] ?? null,
       ttsVoiceLanguage: map['ttsVoiceLanguage'] ?? null,
@@ -118,6 +153,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setCloudModelId: async (modelId: string) => {
     await saveSetting('cloud.modelId', modelId);
     set({ cloudModelId: modelId });
+  },
+
+  setCloudReasoningEffort: async (effort) => {
+    await saveSetting('cloud.reasoningEffort', effort);
+    set({ cloudReasoningEffort: effort });
+  },
+
+  setCloudMaxCompletionTokens: async (tokens) => {
+    await saveSetting('cloud.maxCompletionTokens', String(tokens));
+    set({ cloudMaxCompletionTokens: tokens });
   },
 
   getCloudDeviceId: async () => {

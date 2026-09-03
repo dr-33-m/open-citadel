@@ -14,8 +14,10 @@
  */
 import React from 'react';
 
+import { useToast } from '@/components/toast/toast-provider';
 import { useChatStore } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
+import { useSettingsStore } from '@/stores/settings';
 
 /** `'new'` for a fresh chat, otherwise the id of the session being opened. */
 export type SwitchingTarget = 'new' | string | null;
@@ -27,6 +29,7 @@ export function useChatSessions() {
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
   const activeSession = useChatStore((s) => s.activeSession);
+  const showToast = useToast().showToast;
 
   const pendingBook = useSamwellSessionStore((s) => s.pendingBook);
   const setSession = useSamwellSessionStore((s) => s.set);
@@ -34,22 +37,44 @@ export function useChatSessions() {
   const [switching, setSwitching] = React.useState<SwitchingTarget>(null);
   const [pendingUserMessage, setPendingUserMessage] = React.useState<string | null>(null);
 
+  /**
+   * The leaving conversation's last chance at a better title.
+   *
+   * Offline this must finish before the switch: it runs on the one local
+   * engine, and opening the next session would reset that engine under it.
+   * Cloud is a stateless HTTP call with no engine to race, and slow models
+   * made sitting on it read as a frozen app — the conversation snapshot is
+   * taken synchronously inside, so the switch starts now and the rename lands
+   * in the background, with a toast when it does.
+   */
+  const refineLeavingTitle = React.useCallback(async () => {
+    const cloud = useSettingsStore.getState().samwellMode === 'cloud';
+    if (!cloud) {
+      await useChatStore.getState().refineSessionTitleOnExit();
+      return;
+    }
+    void useChatStore.getState()
+      .refineSessionTitleOnExit()
+      .then((title) => {
+        if (title) showToast({ message: `Chat renamed to "${title}"`, tone: 'success' });
+      })
+      .catch(() => {});
+  }, [showToast]);
+
   const selectSession = React.useCallback(
     async (id: string) => {
       if (switching) return;
       setSwitching(id);
       try {
         if (isGenerating) stopGeneration();
-        // The session being *left* is what needs a last chance at a better
-        // title from its full transcript, so this runs before the open.
-        await useChatStore.getState().refineSessionTitleOnExit();
+        await refineLeavingTitle();
         await openSession(id);
         setSession({ pendingBook: null, mode: 'chat' });
       } finally {
         setSwitching(null);
       }
     },
-    [switching, isGenerating, stopGeneration, openSession, setSession],
+    [switching, isGenerating, stopGeneration, openSession, setSession, refineLeavingTitle],
   );
 
   const newChat = React.useCallback(async () => {
@@ -57,13 +82,13 @@ export function useChatSessions() {
     setSwitching('new');
     try {
       if (isGenerating) stopGeneration();
-      await useChatStore.getState().refineSessionTitleOnExit();
+      await refineLeavingTitle();
       useChatStore.setState({ activeSession: null, messages: [] });
       setSession({ pendingBook: null, mode: 'chat' });
     } finally {
       setSwitching(null);
     }
-  }, [switching, isGenerating, stopGeneration, setSession]);
+  }, [switching, isGenerating, stopGeneration, setSession, refineLeavingTitle]);
 
   const send = React.useCallback(
     async (text: string) => {

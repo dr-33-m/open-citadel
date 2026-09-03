@@ -7,6 +7,7 @@ import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { Progress } from '@/components/ui/progress';
+import { CloudTuneSheet } from '@/features/settings/components/cloud-tune-sheet';
 import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 
@@ -28,6 +29,7 @@ export function CloudPanel() {
   const loadCloudUsage = useSettingsStore((s) => s.loadCloudUsage);
   const loadCloudModels = useSettingsStore((s) => s.loadCloudModels);
   const [pickerVisible, setPickerVisible] = React.useState(false);
+  const [tuneVisible, setTuneVisible] = React.useState(false);
   const activeModel = cloudModels.find((m) => m.id === cloudModelId);
 
   /*
@@ -63,12 +65,20 @@ export function CloudPanel() {
               {activeModel?.label ?? 'Choose a model'}
             </ThemedText>
           </View>
-          <Touchable
-            className="flex-row items-center gap-2 bg-muted px-3 py-2"
-            onPress={() => setPickerVisible(true)}
-          >
-            <ThemedText type="labelSm" color={asColor(mutedForeground)}>CHANGE</ThemedText>
-          </Touchable>
+          <View className="flex-row gap-2">
+            <Touchable
+              className="flex-row items-center gap-2 bg-muted px-3 py-2"
+              onPress={() => setTuneVisible(true)}
+            >
+              <ThemedText type="labelSm" color={asColor(mutedForeground)}>TUNE</ThemedText>
+            </Touchable>
+            <Touchable
+              className="flex-row items-center gap-2 bg-muted px-3 py-2"
+              onPress={() => setPickerVisible(true)}
+            >
+              <ThemedText type="labelSm" color={asColor(mutedForeground)}>CHANGE</ThemedText>
+            </Touchable>
+          </View>
         </View>
 
         <View className="gap-3">
@@ -108,6 +118,8 @@ export function CloudPanel() {
         mutedForeground={asColor(mutedForeground)}
         primary={asColor(primary)}
       />
+
+      <CloudTuneSheet visible={tuneVisible} onClose={() => setTuneVisible(false)} />
     </>
   );
 }
