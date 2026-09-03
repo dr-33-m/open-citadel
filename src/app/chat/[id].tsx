@@ -15,13 +15,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { MaxContentWidth, spacing } from '@/constants/theme';
+import { TurnStatus } from '@/features/chat/components/turn-status';
 import { ChatComposer } from '@/features/chat/components/chat-composer';
 import { ChatHeader } from '@/features/chat/components/chat-header';
-import { TurnStatus } from '@/features/chat/components/turn-status';
 import { SamwellBanner } from '@/features/chat/components/samwell-banner';
 import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
 import { useScrollToLatest } from '@/features/chat/hooks/use-scroll-to-latest';
-import { agentActivity } from '@/features/chat/utils/agent-activity';
+import { turnIndicator } from '@/features/chat/utils/agent-activity';
 import { backTo } from '@/navigation/navigate';
 import { isVisibleChatMessage } from '@/services/chat-transcript';
 import { useChatStore, type ChatMessage } from '@/stores/chat';
@@ -57,6 +57,7 @@ export default function ChatSessionScreen() {
   const toolCallName = useChatStore((s) => s.toolCallName);
   const streamingContent = useChatStore((s) => s.streamingContent);
   const thinkingContent = useChatStore((s) => s.thinkingContent);
+  const thinkingSeconds = useChatStore((s) => s.thinkingSeconds);
   const openSession = useChatStore((s) => s.openSession);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
@@ -161,29 +162,39 @@ export default function ChatSessionScreen() {
   );
 
   /*
-   * Keyed on primitives, not recomputed bare: a fresh activity object per
+   * Keyed on primitives, not recomputed bare: a fresh indicator object per
    * render would defeat the footer's memo below and re-render the turn row
    * on every streamed token.
    */
   const isStreamingText = streamingContent.length > 0;
-  const activity = useMemo(
+  const indicator = useMemo(
     () =>
-      agentActivity({
+      turnIndicator({
         isGenerating,
         isToolCalling,
         toolCallName,
         toolCallStatus,
         isThinking,
         isStreaming: isStreamingText,
+        trace: thinkingContent,
+        traceSeconds: thinkingSeconds ?? undefined,
       }),
-    [isGenerating, isToolCalling, toolCallName, toolCallStatus, isThinking, isStreamingText],
+    [
+      isGenerating,
+      isToolCalling,
+      toolCallName,
+      toolCallStatus,
+      isThinking,
+      isStreamingText,
+      thinkingContent,
+      thinkingSeconds,
+    ],
   );
 
   const listFooter = useMemo(() => {
-    // The streaming bubble first, then the one live row beneath it: the row
-    // that was the thinking trace stays exactly where it will rest once the
-    // turn is over, so the handover from thinking to writing is a fold, not a
-    // swap. It renders nothing when there is nothing to report.
+    // The streaming bubble first, then the one live row beneath it — a plain
+    // status line, or the reasoning panel with any tool work folded into its
+    // trigger. Renders nothing when there is nothing to report.
     return (
       <>
         {isGenerating && streamingContent ? (
@@ -196,19 +207,13 @@ export default function ChatSessionScreen() {
             onNavigateToBook={handleNavigateToBook}
           />
         ) : null}
-        <TurnStatus
-          trace={thinkingContent}
-          traceActive={isThinking && isGenerating}
-          activity={activity}
-        />
+        <TurnStatus indicator={indicator} />
       </>
     );
   }, [
     isGenerating,
-    isThinking,
-    thinkingContent,
-    activity,
     streamingContent,
+    indicator,
     handleNavigateToHighlight,
     handleNavigateToTimeline,
     handleNavigateToBook,

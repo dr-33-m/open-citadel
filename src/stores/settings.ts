@@ -10,24 +10,35 @@ export type AppTheme = 'dark' | 'light';
 export type SamwellMode = 'offline' | 'cloud';
 
 /**
- * How hard the cloud model is asked to think, passed straight through to
- * OpenRouter's reasoning config. `'off'` disables reasoning entirely; the
- * levels map to the provider's own effort scale. `'medium'` is the default,
- * which also means "each model keeps its own default depth" server-side.
+ * How much room Samwell is given to think on the cloud, in plain terms rather
+ * than token counts.
+ *
+ * One knob, three levels. Each one sets both how hard the model reasons *and*
+ * how much of a reply it may write afterwards, coupled server-side so a deep
+ * think can never spend the whole budget and leave nothing for the answer —
+ * which is what produced the "Samwell got stuck mid-response" report. The
+ * server owns the mapping to real token limits; the app only ever sends the
+ * word.
  */
-export type CloudReasoningEffort = 'off' | 'low' | 'medium' | 'high';
+export type CloudThinkingBudget = 'low' | 'medium' | 'high';
 
-export const CLOUD_REASONING_EFFORTS: CloudReasoningEffort[] = ['off', 'low', 'medium', 'high'];
+export const CLOUD_THINKING_BUDGETS: CloudThinkingBudget[] = ['low', 'medium', 'high'];
+
+function isCloudThinkingBudget(value: unknown): value is CloudThinkingBudget {
+  return CLOUD_THINKING_BUDGETS.includes(value as CloudThinkingBudget);
+}
 
 /**
- * Cap on the tokens a cloud reply may spend. Longer is kinder to literary
- * analysis, shorter is cheaper and quicker; the reply itself still ends when
- * Samwell is done.
+ * The thinking budget from whatever an older build persisted.
+ *
+ * This setting used to be a four-way reasoning effort (`off`/`low`/`medium`/
+ * `high`) alongside a separate response-length cap. `off` folds into `low`
+ * (the floor now always reasons a little), and the response cap is gone.
  */
-export const CLOUD_MAX_COMPLETION_TOKENS = [600, 1200, 2400] as const;
-
-function isCloudReasoningEffort(value: unknown): value is CloudReasoningEffort {
-  return CLOUD_REASONING_EFFORTS.includes(value as CloudReasoningEffort);
+function migrateThinkingBudget(raw: string | undefined): CloudThinkingBudget {
+  if (isCloudThinkingBudget(raw)) return raw;
+  if (raw === 'off') return 'low';
+  return 'medium';
 }
 
 type SettingsState = {
@@ -36,8 +47,7 @@ type SettingsState = {
   samwellMode: SamwellMode;
   cloudBaseUrl: string;
   cloudModelId: string;
-  cloudReasoningEffort: CloudReasoningEffort;
-  cloudMaxCompletionTokens: number;
+  cloudThinkingBudget: CloudThinkingBudget;
   cloudDeviceId: string | null;
   cloudUsage: CloudUsageState | null;
   cloudUsageError: string | null;
@@ -51,8 +61,7 @@ type SettingsState = {
   setTheme: (theme: AppTheme) => Promise<void>;
   setSamwellMode: (mode: SamwellMode) => Promise<void>;
   setCloudModelId: (modelId: string) => Promise<void>;
-  setCloudReasoningEffort: (effort: CloudReasoningEffort) => Promise<void>;
-  setCloudMaxCompletionTokens: (tokens: number) => Promise<void>;
+  setCloudThinkingBudget: (budget: CloudThinkingBudget) => Promise<void>;
   getCloudDeviceId: () => Promise<string>;
   loadCloudUsage: () => Promise<void>;
   loadCloudModels: () => Promise<void>;
@@ -83,8 +92,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   samwellMode: 'offline',
   cloudBaseUrl: defaultCloudBaseUrl(),
   cloudModelId: DEFAULT_CLOUD_MODEL_ID,
-  cloudReasoningEffort: 'medium',
-  cloudMaxCompletionTokens: 1200,
+  cloudThinkingBudget: 'medium',
   cloudDeviceId: null,
   cloudUsage: null,
   cloudUsageError: null,
@@ -109,14 +117,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       samwellMode: (map['samwell.mode'] as SamwellMode | undefined) ?? 'offline',
       cloudBaseUrl: defaultCloudBaseUrl(),
       cloudModelId: map['cloud.modelId'] ?? DEFAULT_CLOUD_MODEL_ID,
-      cloudReasoningEffort: isCloudReasoningEffort(map['cloud.reasoningEffort'])
-        ? map['cloud.reasoningEffort']
-        : 'medium',
-      cloudMaxCompletionTokens: CLOUD_MAX_COMPLETION_TOKENS.includes(
-        Number(map['cloud.maxCompletionTokens']) as (typeof CLOUD_MAX_COMPLETION_TOKENS)[number],
-      )
-        ? Number(map['cloud.maxCompletionTokens'])
-        : 1200,
+      cloudThinkingBudget: migrateThinkingBudget(
+        map['cloud.thinkingBudget'] ?? map['cloud.reasoningEffort'],
+      ),
       cloudDeviceId,
       ttsVoice: map['ttsVoice'] ?? null,
       ttsVoiceLanguage: map['ttsVoiceLanguage'] ?? null,
@@ -155,14 +158,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ cloudModelId: modelId });
   },
 
-  setCloudReasoningEffort: async (effort) => {
-    await saveSetting('cloud.reasoningEffort', effort);
-    set({ cloudReasoningEffort: effort });
-  },
-
-  setCloudMaxCompletionTokens: async (tokens) => {
-    await saveSetting('cloud.maxCompletionTokens', String(tokens));
-    set({ cloudMaxCompletionTokens: tokens });
+  setCloudThinkingBudget: async (budget) => {
+    await saveSetting('cloud.thinkingBudget', budget);
+    set({ cloudThinkingBudget: budget });
   },
 
   getCloudDeviceId: async () => {

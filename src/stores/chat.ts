@@ -22,6 +22,7 @@ import {
 } from '@/services/chat-sessions';
 import { suggestChatTitle } from '@/services/chat-title';
 import { sendCloudChatTurn } from '@/services/cloud-chat';
+import { showToast } from '@/components/toast/toast-provider';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
 import { planReplay, type ReplayMessage } from '@/services/context-budget';
 import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
@@ -50,6 +51,15 @@ interface ChatStore {
   toolCallName: string | null;
   streamingContent: string;
   thinkingContent: string;
+  /** Measured thinking time for the turn in flight, in whole seconds. Set by
+   *  the cloud path once the answer starts; null when unknown, and the trace
+   *  row falls back to timing itself. */
+  thinkingSeconds: number | null;
+  /** The id of the assistant message that was just streamed in. The transcript
+   *  skips the rise-and-fade entrance for it — it was already on screen as the
+   *  streaming bubble, so animating its "arrival" is the flick the reader
+   *  sees when a reply finishes. Cleared when the next turn starts. */
+  lastStreamedMessageId: string | null;
   primedGeneration: number | null;
   /** Why on-device Samwell had to stop, if he did. Set instead of attempting
    * a native call we know would be unsafe: `context` when the turn no longer
@@ -141,6 +151,10 @@ function uuid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// Aborts the cloud turn in flight. Module state, not store state: `stop` needs
+// to reach it and nothing renders off it. Null between turns.
+let cloudAbort: AbortController | null = null;
+
 function now(): string {
   return new Date().toISOString();
 }
@@ -209,6 +223,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   toolCallStatus: null, toolCallName: null,
   streamingContent: '',
   thinkingContent: '',
+  thinkingSeconds: null,
+  lastStreamedMessageId: null,
   primedGeneration: null,
   deviceLimit: null,
   titleRefreshing: false,
@@ -394,6 +410,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messages,
       streamingContent: '',
       thinkingContent: '',
+      thinkingSeconds: null,
+      lastStreamedMessageId: null,
       primedGeneration: null,
       // Cleared with the transcript, not left over from the previous chat.
       isGenerating: false,
@@ -457,6 +475,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messages: [...s.messages, userMsg],
       streamingContent: '',
       thinkingContent: '',
+      thinkingSeconds: null,
+      lastStreamedMessageId: null,
       isGenerating: true,
       isThinking: false, // Start with "Processing…"; SDK empty callback triggers "Thinking…"
       deviceLimit: null,
@@ -464,6 +484,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     if (samwellMode === 'cloud') {
       let finalContent = '';
+      cloudAbort = new AbortController();
       try {
         const history = get().messages.filter((m) => m.id !== userMsg.id);
         const deviceId = await getCloudDeviceId();
@@ -475,6 +496,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           bookId: activeSession.bookId,
           history,
           content,
+          signal: cloudAbort.signal,
           onStreamingContent: (streamed) => {
             set({
               isThinking: false,
@@ -487,6 +509,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // so one trace slot serves both engines. Live here rather than at the
           // end, because on cloud the thinking IS the wait.
           onThinkingContent: (trace) => set({ isThinking: true, thinkingContent: trace }),
+          // Measured server-side from the first reasoning delta, so the folded
+          // "Thought for 3 minutes" row is the wait the reader actually sat
+          // through rather than a guess.
+          onThinkingDone: (seconds) => set({ thinkingSeconds: seconds }),
           onToolStatus: (status, name) => {
             set((s) => ({
               isToolCalling: status !== null,
@@ -510,6 +536,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         finalContent = message.includes('429')
           ? 'Cloud Samwell has reached the current usage limit. Try again after the reset window.'
           : `Cloud Samwell could not respond: ${message}`;
+      } finally {
+        cloudAbort = null;
       }
 
       if (finalContent.length > 0) {
@@ -530,6 +558,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         set((s) => ({
           messages: [...s.messages, assistantMsg],
           streamingContent: '',
+          // Already on screen as the streaming bubble — don't let the
+          // transcript play its arrival.
+          lastStreamedMessageId: assistantMsg.id,
           isThinking: false,
           isToolCalling: false,
           toolCallStatus: null, toolCallName: null,
@@ -763,6 +794,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => ({
         messages: [...s.messages, assistantMsg],
         streamingContent: '',
+        // Already on screen as the streaming bubble — don't let the transcript
+        // play its arrival.
+        lastStreamedMessageId: assistantMsg.id,
         isThinking: false,
         isToolCalling: false,
         toolCallStatus: null, toolCallName: null,
@@ -784,7 +818,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   stopGeneration() {
+    // On-device: stop the local engine. On cloud: abort the HTTP turn — the
+    // stop button used to be inert there, so a cloud reply could not be
+    // called off at all.
     Inference.stopGeneration();
+    cloudAbort?.abort();
     // A pending approval dialog would otherwise keep waiting for a tap that
     // will never come once generation is stopped. No-op if nothing pending
     // for the currently active session.
@@ -858,6 +896,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!title || title === activeSession.title) return null;
       await get().updateSessionTitle(activeSession.id, title);
       titledMessageCounts.set(activeSession.id, count);
+      // One place raises this notice, so chat and Compass announce a rename
+      // the same way and no caller has to remember to.
+      showToast({ message: `Renamed to "${title}"`, tone: 'success' });
       return title;
     } catch (err) {
       console.warn('[Chat] Could not refine session title:', err);

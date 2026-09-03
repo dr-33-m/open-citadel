@@ -15,6 +15,7 @@ import {
 } from '@/services/chat-sessions';
 import { suggestChatTitle } from '@/services/chat-title';
 import { sendCloudChatTurn } from '@/services/cloud-chat';
+import { showToast } from '@/components/toast/toast-provider';
 import { useApprovalStore } from '@/stores/approval';
 import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
@@ -53,6 +54,10 @@ function uuid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// Aborts the Compass turn in flight. Module state, same as the reading store:
+// `stop` reaches it and nothing renders off it. Null between turns.
+let cloudAbort: AbortController | null = null;
+
 function realMessageCount(messages: ChatMessage[]): number {
   return messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
 }
@@ -74,6 +79,12 @@ type CompassChatState = {
    * folded "Thought for 8 seconds" row stays with the answer it produced.
    */
   streamingThinking: string;
+  /** Measured thinking time for that trace, in whole seconds; null until the
+   *  answer starts, and kept alongside `streamingThinking`. */
+  streamingThinkingSeconds: number | null;
+  /** The reply that was just streamed in — the transcript skips its entrance
+   *  animation, since it was already on screen as the streaming bubble. */
+  lastStreamedMessageId: string | null;
   toolStatus: string | null;
   toolName: string | null;
   error: string | null;
@@ -83,6 +94,9 @@ type CompassChatState = {
   openSession: (id: string) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   send: (text: string) => Promise<void>;
+  /** Aborts the turn in flight. The reply keeps whatever streamed before the
+   *  tap; no error is raised. */
+  stop: () => void;
   /** Re-titles the open conversation from the whole transcript if it has
    *  grown since it was last named. Called on leaving, as reading chat does. */
   refineTitleOnExit: () => Promise<void>;
@@ -95,6 +109,8 @@ const IDLE = {
   streamingReply: '',
   toolStatus: null,
   toolName: null,
+  // Null by default; a successful commit sets it right after spreading IDLE.
+  lastStreamedMessageId: null,
 } as const;
 
 export const useCompassChatStore = create<CompassChatState>((set, get) => ({
@@ -105,6 +121,8 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
   submitting: false,
   streamingReply: '',
   streamingThinking: '',
+  streamingThinkingSeconds: null,
+  lastStreamedMessageId: null,
   toolStatus: null,
   toolName: null,
   error: null,
@@ -146,7 +164,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         .run();
 
       useSamwellSessionStore.getState().set({ compassDraft: null, refining: false });
-      set({ activeSessionId: id, messages: [], streamingThinking: '', error: null, ...IDLE });
+      set({ activeSessionId: id, messages: [], streamingThinking: '', streamingThinkingSeconds: null, error: null, ...IDLE });
       await get().loadSessions();
     } finally {
       set({ switching: null });
@@ -167,6 +185,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         activeSessionId: id,
         messages: readMessages(id),
         streamingThinking: '',
+        streamingThinkingSeconds: null,
         error: null,
         ...IDLE,
       });
@@ -184,7 +203,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.filter((session) => session.id !== id),
       ...(wasActive
-        ? { activeSessionId: null, messages: [], streamingThinking: '', ...IDLE }
+        ? { activeSessionId: null, messages: [], streamingThinking: '', streamingThinkingSeconds: null, ...IDLE }
         : {}),
     }));
     if (wasActive) useSamwellSessionStore.getState().set({ compassDraft: null, refining: false });
@@ -224,9 +243,12 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       submitting: true,
       streamingReply: '',
       streamingThinking: '',
+      streamingThinkingSeconds: null,
+      lastStreamedMessageId: null,
       error: null,
     });
 
+    cloudAbort = new AbortController();
     try {
       // No journey block assembled here: `sendCloudChatTurn` adds it to every
       // cloud turn, so reading chat and Compass cannot end up sending
@@ -240,10 +262,19 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         mode: 'compass',
         history,
         content: trimmed,
+        signal: cloudAbort.signal,
         onStreamingContent: (content) => set({ streamingReply: content }),
         onThinkingContent: (content) => set({ streamingThinking: content }),
+        onThinkingDone: (seconds) => set({ streamingThinkingSeconds: seconds }),
         onToolStatus: (status, name) => set({ toolStatus: status, toolName: name }),
       });
+
+      // Nothing came back: the turn was called off, or it ended empty. Drop it
+      // rather than writing a blank bubble into the transcript.
+      if (!reply.trim()) {
+        if (get().activeSessionId === sessionId) set({ ...IDLE });
+        return;
+      }
 
       const assistantMessage: ChatMessage = {
         id: uuid(),
@@ -271,6 +302,8 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
           // turn started with: approving a proposal mid-turn can change it.
           messages: [...state.messages, assistantMessage],
           ...IDLE,
+          // Already on screen as the streaming bubble — no arrival animation.
+          lastStreamedMessageId: assistantMessage.id,
         }));
       } else {
         set({ ...IDLE });
@@ -283,12 +316,14 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
        */
       if (!titledMessageCounts.has(sessionId)) {
         // Counted from the rows, not from the store: the store may be showing
-        // a different conversation by now.
+        // a different conversation by now. Silent — this is the first name,
+        // not a rename worth announcing.
         await titleFrom(
           sessionId,
           set,
           `User: ${trimmed}\nSamwell: ${reply}`,
           realMessageCount(readMessages(sessionId)),
+          false,
         );
       }
       await get().loadSessions();
@@ -297,7 +332,13 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         error: err instanceof Error ? err.message : 'Something went wrong. Try again.',
         ...IDLE,
       });
+    } finally {
+      cloudAbort = null;
     }
+  },
+
+  stop: () => {
+    cloudAbort?.abort();
   },
 
   refineTitleOnExit: async () => {
@@ -311,7 +352,9 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
       .join('\n');
-    await titleFrom(activeSessionId, set, conversation, count);
+    // Announce this one: it is a rename of a conversation the reader has a
+    // name for already, the same event reading chat toasts on leaving.
+    await titleFrom(activeSessionId, set, conversation, count, true);
     await get().loadSessions();
   },
 
@@ -330,6 +373,7 @@ async function titleFrom(
   set: (patch: Partial<CompassChatState>) => void,
   conversation: string,
   count: number,
+  announce: boolean,
 ): Promise<void> {
   try {
     const title = await suggestChatTitle(conversation);
@@ -337,6 +381,9 @@ async function titleFrom(
     renameSession(sessionId, title);
     titledMessageCounts.set(sessionId, count);
     set({ sessions: listSessions('compass') });
+    // The same notice reading chat raises, through the same bridge, so a
+    // rename reads identically whichever surface you were on.
+    if (announce) showToast({ message: `Renamed to "${title}"`, tone: 'success' });
   } catch (err) {
     console.warn('[Compass] Could not auto-title conversation:', err);
   }

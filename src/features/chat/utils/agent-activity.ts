@@ -132,3 +132,71 @@ export function agentActivity({
     ? { orb: 'solving', label: 'Thinking…' }
     : { orb: 'working', label: 'Processing…' };
 }
+
+/**
+ * The single live row a transcript's footer should render for the turn in
+ * flight — never two stacked.
+ *
+ * `activity` is the plain orb-and-label row: the wait before the first token,
+ * or a tool running on a model that does not reason. `trace` is the reasoning
+ * panel, and once thinking has started it is the *only* row for the rest of
+ * the turn — a tool call in the middle folds its own orb and label into that
+ * same panel's trigger (`toolActivity`) rather than spawning a second row.
+ * The panel then stays mounted through the whole turn, so a tool call never
+ * resets its "thought for how long" clock.
+ *
+ * Both surfaces render whatever this returns through `TurnStatus` and neither
+ * one decides anything.
+ */
+export type TurnIndicator =
+  | { kind: 'activity'; activity: AgentActivity }
+  | {
+      kind: 'trace';
+      trace: string;
+      /** Whether tokens are still landing in the trace: false while a tool
+       *  runs, and once the answer starts. */
+      active: boolean;
+      /** Measured thinking time in seconds, when the caller has it. */
+      seconds: number | undefined;
+      /** Set while a tool runs mid-reasoning: the panel's trigger shows this
+       *  tool's orb and label in place of "Thinking…" / "Thought for X". */
+      toolActivity: AgentActivity | null;
+    };
+
+export function turnIndicator(
+  input: AgentActivityInput & {
+    /** The reasoning trace so far. */
+    trace: string;
+    /** Measured thinking time in seconds, when the caller has it. */
+    traceSeconds?: number;
+  },
+): TurnIndicator | null {
+  const { trace, traceSeconds, ...activityInput } = input;
+
+  if (!activityInput.isGenerating && !trace) return null;
+
+  // Once there is a trace, the reasoning panel owns the footer for the rest of
+  // the turn — a tool call folds into its trigger instead of stacking a row.
+  if (trace) {
+    return {
+      kind: 'trace',
+      trace,
+      active:
+        activityInput.isGenerating &&
+        activityInput.isThinking &&
+        !activityInput.isToolCalling,
+      seconds: traceSeconds,
+      toolActivity:
+        activityInput.isGenerating && activityInput.isToolCalling
+          ? agentActivity(activityInput)
+          : null,
+    };
+  }
+
+  // No trace: the plain status row. This is the whole story for a model that
+  // does not reason — the wait, and any tool it calls — and it must keep
+  // showing nicely there. `agentActivity` returns null once tokens are
+  // flowing (the bubble is the status) or the turn is over.
+  const activity = activityInput.isGenerating ? agentActivity(activityInput) : null;
+  return activity ? { kind: 'activity', activity } : null;
+}

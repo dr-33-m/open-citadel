@@ -24,14 +24,39 @@ const ToastContext = React.createContext<ToastContextValue | null>(null);
  * something they did (`haptics.commit` on a log, `warn` on a miss), and a
  * second buzz for the notice about it reads as a stutter.
  */
+/**
+ * Raise a toast from outside React.
+ *
+ * A title rename is decided in a store (`stores/chat.ts`,
+ * `stores/compass-chat.ts`), nowhere near a component, and it should announce
+ * itself with the same notice the log deck uses. The provider registers its
+ * enqueue function here while it is mounted; a call before that, or after the
+ * tree is gone, is a silent no-op rather than a crash. Components still use
+ * `useToast()`.
+ */
+let imperativeEnqueue: ((options: ToastOptions) => void) | null = null;
+
+export function showToast(options: ToastOptions): void {
+  imperativeEnqueue?.(options);
+}
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
   const [toasts, setToasts] = React.useState<ToastEntry[]>([]);
   const nextId = React.useRef(1);
 
-  const showToast = React.useCallback((options: ToastOptions) => {
+  const enqueue = React.useCallback((options: ToastOptions) => {
     setToasts((current) => [...current, { id: nextId.current++, ...options }]);
   }, []);
+
+  // The one live provider owns the imperative bridge for as long as it is
+  // mounted. This provider wraps the whole app, so there is only ever one.
+  React.useEffect(() => {
+    imperativeEnqueue = enqueue;
+    return () => {
+      if (imperativeEnqueue === enqueue) imperativeEnqueue = null;
+    };
+  }, [enqueue]);
 
   const handleDismissStart = React.useCallback((id: number) => {
     setToasts((current) => current.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
@@ -41,7 +66,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((current) => current.filter((t) => t.id !== id));
   }, []);
 
-  const value = React.useMemo(() => ({ showToast }), [showToast]);
+  const value = React.useMemo(() => ({ showToast: enqueue }), [enqueue]);
 
   return (
     <ToastContext.Provider value={value}>

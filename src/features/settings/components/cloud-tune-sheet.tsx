@@ -8,40 +8,37 @@ import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { spacing } from '@/constants/theme';
 import {
-  CLOUD_MAX_COMPLETION_TOKENS,
-  CLOUD_REASONING_EFFORTS,
+  CLOUD_THINKING_BUDGETS,
   useSettingsStore,
-  type CloudReasoningEffort,
+  type CloudThinkingBudget,
 } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
 
-const EFFORT_LABEL: Record<CloudReasoningEffort, string> = {
-  off: 'OFF',
+const BUDGET_LABEL: Record<CloudThinkingBudget, string> = {
   low: 'LOW',
   medium: 'MEDIUM',
   high: 'HIGH',
 };
 
-const EFFORT_NOTE: Record<CloudReasoningEffort, string> = {
-  off: 'No reasoning. Fastest replies.',
-  low: 'A brief pause before answering.',
-  medium: 'Each model keeps its own default depth.',
-  high: 'Longest thinking. Slowest and most expensive.',
-};
-
-const TOKEN_LABEL: Record<number, string> = {
-  600: 'CONCISE',
-  1200: 'STANDARD',
-  2400: 'DETAILED',
+/**
+ * Plain-language, no token counts. Each line is what the reader actually gets:
+ * how long Samwell pauses, and roughly what it costs them in wait and money.
+ */
+const BUDGET_NOTE: Record<CloudThinkingBudget, string> = {
+  low: 'A short pause, then he answers. Quickest and cheapest. Best for quick questions.',
+  medium: 'He thinks things through before replying. A good balance for most conversations.',
+  high: 'He works a problem all the way down before answering. Slowest and most expensive, for the hardest planning.',
 };
 
 /**
- * The cloud engine's tuning: how hard the model thinks and how long its
- * replies may run. The same idea as the offline tune sheet, with the knobs
- * that actually matter across a wire — a remote model has no backend or
- * context size to choose, but reasoning effort is real money and real waiting.
- * Applies to the next turn; nothing to restart.
+ * The cloud engine's one tuning knob: how much room Samwell gets to think.
+ *
+ * It used to be two — a reasoning effort and a separate reply-length cap — and
+ * a deep think under a low cap left nothing for the answer ("Samwell got stuck
+ * mid-response"). One setting now, and the server couples the thinking depth
+ * to a reply budget sized to hold both. Applies to the next turn; nothing to
+ * restart.
  */
 export function CloudTuneSheet({
   visible,
@@ -52,10 +49,8 @@ export function CloudTuneSheet({
 }) {
   const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
   const [primaryForeground] = useCSSVariable(['--color-primary-foreground']);
-  const cloudReasoningEffort = useSettingsStore((s) => s.cloudReasoningEffort);
-  const setCloudReasoningEffort = useSettingsStore((s) => s.setCloudReasoningEffort);
-  const cloudMaxCompletionTokens = useSettingsStore((s) => s.cloudMaxCompletionTokens);
-  const setCloudMaxCompletionTokens = useSettingsStore((s) => s.setCloudMaxCompletionTokens);
+  const cloudThinkingBudget = useSettingsStore((s) => s.cloudThinkingBudget);
+  const setCloudThinkingBudget = useSettingsStore((s) => s.setCloudThinkingBudget);
 
   return (
     // `maxHeightRatio` is the cap and the only cap — the sheet measures this
@@ -66,21 +61,21 @@ export function CloudTuneSheet({
         contentContainerStyle={{ paddingHorizontal: spacing[6], gap: spacing[6] }}
       >
         <View className="gap-1">
-          <ThemedText type="bodySm">Reasoning</ThemedText>
+          <ThemedText type="bodySm">Thinking budget</ThemedText>
           <View className="flex-row flex-wrap gap-2">
-            {CLOUD_REASONING_EFFORTS.map((effort) => {
-              const active = cloudReasoningEffort === effort;
+            {CLOUD_THINKING_BUDGETS.map((budget) => {
+              const active = cloudThinkingBudget === budget;
               return (
                 <Touchable
-                  key={effort}
-                  onPress={() => void setCloudReasoningEffort(effort)}
+                  key={budget}
+                  onPress={() => void setCloudThinkingBudget(budget)}
                 >
                   <Card className={cn('px-4 py-2', active && 'border-primary bg-primary')}>
                     <ThemedText
                       type="labelSm"
                       color={active ? asColor(primaryForeground) : undefined}
                     >
-                      {EFFORT_LABEL[effort]}
+                      {BUDGET_LABEL[budget]}
                     </ThemedText>
                   </Card>
                 </Touchable>
@@ -88,34 +83,7 @@ export function CloudTuneSheet({
             })}
           </View>
           <ThemedText type="bodySm" color={asColor(mutedForeground)} style={{ fontSize: 11 }}>
-            {EFFORT_NOTE[cloudReasoningEffort]}
-          </ThemedText>
-        </View>
-
-        <View className="gap-1">
-          <ThemedText type="bodySm">Response Length</ThemedText>
-          <View className="flex-row flex-wrap gap-2">
-            {CLOUD_MAX_COMPLETION_TOKENS.map((tokens) => {
-              const active = cloudMaxCompletionTokens === tokens;
-              return (
-                <Touchable
-                  key={tokens}
-                  onPress={() => void setCloudMaxCompletionTokens(tokens)}
-                >
-                  <Card className={cn('px-4 py-2', active && 'border-primary bg-primary')}>
-                    <ThemedText
-                      type="labelSm"
-                      color={active ? asColor(primaryForeground) : undefined}
-                    >
-                      {TOKEN_LABEL[tokens]}
-                    </ThemedText>
-                  </Card>
-                </Touchable>
-              );
-            })}
-          </View>
-          <ThemedText type="bodySm" color={asColor(mutedForeground)} style={{ fontSize: 11 }}>
-            Caps how much a reply can spend. Samwell still stops when he is done.
+            {BUDGET_NOTE[cloudThinkingBudget]}
           </ThemedText>
         </View>
       </Sheet.ScrollView>

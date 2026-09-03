@@ -38,7 +38,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Pressable, View, type PressableProps, type ViewProps } from 'react-native';
+import { Pressable, ScrollView, View, type PressableProps, type ViewProps } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -47,9 +47,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { tv } from 'tailwind-variants';
 import { useCSSVariable } from 'uniwind';
-import { ChevronDownIcon, SparklesIcon } from '@/components/ui/icons';
+import { ChevronDownIcon } from '@/components/ui/icons';
 import { Collapse } from '@/components/ui/collapse';
 import { Text, textChildren } from '@/components/ui/text';
+import { ThinkingOrb } from '@/components/ui/thinking-orb';
 import { cn } from '@/lib/cn';
 import { Shimmer } from '@/components/ui/shimmer';
 import { asColor } from '@/utils/colors';
@@ -61,6 +62,40 @@ import { asColor } from '@/utils/colors';
  * than as part of it, short enough that nobody is waiting on it.
  */
 const AUTO_CLOSE_DELAY = 1000;
+
+/**
+ * Citadel edit — the tallest the open trace is allowed to get.
+ *
+ * A reasoning model can run for minutes and produce a trace far longer than
+ * the screen. Left to grow it shoved the whole transcript around on every
+ * token; capped, it scrolls inside its own frame and the messages hold still.
+ * About nine lines at the trace's own type size.
+ */
+const TRACE_MAX_HEIGHT = 200;
+
+/**
+ * Citadel edit — the trigger's words for a finished trace.
+ *
+ * Upstream only ever said "Thought for N seconds", which reads wrong once a
+ * reasoning model has been going for minutes: "Thought for 184 seconds" is a
+ * number nobody parses at a glance. Past a minute this switches to minutes
+ * (with the seconds remainder when there is one). The vague fallback stays for
+ * the case where nothing measured a duration at all.
+ *
+ * Exported so the app's `TurnStatus` wrapper puts the same words on its own
+ * custom trigger.
+ */
+export function thoughtForLabel(duration: number | undefined): string {
+  if (duration === undefined) return 'Thought for a few seconds';
+  if (duration < 60) {
+    return `Thought for ${duration} ${duration === 1 ? 'second' : 'seconds'}`;
+  }
+  const minutes = Math.floor(duration / 60);
+  const seconds = duration % 60;
+  const minutePart = `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+  if (seconds === 0) return `Thought for ${minutePart}`;
+  return `Thought for ${minutePart} ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
+}
 
 const reasoningVariants = tv({
   slots: {
@@ -156,7 +191,7 @@ function ReasoningRoot({
   const startedAt = useRef<number | null>(null);
   const [autoClosed, setAutoClosed] = useState(false);
   /*
-   * Citadel addition, same reason as `toggle` above. `null` is "the reader has
+   * Citadel addition, same reason as `toggle` below. `null` is "the reader has
    * not touched it", `true`/`false` is what their last tap did. Without the
    * record, a collapse mid-stream was undone by the auto-open on the next
    * frame, and an open-for-reading was folded a second after the trace ended.
@@ -231,10 +266,10 @@ export interface ReasoningTriggerProps
    * a caller can put its own words to both without reimplementing the timing.
    */
   label?: (isStreaming: boolean, duration?: number) => ReactNode;
-  /*
-   * Citadel addition: replaces the leading glyph rather than the whole row,
-   * so a caller can put its own live indicator here (the app's thinking row
-   * puts its orb in this slot) and keep the trigger's toggle and chevron.
+  /**
+   * Citadel edit — replaces the leading orb only, keeping the label and the
+   * chevron. `TurnStatus` uses it to swap in a tool's own orb while a tool
+   * runs mid-reasoning, so one row carries both kinds of work.
    */
   icon?: ReactNode;
   /** Replaces the whole row, icon and chevron included. */
@@ -248,11 +283,16 @@ function ReasoningTrigger({ className, label, icon, children, onPress, ...props 
   const reducedMotion = useReducedMotion();
   const progress = useSharedValue(open ? 1 : 0);
   /*
-   * Citadel adaptation of the default row: 12px icons in the muted
-   * foreground, the way the house thinking trace drew them — the library's
-   * fallback is 16px chrome grey, a literal that would not follow the theme.
+   * Citadel edit — the app's live-work indicator is the orb, not a glyph, so
+   * the trigger's leading icon IS a ThinkingOrb: running while the trace
+   * arrives, frozen on a representative frame once it has finished, so the
+   * same orb that covered the wait is what the folded row keeps beside its
+   * "Thought for 8 seconds". Upstream drew a 16px sparkles glyph here.
    */
-  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
+  const [primary, mutedForeground] = useCSSVariable([
+    '--color-primary',
+    '--color-muted-foreground',
+  ]);
 
   useEffect(() => {
     progress.value = reducedMotion
@@ -271,11 +311,7 @@ function ReasoningTrigger({ className, label, icon, children, onPress, ...props 
   ) : isStreaming ? (
     <Shimmer textClassName={labelClass()}>Thinking…</Shimmer>
   ) : (
-    <Text className={labelClass()}>
-      {duration === undefined
-        ? 'Thought for a few seconds'
-        : `Thought for ${duration} ${duration === 1 ? 'second' : 'seconds'}`}
-    </Text>
+    <Text className={labelClass()}>{thoughtForLabel(duration)}</Text>
   );
 
   return (
@@ -291,10 +327,20 @@ function ReasoningTrigger({ className, label, icon, children, onPress, ...props 
     >
       {children ?? (
         <>
-          {icon ?? <SparklesIcon size={12} color={asColor(mutedForeground)} />}
+          {icon ?? (
+            <ThinkingOrb
+              state="solving"
+              size={20}
+              paused={!isStreaming}
+              color={asColor(isStreaming ? primary : mutedForeground)}
+              // The row's own label says what is happening; the orb's word
+              // would only be read a second time.
+              importantForAccessibility="no-hide-descendants"
+            />
+          )}
           <View className="flex-1">{body}</View>
           <Animated.View style={chevronStyle}>
-            <ChevronDownIcon size={12} color={asColor(mutedForeground)} />
+            <ChevronDownIcon size={16} />
           </Animated.View>
         </>
       )}
@@ -316,14 +362,32 @@ export interface ReasoningContentProps extends Omit<ViewProps, 'children'> {
  * open would drop whatever the reader had scrolled to.
  */
 function ReasoningContent({ className, children, ...props }: ReasoningContentProps) {
-  const { open } = useReasoning('Reasoning.Content');
+  const { open, isStreaming } = useReasoning('Reasoning.Content');
   const { content, contentText } = reasoningVariants();
+  const scrollRef = useRef<ScrollView>(null);
 
   return (
     <Collapse open={open} className={cn(content(), className)} {...props}>
-      {textChildren(children, (text) => (
-        <Text className={contentText()}>{text}</Text>
-      ))}
+      {/*
+       * Citadel edit — the trace scrolls inside a fixed frame rather than
+       * growing without bound. Pinned to the newest line while tokens are
+       * still landing; free to scroll once it stops. `nestedScrollEnabled`
+       * is what lets it take the drag on Android inside the transcript's
+       * own scroll view.
+       */}
+      <ScrollView
+        ref={scrollRef}
+        style={{ maxHeight: TRACE_MAX_HEIGHT }}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
+        onContentSizeChange={() => {
+          if (isStreaming) scrollRef.current?.scrollToEnd({ animated: false });
+        }}
+      >
+        {textChildren(children, (text) => (
+          <Text className={contentText()}>{text}</Text>
+        ))}
+      </ScrollView>
     </Collapse>
   );
 }

@@ -19,18 +19,20 @@ import {
   SamwellStatusEmptyState,
 } from '@/features/chat/components/samwell-status';
 import type { SamwellStatus } from '@/features/chat/hooks/use-samwell-status';
-import { PENDING_ACTIVITY, type AgentActivity } from '@/features/chat/utils/agent-activity';
+import { PENDING_ACTIVITY, type TurnIndicator } from '@/features/chat/utils/agent-activity';
 import type { ChatMessage } from '@/stores/chat';
 
 interface ChatTranscriptProps {
   messages: ChatMessage[];
   streamingContent: string;
-  thinkingContent: string;
-  /** True while the reasoning trace itself is arriving. */
-  isThinking: boolean;
   /** True only while a reply is genuinely still owed. */
   isGenerating: boolean;
-  activity: AgentActivity | null;
+  /** The one live footer row: a status line, or the reasoning panel. */
+  indicator: TurnIndicator | null;
+  /** The assistant message that was just streamed in — it renders without the
+   *  entrance animation, since it was already on screen as the streaming
+   *  bubble. */
+  lastStreamedMessageId: string | null;
   status: SamwellStatus | null;
   /** The user's message, held locally until the store has it — see below. */
   pendingUserMessage: string | null;
@@ -44,10 +46,9 @@ interface ChatTranscriptProps {
 export function ChatTranscript({
   messages,
   streamingContent,
-  thinkingContent,
-  isThinking,
   isGenerating,
-  activity,
+  indicator,
+  lastStreamedMessageId,
   status,
   pendingUserMessage,
   contentColumn,
@@ -91,7 +92,9 @@ export function ChatTranscript({
               key={m.id}
               role={m.role as 'user' | 'assistant'}
               content={m.content}
-              animateEntry
+              // The just-streamed reply is already on screen; animating its
+              // "arrival" is the flick the reader sees when a turn finishes.
+              animateEntry={m.id !== lastStreamedMessageId}
               onNavigateToHighlight={onNavigateToHighlight}
               onNavigateToTimeline={onNavigateToTimeline}
               onNavigateToBook={onNavigateToBook}
@@ -103,7 +106,9 @@ export function ChatTranscript({
               role="assistant"
               content={streamingContent}
               streaming
-              animateEntry
+              // No entrance — it grows in token by token, and matching the
+              // committed bubble (which also does not animate) makes the
+              // hand-off pixel-identical.
               onNavigateToHighlight={onNavigateToHighlight}
               onNavigateToTimeline={onNavigateToTimeline}
               onNavigateToBook={onNavigateToBook}
@@ -111,22 +116,15 @@ export function ChatTranscript({
           )}
 
           {showPending ? (
-            // The store has nothing yet, so `activity` cannot know a turn is
-            // under way. Same orb and same words it will show a moment later,
-            // so the handover is invisible rather than a spinner turning into
-            // an orb.
+            // The store has nothing yet, so the indicator cannot know a turn
+            // is under way. Same orb and same words it will show a moment
+            // later, so the handover is invisible rather than a spinner
+            // turning into an orb.
             <AgentStatus activity={PENDING_ACTIVITY} />
           ) : (
-            // The one live row: orb, label and foldable trace in a single
-            // piece that survives the whole turn. Thinking becomes tool work
-            // becomes "Thought for 12s" without anything unmounting, and it
-            // sits below the streaming bubble, which is where it rests once
-            // the turn is over — so the handover moves nothing.
-            <TurnStatus
-              trace={thinkingContent}
-              traceActive={isThinking && isGenerating}
-              activity={activity}
-            />
+            // One row for the whole turn: a plain status line, or the
+            // reasoning panel with tool work folded into its trigger.
+            <TurnStatus indicator={indicator} />
           )}
         </ScrollView>
       </PageFade>

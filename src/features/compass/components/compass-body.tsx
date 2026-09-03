@@ -13,9 +13,9 @@ import { ScrollView, View, type ViewStyle } from 'react-native';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { PageFade } from '@/components/scroll-fades';
-import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
 import { TurnStatus } from '@/features/chat/components/turn-status';
-import { agentActivity } from '@/features/chat/utils/agent-activity';
+import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
+import { turnIndicator } from '@/features/chat/utils/agent-activity';
 import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
 import { GoalProposalCard } from '@/features/compass/components/goal-proposal-card';
 import type { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
@@ -56,6 +56,8 @@ export function CompassBody({
     submitting,
     streamingReply,
     streamingThinking,
+    streamingThinkingSeconds,
+    lastStreamedMessageId,
     toolStatus,
     toolName,
     committing,
@@ -79,25 +81,26 @@ export function CompassBody({
    * server, thinking is nearly the whole turn: a plan turn thought for 3.8s
    * and then wrote its reply in 220ms.
    */
-  const thinking =
-    submitting && !streaming && toolStatus === null && streamingThinking.length > 0;
-  /*
-   * The same function the reading surface uses, now that Compass genuinely
-   * calls tools. It used to be a two-entry lookup, which was honest while a
-   * Compass turn was one structured answer and became a lie the moment
-   * Samwell could search the library or write a log mid-turn.
-   */
-  const activity = React.useMemo(
+  const indicator = React.useMemo(
     () =>
-      agentActivity({
+      turnIndicator({
         isGenerating: submitting,
         isToolCalling: toolStatus !== null,
         toolCallName: toolName,
         toolCallStatus: toolStatus,
         isThinking: streamingThinking.length > 0,
         isStreaming: streaming,
+        trace: streamingThinking,
+        traceSeconds: streamingThinkingSeconds ?? undefined,
       }),
-    [submitting, toolStatus, toolName, streamingThinking.length, streaming],
+    [
+      submitting,
+      toolStatus,
+      toolName,
+      streamingThinking,
+      streamingThinkingSeconds,
+      streaming,
+    ],
   );
 
   const followContent = React.useCallback(() => {
@@ -164,7 +167,14 @@ export function CompassBody({
             rows; neither is a turn anybody had. */}
         {messages.map((m) =>
           m.role === 'user' || m.role === 'assistant' ? (
-            <ChatBubble key={m.id} role={m.role} content={m.content} animateEntry />
+            <ChatBubble
+              key={m.id}
+              role={m.role}
+              content={m.content}
+              // The just-streamed reply is already on screen; animating its
+              // arrival is the flick the reader sees when a turn finishes.
+              animateEntry={m.id !== lastStreamedMessageId}
+            />
           ) : null,
         )}
 
@@ -177,15 +187,11 @@ export function CompassBody({
           <ChatBubble role="assistant" content={streamingReply} streaming />
         ) : null}
 
-        {/* One row for the whole turn: orb, label and foldable trace. A tool
-            call mid-turn changes the orb's shape and the label's words instead
-            of swapping rows, which is the interleave the two-row version kept
-            getting wrong. */}
-        <TurnStatus
-          trace={streamingThinking}
-          traceActive={thinking}
-          activity={activity}
-        />
+        {/* One row for the whole turn: a plain status line on a model that
+            does not reason, or the reasoning panel with tool work folded into
+            its trigger. The panel is never unmounted mid-turn, so a tool call
+            does not reset its "thought for how long" clock. */}
+        <TurnStatus indicator={indicator} />
 
         {draft?.kind === 'plan' && (
           <View className="px-1 py-2">

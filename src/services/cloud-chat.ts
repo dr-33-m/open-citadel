@@ -97,9 +97,21 @@ export interface CloudChatTurnOptions {
    * instead of accumulating a second copy of it.
    */
   onThinkingContent: (content: string) => void;
+  /**
+   * How long the model spent thinking, in whole seconds, reported once the
+   * first answer token lands (or when the turn ends without one). Measured
+   * from the first reasoning delta, so it is the wait the reader actually sat
+   * through rather than a number taken on trust from the transcript.
+   */
+  onThinkingDone?: (seconds: number) => void;
   /** `name` is the tool the status describes, so the caller can pick a
    *  matching indicator; both are null when the run ends. */
   onToolStatus: (status: string | null, name: string | null) => void;
+  /**
+   * Aborts the turn. `stop()` on the two chat surfaces routes here; the turn
+   * returns whatever text had streamed so far and no error is raised.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -585,7 +597,9 @@ export async function sendCloudChatTurn({
   content,
   onStreamingContent,
   onThinkingContent,
+  onThinkingDone,
   onToolStatus,
+  signal,
 }: CloudChatTurnOptions): Promise<string> {
   /*
    * The reasoning trace, accumulated here rather than in the store, so a
@@ -593,9 +607,26 @@ export async function sendCloudChatTurn({
    * of them.
    */
   let thinking = '';
+  /*
+   * Thinking-time measurement. `thinkingStartedAt` is set on the first
+   * reasoning delta; `reportThinkingDone` fires `onThinkingDone` once, at the
+   * first answer token or when the turn ends, whichever comes first.
+   */
+  let thinkingStartedAt: number | null = null;
+  let thinkingReported = false;
+  const reportThinkingDone = () => {
+    if (thinkingReported || thinkingStartedAt === null) return;
+    thinkingReported = true;
+    onThinkingDone?.(Math.max(1, Math.round((Date.now() - thinkingStartedAt) / 1000)));
+  };
+
+  // Set from the RUN_FINISHED event so a turn that ended only because it ran
+  // out of room can say so, instead of the generic "got stuck".
+  let finishReason: string | null = null;
+
   await preflightCloudServer(baseUrl);
 
-  const { cloudReasoningEffort, cloudMaxCompletionTokens } = useSettingsStore.getState();
+  const { cloudThinkingBudget } = useSettingsStore.getState();
 
   const approvals: ApprovalRequest[] = [];
   const initialMessages = [
@@ -628,8 +659,9 @@ export async function sendCloudChatTurn({
     forwardedProps: {
       modelId,
       mode,
-      reasoningEffort: cloudReasoningEffort,
-      maxCompletionTokens: cloudMaxCompletionTokens,
+      // One word. The server maps it to a reasoning effort and a coupled
+      // reply budget, so a deep think cannot starve the answer.
+      thinkingBudget: cloudThinkingBudget,
     },
     tools:
       mode === 'compass'
@@ -649,9 +681,14 @@ export async function sendCloudChatTurn({
       if (chunk.type === 'REASONING_MESSAGE_CONTENT') {
         const delta = (chunk as { delta?: unknown }).delta;
         if (typeof delta === 'string' && delta) {
+          thinkingStartedAt ??= Date.now();
           thinking += delta;
           flushThinking(thinking);
         }
+      }
+
+      if (chunk.type === 'RUN_FINISHED') {
+        finishReason = (chunk as { finishReason?: string | null }).finishReason ?? null;
       }
 
       const toolName = readToolName(chunk);
@@ -668,6 +705,7 @@ export async function sendCloudChatTurn({
       const text = activeAssistantText(messages);
       if (text) {
         // The answer is being written; the wait it was covering is over.
+        reportThinkingDone();
         flushThinking.flush();
         onToolStatus(null, null);
         flushStreaming(text);
@@ -675,11 +713,37 @@ export async function sendCloudChatTurn({
     },
   });
 
+  /*
+   * Abort wiring. `client.stop()` tears down the in-flight request and the
+   * subscription loop; the settle loop below sees `aborted` and returns
+   * whatever streamed so far. No throw — a turn the reader called off is not
+   * an error.
+   */
+  let aborted = signal?.aborted ?? false;
+  const onAbort = () => {
+    aborted = true;
+    try {
+      client.stop();
+    } catch {
+      // Already disposed or never started — nothing to stop.
+    }
+  };
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  }
+
   try {
     console.log(`[Samwell Cloud] Sending ${mode} request to ${baseUrl}/chat/http`);
     try {
       await client.sendMessage(content);
     } catch (err) {
+      // A turn the reader called off rejects here through the aborted request;
+      // that is the outcome they asked for, not a failure to report.
+      if (aborted) {
+        reportThinkingDone();
+        return latestAssistantText(client.getMessages()).trim();
+      }
       console.error('[Samwell Cloud] sendMessage failed:', err, (err as { cause?: unknown })?.cause);
       const detail = err instanceof Error ? err.message : String(err);
       throw new Error(`${detail} (POST ${baseUrl}/chat/http)`);
@@ -696,6 +760,7 @@ export async function sendCloudChatTurn({
     // arrive and wait for a final assistant text answer with nothing loading.
     const startedAt = Date.now();
     while (Date.now() - startedAt < SETTLE_ABSOLUTE_MS) {
+      if (aborted) break;
       if (approvals.length > 0) lastProgressAt = Date.now();
       if (Date.now() - lastProgressAt > SETTLE_INACTIVITY_MS) {
         console.warn('[Samwell Cloud] Turn went quiet; returning partial content.');
@@ -715,6 +780,7 @@ export async function sendCloudChatTurn({
       if (!client.getIsLoading() && !hasUnresolvedToolCalls(client.getMessages())) {
         const text = latestAssistantText(client.getMessages()).trim();
         if (text) {
+          reportThinkingDone();
           flushThinking.flush();
           flushStreaming.flush();
           return text;
@@ -724,10 +790,20 @@ export async function sendCloudChatTurn({
       await new Promise((resolve) => setTimeout(resolve, 60));
     }
 
-    console.warn('[Samwell Cloud] Turn did not settle before timeout; returning partial content.');
+    reportThinkingDone();
+    // Whatever streamed, and nothing else. A turn that did not finish leaves
+    // the reader where they were, free to send again or stop it themselves —
+    // a canned "he got stuck" bubble dropped into the transcript reads worse
+    // than the quiet, and it is the reader's call, not the app's.
     const partial = latestAssistantText(client.getMessages()).trim();
-    return partial || "Samwell got stuck mid-response and couldn't finish. Try again.";
+    if (!partial) {
+      console.warn(
+        `[Samwell Cloud] Turn produced no answer (finishReason=${finishReason ?? 'none'}, aborted=${aborted}).`,
+      );
+    }
+    return partial;
   } finally {
+    signal?.removeEventListener('abort', onAbort);
     flushThinking.cancel();
     flushStreaming.cancel();
     client.dispose();

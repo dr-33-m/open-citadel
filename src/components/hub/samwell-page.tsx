@@ -31,7 +31,7 @@ import { ChatTranscript } from '@/features/chat/components/chat-transcript';
 import { useChatSessions } from '@/features/chat/hooks/use-chat-sessions';
 import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
 import { useSamwellStatus } from '@/features/chat/hooks/use-samwell-status';
-import { agentActivity } from '@/features/chat/utils/agent-activity';
+import { turnIndicator } from '@/features/chat/utils/agent-activity';
 import { CompassBody } from '@/features/compass/components/compass-body';
 import { InsightsSheet } from '@/features/compass/components/insights-sheet';
 import { LogDeckSheet } from '@/features/compass/components/log-deck-sheet';
@@ -103,6 +103,8 @@ export function SamwellPage() {
   const toolCallName = useChatStore((s) => s.toolCallName);
   const streamingContent = useChatStore((s) => s.streamingContent);
   const thinkingContent = useChatStore((s) => s.thinkingContent);
+  const thinkingSeconds = useChatStore((s) => s.thinkingSeconds);
+  const lastStreamedMessageId = useChatStore((s) => s.lastStreamedMessageId);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
   const deleteSession = useChatStore((s) => s.deleteSession);
@@ -256,20 +258,31 @@ export function SamwellPage() {
   const stillWaitingForReply = isGenerating && lastVisibleRole !== 'assistant';
   const isStreamingText = streamingContent.length > 0;
 
-  // Keyed on primitives: the activity object rides into the transcript and
-  // its turn-status row, both memoized, so a fresh object per render (this
-  // screen re-renders on every streamed token) would defeat them.
-  const activity = React.useMemo(
+  // Keyed on primitives: the indicator object rides into the transcript and
+  // its rows, which are memoized, so a fresh object per render (this screen
+  // re-renders on every streamed token) would defeat them.
+  const indicator = React.useMemo(
     () =>
-      agentActivity({
+      turnIndicator({
         isGenerating: stillWaitingForReply,
         isToolCalling,
         toolCallName,
         toolCallStatus,
         isThinking,
         isStreaming: isStreamingText,
+        trace: thinkingContent,
+        traceSeconds: thinkingSeconds ?? undefined,
       }),
-    [stillWaitingForReply, isToolCalling, toolCallName, toolCallStatus, isThinking, isStreamingText],
+    [
+      stillWaitingForReply,
+      isToolCalling,
+      toolCallName,
+      toolCallStatus,
+      isThinking,
+      isStreamingText,
+      thinkingContent,
+      thinkingSeconds,
+    ],
   );
 
   // Tapping a referenced highlight opens it at its exact place in the reader;
@@ -376,10 +389,9 @@ export function SamwellPage() {
               <ChatTranscript
                 messages={visibleChatMessages}
                 streamingContent={streamingContent}
-                thinkingContent={thinkingContent}
-                isThinking={isThinking}
                 isGenerating={isGenerating}
-                activity={activity}
+                indicator={indicator}
+                lastStreamedMessageId={lastStreamedMessageId}
                 status={status}
                 pendingUserMessage={chat.pendingUserMessage}
                 contentColumn={contentColumn}
@@ -435,8 +447,11 @@ export function SamwellPage() {
                   onChangeText={setText}
                   onSend={handleSend}
                   busy={busy}
-                  showStop={mode === 'chat' && isGenerating}
-                  onStop={stopGeneration}
+                  // Both modes get a Stop while a turn is in flight — Compass
+                  // is a cloud turn like any other and can be called off the
+                  // same way, rather than the send button just greying out.
+                  showStop={mode === 'chat' ? isGenerating : compass.submitting}
+                  onStop={mode === 'chat' ? stopGeneration : compass.stop}
                   placeholder={
                     mode === 'chat'
                       ? 'Message Samwell…'

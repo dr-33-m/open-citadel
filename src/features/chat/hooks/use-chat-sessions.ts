@@ -14,7 +14,6 @@
  */
 import React from 'react';
 
-import { useToast } from '@/components/toast/toast-provider';
 import { useChatStore } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 import { useSettingsStore } from '@/stores/settings';
@@ -29,7 +28,6 @@ export function useChatSessions() {
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
   const activeSession = useChatStore((s) => s.activeSession);
-  const showToast = useToast().showToast;
 
   const pendingBook = useSamwellSessionStore((s) => s.pendingBook);
   const setSession = useSamwellSessionStore((s) => s.set);
@@ -45,7 +43,8 @@ export function useChatSessions() {
    * Cloud is a stateless HTTP call with no engine to race, and slow models
    * made sitting on it read as a frozen app — the conversation snapshot is
    * taken synchronously inside, so the switch starts now and the rename lands
-   * in the background, with a toast when it does.
+   * in the background. `refineSessionTitleOnExit` raises its own toast when it
+   * renames, so nothing here has to.
    */
   const refineLeavingTitle = React.useCallback(async () => {
     const cloud = useSettingsStore.getState().samwellMode === 'cloud';
@@ -53,13 +52,8 @@ export function useChatSessions() {
       await useChatStore.getState().refineSessionTitleOnExit();
       return;
     }
-    void useChatStore.getState()
-      .refineSessionTitleOnExit()
-      .then((title) => {
-        if (title) showToast({ message: `Chat renamed to "${title}"`, tone: 'success' });
-      })
-      .catch(() => {});
-  }, [showToast]);
+    void useChatStore.getState().refineSessionTitleOnExit().catch(() => {});
+  }, []);
 
   const selectSession = React.useCallback(
     async (id: string) => {
