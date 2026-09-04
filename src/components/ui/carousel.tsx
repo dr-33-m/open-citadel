@@ -282,6 +282,20 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
 
   const progress = useSharedValue(indexProp ?? defaultIndex);
   const engaged = useSharedValue(0);
+  /*
+   * LOCAL EDIT (Open Citadel): where the run was when the finger landed.
+   *
+   * A pan reports `translation` from the touch down, cumulatively — so the
+   * position under the finger is (start - translation/itemSize), not
+   * (wherever it is now - translation/itemSize). The registry's `onUpdate`
+   * did the latter, which re-applies the whole travel to an already-moved
+   * `progress` on every frame: the run advances by the SUM of the per-frame
+   * offsets and outruns the finger several times over. Felt as a deck that
+   * flies through three cards on a flick meant to take one.
+   *
+   * Re-apply after any `panelui-cli update carousel`.
+   */
+  const dragFrom = useSharedValue(0);
 
   // A deck is dealt from the top of a pile, so it is dragged sideways whatever
   // the run's own direction is — there is no track for it to travel along.
@@ -394,11 +408,15 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
         .activeOffsetX(axis === 'horizontal' ? [-10, 10] : [-10000, 10000])
         .activeOffsetY(axis === 'horizontal' ? [-10000, 10000] : [-10, 10])
         .onBegin(() => {
+          // Read before the first update, and before any spring still settling
+          // from the last flick has anywhere left to go — assigning `progress`
+          // below cancels it, so this is where the run actually starts from.
+          dragFrom.value = progress.value;
           engaged.value = withTiming(1, { duration: 160 });
         })
         .onUpdate((event) => {
           const moved = axis === 'horizontal' ? event.translationX : event.translationY;
-          const raw = progress.value - moved / itemSize;
+          const raw = dragFrom.value - moved / itemSize;
           if (loop) {
             progress.value = raw;
             return;
@@ -419,8 +437,10 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
 
           // The slide it started on, not the one it is nearest now: rounding
           // the current position would let a slow drag that never reached the
-          // threshold still count as a move.
-          const from = Math.round(progress.value + moved / itemSize);
+          // threshold still count as a move. Taken from where the finger
+          // landed rather than reconstructed by adding the travel back on,
+          // which the rubber band at the ends makes inexact.
+          const from = Math.round(dragFrom.value);
           const past = Math.abs(moved) / itemSize > SNAP_FRACTION;
           const flicked = Math.abs(velocity) > SNAP_VELOCITY;
           const step = past || flicked ? (moved < 0 ? 1 : -1) : 0;
@@ -430,7 +450,7 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
         .onFinalize(() => {
           engaged.value = withTiming(0, { duration: 220 });
         }),
-    [scrollEnabled, count, itemSize, axis, engaged, progress, loop, settle]
+    [scrollEnabled, count, itemSize, axis, engaged, progress, dragFrom, loop, settle]
   );
 
   const onLayout = (event: LayoutChangeEvent) => {
