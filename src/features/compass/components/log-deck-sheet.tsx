@@ -113,6 +113,7 @@ export function LogDeckSheet({ visible, onClose }: LogDeckSheetProps) {
             answering one returns you to the same pile in the same place. */}
         <LogDeck
           items={deck.items}
+          goalLabels={deck.goalLabels}
           values={deck.values}
           onChangeValue={deck.changeValue}
           onDone={deck.done}

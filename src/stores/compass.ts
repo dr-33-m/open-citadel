@@ -170,7 +170,7 @@ function goalConsistency(
 }
 
 /** One goal's trackables + logs, as read by {@link readGoals}. */
-type GoalData = { views: TrackableView[]; logsByTrackable: Map<string, LogView[]> };
+export type GoalData = { views: TrackableView[]; logsByTrackable: Map<string, LogView[]> };
 
 function computeDerived(
   activeGoal: GoalRow | null,
@@ -217,8 +217,11 @@ function computeDerived(
  *
  * Batched rather than one `readGoal` per goal: five active goals is fifteen
  * round trips the naive way, and `loadCompass` runs on every write.
+ *
+ * Exported for Samwell's tool layer, which resolves a trackable id against
+ * every active goal rather than only the one being viewed.
  */
-function readGoals(goalIds: string[]): Map<string, GoalData> {
+export function readGoals(goalIds: string[]): Map<string, GoalData> {
   const result = new Map<string, GoalData>();
   for (const id of goalIds) result.set(id, { views: [], logsByTrackable: new Map() });
   if (goalIds.length === 0) return result;
@@ -304,6 +307,43 @@ function orderActiveGoals(all: GoalRow[]): GoalRow[] {
   const primary = active.filter((g) => g.isPrimary);
   const rest = active.filter((g) => !g.isPrimary);
   return [...primary, ...rest].slice(0, MAX_ACTIVE_GOALS);
+}
+
+/**
+ * One trackable of any ACTIVE goal, with its JSON columns parsed.
+ *
+ * The deck is merged across goals and Samwell's tools take ids from any of
+ * them, so a write can name a side goal's trackable while another goal is the
+ * one being viewed — and the store only holds the viewed goal's views. The
+ * rest are read from the database on the way in, active goals only.
+ */
+function readActiveTrackable(get: () => CompassState, trackableId: string): TrackableView | null {
+  const held = get().trackables.find((t) => t.id === trackableId);
+  if (held) return held;
+
+  const row = db.select().from(trackables).where(eq(trackables.id, trackableId)).get();
+  if (!row || !get().activeGoals.some((g) => g.id === row.goalId)) return null;
+  const schedule = parseSchedule(row.schedule);
+  const measurement = parseMeasurement(row.measurement);
+  if (!schedule || !measurement) return null;
+  return {
+    id: row.id,
+    goalId: row.goalId,
+    title: row.title,
+    description: row.description,
+    timeOfDay: row.timeOfDay,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    status: row.status,
+    schedule,
+    measurement,
+    pauses: db
+      .select()
+      .from(trackablePauses)
+      .where(eq(trackablePauses.trackableId, row.id))
+      .all()
+      .map((p) => ({ startDate: p.startDate, endDate: p.endDate })),
+  };
 }
 
 export const useCompassStore = create<CompassState>((set, get) => ({
@@ -462,7 +502,10 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     const { activeGoalId } = get();
 
     for (const adjustment of draft.adjustments) {
-      const trackable = get().trackables.find((t) => t.id === adjustment.trackableId);
+      // Adjustments may name a side goal's trackable — the tool layer validates
+      // ids against every active goal, so the application has to resolve the
+      // same way.
+      const trackable = readActiveTrackable(get, adjustment.trackableId);
       if (!trackable) continue;
 
       switch (adjustment.action) {
@@ -503,7 +546,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   },
 
   logDone: async (trackableId, value, note, date) => {
-    const trackable = get().trackables.find((t) => t.id === trackableId);
+    const trackable = readActiveTrackable(get, trackableId);
     if (!trackable) return;
     // A COMPLETION log says so with a 1; everything else carries its number and
     // leaves `completed` null, so whether it met the target stays derivable.
@@ -513,13 +556,29 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   },
 
   logMissed: async (trackableId, note, date) => {
+    // The same guard as `logDone`, so both outcomes agree on what exists: an
+    // id from a goal that is not active writes nothing rather than a row
+    // nothing reads.
+    if (!readActiveTrackable(get, trackableId)) return;
     writeLog(trackableId, { completed: 0, value: null, note }, date);
     patchAfterWrite(set, get);
   },
 
   undoLastLog: async () => {
-    const ids = get()
-      .trackables.map((t) => t.id);
+    // Every active goal's trackables, not just the viewed goal's — the log
+    // being undone may have come from a deck card of a side goal.
+    const goalIds = new Set(get().activeGoals.map((g) => g.id));
+    const viewedId = get().activeGoalId;
+    if (viewedId) goalIds.add(viewedId);
+    const ids =
+      goalIds.size === 0
+        ? []
+        : db
+            .select({ id: trackables.id })
+            .from(trackables)
+            .where(inArray(trackables.goalId, [...goalIds]))
+            .all()
+            .map((r) => r.id);
     if (ids.length === 0) return;
     const last = db
       .select()

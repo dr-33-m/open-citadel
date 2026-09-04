@@ -77,3 +77,9 @@ export function toneColor(tone: PaceTone, neutral: string): string {
 export function ratioScore(ratio: number | null | undefined): number | null {
   return ratio == null ? null : Math.round(ratio * 100);
 }
+
+/** Thousands separators, and `4k` where the exact figure is not the point. */
+export function compact(value: number): string {
+  if (Math.abs(value) >= 10_000) return `${Math.round(value / 1000)}k`;
+  return Math.round(value).toLocaleString();
+}

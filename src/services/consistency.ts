@@ -259,7 +259,6 @@ export function goalExecution(results: ConsistencyResult[]): GoalExecution {
 }
 
 export type GoalOutcome = { value: number; target: number; unit: string };
-
 /**
  * Progress toward the goal's numeric outcome, which is a different fact from
  * execution and is never averaged with it. You can be 92% consistent and a
@@ -291,4 +290,41 @@ export function goalOutcome(
   }
 
   return { value, target: goal.outcomeTarget, unit: goal.outcomeUnit };
+}
+
+/** The primary goal being out-executed by a side goal, and by which one. */
+export type LeanSignal = {
+  /** The side goal that is ahead. */
+  leaderId: string;
+  leaderRatio: number;
+  primaryRatio: number;
+};
+
+/**
+ * Whether a side goal is running ahead of the primary, and which one leads.
+ *
+ * One comparison, in one place, because two surfaces nudge on it: the overview
+ * sheet prints a line and Samwell's status carries a lean signal, and the two
+ * had better agree about when the primary is trailing. The leader is the BEST
+ * non-primary execution, measured on the same weighted ratio the goal's own
+ * number uses; a goal with nothing expected yet cannot lead, because an
+ * unmeasured goal is not ahead of anything. Dead even is not trailing.
+ */
+export function leanSignal(
+  primary: GoalExecution | null,
+  others: readonly { id: string; execution: GoalExecution | null }[],
+): LeanSignal | null {
+  const primaryRatio = primary?.ratio;
+  if (primaryRatio == null) return null;
+
+  let leader: { id: string; ratio: number } | null = null;
+  for (const other of others) {
+    const ratio = other.execution?.ratio;
+    if (ratio == null || ratio <= primaryRatio) continue;
+    if (leader == null || ratio > leader.ratio) leader = { id: other.id, ratio };
+  }
+
+  return leader == null
+    ? null
+    : { leaderId: leader.id, leaderRatio: leader.ratio, primaryRatio };
 }

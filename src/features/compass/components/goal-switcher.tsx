@@ -25,7 +25,7 @@ import { Check, ChevronDown, Plus, Star } from '@/components/icons';
 import { Popover } from '@/components/ui/popover';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { categoryColorVar } from '@/features/compass/utils/category';
+import { GoalDot } from '@/features/compass/components/goal-dot';
 import { cn } from '@/lib/cn';
 import type { GoalRow } from '@/stores/compass';
 import { asColor } from '@/utils/colors';
@@ -41,21 +41,6 @@ type GoalSwitcherProps = {
   /** Held while a turn or a switch is in flight. */
   disabled?: boolean;
 };
-
-const DOT = 8;
-
-/** The category's colour as a small square — the same square in the overview
- *  list and on a deck card, so a goal reads as one identity across surfaces. */
-function GoalDot({ category }: { category: GoalRow['category'] }) {
-  const color = useCSSVariable(categoryColorVar(category));
-  return (
-    <View
-      style={{ width: DOT, height: DOT, backgroundColor: asColor(color) }}
-      accessibilityElementsHidden
-      importantForAccessibility="no"
-    />
-  );
-}
 
 export function GoalSwitcher({
   goals,

@@ -7,6 +7,7 @@ import {
   goalExecution,
   goalOutcome,
   isLogSatisfying,
+  leanSignal,
   trackableConsistency,
 } from '../consistency';
 import type { DateRange, LogView, TrackableView } from '../occurrences';
@@ -423,5 +424,44 @@ describe('goalOutcome', () => {
 
   it('is null for a purely behavioural goal', () => {
     expect(goalOutcome({ outcomeTarget: null, outcomeUnit: null }, [trackable()], new Map())).toBeNull();
+  });
+});
+
+describe('leanSignal', () => {
+  const execution = (completed: number, expected: number) => ({
+    expected,
+    completed,
+    ratio: expected === 0 ? null : completed / expected,
+    breakdown: [],
+  });
+
+  it('fires when a side goal is out-executing the primary, naming the best one', () => {
+    const signal = leanSignal(
+      execution(50, 100),
+      [
+        { id: 'side-a', execution: execution(60, 100) },
+        { id: 'side-b', execution: execution(90, 100) },
+      ],
+    );
+    expect(signal).toEqual({ leaderId: 'side-b', leaderRatio: 0.9, primaryRatio: 0.5 });
+  });
+
+  it('stays quiet when the primary leads, ties, or runs alone', () => {
+    expect(
+      leanSignal(execution(90, 100), [{ id: 'side', execution: execution(40, 100) }]),
+    ).toBeNull();
+    expect(
+      leanSignal(execution(50, 100), [{ id: 'side', execution: execution(50, 100) }]),
+    ).toBeNull();
+    expect(leanSignal(execution(50, 100), [])).toBeNull();
+  });
+
+  it('does not judge a primary with nothing expected yet, and skips unmeasured side goals', () => {
+    expect(
+      leanSignal(execution(0, 0), [{ id: 'side', execution: execution(90, 100) }]),
+    ).toBeNull();
+    expect(
+      leanSignal(execution(50, 100), [{ id: 'side', execution: execution(0, 0) }]),
+    ).toBeNull();
   });
 });

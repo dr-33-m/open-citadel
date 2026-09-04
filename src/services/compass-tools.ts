@@ -6,10 +6,8 @@ import {
 } from 'samwell-shared';
 
 import {
-  goalExecution,
-  goalOutcome,
+  leanSignal,
   trackableConsistency,
-  type ConsistencyResult,
 } from '@/services/consistency';
 import { isLogSatisfying, measurementLabel } from '@/services/measurement';
 import {
@@ -19,7 +17,7 @@ import {
   type LogView,
   type TrackableView,
 } from '@/services/occurrences';
-import { useCompassStore, type GoalRow } from '@/stores/compass';
+import { readGoals, useCompassStore, type GoalRow } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 import {
   addDaysYmd,
@@ -74,28 +72,92 @@ function activeGoal(): ActiveGoal | null {
   return { goal, trackables, logsByTrackable, today: localDayString() };
 }
 
-function consistencyFor(active: ActiveGoal): ConsistencyResult[] {
-  const range = goalWindowTo(active.goal, active.today);
-  return active.trackables.map((trackable) =>
-    trackableConsistency({
-      trackable,
-      logs: active.logsByTrackable.get(trackable.id) ?? [],
-      range,
-      today: active.today,
-    }),
-  );
+/**
+ * One goal with the data its detail block is written from.
+ *
+ * The viewed goal's views are already held by the store; the primary, when it
+ * is a different goal, is read on demand.
+ */
+type GoalDetail = {
+  goal: GoalRow;
+  trackables: TrackableView[];
+  logsByTrackable: Map<string, LogView[]>;
+};
+
+function detailFor(
+  goalId: string,
+  store: ReturnType<typeof useCompassStore.getState>,
+  today: Ymd,
+): GoalDetail | null {
+  const goal = store.goals.find((g) => g.id === goalId);
+  if (!goal) return null;
+  if (goalId === store.activeGoalId) {
+    return { goal, trackables: store.trackables, logsByTrackable: store.logsByTrackable };
+  }
+  const data = readGoals([goalId]).get(goalId);
+  return data ? { goal, trackables: data.views, logsByTrackable: data.logsByTrackable } : null;
+}
+
+/**
+ * The goal a trackable id belongs to, searched across every active goal.
+ *
+ * get_compass_status lists ids from the primary and the viewed goal, and the
+ * primary may not be the one on screen, so the write and history tools have to
+ * resolve the same way or the ids they advertise would not work. The common
+ * case — the viewed goal — is already in the store and costs no query; the
+ * rest fall back to one read over the active set.
+ */
+function trackableContext(trackableId: string): (GoalDetail & { trackable: TrackableView }) | null {
+  const store = useCompassStore.getState();
+
+  const held = store.trackables.find((t) => t.id === trackableId);
+  if (held) {
+    const goal = store.goals.find((g) => g.id === held.goalId);
+    if (goal) {
+      return {
+        goal,
+        trackable: held,
+        trackables: store.trackables,
+        logsByTrackable: store.logsByTrackable,
+      };
+    }
+  }
+
+  const data = readGoals(store.activeGoals.map((g) => g.id));
+  for (const goal of store.activeGoals) {
+    const views = data.get(goal.id)?.views ?? [];
+    const trackable = views.find((t) => t.id === trackableId);
+    if (trackable) {
+      return {
+        goal,
+        trackable,
+        trackables: views,
+        logsByTrackable: data.get(goal.id)?.logsByTrackable ?? new Map(),
+      };
+    }
+  }
+  return null;
 }
 
 // ── get_compass_status ──────────────────────────────────────────────────────
 
-export function formatCompassStatus(): string {
-  const active = activeGoal();
-  if (!active) return NO_GOAL;
-
-  const { goal, trackables, logsByTrackable, today } = active;
-  const results = consistencyFor(active);
-  const execution = goalExecution(results);
-  const outcome = goalOutcome(goal, trackables, logsByTrackable);
+/**
+ * The trackable rows for one goal's detail block: schedule, measurement, the
+ * per-trackable consistency, and the weakest link marked. The per-trackable
+ * ratio is always included now that the goal's own EXECUTION line sits in the
+ * summary above — the row is the only place that connects an id to a number,
+ * and the model may only quote numbers the tool gave it.
+ */
+function trackableLines(detail: GoalDetail, today: Ymd): string[] {
+  const range = goalWindowTo(detail.goal, today);
+  const results = detail.trackables.map((trackable) =>
+    trackableConsistency({
+      trackable,
+      logs: detail.logsByTrackable.get(trackable.id) ?? [],
+      range,
+      today,
+    }),
+  );
   const byId = new Map(results.map((r) => [r.trackableId, r]));
 
   /*
@@ -111,55 +173,127 @@ export function formatCompassStatus(): string {
       ? measured.reduce((worst, r) => ((r.ratio ?? 1) < (worst.ratio ?? 1) ? r : worst))
       : null;
 
-  const lines = [
-    `GOAL: ${goal.title}`,
-    goal.description ? goal.description : null,
-    `Runs ${goal.startDate} to ${goal.endDate}. ${Math.max(0, daysBetween(today, goal.endDate))} days left. Status ${goal.status}.`,
-    `EXECUTION: ${percent(execution.ratio)} (${execution.completed} of ${execution.expected} expected). This is how consistently they showed up.`,
-    outcome
-      ? `OUTCOME: ${outcome.value} of ${outcome.target} ${outcome.unit}. This is a different fact from execution.`
-      : 'OUTCOME: this goal has no numeric target, so consistency is the whole measure.',
-    '',
-    'TRACKABLES (use the id in square brackets when you call a tool):',
-  ];
-
-  // With one trackable the goal's own EXECUTION line above already IS this
-  // trackable's number; repeating it per row is noise, and there is no weak
-  // link to name among a set of one.
-  const single = trackables.length === 1;
-
-  for (const trackable of trackables) {
+  const lines: string[] = [];
+  for (const trackable of detail.trackables) {
     const result = byId.get(trackable.id);
     const unit = measurementLabel(trackable.measurement);
     const parts = [
       `[${trackable.id}] ${trackable.title}`,
       scheduleSummary(trackable.schedule),
       `measured by ${trackable.measurement.type}${unit ? ` in ${unit}` : ''}`,
+      result
+        ? `${result.completed} of ${result.expected} (${percent(result.ratio)})`
+        : 'nothing expected yet',
     ];
-    if (!single) {
-      parts.push(
-        result
-          ? `${result.completed} of ${result.expected} (${percent(result.ratio)})`
-          : 'nothing expected yet',
-      );
-    }
     if (trackable.status !== 'ACTIVE') parts.push(trackable.status);
-    if (!single && result && result.bonus > 0) {
+    if (result && result.bonus > 0) {
       parts.push(`${result.bonus} extra beyond what was asked`);
     }
     if (weakest && weakest.trackableId === trackable.id) parts.push('WEAKEST');
     lines.push(parts.join(' — '));
   }
+  return lines;
+}
 
-  const paused = trackables.filter((t) => t.pauses.some((p) => p.endDate === null));
-  if (paused.length > 0) {
+export function formatCompassStatus(): string {
+  const store = useCompassStore.getState();
+  const { activeGoals, primaryGoalId, activeGoalId, consistencyByGoal } = store;
+  if (activeGoals.length === 0) return NO_GOAL;
+
+  const today = localDayString();
+
+  /*
+   * One summary line per active goal. The numbers come from
+   * `consistencyByGoal`, which the store recomputed on its last write, so the
+   * summary costs no queries however many goals are running.
+   */
+  const lines = [
+    `GOALS (${activeGoals.length} ACTIVE. The PRIMARY goal is where the main prize is.)`,
+  ];
+  for (const goal of activeGoals) {
+    const consistency = consistencyByGoal.get(goal.id);
+    const execution = consistency
+      ? `${percent(consistency.execution.ratio)} (${consistency.execution.completed} of ${consistency.execution.expected} expected)`
+      : 'not yet measurable';
+    const outcome = consistency?.outcome
+      ? `${consistency.outcome.value} of ${consistency.outcome.target} ${consistency.outcome.unit}`
+      : 'no numeric outcome';
+    const marks = [
+      goal.id === primaryGoalId ? 'PRIMARY' : null,
+      goal.id === activeGoalId ? 'CURRENT' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
     lines.push(
-      '',
-      `PAUSED RIGHT NOW: ${paused.map((t) => t.title).join(', ')}. Paused days expect nothing and are not counted against them.`,
+      `- ${goal.title}${marks ? ` [${marks}]` : ''} — ${goal.category} — EXECUTION ${execution} — OUTCOME ${outcome}`,
     );
   }
 
-  return lines.filter((line) => line !== null).join('\n');
+  /*
+   * Full detail on the primary and the goal being viewed — the two the
+   * conversation can act on. They are usually the same goal, which is one
+   * block, not two.
+   */
+  const detailIds = [
+    ...new Set([primaryGoalId, activeGoalId].filter((id): id is string => id != null)),
+  ];
+  const details = detailIds
+    .map((id) => detailFor(id, store, today))
+    .filter((detail): detail is GoalDetail => detail !== null);
+
+  if (details.length > 0) {
+    lines.push('', 'DETAIL (use the trackable id in square brackets when you call a tool):');
+    for (const detail of details) {
+      const marks = [
+        detail.goal.id === primaryGoalId ? 'PRIMARY' : null,
+        detail.goal.id === activeGoalId ? 'CURRENT' : null,
+      ]
+        .filter(Boolean)
+        .join(', ');
+      lines.push(
+        '',
+        `${detail.goal.title}${marks ? ` [${marks}]` : ''} — runs ${detail.goal.startDate} to ${detail.goal.endDate}. ${Math.max(0, daysBetween(today, detail.goal.endDate))} days left. Status ${detail.goal.status}.`,
+      );
+      if (detail.goal.description) lines.push(detail.goal.description);
+      lines.push(...trackableLines(detail, today));
+    }
+  }
+
+  const paused = details.flatMap((detail) =>
+    detail.trackables
+      .filter((t) => t.pauses.some((p) => p.endDate === null))
+      .map((t) => `${t.title} (${detail.goal.title})`),
+  );
+  if (paused.length > 0) {
+    lines.push(
+      '',
+      `PAUSED RIGHT NOW: ${paused.join(', ')}. Paused days expect nothing and are not counted against them.`,
+    );
+  }
+
+  /*
+   * The lean signal: the primary being out-executed by the best side goal.
+   * Computed by the same engine the overview sheet nudges from, so the two
+   * cannot disagree about when the primary is trailing.
+   */
+  const primary = activeGoals.find((g) => g.id === primaryGoalId);
+  if (primary) {
+    const lean = leanSignal(
+      consistencyByGoal.get(primary.id)?.execution ?? null,
+      activeGoals
+        .filter((g) => g.id !== primary.id)
+        .map((g) => ({ id: g.id, execution: consistencyByGoal.get(g.id)?.execution ?? null })),
+    );
+    const leader = lean ? activeGoals.find((g) => g.id === lean.leaderId) : null;
+    if (lean && leader) {
+      lines.push(
+        '',
+        `LEAN: "${leader.title}" is executing at ${percent(lean.leaderRatio)} while the primary goal "${primary.title}" sits at ${percent(lean.primaryRatio)}. Name the primary goal's prize and steer back to it.`,
+      );
+    }
+  }
+
+  return lines.join('\n');
 }
 
 // ── get_today ───────────────────────────────────────────────────────────────
@@ -218,31 +352,30 @@ const DEFAULT_HISTORY_DAYS = 28;
 const MAX_HISTORY_LOGS = 40;
 
 export function formatTrackableHistory(trackableId: string, days: number | null): string {
-  const active = activeGoal();
-  if (!active) return NO_GOAL;
-
-  const trackable = active.trackables.find((t) => t.id === trackableId);
-  if (!trackable) {
+  const context = trackableContext(trackableId);
+  if (!context) {
     return `There is no trackable with id ${trackableId}. Call get_compass_status for the real ids.`;
   }
 
+  const { goal, trackable, logsByTrackable } = context;
+  const today = localDayString();
   const span = days ?? DEFAULT_HISTORY_DAYS;
-  const from = maxYmd(addDaysYmd(active.today, -span), trackable.startDate);
-  const to = minYmd(active.today, trackable.endDate);
-  const logs = (active.logsByTrackable.get(trackableId) ?? [])
+  const from = maxYmd(addDaysYmd(today, -span), trackable.startDate);
+  const to = minYmd(today, trackable.endDate);
+  const logs = (logsByTrackable.get(trackableId) ?? [])
     .filter((log) => log.date >= from && log.date <= to)
     .sort((a, b) => (a.date < b.date ? 1 : -1))
     .slice(0, MAX_HISTORY_LOGS);
 
   const result = trackableConsistency({
     trackable,
-    logs: active.logsByTrackable.get(trackableId) ?? [],
+    logs: logsByTrackable.get(trackableId) ?? [],
     range: { from, to },
-    today: active.today,
+    today,
   });
 
   const lines = [
-    `${trackable.title} — ${scheduleSummary(trackable.schedule)} — measured by ${trackable.measurement.type}`,
+    `${trackable.title} (goal: ${goal.title}) — ${scheduleSummary(trackable.schedule)} — measured by ${trackable.measurement.type}`,
     `Last ${span} days (${from} to ${to}): ${result.completed} of ${result.expected} (${percent(result.ratio)}).`,
   ];
 
@@ -250,7 +383,7 @@ export function formatTrackableHistory(trackableId: string, days: number | null)
     lines.push(`MISSED DAYS: ${result.missed.slice(-15).join(', ')}.`);
   }
 
-  const pauses = trackable.pauses.filter((p) => (p.endDate ?? active.today) >= from);
+  const pauses = trackable.pauses.filter((p) => (p.endDate ?? today) >= from);
   if (pauses.length > 0) {
     lines.push(
       `PAUSED: ${pauses
@@ -293,23 +426,23 @@ export type LogTrackableInput = {
 export async function runLogTrackable(
   input: LogTrackableInput,
 ): Promise<{ ok: boolean; formatted: string }> {
-  const active = activeGoal();
-  if (!active) return { ok: false, formatted: NO_GOAL };
-
-  const trackable = active.trackables.find((t) => t.id === input.trackable_id);
-  if (!trackable) {
+  const context = trackableContext(input.trackable_id);
+  if (!context) {
     return {
       ok: false,
       formatted: `There is no trackable with id ${input.trackable_id}. Call get_today or get_compass_status for the real ids.`,
     };
   }
 
+  const trackable = context.trackable;
+  const today = localDayString();
+
   /*
    * A day that has not happened cannot be logged. The prompt says so, but a
    * model that miscounts a date would otherwise write a completion into the
    * future, where it silently satisfies a day the user has not lived yet.
    */
-  const date = input.date && input.date <= active.today ? input.date : active.today;
+  const date = input.date && input.date <= today ? input.date : today;
   if (date < trackable.startDate || date > trackable.endDate) {
     return {
       ok: false,
@@ -317,7 +450,9 @@ export async function runLogTrackable(
     };
   }
 
-  const already = (active.logsByTrackable.get(trackable.id) ?? []).find((l) => l.date === date);
+  const already = (context.logsByTrackable.get(trackable.id) ?? []).find(
+    (l) => l.date === date,
+  );
   if (already) {
     return {
       ok: false,
@@ -383,13 +518,19 @@ export function runProposeAdjustments(input: CompassCheckinDraftModel): {
   ok: boolean;
   formatted: string;
 } {
-  const active = activeGoal();
-  if (!active) return { ok: false, formatted: NO_GOAL };
+  const store = useCompassStore.getState();
+  if (store.activeGoals.length === 0) return { ok: false, formatted: NO_GOAL };
 
-  const draft = normalizeCheckinDraft(
-    input,
-    active.trackables.map((t) => t.id),
+  /*
+   * Adjustments may target any active goal's trackables — the same set
+   * get_compass_status draws its ids from, not only the goal on screen.
+   */
+  const data = readGoals(store.activeGoals.map((g) => g.id));
+  const knownIds = [...data.values()].flatMap((goalData) =>
+    goalData.views.map((t) => t.id),
   );
+
+  const draft = normalizeCheckinDraft(input, knownIds);
   if (!draft) {
     return {
       ok: false,

@@ -52,7 +52,7 @@ export const GetCompassStatusInputSchema = z.object({});
 export const getCompassStatusTool = toolDefinition({
   name: 'get_compass_status',
   description:
-    "The user's active goal and how it is actually going: the goal, its trackables with their schedules, how consistent they have been on each, the overall execution ratio, and progress toward the numeric outcome if the goal has one. These are the same numbers the Insights screen shows. Call this before discussing progress, before proposing an adjustment, and whenever the user asks what their data means. Returns no goal if they have not set one up yet.",
+    "Every active goal and how each is actually going: one summary line per goal with the PRIMARY one marked, full trackable detail (schedules, consistency on each, execution, outcome) for the primary goal and the one the user is viewing, and a LEAN line when a side goal is running ahead of the primary. These are the same numbers the Insights and overview screens show. Call this before discussing progress, before proposing an adjustment, and whenever the user asks what their data means. Trackable ids from any active goal work in the other tools. Returns no goal if they have not set one up yet.",
   inputSchema: GetCompassStatusInputSchema,
   outputSchema: ReadOutputSchema,
 });

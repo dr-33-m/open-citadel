@@ -47,3 +47,26 @@ export function InsightsSkeleton() {
     </SkeletonGroup>
   );
 }
+
+/**
+ * The overview sheet's placeholder, on the same terms as the insights one: the
+ * overview carries an SVG radar and a stack of metered rows, and it opens with
+ * `snapRatios`, so a fixed-height placeholder cannot make the sheet jump when
+ * the real body lands.
+ */
+export function OverviewSkeleton() {
+  return (
+    <SkeletonGroup label="Loading overview" className="gap-4 px-4 pb-6">
+      <SkeletonBar className="h-3 w-24" />
+      <View className="items-center gap-3 border border-border bg-card p-4">
+        <SkeletonBar className="h-3 w-40 self-start" />
+        <SkeletonBar className="h-[220px] w-[220px]" />
+      </View>
+      <View className="gap-2">
+        <SkeletonBar className="h-3 w-16" />
+        <SkeletonBar className="h-24 w-full" />
+        <SkeletonBar className="h-24 w-full" />
+      </View>
+    </SkeletonGroup>
+  );
+}

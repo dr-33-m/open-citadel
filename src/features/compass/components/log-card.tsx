@@ -6,10 +6,20 @@ import { useCSSVariable } from 'uniwind';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
+import { GoalDot } from '@/features/compass/components/goal-dot';
 import { LogControl } from '@/features/compass/components/log-control';
 import { defaultLogValue, needsValue } from '@/services/measurement';
 import { scheduleSummary, type DueItem } from '@/services/occurrences';
+import type { GoalCategory } from 'samwell-shared';
 import { asColor } from '@/utils/colors';
+
+/** The goal a card belongs to, shown once more than one goal is running. */
+export type DeckGoalLabel = {
+  title: string;
+  category: GoalCategory;
+  /** The primary's caption reads at full strength; a side goal's sits muted. */
+  isPrimary: boolean;
+};
 
 type LogCardProps = {
   item: DueItem;
@@ -20,7 +30,37 @@ type LogCardProps = {
   onSkip: () => void;
   /** Already snoozed, so the clock un-snoozes instead of snoozing again. */
   snoozed?: boolean;
+  /** Which goal this activity serves. Absent with a single active goal, where
+   *  a caption would say the same thing on every card. */
+  goal?: DeckGoalLabel;
 };
+
+/**
+ * The quiet caption that scopes a card to its goal: the category dot plus the
+ * goal's name, above the clock line. The primary goal's items are emphasised
+ * by weight of ink alone — full-strength text where a side goal sits at muted —
+ * which is the loudest a caption should get on a card that is really about one
+ * activity.
+ */
+function GoalCaption({ goal }: { goal: DeckGoalLabel }) {
+  const [foreground, mutedForeground] = useCSSVariable([
+    '--color-foreground',
+    '--color-muted-foreground',
+  ]);
+  return (
+    <View className="flex-row items-center gap-1.5">
+      <GoalDot category={goal.category} size={6} />
+      <ThemedText
+        type="labelSm"
+        numberOfLines={1}
+        color={asColor(goal.isPrimary ? foreground : mutedForeground)}
+        style={{ maxWidth: 200 }}
+      >
+        {goal.title}
+      </ThemedText>
+    </View>
+  );
+}
 
 /**
  * One activity, waiting to be answered.
@@ -42,6 +82,7 @@ export function LogCard({
   onMissed,
   onSkip,
   snoozed = false,
+  goal,
 }: LogCardProps) {
   const [primary, primaryForeground, mutedForeground, foreground, border] = useCSSVariable([
     '--color-primary',
@@ -78,6 +119,7 @@ export function LogCard({
     <Card className="h-full w-full">
       <Card.Content className="flex-1 gap-5 p-5">
         <View className="gap-2">
+          {goal && <GoalCaption goal={goal} />}
           <ThemedText type="labelSm" color={asColor(primary)}>
             {subtitle}
           </ThemedText>

@@ -4,7 +4,7 @@ import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { Carousel } from '@/components/ui/carousel';
-import { LogCard } from '@/features/compass/components/log-card';
+import { LogCard, type DeckGoalLabel } from '@/features/compass/components/log-card';
 import type { DueItem } from '@/services/occurrences';
 import { asColor } from '@/utils/colors';
 
@@ -20,6 +20,9 @@ type LogDeckProps = {
   snoozed?: boolean;
   /** What the empty state says once everything has been answered. */
   emptyNote?: string;
+  /** Goal captions, keyed by the trackable's goal id. Absent with a single
+   *  active goal, where every card would carry the same name. */
+  goalLabels?: Map<string, DeckGoalLabel>;
 };
 
 /** Card width leaves the pile behind the top one visible at the edges. */
@@ -72,6 +75,7 @@ export function LogDeck({
   onSkip,
   snoozed = false,
   emptyNote,
+  goalLabels,
 }: LogDeckProps) {
   const mutedForeground = useCSSVariable('--color-muted-foreground');
 
@@ -101,6 +105,7 @@ export function LogDeck({
               <View style={{ width: CARD_SIZE, height: CARD_HEIGHT }}>
                 <LogCard
                   item={item}
+                  goal={goalLabels?.get(item.trackable.goalId)}
                   value={values[item.trackable.id] ?? null}
                   onChangeValue={(next) => onChangeValue(item.trackable.id, next)}
                   onDone={() => onDone(item)}

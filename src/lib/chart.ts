@@ -209,6 +209,33 @@ function mantissa(value: number): string {
   return trimZeros(value.toFixed(Math.abs(value) < 10 ? 1 : 0));
 }
 
+/**
+ * A value's radius on a bubble scale, in points.
+ *
+ * The value maps to *area* and the radius is taken from it, so a bubble holding
+ * twice the value carries twice the ink. Mapping it to the radius instead
+ * quadruples the ink for a doubled value, and the reader believes the larger
+ * number by four times.
+ *
+ * `extent` is the smallest and largest value in the whole set, so one bubble's
+ * size means the same thing as another's. A degenerate extent — one row, or
+ * every value identical — puts everything at the top of the range rather than
+ * dividing by zero.
+ */
+export function bubbleRadius(
+  value: number,
+  extent: readonly [number, number],
+  range: readonly [number, number]
+): number {
+  'worklet';
+  const [min, max] = extent;
+  const [rMin, rMax] = range;
+  const ratio = max === min ? 1 : (value - min) / (max - min);
+  const clamped = ratio < 0 ? 0 : ratio > 1 ? 1 : ratio;
+  const area = rMin * rMin + clamped * (rMax * rMax - rMin * rMin);
+  return Math.sqrt(area);
+}
+
 /** `12k` rather than `12400` — a readout has one line to say it in. */
 export function compactNumber(value: number): string {
   if (!Number.isFinite(value)) return String(value);

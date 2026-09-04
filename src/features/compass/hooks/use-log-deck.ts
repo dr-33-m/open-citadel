@@ -7,6 +7,7 @@ import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 import { useToast } from '@/components/toast/toast-provider';
 import { haptics } from '@/utils/haptics';
+import type { DeckGoalLabel } from '@/features/compass/components/log-card';
 
 type PendingNote = { item: DueItem; outcome: 'done' | 'missed'; value: number | null };
 
@@ -26,6 +27,27 @@ export function useLogDeck() {
 
   const skipped = useSamwellSessionStore((s) => s.skippedTrackableIds);
   const setSession = useSamwellSessionStore((s) => s.set);
+
+  const activeGoals = useCompassStore((s) => s.activeGoals);
+  const primaryGoalId = useCompassStore((s) => s.primaryGoalId);
+  /**
+   * Card captions, keyed by goal id. They only earn their place once two goals
+   * are running at once: with one goal every card would carry the same name,
+   * and a label that is always there stops being information.
+   */
+  const goalLabels = React.useMemo(() => {
+    if (activeGoals.length < 2) return undefined;
+    return new Map(
+      activeGoals.map((goal) => [
+        goal.id,
+        {
+          title: goal.title,
+          category: goal.category,
+          isPrimary: goal.id === primaryGoalId,
+        } satisfies DeckGoalLabel,
+      ]),
+    );
+  }, [activeGoals, primaryGoalId]);
 
   /**
    * Whether the deck is showing what was snoozed rather than what is due.
@@ -156,6 +178,7 @@ export function useLogDeck() {
 
   return {
     items,
+    goalLabels,
     snoozedCount: snoozedItems.length,
     showingSnoozed,
     toggleSnoozed: () => setWantsSnoozed((v) => !v),

@@ -348,6 +348,18 @@
     "src/components/ui/scroll-fade.tsx": {
       "item": "scroll-fade",
       "digest": "sha256:6cdbb05928f04c978775d07e7c303b744cec87bea052da5796a8bba17b86171d"
+    },
+    "src/components/ui/radar-chart.tsx": {
+      "item": "radar-chart",
+      "digest": "sha256:079b09f120fe464124b0f409ec5205fad730d1dc16dd25c873c159a1eeb44a2e"
+    },
+    "src/lib/chart.ts": {
+      "item": "chart",
+      "digest": "sha256:7e4536a60006d11ca61fc0a3f2da29f2ef4314aef31cbb82927f0016a498b88b"
+    },
+    "src/components/ui/chart-accessibility.ts": {
+      "item": "chart-accessibility",
+      "digest": "sha256:32186807d2bc752936da901286d067f535829ba096d25f2bfffd6afa456e5590"
     }
   },
   "roots": {
@@ -656,6 +668,14 @@
     ],
     "scroll-fade": [
       "scroll-fade"
+    ],
+    "radar-chart": [
+      "radar-chart",
+      "chart",
+      "chart-accessibility",
+      "cn",
+      "text",
+      "use-direction"
     ]
   },
   "legacyFiles": [],

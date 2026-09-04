@@ -36,6 +36,7 @@ import { CompassBody } from '@/features/compass/components/compass-body';
 import { GoalSwitcher } from '@/features/compass/components/goal-switcher';
 import { InsightsSheet } from '@/features/compass/components/insights-sheet';
 import { LogDeckSheet } from '@/features/compass/components/log-deck-sheet';
+import { OverviewSheet } from '@/features/compass/components/overview-sheet';
 import { PlannerSheet } from '@/features/compass/components/planner-sheet';
 import { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
 import { useCompassChatStore } from '@/stores/compass-chat';
@@ -127,10 +128,12 @@ export function SamwellPage() {
   const compassActiveGoalId = useCompassStore((s) => s.activeGoalId);
   const compassPrimaryGoalId = useCompassStore((s) => s.primaryGoalId);
   const selectGoal = useCompassStore((s) => s.selectGoal);
+  const setPrimaryGoal = useCompassStore((s) => s.setPrimaryGoal);
   const compassTrackables = useCompassStore((s) => s.trackables);
   const compassLogs = useCompassStore((s) => s.logsByTrackable);
   const compassDue = useCompassStore((s) => s.due);
   const compassConsistency = useCompassStore((s) => s.consistency);
+  const compassConsistencyByGoal = useCompassStore((s) => s.consistencyByGoal);
   const compassError = useCompassStore((s) => s.error);
 
   const trackableTitles = React.useMemo(
@@ -168,6 +171,7 @@ export function SamwellPage() {
   const [showDeck, setShowDeck] = React.useState(false);
   const [showPlanner, setShowPlanner] = React.useState(false);
   const [showInsights, setShowInsights] = React.useState(false);
+  const [showOverview, setShowOverview] = React.useState(false);
 
   // The input card and nav float over the transcript so messages stay visible
   // through the gaps around them. Their combined height is measured rather
@@ -511,7 +515,13 @@ export function SamwellPage() {
                   dueCount={compassDue.length}
                   onOpenDeck={() => openSheet(setShowDeck)}
                   onOpenPlanner={() => openSheet(setShowPlanner)}
-                  onOpenInsights={() => openSheet(setShowInsights)}
+                  // One goal is that goal's Insights; two or more make the
+                  // same button open the overview of the set.
+                  onOpenInsights={() =>
+                    openSheet(
+                      compassActiveGoals.length >= 2 ? setShowOverview : setShowInsights,
+                    )
+                  }
                 />
               </View>
             </Reveal>
@@ -625,6 +635,19 @@ export function SamwellPage() {
             consistency={compassConsistency}
             trackables={compassTrackables}
             logsByTrackable={compassLogs}
+          />
+
+          <OverviewSheet
+            visible={showOverview}
+            onClose={() => setShowOverview(false)}
+            goals={compassActiveGoals}
+            primaryGoalId={compassPrimaryGoalId}
+            consistencyByGoal={compassConsistencyByGoal}
+            onSelectGoal={(goalId) => {
+              setShowOverview(false);
+              void selectGoal(goalId);
+            }}
+            onMakePrimary={(goalId) => void setPrimaryGoal(goalId)}
           />
         </>
       </DeferredBody>
