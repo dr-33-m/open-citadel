@@ -20,6 +20,7 @@ import React from 'react';
 import { useCSSVariable } from 'uniwind';
 
 import { ScrollFade } from '@/components/ui/scroll-fade';
+import { useMessageScrollerEdgeDistance } from '@/components/ui/message-scroller';
 import { asColor } from '@/utils/colors';
 
 /**
@@ -88,6 +89,40 @@ export function PageFade({
   const color = useFadeColor(surface);
   return (
     <ScrollFade className="flex-1" size={PAGE_FADE} edges={edges} color={color}>
+      {children}
+    </ScrollFade>
+  );
+}
+
+/**
+ * `PageFade` for a transcript — the same depth and the same colours, reading
+ * the scroll from `MessageScroller` instead of from the child.
+ *
+ * A transcript's scrollable is the library's, and it owns its scroll events:
+ * following the live edge, holding position through a prepend and opening on
+ * the right turn are all reactions to them. So the fade cannot wrap the
+ * scrollable and put a handler of its own on it; it takes the distances the
+ * scroller is already tracking. Must be rendered inside a `MessageScroller`.
+ */
+export function TranscriptFade({
+  edges = 'both',
+  surface = 'background',
+  children,
+}: {
+  edges?: 'start' | 'both';
+  surface?: FadeSurface;
+  children: React.ReactNode;
+}) {
+  const color = useFadeColor(surface);
+  const distance = useMessageScrollerEdgeDistance();
+  return (
+    <ScrollFade
+      className="flex-1"
+      size={PAGE_FADE}
+      edges={edges}
+      color={color}
+      distance={distance}
+    >
       {children}
     </ScrollFade>
   );

@@ -8,32 +8,33 @@
  * looks or behaves is shared with the hub page rather than restated here.
  */
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, View } from 'react-native';
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
-import { MaxContentWidth, spacing } from '@/constants/theme';
+import { TranscriptFade } from '@/components/scroll-fades';
+import { MessageScroller } from '@/components/ui/message-scroller';
+import { MaxContentWidth } from '@/constants/theme';
 import { TurnStatus } from '@/features/chat/components/turn-status';
 import { ChatComposer } from '@/features/chat/components/chat-composer';
 import { ChatHeader } from '@/features/chat/components/chat-header';
 import { SamwellBanner } from '@/features/chat/components/samwell-banner';
 import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
-import { useScrollToLatest } from '@/features/chat/hooks/use-scroll-to-latest';
 import { turnIndicator } from '@/features/chat/utils/agent-activity';
+import { transcriptContent } from '@/features/chat/utils/transcript-layout';
 import { backTo } from '@/navigation/navigate';
 import { isVisibleChatMessage } from '@/services/chat-transcript';
 import { useChatStore, type ChatMessage } from '@/stores/chat';
 import { HUB, useHubStore } from '@/stores/hub';
 
+/** One turn, as the virtualized transcript wants it: the message plus the
+ *  navigation metadata rows outside the render window still have to carry. */
+type TranscriptRow = ChatMessage & { messageId: string; scrollAnchor: boolean };
+
 /* Static styles hoisted — new objects per render re-layout the list's
     container for no reason. */
 const LIST_STYLE = { flex: 1 } as const;
-const LIST_CONTENT_STYLE = {
-  paddingTop: spacing[4],
-  paddingBottom: spacing[2],
-} as const;
 const COLUMN_STYLE = {
   maxWidth: MaxContentWidth,
   width: '100%',
@@ -72,7 +73,6 @@ export default function ChatSessionScreen() {
      send starts instead, which is the only moment it could go stale. */
   const [stopRequested, setStopRequested] = useState(false);
   const isStopping = isGenerating && stopRequested;
-  const listRef = useRef<FlashListRef<ChatMessage>>(null);
 
   useEffect(() => {
     if (id) openSession(id);
@@ -99,8 +99,6 @@ export default function ChatSessionScreen() {
      was invalidated while backgrounded needs an action on the model store that
      does not exist yet; that is a separate piece of work, not a getter call. */
 
-  useScrollToLatest(listRef, { messageCount: messages.length, streamingContent });
-
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text || isGenerating || !readiness.ready) return;
@@ -116,13 +114,22 @@ export default function ChatSessionScreen() {
 
   /*
    * Memoized: during a stream this screen re-renders on every token, and an
-   * unmemoized filter hands FlashList a new `data` array each time — it
-   * would re-run its item diff (new elements for every bubble) on tokens
-   * that changed no message. With a stable reference FlashList skips
-   * entirely; only the streaming footer re-renders per token.
+   * unmemoized filter hands the list a new `data` array each time — it would
+   * re-run its item diff (new elements for every bubble) on tokens that
+   * changed no message. With a stable reference the list skips entirely; only
+   * the streaming footer re-renders per token.
+   *
+   * The id and the anchor flag ride on the row rather than being passed to a
+   * wrapper, because rows outside the render window are never mounted: the
+   * scroller reads them off the data to know where a turn starts.
    */
-  const visibleMessages = useMemo(
-    () => messages.filter(isVisibleChatMessage),
+  const rows = useMemo<TranscriptRow[]>(
+    () =>
+      messages.filter(isVisibleChatMessage).map((m) => ({
+        ...m,
+        messageId: m.id,
+        scrollAnchor: m.role === 'user',
+      })),
     [messages],
   );
 
@@ -149,7 +156,7 @@ export default function ChatSessionScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: ChatMessage }) => (
+    ({ item }: { item: TranscriptRow }) => (
       <ChatBubble
         role={item.role as 'user' | 'assistant'}
         content={item.content}
@@ -254,17 +261,29 @@ export default function ChatSessionScreen() {
 
         <SamwellBanner readiness={readiness} onOpenSettings={() => router.push('/settings')} />
 
-        <FlashList
-          ref={listRef}
-          style={LIST_STYLE}
-          contentContainerStyle={LIST_CONTENT_STYLE}
-          data={visibleMessages}
-          keyExtractor={(item: ChatMessage) => item.id}
-          keyboardDismissMode="interactive"
-          keyboardShouldPersistTaps="handled"
-          renderItem={renderItem}
-          ListFooterComponent={listFooter}
-        />
+        {/* The virtualized transcript path: only the rows near the viewport
+            are mounted, and following the live edge, holding position through
+            a prepend and opening on the last question the reader asked are
+            the scroller's, not this screen's. It replaced a FlashList driven
+            by a hand-rolled follow that scrolled to the end on a timer — which
+            pulled the reader back down whatever they were reading. */}
+        <MessageScroller autoScroll className="flex-1" defaultScrollPosition="last-anchor">
+          {/* `start` only: unlike the hub's transcripts, nothing floats over
+              this one — the composer below is in normal flow, so the bottom is
+              an edge content stops at rather than passes behind. */}
+          <TranscriptFade edges="start">
+            <MessageScroller.List
+              style={LIST_STYLE}
+              contentContainerStyle={transcriptContent}
+              data={rows}
+              keyboardDismissMode="interactive"
+              keyboardShouldPersistTaps="handled"
+              renderItem={renderItem}
+              ListFooterComponent={listFooter}
+            />
+          </TranscriptFade>
+          <MessageScroller.Button />
+        </MessageScroller>
 
         <ChatComposer
           value={inputText}

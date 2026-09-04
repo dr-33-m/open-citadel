@@ -396,6 +396,7 @@ export function SamwellPage() {
           <Reveal index={0} className="flex-1">
             {mode === 'chat' ? (
               <ChatTranscript
+                sessionId={activeSession?.id ?? null}
                 messages={visibleChatMessages}
                 streamingContent={streamingContent}
                 isGenerating={isGenerating}

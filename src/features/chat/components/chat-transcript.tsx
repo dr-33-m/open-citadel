@@ -1,16 +1,23 @@
 /**
  * The conversation itself.
  *
- * A plain `ScrollView` rather than a virtualized list, which is a deliberate
- * difference from `chat/[id].tsx`: bubbles here play an entrance animation,
- * and an entrance on a recycled row fires again every time the row is reused,
- * so a scroll back up sets the whole transcript animating. Chats are short
- * enough that the virtualization is not worth losing that.
+ * `MessageScroller.Viewport` rather than the virtualized `List`, which is a
+ * deliberate difference from `chat/[id].tsx`: bubbles here play an entrance
+ * animation, and an entrance on a recycled row fires again every time the row
+ * is reused, so a scroll back up sets the whole transcript animating. Chats
+ * are short enough that the virtualization is not worth losing that.
+ *
+ * What the scroller itself does — follow a reply down only while the reader is
+ * already at the bottom, hand control back the moment they scroll away, hold
+ * their place when content is added above — is the library's, and it replaced
+ * a `scrollToEnd` on every content-size change that dragged the reader back to
+ * the live edge whatever they were half way through reading.
  */
 import React from 'react';
-import { ScrollView, type ViewStyle } from 'react-native';
+import { View, type ViewStyle } from 'react-native';
 
-import { PageFade } from '@/components/scroll-fades';
+import { TranscriptFade } from '@/components/scroll-fades';
+import { MessageScroller } from '@/components/ui/message-scroller';
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { AgentStatus } from '@/features/chat/components/agent-status';
 import { TurnStatus } from '@/features/chat/components/turn-status';
@@ -20,9 +27,13 @@ import {
 } from '@/features/chat/components/samwell-status';
 import type { SamwellStatus } from '@/features/chat/hooks/use-samwell-status';
 import { PENDING_ACTIVITY, type TurnIndicator } from '@/features/chat/utils/agent-activity';
+import { transcriptContent } from '@/features/chat/utils/transcript-layout';
 import type { ChatMessage } from '@/stores/chat';
 
 interface ChatTranscriptProps {
+  /** Which conversation this is. The scroller is keyed on it, so opening
+   *  another one opens it rather than inheriting where the last one was left. */
+  sessionId: string | null;
   messages: ChatMessage[];
   streamingContent: string;
   /** True only while a reply is genuinely still owed. */
@@ -44,6 +55,7 @@ interface ChatTranscriptProps {
 }
 
 export function ChatTranscript({
+  sessionId,
   messages,
   streamingContent,
   isGenerating,
@@ -57,7 +69,13 @@ export function ChatTranscript({
   onNavigateToTimeline,
   onNavigateToBook,
 }: ChatTranscriptProps) {
-  const scrollRef = React.useRef<ScrollView>(null);
+  /* The column, plus whatever the floating input card is covering. Merged
+     here rather than by the caller, so the two hub transcripts pad
+     identically. */
+  const contentStyle = React.useMemo(
+    () => [transcriptContent, floatingClearance],
+    [floatingClearance],
+  );
 
   const isEmpty = messages.length === 0 && !streamingContent && !pendingUserMessage;
   if (isEmpty) {
@@ -73,61 +91,86 @@ export function ChatTranscript({
   return (
     <>
       {status ? <SamwellStatusBanner status={status} style={contentColumn} /> : null}
-      {/* Top and bottom: the transcript runs under the header and under
-          the floating input card, so both edges are boundaries content
-          passes behind rather than stops at. */}
-      <PageFade edges="both">
-        <ScrollView
-          ref={scrollRef}
-          className="flex-1"
-          style={contentColumn}
-          contentContainerClassName="px-4 py-3 gap-1"
-          contentContainerStyle={[floatingClearance]}
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+
+      <MessageScroller
+        key={sessionId ?? 'new'}
+        autoScroll
+        className="flex-1"
+        style={contentColumn}
+      >
+        {/* Top and bottom: the transcript runs under the header and under the
+            floating input card, so both edges are boundaries content passes
+            behind rather than stops at. */}
+        <TranscriptFade edges="both">
+          <MessageScroller.Viewport>
+            <MessageScroller.Content style={contentStyle}>
+              {showPending && (
+                <ChatBubble role="user" content={pendingUserMessage} animateEntry />
+              )}
+
+              {messages.map((m) => (
+                <MessageScroller.Item
+                  key={m.id}
+                  messageId={m.id}
+                  // The reader's own turns are what a thread is navigated by:
+                  // the question, not the tail of the answer to it.
+                  scrollAnchor={m.role === 'user'}
+                >
+                  <ChatBubble
+                    role={m.role as 'user' | 'assistant'}
+                    content={m.content}
+                    // The just-streamed reply is already on screen; animating
+                    // its "arrival" is the flick the reader sees when a turn
+                    // finishes.
+                    animateEntry={m.id !== lastStreamedMessageId}
+                    onNavigateToHighlight={onNavigateToHighlight}
+                    onNavigateToTimeline={onNavigateToTimeline}
+                    onNavigateToBook={onNavigateToBook}
+                  />
+                </MessageScroller.Item>
+              ))}
+
+              {streamingContent.length > 0 && (
+                <ChatBubble
+                  role="assistant"
+                  content={streamingContent}
+                  streaming
+                  // No entrance — it grows in token by token, and matching the
+                  // committed bubble (which also does not animate) makes the
+                  // hand-off pixel-identical.
+                  onNavigateToHighlight={onNavigateToHighlight}
+                  onNavigateToTimeline={onNavigateToTimeline}
+                  onNavigateToBook={onNavigateToBook}
+                />
+              )}
+
+              {showPending ? (
+                // The store has nothing yet, so the indicator cannot know a
+                // turn is under way. Same orb and same words it will show a
+                // moment later, so the handover is invisible rather than a
+                // spinner turning into an orb.
+                <AgentStatus activity={PENDING_ACTIVITY} />
+              ) : (
+                // One row for the whole turn: a plain status line, or the
+                // reasoning panel with tool work folded into its trigger.
+                <TurnStatus indicator={indicator} />
+              )}
+            </MessageScroller.Content>
+          </MessageScroller.Viewport>
+        </TranscriptFade>
+
+        {/* The button pins itself to the bottom of the scroller, which here is
+            behind the floating input card. This lifts it clear of it — a
+            `style` of its own would replace the animated one that fades it in,
+            so the offset has to come from a box around it. */}
+        <View
+          pointerEvents="box-none"
+          className="absolute inset-x-0 bottom-0 items-center"
+          style={floatingClearance}
         >
-          {showPending && <ChatBubble role="user" content={pendingUserMessage} animateEntry />}
-
-          {messages.map((m) => (
-            <ChatBubble
-              key={m.id}
-              role={m.role as 'user' | 'assistant'}
-              content={m.content}
-              // The just-streamed reply is already on screen; animating its
-              // "arrival" is the flick the reader sees when a turn finishes.
-              animateEntry={m.id !== lastStreamedMessageId}
-              onNavigateToHighlight={onNavigateToHighlight}
-              onNavigateToTimeline={onNavigateToTimeline}
-              onNavigateToBook={onNavigateToBook}
-            />
-          ))}
-
-          {streamingContent.length > 0 && (
-            <ChatBubble
-              role="assistant"
-              content={streamingContent}
-              streaming
-              // No entrance — it grows in token by token, and matching the
-              // committed bubble (which also does not animate) makes the
-              // hand-off pixel-identical.
-              onNavigateToHighlight={onNavigateToHighlight}
-              onNavigateToTimeline={onNavigateToTimeline}
-              onNavigateToBook={onNavigateToBook}
-            />
-          )}
-
-          {showPending ? (
-            // The store has nothing yet, so the indicator cannot know a turn
-            // is under way. Same orb and same words it will show a moment
-            // later, so the handover is invisible rather than a spinner
-            // turning into an orb.
-            <AgentStatus activity={PENDING_ACTIVITY} />
-          ) : (
-            // One row for the whole turn: a plain status line, or the
-            // reasoning panel with tool work folded into its trigger.
-            <TurnStatus indicator={indicator} />
-          )}
-        </ScrollView>
-      </PageFade>
+          <MessageScroller.Button className="relative bottom-0" />
+        </View>
+      </MessageScroller>
     </>
   );
 }
