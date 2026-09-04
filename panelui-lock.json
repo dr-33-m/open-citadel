@@ -360,6 +360,14 @@
     "src/components/ui/chart-accessibility.ts": {
       "item": "chart-accessibility",
       "digest": "sha256:32186807d2bc752936da901286d067f535829ba096d25f2bfffd6afa456e5590"
+    },
+    "src/components/ui/message-scroller.tsx": {
+      "item": "message-scroller",
+      "digest": "sha256:50ec638db3f067355fb6a547d658a766f1159c03cba7eab8ca49d5ed1d979078"
+    },
+    "src/components/ui/message-scroller-math.ts": {
+      "item": "message-scroller",
+      "digest": "sha256:d45cafb28969bb6288dfb6ffd2e4470d282723cdfd548379ad285184c2cb40cf"
     }
   },
   "roots": {
@@ -676,6 +684,14 @@
       "cn",
       "text",
       "use-direction"
+    ],
+    "message-scroller": [
+      "message-scroller",
+      "animated-pressable",
+      "cn",
+      "icons",
+      "use-direction",
+      "text"
     ]
   },
   "legacyFiles": [],

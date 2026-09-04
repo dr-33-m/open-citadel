@@ -975,6 +975,44 @@ function PlannerDay({ date, renderDay }: PlannerDayProps) {
   const inMonth = isInMonth(date);
   const isToday = isSameDay(date, today);
   const isSelected = selected ? isSameDay(date, selected) : false;
+  const gridIndex = navigation?.indexByDay.get(date.getTime());
+  const setRef = useCallback(
+    (node: View | null) => {
+      if (gridIndex !== undefined) registerGridCell?.(gridIndex, node);
+    },
+    [gridIndex, registerGridCell]
+  );
+  const onFocus = useCallback(() => {
+    if (gridIndex !== undefined) makeGridCellActive?.(gridIndex);
+  }, [gridIndex, makeGridCellActive]);
+  const onKeyDown = useCallback(
+    (event: PlannerGridKeyDownEvent) => {
+      if (gridIndex !== undefined) focusGridCell?.(gridIndex, event);
+    },
+    [gridIndex, focusGridCell]
+  );
+  /*
+   * LOCAL EDIT (Open Citadel): the early return moved up here, above everything
+   * only the built-in cell draws from.
+   *
+   * The registry ran all of it first and then threw it away — a `tv()` slot
+   * call, a spoken label, the overflow split and the marker colour, 42 times a
+   * month, for a caller that renders its own cell. On an A33 that was most of
+   * the cost of paging the Compass planner, and `tv()` (which runs
+   * tailwind-merge over five slots) was most of that. Everything above this
+   * line is either a hook — which cannot move below a return — or something
+   * `renderDay` is handed.
+   *
+   * Re-apply after any `panelui-cli update planner`.
+   */
+  if (renderDay) {
+    return (
+      <View className="flex-1">
+        {renderDay({ date, entries, isToday, isSelected, isInMonth: inMonth })}
+      </View>
+    );
+  }
+
   const { shown, overflow } = visibleEntries(entries, entryLimit);
   const drawable = shown.filter((entry) => entry.icon);
   const styles = dayVariants({ variant, fill, inMonth, today: isToday, selected: isSelected });
@@ -1002,22 +1040,7 @@ function PlannerDay({ date, renderDay }: PlannerDayProps) {
     onDayPress?.(date, entries);
     select(isSelected ? null : date);
   };
-  const gridIndex = navigation?.indexByDay.get(date.getTime());
-  const setRef = useCallback(
-    (node: View | null) => {
-      if (gridIndex !== undefined) registerGridCell?.(gridIndex, node);
-    },
-    [gridIndex, registerGridCell]
-  );
-  const onFocus = useCallback(() => {
-    if (gridIndex !== undefined) makeGridCellActive?.(gridIndex);
-  }, [gridIndex, makeGridCellActive]);
-  const onKeyDown = useCallback(
-    (event: PlannerGridKeyDownEvent) => {
-      if (gridIndex !== undefined) focusGridCell?.(gridIndex, event);
-    },
-    [gridIndex, focusGridCell]
-  );
+
   const webGridProps =
     Platform.OS === 'web' && gridIndex !== undefined && navigation
       ? {
@@ -1027,14 +1050,6 @@ function PlannerDay({ date, renderDay }: PlannerDayProps) {
           onKeyDown,
         }
       : {};
-
-  if (renderDay) {
-    return (
-      <View className="flex-1">
-        {renderDay({ date, entries, isToday, isSelected, isInMonth: inMonth })}
-      </View>
-    );
-  }
 
   /*
    * `tiles` leaves the days either side of the month out altogether. The row

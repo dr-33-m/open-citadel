@@ -16,7 +16,8 @@ type LogNoteDialogProps = {
   /** What happened, which decides what the dialog asks. Null closes it. */
   outcome: 'done' | 'missed' | null;
   title: string;
-  value: string;
+  /** The card being answered. Changing it gives the field a fresh buffer. */
+  fieldKey: string;
   onChangeText: (next: string) => void;
   onSave: () => void;
   onSkip: () => void;
@@ -52,7 +53,7 @@ type LogNoteDialogProps = {
 export function LogNoteDialog({
   outcome,
   title,
-  value,
+  fieldKey,
   onChangeText,
   onSave,
   onSkip,
@@ -101,9 +102,20 @@ export function LogNoteDialog({
                 </ThemedText>
               </View>
 
-              {/* No autoFocus: the keyboard opens on an explicit tap, never on
+              {/* Uncontrolled, like every other field in the app's sheets: the
+                  text lives in the native buffer and React only mirrors it out
+                  (`onChangeText`), never back in. Controlled, every keystroke
+                  re-set the field from JS state while the deck sheet around it
+                  was re-rendering, and letters that landed mid-render were
+                  committed over by a stale string — they dropped, or the IME
+                  re-inserted them and the word duplicated. The key is what
+                  empties it: the buffer is the field's, so it takes a remount
+                  to clear, and one card's note must never open on the next.
+
+                  No autoFocus: the keyboard opens on an explicit tap, never on
                   the dialog arriving. Skipping should not cost a dismissal. */}
               <TextInput
+                key={fieldKey}
                 className="min-h-28 border border-border p-3"
                 style={{
                   fontFamily: fontFamily.sans,
@@ -115,7 +127,7 @@ export function LogNoteDialog({
                 multiline
                 placeholder={placeholder}
                 placeholderTextColor={muted}
-                value={value}
+                defaultValue=""
                 onChangeText={onChangeText}
                 accessibilityLabel="Note"
               />

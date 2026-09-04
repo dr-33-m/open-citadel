@@ -41,6 +41,7 @@ import Animated, {
   useSharedValue,
   type AnimatedScrollViewProps,
   type DerivedValue,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
@@ -68,6 +69,20 @@ export interface ScrollFadeProps extends ViewProps {
   fadeInDistance?: number;
   /** Set false to render the child with no fades at all. */
   enabled?: boolean;
+  /**
+   * LOCAL EDIT (Open Citadel): drive the fades from a scrollable that already
+   * owns its scroll events, rather than by cloning the child.
+   *
+   * The default path wraps the child in `createAnimatedComponent` and puts its
+   * own handler on it. A component that renders its own `Animated.ScrollView`
+   * and owns `onScroll` as its whole reason to exist — `MessageScroller` — has
+   * nowhere for that handler to go, and cloning it would attach the ref to the
+   * wrapper rather than to a host view. So it hands over the two distances it
+   * is already tracking and the child is rendered untouched.
+   *
+   * Additive. Re-apply after any `panelui-cli update scroll-fade`.
+   */
+  distance?: { start: SharedValue<number>; end: SharedValue<number> };
   children?: ReactNode;
 }
 
@@ -87,6 +102,7 @@ export function ScrollFade({
   color,
   fadeInDistance = DEFAULT_FADE_IN_DISTANCE,
   enabled = true,
+  distance,
   children,
   ...props
 }: ScrollFadeProps) {
@@ -148,17 +164,22 @@ export function ScrollFade({
   };
 
   const startOpacity = useDerivedValue(() =>
-    Math.min(offset.value / fadeInDistance, 1)
+    Math.min(Math.max(distance ? distance.start.value : offset.value, 0) / fadeInDistance, 1)
   );
 
   const endOpacity = useDerivedValue(() => {
     // Nothing to fade towards when the content fits inside the viewport.
-    const remaining = contentLength.value - viewportLength.value - offset.value;
+    const remaining = distance
+      ? distance.end.value
+      : contentLength.value - viewportLength.value - offset.value;
     return Math.min(Math.max(remaining, 0) / fadeInDistance, 1);
   });
 
-  const scrollable =
-    AnimatedScrollable && isValidElement(child) ? (
+  // Handed the distances, the child keeps its own scroll events — see
+  // `distance` above.
+  const scrollable = distance ? (
+    child
+  ) : AnimatedScrollable && isValidElement(child) ? (
       <AnimatedScrollable
         {...child.props}
         onScroll={onScroll}

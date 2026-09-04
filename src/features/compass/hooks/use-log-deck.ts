@@ -60,7 +60,21 @@ export function useLogDeck() {
   const [wantsSnoozed, setWantsSnoozed] = React.useState(false);
   const [values, setValues] = React.useState<Record<string, number | null>>({});
   const [pending, setPending] = React.useState<PendingNote | null>(null);
-  const [note, setNote] = React.useState('');
+  /*
+   * The note lives in the field's native buffer, and this only mirrors it out.
+   *
+   * A ref rather than state, because state here is the input bug the rest of
+   * the app's sheet fields have already been fixed for: a controlled field
+   * re-sets itself from JS on every commit, and a keystroke that lands while
+   * the JS thread is busy — this one re-renders the whole deck sheet per
+   * letter — gets committed over by a stale string, so the letter drops or the
+   * IME re-inserts it and the word duplicates. Nothing renders from the note,
+   * so nothing needs the re-render either.
+   */
+  const note = React.useRef('');
+  const setNote = React.useCallback((next: string) => {
+    note.current = next;
+  }, []);
 
   /**
    * One commit per answered card, whatever fires it.
@@ -107,7 +121,7 @@ export function useLogDeck() {
   const done = React.useCallback(
     (item: DueItem) => {
       haptics.commit();
-      setNote('');
+      note.current = '';
       setPending({ item, outcome: 'done', value: resolveValue(item) });
     },
     [resolveValue],
@@ -115,7 +129,7 @@ export function useLogDeck() {
 
   const missed = React.useCallback((item: DueItem) => {
     haptics.warn();
-    setNote('');
+    note.current = '';
     setPending({ item, outcome: 'missed', value: null });
   }, []);
 
@@ -147,7 +161,7 @@ export function useLogDeck() {
       committing.current = true;
       const { item, outcome, value } = pending;
       setPending(null);
-      setNote('');
+      note.current = '';
       if (skipped.includes(item.trackable.id)) unsnooze(item.trackable.id);
 
       if (outcome === 'done') {
@@ -197,9 +211,8 @@ export function useLogDeck() {
     missed,
     skip,
     pending,
-    note,
     setNote,
-    saveNote: () => void commit(note.trim() || null),
+    saveNote: () => void commit(note.current.trim() || null),
     skipNote: () => void commit(null),
   };
 }

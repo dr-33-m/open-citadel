@@ -133,7 +133,7 @@ export function LogDeckSheet({ visible, onClose }: LogDeckSheetProps) {
       <LogNoteDialog
         outcome={deck.pending?.outcome ?? null}
         title={deck.pending?.item.trackable.title ?? ''}
-        value={deck.note}
+        fieldKey={deck.pending ? `${deck.pending.item.trackable.id}:${deck.pending.outcome}` : ''}
         onChangeText={deck.setNote}
         onSave={deck.saveNote}
         onSkip={deck.skipNote}

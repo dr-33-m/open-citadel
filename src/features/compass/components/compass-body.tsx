@@ -9,13 +9,15 @@
  */
 import React from 'react';
 import { Compass } from '@/components/icons';
-import { ScrollView, View, type ViewStyle } from 'react-native';
+import { View, type ViewStyle } from 'react-native';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
-import { PageFade } from '@/components/scroll-fades';
+import { TranscriptFade } from '@/components/scroll-fades';
+import { MessageScroller } from '@/components/ui/message-scroller';
 import { TurnStatus } from '@/features/chat/components/turn-status';
 import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
 import { turnIndicator } from '@/features/chat/utils/agent-activity';
+import { transcriptContent } from '@/features/chat/utils/transcript-layout';
 import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
 import { GoalProposalCard } from '@/features/compass/components/goal-proposal-card';
 import type { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
@@ -45,10 +47,9 @@ export function CompassBody({
   contentColumn,
   floatingClearance,
 }: CompassBodyProps) {
-  const scrollRef = React.useRef<ScrollView>(null);
-
   const {
     kind,
+    activeSessionId,
     messages,
     draft,
     approve,
@@ -65,13 +66,11 @@ export function CompassBody({
 
   /*
    * A reply arriving token by token changes this component's state dozens of
-   * times a second, so anything the ScrollView is handed has to survive that.
+   * times a second, so anything the scroller is handed has to survive that.
    *
-   * `streaming` also decides how the transcript follows the text. An animated
-   * `scrollToEnd` per token queues a new scroll animation before the last one
-   * has finished, dozens deep; jumping is what a transcript that is being
-   * written under you should do anyway, and the animation is for the one case
-   * it reads as motion: a message the reader just sent.
+   * Following the text is `MessageScroller`'s job now, not this component's.
+   * It used to be a `scrollToEnd` on every content-size change, which pinned
+   * the reader to the bottom whether or not that is where they were.
    */
   const streaming = submitting && streamingReply.length > 0;
   /*
@@ -103,10 +102,12 @@ export function CompassBody({
     ],
   );
 
-  const followContent = React.useCallback(() => {
-    scrollRef.current?.scrollToEnd({ animated: !streaming });
-  }, [streaming]);
-  const scrollContentStyle = React.useMemo(() => [floatingClearance], [floatingClearance]);
+  /* The same column the chat transcript uses, plus whatever the floating
+     input card is covering. */
+  const contentStyle = React.useMemo(
+    () => [transcriptContent, floatingClearance],
+    [floatingClearance],
+  );
 
   /*
    * A proposal turn reads card first, then Samwell's line about it. The reply
@@ -165,75 +166,97 @@ export function CompassBody({
   }
 
   return (
-    <PageFade edges="both">
-      <ScrollView
-        ref={scrollRef}
-        className="flex-1"
-        style={contentColumn}
-        contentContainerClassName="px-4 py-3 gap-1"
-        contentContainerStyle={scrollContentStyle}
-        onContentSizeChange={followContent}
+    /* Keyed on the conversation: opening an earlier one should open it, not
+       inherit where the last one was left. */
+    <MessageScroller
+      key={activeSessionId ?? 'new'}
+      autoScroll
+      className="flex-1"
+      style={contentColumn}
+    >
+      <TranscriptFade edges="both">
+        <MessageScroller.Viewport>
+          <MessageScroller.Content style={contentStyle}>
+            {/* Only what was actually said. A Compass transcript can carry a
+                system row (the journey summary) and, once tools write to it,
+                tool rows; neither is a turn anybody had. The proposal turn's
+                own reply is held out here and rendered below its card. */}
+            {listMessages.map((m) =>
+              m.role === 'user' || m.role === 'assistant' ? (
+                <MessageScroller.Item
+                  key={m.id}
+                  messageId={m.id}
+                  scrollAnchor={m.role === 'user'}
+                >
+                  <ChatBubble
+                    role={m.role}
+                    content={m.content}
+                    // The just-streamed reply is already on screen; animating
+                    // its arrival is the flick the reader sees when a turn
+                    // finishes.
+                    animateEntry={m.id !== lastStreamedMessageId}
+                  />
+                </MessageScroller.Item>
+              ) : null,
+            )}
+
+            {draft?.kind === 'plan' && (
+              <View className="px-1 py-2">
+                <GoalProposalCard
+                  proposal={draft.proposal}
+                  onApprove={() => void approve()}
+                  onRefine={refine}
+                  disabled={committing}
+                />
+              </View>
+            )}
+
+            {draft?.kind === 'checkin' && (
+              <View className="px-1 py-2">
+                <CheckinDraftCard
+                  draft={draft.draft}
+                  titles={trackableTitles}
+                  onApprove={() => void approve()}
+                  onRefine={refine}
+                  disabled={committing}
+                />
+              </View>
+            )}
+
+            {/* The turn's reply, below its card: streaming bubble while it
+                arrives, the committed message once it lands. Without a draft
+                on screen this falls through and the normal flow above has
+                already drawn it. */}
+            {submitting && streaming ? (
+              <ChatBubble role="assistant" content={streamingReply} streaming />
+            ) : proposalReply ? (
+              <ChatBubble
+                key={proposalReply.id}
+                role="assistant"
+                content={proposalReply.content}
+                animateEntry={proposalReply.id !== lastStreamedMessageId}
+              />
+            ) : null}
+
+            {/* One row for the whole turn: a plain status line on a model that
+                does not reason, or the reasoning panel with tool work folded
+                into its trigger. The panel is never unmounted mid-turn, so a
+                tool call does not reset its "thought for how long" clock. */}
+            <TurnStatus indicator={indicator} />
+          </MessageScroller.Content>
+        </MessageScroller.Viewport>
+      </TranscriptFade>
+
+      {/* Lifted clear of the floating input card the transcript runs under.
+          See the same box in `ChatTranscript` for why it is a box and not a
+          style on the button. */}
+      <View
+        pointerEvents="box-none"
+        className="absolute inset-x-0 bottom-0 items-center"
+        style={floatingClearance}
       >
-        {/* Only what was actually said. A Compass transcript can carry a
-            system row (the journey summary) and, once tools write to it, tool
-            rows; neither is a turn anybody had. The proposal turn's own reply
-            is held out here and rendered below its card. */}
-        {listMessages.map((m) =>
-          m.role === 'user' || m.role === 'assistant' ? (
-            <ChatBubble
-              key={m.id}
-              role={m.role}
-              content={m.content}
-              // The just-streamed reply is already on screen; animating its
-              // arrival is the flick the reader sees when a turn finishes.
-              animateEntry={m.id !== lastStreamedMessageId}
-            />
-          ) : null,
-        )}
-
-        {draft?.kind === 'plan' && (
-          <View className="px-1 py-2">
-            <GoalProposalCard
-              proposal={draft.proposal}
-              onApprove={() => void approve()}
-              onRefine={refine}
-              disabled={committing}
-            />
-          </View>
-        )}
-
-        {draft?.kind === 'checkin' && (
-          <View className="px-1 py-2">
-            <CheckinDraftCard
-              draft={draft.draft}
-              titles={trackableTitles}
-              onApprove={() => void approve()}
-              onRefine={refine}
-              disabled={committing}
-            />
-          </View>
-        )}
-
-        {/* The turn's reply, below its card: streaming bubble while it arrives,
-            the committed message once it lands. Without a draft on screen this
-            falls through and the normal flow above has already drawn it. */}
-        {submitting && streaming ? (
-          <ChatBubble role="assistant" content={streamingReply} streaming />
-        ) : proposalReply ? (
-          <ChatBubble
-            key={proposalReply.id}
-            role="assistant"
-            content={proposalReply.content}
-            animateEntry={proposalReply.id !== lastStreamedMessageId}
-          />
-        ) : null}
-
-        {/* One row for the whole turn: a plain status line on a model that
-            does not reason, or the reasoning panel with tool work folded into
-            its trigger. The panel is never unmounted mid-turn, so a tool call
-            does not reset its "thought for how long" clock. */}
-        <TurnStatus indicator={indicator} />
-      </ScrollView>
-    </PageFade>
+        <MessageScroller.Button className="relative bottom-0" />
+      </View>
+    </MessageScroller>
   );
 }
