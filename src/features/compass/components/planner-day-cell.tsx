@@ -1,20 +1,40 @@
 import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
+import { Pressable, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Touchable } from '@/components/ui/touchable';
 import type { DayStatus } from '@/features/compass/utils/planner-entries';
-import { asColor } from '@/utils/colors';
+import type { Ymd } from '@/utils/day';
+import { haptics } from '@/utils/haptics';
+
+/**
+ * Every colour a day can draw, resolved once for the whole month.
+ *
+ * The cell used to read six CSS variables itself, which is 252 reads for a
+ * grid — and the grid redraws whenever the month does. The month is one theme,
+ * so the reads belong where there is one of them.
+ */
+export type PlannerDayColors = {
+  dot: Record<DayStatus, string | undefined>;
+  /** The gold the today ring and the selected fill are both drawn in. */
+  mark: string | undefined;
+  /** The number's colour on a selected day, inside the month, and outside it. */
+  onMark: string | undefined;
+  inMonth: string | undefined;
+  outOfMonth: string | undefined;
+};
 
 type PlannerDayCellProps = {
+  day: Ymd;
   dayNumber: number;
   /** One per activity that day, in the order they fall. */
   statuses: DayStatus[];
   isToday: boolean;
   isSelected: boolean;
   isInMonth: boolean;
-  onPress: () => void;
+  colors: PlannerDayColors;
+  /** Takes the day rather than closing over it, so the callback is one object
+   *  for the whole grid and the memo below actually holds. */
+  onPress: (day: Ymd) => void;
 };
 
 /** Past three, the dots stop counting and start being texture. */
@@ -38,6 +58,13 @@ const MAX_DOTS = 6;
 const MARK_SIZE = 28;
 const DOT_SIZE = 4;
 
+const MARK_BOX = {
+  width: MARK_SIZE,
+  height: MARK_SIZE,
+  alignItems: 'center',
+  justifyContent: 'center',
+} as const;
+
 /**
  * One day in the planner, drawn by hand.
  *
@@ -49,45 +76,44 @@ const DOT_SIZE = 4;
  *
  * Today is a hairline gold ring and the selected day is a gold fill. They have
  * to be tellable apart at a glance, because there is only one gold.
+ *
+ * A plain `Pressable`, not the app's `Touchable`. `Touchable` animates its own
+ * press on the UI thread, which is the right default for a button and the
+ * wrong one for forty-two of them in a grid — that is a shared value and an
+ * animated style per day, the same one-node-per-element trap the skeleton bars
+ * were. A day already answers a press by filling in.
+ *
+ * Memoized, and its props are all primitives or held identities, so the
+ * transcript streaming behind an open planner redraws none of this and opening
+ * a day redraws two cells rather than the month.
  */
-export function PlannerDayCell({
+export const PlannerDayCell = React.memo(function PlannerDayCell({
+  day,
   dayNumber,
   statuses,
   isToday,
   isSelected,
   isInMonth,
+  colors,
   onPress,
 }: PlannerDayCellProps) {
-  const [primary, primaryForeground, destructive, foreground, mutedForeground, border] =
-    useCSSVariable([
-      '--color-primary',
-      '--color-primary-foreground',
-      '--color-destructive',
-      '--color-foreground',
-      '--color-muted-foreground',
-      '--color-border',
-    ]);
+  const numberColor = isSelected
+    ? colors.onMark
+    : isInMonth
+      ? colors.inMonth
+      : colors.outOfMonth;
 
-  const dotColor: Record<DayStatus, string | undefined> = {
-    done: asColor(primary),
-    missed: asColor(destructive),
-    expected: asColor(border),
-    flexible: asColor(mutedForeground),
+  const shown = statuses.length > MAX_DOTS ? statuses.slice(0, MAX_DOTS) : statuses;
+
+  const press = () => {
+    haptics.select();
+    onPress(day);
   };
 
-  const numberColor = isSelected
-    ? asColor(primaryForeground)
-    : isInMonth
-      ? asColor(foreground)
-      : asColor(mutedForeground);
-
-  const shown = statuses.slice(0, MAX_DOTS);
-
   return (
-    <Touchable
+    <Pressable
       className="flex-1 items-center gap-1 py-1"
-      onPress={onPress}
-      haptic="select"
+      onPress={press}
       accessibilityRole="button"
       accessibilityState={{ selected: isSelected }}
       accessibilityLabel={`${dayNumber}${isToday ? ', today' : ''}, ${
@@ -96,16 +122,11 @@ export function PlannerDayCell({
     >
       <View
         style={[
-          {
-            width: MARK_SIZE,
-            height: MARK_SIZE,
-            alignItems: 'center',
-            justifyContent: 'center',
-          },
+          MARK_BOX,
           isSelected
-            ? { backgroundColor: asColor(primary) }
+            ? { backgroundColor: colors.mark }
             : isToday
-              ? { borderWidth: 1, borderColor: asColor(primary) }
+              ? { borderWidth: 1, borderColor: colors.mark }
               : null,
         ]}
       >
@@ -124,11 +145,11 @@ export function PlannerDayCell({
             style={{
               width: DOT_SIZE,
               height: DOT_SIZE,
-              backgroundColor: dotColor[status],
+              backgroundColor: colors.dot[status],
             }}
           />
         ))}
       </View>
-    </Touchable>
+    </Pressable>
   );
-}
+});

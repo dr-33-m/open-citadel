@@ -168,6 +168,10 @@ export function SamwellPage() {
   const [showDeck, setShowDeck] = React.useState(false);
   const [showPlanner, setShowPlanner] = React.useState(false);
   const [showInsights, setShowInsights] = React.useState(false);
+  // Held, not inline: the planner is memoized so that a reply streaming behind
+  // it does not redraw a month grid per token, and a fresh closure per render
+  // would defeat that on its own.
+  const closePlanner = React.useCallback(() => setShowPlanner(false), []);
 
   // The input card and nav float over the transcript so messages stay visible
   // through the gaps around them. Their combined height is measured rather
@@ -613,7 +617,7 @@ export function SamwellPage() {
 
           <PlannerSheet
             visible={showPlanner}
-            onClose={() => setShowPlanner(false)}
+            onClose={closePlanner}
             trackables={compassTrackables}
             logsByTrackable={compassLogs}
           />
