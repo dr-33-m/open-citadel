@@ -2,10 +2,13 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { LogIn, LogOut, Mail, UserPlus } from '@/components/icons';
+import { LogOut, Mail, UserPlus, UserStar } from '@/components/icons';
 import { ActionButton } from '@/components/action-button';
+import { SamwellText } from '@/components/samwell-text';
 import { ThemedText } from '@/components/themed-text';
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { GoldButton } from '@/components/ui/gold-button';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { showToast } from '@/components/toast/toast-provider';
 import { ACCOUNT_ENABLED } from '@/constants/logto';
@@ -70,24 +73,52 @@ export function AccountCard() {
   return (
     <>
       <Card className="gap-3 p-4">
-        <View className="flex-row items-center gap-3">
-          <PrefixIcon icon={signedIn ? Mail : LogIn} size={36} />
+        {/* `items-start`, not `items-center`. The text beside it runs to two
+            lines, so centring floated the badge between them instead of
+            beside the thing it names. */}
+        <View className="flex-row items-start gap-3">
+          {/* Signed out the card is about the idea of an account, so the mark
+              is a person; signed in it is about one address, so it is a
+              letter. */}
+          <PrefixIcon icon={signedIn ? Mail : UserStar} size={36} />
           <View className="flex-1 gap-0.5">
-            <ThemedText type="bodyMd" numberOfLines={1}>
-              {signedIn ? (email ?? name ?? 'Signed in') : 'No account'}
-            </ThemedText>
-            <ThemedText type="bodySm" color={asColor(mutedForeground)} numberOfLines={2}>
+            {/* The name of the thing on the left, what it costs you on the
+                right. `justify-between` rather than a gap, so the badge holds
+                the right edge whatever length the email above it runs to, and
+                `shrink` lets the address give way rather than push it off. */}
+            <View className="flex-row items-center justify-between gap-2">
+              <ThemedText type="bodyMd" numberOfLines={1} className="shrink">
+                {signedIn ? (email ?? name ?? 'Cloud Account') : 'Cloud Account'}
+              </ThemedText>
+              {/* Only while signed out. Once there is an account, saying it
+                  was optional is answering a question nobody is still asking. */}
+              {/* Filled rather than outlined. This card already carries the
+                  card's own rule, the icon's, and the buttons' — a fourth
+                  1px rectangle at the same weight made a label look like a
+                  control, and left nothing on the card looking dominant. */}
+              {!signedIn && <Badge variant="secondary">Optional</Badge>}
+            </View>
+            {/* `SamwellText`, so his name carries the gold here as it does in
+                every other sentence about him. */}
+            <SamwellText type="bodySm" color={asColor(mutedForeground)} numberOfLines={2}>
               {signedIn
-                ? 'Grand Maester Samwell works from this account.'
-                : 'Optional. Sign in to use Grand Maester Samwell.'}
-            </ThemedText>
+                ? 'Grand Maester Samwell works with this account.'
+                : 'Sign in or create account to use Grand Maester Samwell.'}
+            </SamwellText>
           </View>
         </View>
 
         {/* The buttons sit under the row rather than beside it. Two of them
             next to a wrapping two-line description is the layout that ate its
-            own right padding on the Reach Out row. */}
-        <View className="flex-row flex-wrap gap-2">
+            own right padding on the Reach Out row.
+            One of them is gold, and that is the point. Two identical bordered
+            buttons gave the card no primary path, so the eye had to read both
+            labels to find the common one. Signing in is what most people are
+            here to do; making an account is the same flow with a different
+            first screen, so it stays quiet beside it. Gold is also what every
+            other "this is the way forward" button in the app wears, including
+            the SIGN IN on the Samwell page these two lead to. */}
+        <View className="flex-row flex-wrap items-center gap-2">
           {signedIn ? (
             <ActionButton
               icon={LogOut}
@@ -98,10 +129,9 @@ export function AccountCard() {
             />
           ) : (
             <>
-              <ActionButton
-                icon={LogIn}
+              <GoldButton
                 label="SIGN IN"
-                tint={asColor(mutedForeground)}
+                size="compact"
                 disabled={busy}
                 onPress={() => void enter('sign_in')}
               />

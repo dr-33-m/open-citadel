@@ -37,7 +37,7 @@ export function SamwellBanner({ readiness, onOpenSettings }: SamwellBannerProps)
   if (cloudBlocker === 'needsAccount') {
     return (
       <Banner
-        message="Grand Maester Samwell works from your account. Sign in to talk to him."
+        message="Grand Maester Samwell works with your Cloud Account. Sign in to talk to him."
         color={asColor(mutedForeground)}
         action={{ label: 'SIGN IN', onPress: onOpenSettings }}
       />

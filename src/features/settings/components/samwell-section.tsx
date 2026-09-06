@@ -21,7 +21,13 @@ import { cn } from '@/lib/cn';
  * The Samwell group: which engine answers, and its controls. Each panel
  * owns its own sheets — this component only decides which panel exists.
  */
-export const SamwellSection = React.memo(function SamwellSection() {
+export const SamwellSection = React.memo(function SamwellSection({
+  onRequestAccount,
+}: {
+  /** Bring the Profile section into view — the cloud panel's way out when
+   *  there is no account yet. Owned by the route, which holds the scroller. */
+  onRequestAccount: () => void;
+}) {
   const [primary, mutedForeground] = useCSSVariable([
     '--color-primary',
     '--color-muted-foreground',
@@ -63,7 +69,7 @@ export const SamwellSection = React.memo(function SamwellSection() {
       </View>
 
       {samwellMode === 'cloud' ? (
-        <CloudPanel />
+        <CloudPanel onRequestAccount={onRequestAccount} />
       ) : !nativeAvailable ? (
         <ThemedText type="bodySm" color={asColor(mutedForeground)}>
           On-device AI is not supported on this device. Grand Maester Samwell is on the way. Check

@@ -91,6 +91,7 @@ export { default as TrendingUp } from 'lucide-react-native/icons/trending-up';
 export { default as Undo2 } from 'lucide-react-native/icons/undo-2';
 export { default as User } from 'lucide-react-native/icons/user';
 export { default as UserPlus } from 'lucide-react-native/icons/user-plus';
+export { default as UserStar } from 'lucide-react-native/icons/user-star';
 export { default as Volume2 } from 'lucide-react-native/icons/volume-2';
 export { default as X } from 'lucide-react-native/icons/x';
 export { default as ZodiacPisces } from 'lucide-react-native/icons/zodiac-pisces';

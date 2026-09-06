@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
 import { List, SlidersHorizontal } from '@/components/icons';
+import { GoldButton } from '@/components/ui/gold-button';
 import { ActionButton } from '@/components/action-button';
 import { Touchable } from '@/components/ui/touchable';
 import { Progress } from '@/components/ui/progress';
@@ -19,7 +20,7 @@ import { asColor } from '@/utils/colors';
  * The cloud engine's panel: setup state, the chosen model, and usage. Owns
  * the cloud model picker.
  */
-export function CloudPanel() {
+export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void }) {
   const [mutedForeground, primary] = useCSSVariable([
     '--color-muted-foreground',
     '--color-primary',
@@ -56,26 +57,53 @@ export function CloudPanel() {
     void loadCloudModels();
   }, [loadCloudModels]);
 
+  /*
+   * Configured, but nobody is signed in.
+   *
+   * The model picker and the usage bars both need an account to mean
+   * anything — one spends it, the other counts it — so the panel becomes the
+   * single thing worth doing instead of two disabled halves of itself. The
+   * button does not open the browser from here: sign-in lives in one place,
+   * and this scrolls to it so the reader ends up looking at the card that
+   * owns it rather than at a flow that started from somewhere else.
+   */
+  if (cloudBaseUrl && ACCOUNT_ENABLED && !signedIn) {
+    return (
+      // No leading icon, and no second explanation of what an account is.
+      // The Cloud mode card immediately above is selected, gold, and already
+      // carries the cloud mark; repeating it here put two cloud badges four
+      // lines apart and made the panel look like a second, competing choice
+      // rather than the consequence of the one just made. What is left is the
+      // fact and the way out.
+      <Card className="gap-4 p-4">
+        <View className="gap-1">
+          <ThemedText type="bodyMd">Requires a cloud account</ThemedText>
+          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+            His work is counted against your account.
+          </ThemedText>
+        </View>
+        <View className="flex-row">
+          <GoldButton label="SIGN IN" size="compact" onPress={onRequestAccount} />
+        </View>
+      </Card>
+    );
+  }
+
   return (
     <>
       <Card className="gap-3 p-4">
-        {/* One line, and it has to pick the true reason.
-            `ACCOUNT_ENABLED` sits with the missing base URL rather than with
-            the missing sign-in: a build without Logto draws no account card,
-            so telling the reader to sign in under Profile would point at
-            nothing. Same reasoning as `cloudBlocker` in `use-samwell-readiness`
-            — this panel is the settings-side view of the same three states. */}
+        {/* The build itself cannot reach him, and no amount of signing in
+            changes that. `ACCOUNT_ENABLED` sits with the missing base URL
+            rather than with the missing sign-in, because a build without
+            Logto draws no account card — telling the reader to sign in under
+            Profile would point at nothing. Same ordering as `cloudBlocker` in
+            `use-samwell-readiness`; this panel is the settings-side view of
+            the same states. */}
         {!cloudBaseUrl || !ACCOUNT_ENABLED ? (
           <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
             Grand Maester Samwell is not set up in this build yet.
           </ThemedText>
-        ) : (
-          !signedIn && (
-            <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
-              He works from your account. Sign in under Profile to reach him.
-            </ThemedText>
-          )
-        )}
+        ) : null}
 
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1 gap-1">
@@ -108,13 +136,8 @@ export function CloudPanel() {
         <View className="gap-3">
           <View className="flex-row items-center justify-between">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>USAGE</ThemedText>
-            <Touchable onPress={loadCloudUsage} disabled={!signedIn}>
-              <ThemedText
-                type="labelSm"
-                color={asColor(signedIn ? primary : mutedForeground)}
-              >
-                REFRESH
-              </ThemedText>
+            <Touchable onPress={loadCloudUsage}>
+              <ThemedText type="labelSm" color={asColor(primary)}>REFRESH</ThemedText>
             </Touchable>
           </View>
           {cloudUsage ? (
@@ -129,9 +152,7 @@ export function CloudPanel() {
             </>
           ) : (
             <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-              {!signedIn
-                ? 'Usage is counted against your account.'
-                : (cloudUsageError ?? 'Usage appears after the first successful server check.')}
+              {cloudUsageError ?? 'Usage appears after the first successful server check.'}
             </ThemedText>
           )}
         </View>

@@ -129,8 +129,8 @@ export function useSamwellStatus({
 
   if (cloudBlocker === 'needsAccount') {
     return {
-      title: 'Grand Maester Samwell works from your account.',
-      message: 'Sign in and he can pick up where you left off, on any device you read on.',
+      title: 'Grand Maester Samwell works with your Cloud Account.',
+      message: 'Sign in and he can pick up where you left off.',
       actions: [{ label: 'SIGN IN', onPress: onOpenSettings }],
     };
   }

@@ -68,6 +68,19 @@ export default function SettingsScreen() {
 
   React.useEffect(revealSection, [revealSection]);
 
+  /**
+   * Bring the account into view, for the cloud panel's "sign in" way out.
+   *
+   * Measured rather than assumed to be zero: Profile is the first section
+   * today, and a scroll to the top would look right for exactly as long as
+   * that stays true. The same `- 24` as above, so the section label is not
+   * welded to the top edge.
+   */
+  const profileY = React.useRef(0);
+  const revealAccount = React.useCallback(() => {
+    scrollRef.current?.scrollTo({ y: Math.max(0, profileY.current - 24), animated: true });
+  }, []);
+
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
       {/* A drawer, so the way out points the way it will go: down. The same
@@ -107,7 +120,9 @@ export default function SettingsScreen() {
             }}
             showsVerticalScrollIndicator={false}
           >
-            <ProfileSection />
+            <View onLayout={(e) => { profileY.current = e.nativeEvent.layout.y; }}>
+              <ProfileSection />
+            </View>
 
             <AppearanceSection />
 
@@ -119,7 +134,7 @@ export default function SettingsScreen() {
                 revealSection();
               }}
             >
-              <SamwellSection />
+              <SamwellSection onRequestAccount={revealAccount} />
             </View>
 
             {settled && <TtsSection />}

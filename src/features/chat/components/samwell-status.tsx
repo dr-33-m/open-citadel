@@ -15,6 +15,7 @@ import { useCSSVariable } from 'uniwind';
 import { SamwellText, useSamwellSpans } from '@/components/samwell-text';
 import { ThemedText } from '@/components/themed-text';
 import { EmptyState } from '@/components/ui/empty-state';
+import { GoldButton } from '@/components/ui/gold-button';
 import { Spinner } from '@/components/ui/spinner';
 import { Touchable } from '@/components/ui/touchable';
 import type { SamwellStatus, SamwellStatusAction } from '@/features/chat/hooks/use-samwell-status';
@@ -30,25 +31,41 @@ import { asColor } from '@/utils/colors';
 const IDLE_TITLE = 'Ask Samwell about your books';
 const IDLE_MESSAGE = 'Analyse and learn with Samwell';
 
-/** First action reads as the recommended one; the rest are quieter alternates. */
+/**
+ * The way out of a status, with the first one carrying the weight.
+ *
+ * The primary is `GoldButton`, not a gold rectangle rolled by hand here. It
+ * used to be `bg-primary` with a 1px border and `labelSm` in a `px-4 py-2`
+ * box, which is a different gold from every other primary in the app:
+ * `GoldButton` is a gradient from `--color-primary` into `--color-primary-deep`
+ * in a 40pt box. The two sat one tap apart on the same journey — SIGN IN here,
+ * SIGN IN on the account card in Settings — as a flat gold and a graded one,
+ * which is the kind of difference nobody names and everybody feels.
+ */
 function StatusActions({ actions }: { actions?: SamwellStatusAction[] }) {
-  const primaryForeground = useCSSVariable('--color-primary-foreground');
   if (!actions || actions.length === 0) return null;
 
   return (
-    <View className="mt-1 flex-row flex-wrap justify-center gap-2">
-      {actions.map((action, i) => (
-        <Touchable
-          key={action.label}
-          onPress={action.onPress}
-          accessibilityRole="button"
-          className={cn('border px-4 py-2', i === 0 ? 'border-primary bg-primary' : 'border-border')}
-        >
-          <ThemedText type="labelSm" color={i === 0 ? asColor(primaryForeground) : undefined}>
-            {action.label}
-          </ThemedText>
-        </Touchable>
-      ))}
+    <View className="mt-1 flex-row flex-wrap items-center justify-center gap-2">
+      {actions.map((action, i) =>
+        i === 0 ? (
+          <GoldButton
+            key={action.label}
+            label={action.label}
+            size="compact"
+            onPress={action.onPress}
+          />
+        ) : (
+          <Touchable
+            key={action.label}
+            onPress={action.onPress}
+            accessibilityRole="button"
+            className="border border-border px-4 py-2"
+          >
+            <ThemedText type="labelSm">{action.label}</ThemedText>
+          </Touchable>
+        ),
+      )}
     </View>
   );
 }

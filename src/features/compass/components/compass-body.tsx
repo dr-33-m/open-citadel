@@ -46,7 +46,7 @@ const COMPASS_BLOCKED: Record<
     action: 'OPEN SETTINGS',
   },
   needsAccount: {
-    message: 'Sign in and Samwell can hold your goals for you, wherever you read.',
+    message: 'Sign in and let Samwell track and analyse your goals.',
     action: 'SIGN IN',
   },
 };
@@ -173,7 +173,7 @@ export function CompassBody({
         status={{
           title:
             cloudBlocker === 'needsAccount'
-              ? 'Compass works from your account.'
+              ? 'Compass works with your Cloud Account.'
               : 'Compass needs Samwell Cloud.',
           message: COMPASS_BLOCKED[cloudBlocker].message,
           // Nothing to offer when the build itself has no server: the way out
