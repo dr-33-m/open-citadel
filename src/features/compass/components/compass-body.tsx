@@ -8,7 +8,7 @@
  * and the month behind PLANNER, for when they are what you actually came for.
  */
 import React from 'react';
-import { Compass } from '@/components/icons';
+import { Compass, LogIn, Settings, type LucideIcon } from '@/components/icons';
 import { View, type ViewStyle } from 'react-native';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
@@ -34,20 +34,23 @@ type Conversation = ReturnType<typeof useCompassConversation>;
  */
 const COMPASS_BLOCKED: Record<
   Exclude<CloudBlocker, 'checkingAccount'>,
-  { message: string; action: string }
+  { message: string; action: string; icon: LucideIcon }
 > = {
   offlineMode: {
     message:
       'Tap the button below to switch Samwell to cloud mode and get started with your goals.',
     action: 'OPEN SETTINGS',
+    icon: Settings,
   },
   notConfigured: {
     message: 'This build has no cloud server, so Samwell cannot help you plan a goal yet.',
     action: 'OPEN SETTINGS',
+    icon: Settings,
   },
   needsAccount: {
     message: 'Sign in and let Samwell track and analyse your goals.',
     action: 'SIGN IN',
+    icon: LogIn,
   },
 };
 
@@ -181,7 +184,13 @@ export function CompassBody({
           actions:
             cloudBlocker === 'notConfigured'
               ? undefined
-              : [{ label: COMPASS_BLOCKED[cloudBlocker].action, onPress: onOpenSettings }],
+              : [
+                  {
+                    label: COMPASS_BLOCKED[cloudBlocker].action,
+                    icon: COMPASS_BLOCKED[cloudBlocker].icon,
+                    onPress: onOpenSettings,
+                  },
+                ],
         }}
       />
     );

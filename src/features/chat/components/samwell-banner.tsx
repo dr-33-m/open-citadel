@@ -10,6 +10,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { LogIn, Power, RefreshCw, Settings, type LucideIcon } from '@/components/icons';
 import { SamwellText } from '@/components/samwell-text';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
@@ -30,16 +31,18 @@ export function SamwellBanner({ readiness, onOpenSettings }: SamwellBannerProps)
 
   const { ready, downloaded, loading, loadError, initContext, mode, cloudBlocker } = readiness;
 
-  if (cloudBlocker === 'notConfigured') {
+  // Both gated on cloud mode: `cloudBlocker` names a missing account even in
+  // offline mode now (Compass needs that), and offline chat does not care.
+  if (mode === 'cloud' && cloudBlocker === 'notConfigured') {
     return <Banner message="Grand Maester Samwell is not set up in this build yet." color={asColor(mutedForeground)} />;
   }
 
-  if (cloudBlocker === 'needsAccount') {
+  if (mode === 'cloud' && cloudBlocker === 'needsAccount') {
     return (
       <Banner
         message="Grand Maester Samwell works with your Cloud Account. Sign in to talk to him."
         color={asColor(mutedForeground)}
-        action={{ label: 'SIGN IN', onPress: onOpenSettings }}
+        action={{ label: 'SIGN IN', icon: LogIn, onPress: onOpenSettings }}
       />
     );
   }
@@ -53,7 +56,7 @@ export function SamwellBanner({ readiness, onOpenSettings }: SamwellBannerProps)
       <Banner
         message="Samwell needs a model to run. Set one up in Settings."
         color={asColor(mutedForeground)}
-        action={{ label: 'SET UP SAMWELL', onPress: onOpenSettings }}
+        action={{ label: 'SET UP SAMWELL', icon: Settings, onPress: onOpenSettings }}
       />
     );
   }
@@ -63,7 +66,7 @@ export function SamwellBanner({ readiness, onOpenSettings }: SamwellBannerProps)
       <Banner
         message={loadError}
         color={asColor(destructive)}
-        action={{ label: 'RETRY', onPress: initContext, disabled: loading }}
+        action={{ label: 'RETRY', icon: RefreshCw, onPress: initContext, disabled: loading }}
       />
     );
   }
@@ -73,7 +76,7 @@ export function SamwellBanner({ readiness, onOpenSettings }: SamwellBannerProps)
       <Banner
         message="Samwell is offline. Wake him up to chat."
         color={asColor(mutedForeground)}
-        action={{ label: 'WAKE UP', onPress: initContext, disabled: loading }}
+        action={{ label: 'WAKE UP', icon: Power, onPress: initContext, disabled: loading }}
       />
     );
   }
@@ -88,7 +91,7 @@ function Banner({
 }: {
   message: string;
   color: string | undefined;
-  action?: { label: string; onPress: () => void; disabled?: boolean };
+  action?: { label: string; onPress: () => void; disabled?: boolean; icon?: LucideIcon };
 }) {
   const primaryForeground = useCSSVariable('--color-primary-foreground');
 
@@ -107,9 +110,13 @@ function Banner({
           onPress={action.onPress}
           accessibilityRole="button"
         >
-          <ThemedText type="labelSm" color={asColor(primaryForeground)}>
-            {action.label}
-          </ThemedText>
+          {/* The same 14pt mark the rest of the app's buttons lead with. */}
+          <View className="flex-row items-center gap-2">
+            {action.icon ? <action.icon size={14} color={asColor(primaryForeground)} /> : null}
+            <ThemedText type="labelSm" color={asColor(primaryForeground)}>
+              {action.label}
+            </ThemedText>
+          </View>
         </Touchable>
       ) : null}
     </View>

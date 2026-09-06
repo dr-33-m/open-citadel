@@ -37,12 +37,18 @@ const IDLE_MESSAGE = 'Analyse and learn with Samwell';
  * The primary is `GoldButton`, not a gold rectangle rolled by hand here. It
  * used to be `bg-primary` with a 1px border and `labelSm` in a `px-4 py-2`
  * box, which is a different gold from every other primary in the app:
- * `GoldButton` is a gradient from `--color-primary` into `--color-primary-deep`
- * in a 40pt box. The two sat one tap apart on the same journey — SIGN IN here,
- * SIGN IN on the account card in Settings — as a flat gold and a graded one,
- * which is the kind of difference nobody names and everybody feels.
+ * `GoldButton` is a gradient from `--color-primary` into `--color-primary-deep`.
+ * The two sat one tap apart on the same journey — SIGN IN here, SIGN IN on the
+ * account card in Settings — as a flat gold and a graded one, which is the
+ * kind of difference nobody names and everybody feels.
+ *
+ * `small` rather than `compact`, and it settles an old mismatch: the quieter
+ * actions beside it are `px-4 py-2` around `labelSm`, which is 34pt once the
+ * border is counted, and `small` is that same 34. Every button in this row is
+ * now one height whatever it is made of.
  */
 function StatusActions({ actions }: { actions?: SamwellStatusAction[] }) {
+  const mutedForeground = useCSSVariable('--color-muted-foreground');
   if (!actions || actions.length === 0) return null;
 
   return (
@@ -52,7 +58,8 @@ function StatusActions({ actions }: { actions?: SamwellStatusAction[] }) {
           <GoldButton
             key={action.label}
             label={action.label}
-            size="compact"
+            icon={action.icon}
+            size="small"
             onPress={action.onPress}
           />
         ) : (
@@ -62,7 +69,12 @@ function StatusActions({ actions }: { actions?: SamwellStatusAction[] }) {
             accessibilityRole="button"
             className="border border-border px-4 py-2"
           >
-            <ThemedText type="labelSm">{action.label}</ThemedText>
+            {/* The same 14pt mark `ActionButton` and the gold button use, so a
+                row can mix all three and still look like one row. */}
+            <View className="flex-row items-center gap-2">
+              {action.icon ? <action.icon size={14} color={asColor(mutedForeground)} /> : null}
+              <ThemedText type="labelSm">{action.label}</ThemedText>
+            </View>
           </Touchable>
         ),
       )}

@@ -110,6 +110,18 @@ export function SamwellPage() {
     () => router.push({ pathname: '/settings', params: { section: 'samwell' } }),
     [router],
   );
+  /**
+   * Settings, opened at the account rather than at the engine.
+   *
+   * A different destination because a different thing is wrong. "Set Samwell
+   * up" wants the engine section; "sign in" wants the account card, and
+   * pointing it at Samwell landed the reader on a panel whose only advice was
+   * to sign in somewhere further up the page it had just scrolled them past.
+   */
+  const openAccountSettings = React.useCallback(
+    () => router.push({ pathname: '/settings', params: { section: 'account' } }),
+    [router],
+  );
 
   // Field-by-field selectors rather than one whole-store subscription: this
   // screen is the app's largest render, and a single unrelated field change
@@ -182,6 +194,7 @@ export function SamwellPage() {
   const status = useSamwellStatus({
     readiness,
     onOpenSettings: openSamwellSettings,
+    onOpenAccount: openAccountSettings,
     onNewChat: React.useCallback(() => void newChat(), [newChat]),
   });
 
@@ -666,7 +679,13 @@ export function SamwellPage() {
               <CompassBody
                 conversation={compass}
                 cloudBlocker={readiness.cloudBlocker}
-                onOpenSettings={openSamwellSettings}
+                /* Same split as the status hook's: only the missing account
+                   sends you to the account. */
+                onOpenSettings={
+                  readiness.cloudBlocker === 'needsAccount'
+                    ? openAccountSettings
+                    : openSamwellSettings
+                }
                 trackableTitles={trackableTitles}
                 contentColumn={contentColumn}
                 floatingClearance={floatingClearance}

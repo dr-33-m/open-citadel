@@ -53,33 +53,35 @@ export default function SettingsScreen() {
    */
   const { section } = useLocalSearchParams<{ section?: string }>();
   const scrollRef = React.useRef<ScrollView>(null);
-  const sectionY = React.useRef<number | null>(null);
   const scrolled = React.useRef(false);
+  /**
+   * Where each named section starts, filled in by its own `onLayout`.
+   *
+   * Measured rather than assumed. Profile is the first section today and a
+   * scroll to zero would look right for exactly as long as that stays true,
+   * which is the sort of thing that stays true until it quietly does not.
+   */
+  const sectionY = React.useRef<Record<string, number>>({});
 
-  const revealSection = React.useCallback(() => {
-    if (scrolled.current || !settled || section !== 'samwell') return;
-    const y = sectionY.current;
+  const scrollToSection = React.useCallback((name: string) => {
+    const y = sectionY.current[name];
     if (y == null) return;
-    scrolled.current = true;
     // A little above it, so the section's own label is not welded to the
     // top edge and you can see it has something above it.
     scrollRef.current?.scrollTo({ y: Math.max(0, y - 24), animated: true });
-  }, [section, settled]);
+  }, []);
+
+  const revealSection = React.useCallback(() => {
+    if (scrolled.current || !settled || !section) return;
+    if (sectionY.current[section] == null) return;
+    scrolled.current = true;
+    scrollToSection(section);
+  }, [section, settled, scrollToSection]);
 
   React.useEffect(revealSection, [revealSection]);
 
-  /**
-   * Bring the account into view, for the cloud panel's "sign in" way out.
-   *
-   * Measured rather than assumed to be zero: Profile is the first section
-   * today, and a scroll to the top would look right for exactly as long as
-   * that stays true. The same `- 24` as above, so the section label is not
-   * welded to the top edge.
-   */
-  const profileY = React.useRef(0);
-  const revealAccount = React.useCallback(() => {
-    scrollRef.current?.scrollTo({ y: Math.max(0, profileY.current - 24), animated: true });
-  }, []);
+  /** The cloud panel's "sign in" way out, one section up the same screen. */
+  const revealAccount = React.useCallback(() => scrollToSection('account'), [scrollToSection]);
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -120,7 +122,12 @@ export default function SettingsScreen() {
             }}
             showsVerticalScrollIndicator={false}
           >
-            <View onLayout={(e) => { profileY.current = e.nativeEvent.layout.y; }}>
+            <View
+              onLayout={(e) => {
+                sectionY.current.account = e.nativeEvent.layout.y;
+                revealSection();
+              }}
+            >
               <ProfileSection />
             </View>
 
@@ -130,7 +137,7 @@ export default function SettingsScreen() {
 
             <View
               onLayout={(e) => {
-                sectionY.current = e.nativeEvent.layout.y;
+                sectionY.current.samwell = e.nativeEvent.layout.y;
                 revealSection();
               }}
             >

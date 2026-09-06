@@ -25,12 +25,27 @@
 import React from 'react';
 
 import type { SamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
+import {
+  Cloud,
+  LogIn,
+  MessageSquarePlus,
+  Power,
+  RefreshCw,
+  Settings,
+  type LucideIcon,
+} from '@/components/icons';
 import { useChatStore } from '@/stores/chat';
 import { useSettingsStore } from '@/stores/settings';
 
 export interface SamwellStatusAction {
   label: string;
   onPress: () => void;
+  /**
+   * The mark that leads the label, as every other button in the app carries
+   * one. Optional on the type, present on every action here: a row where some
+   * buttons are marked and some are not reads worse than either alone.
+   */
+  icon?: LucideIcon;
 }
 
 export interface SamwellStatus {
@@ -53,6 +68,16 @@ export interface SamwellStatus {
 interface UseSamwellStatusArgs {
   readiness: SamwellReadiness;
   onOpenSettings: () => void;
+  /**
+   * Settings, scrolled to the account rather than to Samwell.
+   *
+   * Its own callback because the destination differs by what is wrong. "SET
+   * UP CLOUD" wants the engine section; "SIGN IN" wants the account card, and
+   * sending it to Samwell left the reader looking at a panel whose only
+   * advice was to sign in somewhere further up the page they had just been
+   * scrolled past.
+   */
+  onOpenAccount: () => void;
   /** Starts a fresh conversation, for the "too long" way out. */
   onNewChat: () => void;
 }
@@ -60,6 +85,7 @@ interface UseSamwellStatusArgs {
 export function useSamwellStatus({
   readiness,
   onOpenSettings,
+  onOpenAccount,
   onNewChat,
 }: UseSamwellStatusArgs): SamwellStatus | null {
   const deviceLimit = useChatStore((s) => s.deviceLimit);
@@ -87,8 +113,8 @@ export function useSamwellStatus({
    * honest offer is the place where one gets set up.
    */
   const cloudEscape: SamwellStatusAction = cloudConfigured
-    ? { label: 'SWITCH TO CLOUD', onPress: () => void switchToCloud() }
-    : { label: 'SET UP CLOUD', onPress: onOpenSettings };
+    ? { label: 'SWITCH TO CLOUD', icon: Cloud, onPress: () => void switchToCloud() }
+    : { label: 'SET UP CLOUD', icon: Cloud, onPress: onOpenSettings };
 
   const { ready, downloaded, loading, loadError, initContext, mode, cloudBlocker } = readiness;
 
@@ -99,6 +125,7 @@ export function useSamwellStatus({
         cloudEscape,
         {
           label: 'START NEW CHAT',
+          icon: MessageSquarePlus,
           onPress: () => {
             clearDeviceLimit();
             onNewChat();
@@ -115,7 +142,16 @@ export function useSamwellStatus({
     };
   }
 
-  if (cloudBlocker === 'notConfigured') {
+  /*
+   * `mode === 'cloud' &&` on both of these, and it is load-bearing.
+   *
+   * `cloudBlocker` is ordered by what to fix first, so it now names a missing
+   * account even while Samwell is set to run on this device — which Compass
+   * needs, being cloud-only. Chat does not: offline chat with a local model
+   * is working exactly as asked, and telling that reader to sign in would be
+   * answering a question they have not asked.
+   */
+  if (mode === 'cloud' && cloudBlocker === 'notConfigured') {
     // Also carried no action until now, which stranded anyone who reached it
     // — including from the device-limit banner above. Settings is where the
     // base URL is entered and where switching back offline lives, so it is
@@ -123,15 +159,15 @@ export function useSamwellStatus({
     return {
       title: 'Samwell Cloud is not set up.',
       message: 'This build has no cloud server, so there is nothing to talk to yet.',
-      actions: [{ label: 'OPEN SETTINGS', onPress: onOpenSettings }],
+      actions: [{ label: 'OPEN SETTINGS', icon: Settings, onPress: onOpenSettings }],
     };
   }
 
-  if (cloudBlocker === 'needsAccount') {
+  if (mode === 'cloud' && cloudBlocker === 'needsAccount') {
     return {
       title: 'Grand Maester Samwell works with your Cloud Account.',
       message: 'Sign in and he can pick up where you left off.',
-      actions: [{ label: 'SIGN IN', onPress: onOpenSettings }],
+      actions: [{ label: 'SIGN IN', icon: LogIn, onPress: onOpenAccount }],
     };
   }
 
@@ -141,14 +177,14 @@ export function useSamwellStatus({
     return {
       title: 'Samwell needs a model to run.',
       message: 'Tap button below to set up Samwell.',
-      actions: [{ label: 'SET UP SAMWELL', onPress: onOpenSettings }],
+      actions: [{ label: 'SET UP SAMWELL', icon: Settings, onPress: onOpenSettings }],
     };
   }
 
   if (loadError) {
     return {
       message: loadError,
-      actions: [{ label: 'RETRY', onPress: initContext }],
+      actions: [{ label: 'RETRY', icon: RefreshCw, onPress: initContext }],
       isError: true,
     };
   }
@@ -161,7 +197,7 @@ export function useSamwellStatus({
     return {
       title: 'Samwell is asleep.',
       message: 'Tap button below to wake him up.',
-      actions: [{ label: 'WAKE UP', onPress: initContext }],
+      actions: [{ label: 'WAKE UP', icon: Power, onPress: initContext }],
     };
   }
 

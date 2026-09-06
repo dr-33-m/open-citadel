@@ -25,7 +25,14 @@ import { useSettingsStore } from '@/stores/settings';
  * flags produce the first time one of them is read out of turn.
  */
 export type CloudBlocker =
-  /** Samwell is set to run on this device. Only Compass, which is cloud-only, cares. */
+  /**
+   * Everything else is in place, but Samwell is set to run on this device.
+   *
+   * Last in the order, because it is the only one of these a reader has
+   * already chosen on purpose. Only Compass, which is cloud-only, treats it
+   * as a problem; chat in offline mode is working exactly as asked, which is
+   * why every chat surface tests `mode === 'cloud'` before reading this at all.
+   */
   | 'offlineMode'
   /**
    * This build cannot reach the cloud at all: no server URL, or no Logto to
@@ -82,27 +89,35 @@ export function useSamwellReadiness(): SamwellReadiness {
   const activeModel = models.find((m) => m.id === activeModelId);
 
   /*
-   * Read in order, and the account comes last on purpose.
+   * Ordered by what you would have to fix FIRST, not by what is easiest to
+   * test for. That ordering is the whole value of this being one value.
+   *
+   * `offlineMode` used to come first, and it read the situation backwards for
+   * anyone signed out: Compass told them to switch Samwell to cloud mode,
+   * they did, and were met with "sign in" — two dead ends in a row, the
+   * second only reachable through the first. An account is the deeper
+   * prerequisite, so it is named first and the mode second.
+   *
+   * `ACCOUNT_ENABLED` belongs beside the missing base URL rather than with
+   * the missing sign-in: a build with a server but no Logto draws no account
+   * card, so calling that `needsAccount` would send the reader to a Settings
+   * screen with nowhere to carry the instruction out. Both are one fact from
+   * their side: this build cannot reach him.
    *
    * `checkingAccount` is the launch window and says nothing out loud, so a
    * reader who IS signed in never sees a sign-in prompt flash past on a cold
-   * open. It still blocks, which is the half that matters for anything
-   * enabling a control.
+   * open. It still blocks, which is the half that matters for enabling.
    */
-  const cloudBlocker: CloudBlocker | null = !isCloud
-    ? 'offlineMode'
-    : // `ACCOUNT_ENABLED` belongs beside the base URL, not after it. A build
-      // with a server but no Logto has no way to make an account, so calling
-      // that `needsAccount` sent the reader to a Settings screen that draws no
-      // account card — an instruction with nowhere to carry it out. Both are
-      // the same fact from the reader's side: this build cannot reach him.
-      cloudBaseUrl.length === 0 || !ACCOUNT_ENABLED
+  const cloudBlocker: CloudBlocker | null =
+    cloudBaseUrl.length === 0 || !ACCOUNT_ENABLED
       ? 'notConfigured'
       : accountStatus === 'unknown'
         ? 'checkingAccount'
         : accountStatus === 'signedOut'
           ? 'needsAccount'
-          : null;
+          : !isCloud
+            ? 'offlineMode'
+            : null;
 
   return {
     // Read off the blocker rather than rebuilt from the same parts, so the

@@ -32,13 +32,18 @@ interface ChatComposerProps {
   bottomInset: number;
 }
 
-function placeholderFor({ ready, downloaded, cloudBlocker }: SamwellReadiness): string {
+function placeholderFor({ ready, downloaded, mode, cloudBlocker }: SamwellReadiness): string {
   if (!downloaded) return 'Set up Samwell in Settings…';
-  if (cloudBlocker === 'notConfigured') return 'Cloud unavailable in this build…';
-  if (cloudBlocker === 'needsAccount') return 'Sign in to reach Samwell…';
-  // Nothing to wake in cloud mode, so the offline copy below would be a lie.
-  // The field is disabled for this beat either way.
-  if (cloudBlocker === 'checkingAccount') return 'Message Samwell…';
+  // Cloud-only, for the same reason the banner's two branches are: the
+  // blocker names a missing account even while running on this device, and
+  // an offline reader has nothing to sign in for.
+  if (mode === 'cloud') {
+    if (cloudBlocker === 'notConfigured') return 'Cloud unavailable in this build…';
+    if (cloudBlocker === 'needsAccount') return 'Sign in to reach Samwell…';
+    // Nothing to wake in cloud mode, so the offline copy below would be a
+    // lie. The field is disabled for this beat either way.
+    if (cloudBlocker === 'checkingAccount') return 'Message Samwell…';
+  }
   if (!ready) return 'Wake up Samwell…';
   return 'Message Samwell…';
 }
