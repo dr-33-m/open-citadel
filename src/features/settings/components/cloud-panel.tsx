@@ -10,6 +10,7 @@ import { ActionButton } from '@/components/action-button';
 import { Touchable } from '@/components/ui/touchable';
 import { Progress } from '@/components/ui/progress';
 import { CloudTuneSheet } from '@/features/settings/components/cloud-tune-sheet';
+import { useSignedIn } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 
@@ -30,6 +31,9 @@ export function CloudPanel() {
   const setCloudModelId = useSettingsStore((s) => s.setCloudModelId);
   const loadCloudUsage = useSettingsStore((s) => s.loadCloudUsage);
   const loadCloudModels = useSettingsStore((s) => s.loadCloudModels);
+  // Just the boolean. The panel does not draw the email, and subscribing to
+  // the account itself would redraw it whenever a name or an error moved.
+  const signedIn = useSignedIn();
   const [pickerVisible, setPickerVisible] = React.useState(false);
   const [tuneVisible, setTuneVisible] = React.useState(false);
   const activeModel = cloudModels.find((m) => m.id === cloudModelId);
@@ -57,6 +61,17 @@ export function CloudPanel() {
         {!cloudBaseUrl && (
           <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
             Grand Maester Samwell is not set up in this build yet.
+          </ThemedText>
+        )}
+
+        {/* The model and the usage below are both real and both unreachable
+            without an account, so this says so once at the top rather than
+            leaving two halves of the card to fail separately. The way out is
+            the Profile section at the top of this same screen, which is why
+            there is no button here pointing anywhere. */}
+        {cloudBaseUrl && !signedIn && (
+          <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
+            He works from your account. Sign in under Profile to reach him.
           </ThemedText>
         )}
 
@@ -91,8 +106,13 @@ export function CloudPanel() {
         <View className="gap-3">
           <View className="flex-row items-center justify-between">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>USAGE</ThemedText>
-            <Touchable onPress={loadCloudUsage}>
-              <ThemedText type="labelSm" color={asColor(primary)}>REFRESH</ThemedText>
+            <Touchable onPress={loadCloudUsage} disabled={!signedIn}>
+              <ThemedText
+                type="labelSm"
+                color={asColor(signedIn ? primary : mutedForeground)}
+              >
+                REFRESH
+              </ThemedText>
             </Touchable>
           </View>
           {cloudUsage ? (
@@ -107,7 +127,9 @@ export function CloudPanel() {
             </>
           ) : (
             <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-              {cloudUsageError ?? 'Usage appears after the first successful server check.'}
+              {!signedIn
+                ? 'Usage is counted against your account.'
+                : (cloudUsageError ?? 'Usage appears after the first successful server check.')}
             </ThemedText>
           )}
         </View>

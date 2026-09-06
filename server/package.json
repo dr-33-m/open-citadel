@@ -16,6 +16,7 @@
     "@tanstack/ai-openrouter": "0.15.8",
     "dotenv": "^17.2.3",
     "hono": "^4.10.7",
+    "jose": "^6.2.12",
     "samwell-shared": "workspace:*",
     "zod": "^4.2.0"
   },

@@ -311,13 +311,21 @@ function resetTime(events: { created_at_ms: number }[], windowMs: number): strin
   return new Date(oldest + windowMs).toISOString();
 }
 
-export async function getUsageState(deviceId: string, nowMs = Date.now()): Promise<CloudUsageState> {
+/**
+ * What an account has spent inside the two windows.
+ *
+ * The column is still called `device_id`. It used to hold exactly that, and
+ * it now holds an `account:<sub>` string instead — an opaque key either way,
+ * so nothing needed migrating when Samwell Cloud moved onto accounts. The
+ * credit redesign that follows this is where the name gets put right.
+ */
+export async function getUsageState(accountId: string, nowMs = Date.now()): Promise<CloudUsageState> {
   const sinceWeekly = nowMs - CLOUD_LIMITS.weeklyWindowMs;
   const result = await db.execute({
     sql: `SELECT created_at_ms FROM usage_events
       WHERE device_id = ? AND created_at_ms >= ? AND counts_toward_limit = 1
       ORDER BY created_at_ms ASC`,
-    args: [deviceId, sinceWeekly],
+    args: [accountId, sinceWeekly],
   });
 
   const weeklyEvents = result.rows.map((row) => ({
@@ -358,7 +366,7 @@ export async function getUsageState(deviceId: string, nowMs = Date.now()): Promi
  */
 export async function reserveUsageEvent(args: {
   id: string;
-  deviceId: string;
+  accountId: string;
   modelId: string;
   countsTowardLimit: boolean;
   kind?: string;
@@ -372,9 +380,9 @@ export async function reserveUsageEvent(args: {
           id, device_id, model_id, status, counts_toward_limit, kind, created_at_ms
         )
         VALUES (?, ?, ?, 'started', 0, ?, ?)`,
-      args: [args.id, args.deviceId, args.modelId, args.kind ?? 'chat', now],
+      args: [args.id, args.accountId, args.modelId, args.kind ?? 'chat', now],
     });
-    return { allowed: true, usage: await getUsageState(args.deviceId, now) };
+    return { allowed: true, usage: await getUsageState(args.accountId, now) };
   }
 
   const sinceFiveHour = now - CLOUD_LIMITS.fiveHourWindowMs;
@@ -395,20 +403,20 @@ export async function reserveUsageEvent(args: {
       ) < ?`,
     args: [
       args.id,
-      args.deviceId,
+      args.accountId,
       args.modelId,
       args.kind ?? 'chat',
       now,
-      args.deviceId,
+      args.accountId,
       sinceFiveHour,
       CLOUD_LIMITS.fiveHourMessageCap,
-      args.deviceId,
+      args.accountId,
       sinceWeekly,
       CLOUD_LIMITS.weeklyMessageCap,
     ],
   });
 
-  const usage = await getUsageState(args.deviceId, now);
+  const usage = await getUsageState(args.accountId, now);
   if (result.rowsAffected === 0) {
     const reason: 'fiveHour' | 'weekly' = usage.fiveHour.remaining <= 0 ? 'fiveHour' : 'weekly';
     return { allowed: false, usage, reason };

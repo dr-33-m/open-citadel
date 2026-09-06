@@ -32,9 +32,10 @@ interface ChatComposerProps {
   bottomInset: number;
 }
 
-function placeholderFor({ ready, downloaded, cloudUnavailable }: SamwellReadiness): string {
+function placeholderFor({ ready, downloaded, cloudBlocker }: SamwellReadiness): string {
   if (!downloaded) return 'Set up Samwell in Settings…';
-  if (cloudUnavailable) return 'Cloud unavailable in this build…';
+  if (cloudBlocker === 'notConfigured') return 'Cloud unavailable in this build…';
+  if (cloudBlocker === 'needsAccount') return 'Sign in to reach Samwell…';
   if (!ready) return 'Wake up Samwell…';
   return 'Message Samwell…';
 }

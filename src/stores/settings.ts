@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { CLOUD_MODEL_CATALOG, DEFAULT_CLOUD_MODEL_ID, type CloudModelOption, type CloudUsageState } from 'samwell-shared';
 
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
+import { cloudHeaders } from '@/services/cloud-identity';
 import { db } from '@/db/client';
 import { appSettings } from '@/db/schema';
 
@@ -48,7 +49,6 @@ type SettingsState = {
   cloudBaseUrl: string;
   cloudModelId: string;
   cloudThinkingBudget: CloudThinkingBudget;
-  cloudDeviceId: string | null;
   cloudUsage: CloudUsageState | null;
   cloudUsageError: string | null;
   cloudModels: CloudModelOption[];
@@ -62,7 +62,6 @@ type SettingsState = {
   setSamwellMode: (mode: SamwellMode) => Promise<void>;
   setCloudModelId: (modelId: string) => Promise<void>;
   setCloudThinkingBudget: (budget: CloudThinkingBudget) => Promise<void>;
-  getCloudDeviceId: () => Promise<string>;
   loadCloudUsage: () => Promise<void>;
   loadCloudModels: () => Promise<void>;
   setTtsVoice: (voice: string | null, language?: string | null) => Promise<void>;
@@ -78,10 +77,6 @@ async function saveSetting(key: string, value: string) {
     .run();
 }
 
-function createDeviceId(): string {
-  return `device_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
-}
-
 function defaultCloudBaseUrl(): string {
   return SAMWELL_CLOUD_BASE_URL.trim().replace(/\/+$/, '');
 }
@@ -93,7 +88,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   cloudBaseUrl: defaultCloudBaseUrl(),
   cloudModelId: DEFAULT_CLOUD_MODEL_ID,
   cloudThinkingBudget: 'medium',
-  cloudDeviceId: null,
   cloudUsage: null,
   cloudUsageError: null,
   cloudModels: CLOUD_MODEL_CATALOG,
@@ -105,11 +99,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   loadSettings: async () => {
     const rows = await db.select().from(appSettings);
     const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-    let cloudDeviceId = map['cloud.deviceId'] ?? null;
-    if (!cloudDeviceId) {
-      cloudDeviceId = createDeviceId();
-      await saveSetting('cloud.deviceId', cloudDeviceId);
-    }
 
     set({
       username: map['username'] ?? '',
@@ -120,7 +109,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       cloudThinkingBudget: migrateThinkingBudget(
         map['cloud.thinkingBudget'] ?? map['cloud.reasoningEffort'],
       ),
-      cloudDeviceId,
       ttsVoice: map['ttsVoice'] ?? null,
       ttsVoiceLanguage: map['ttsVoiceLanguage'] ?? null,
       ttsRate: parseFloat(map['ttsRate'] ?? '1'),      isLoaded: true,
@@ -163,39 +151,26 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ cloudThinkingBudget: budget });
   },
 
-  getCloudDeviceId: async () => {
-    const existing = get().cloudDeviceId;
-    if (existing) return existing;
-
-    const row = db.select().from(appSettings).where(eq(appSettings.key, 'cloud.deviceId')).get();
-    if (row?.value) {
-      set({ cloudDeviceId: row.value });
-      return row.value;
-    }
-
-    const next = createDeviceId();
-    await saveSetting('cloud.deviceId', next);
-    set({ cloudDeviceId: next });
-    return next;
-  },
-
   loadCloudUsage: async () => {
-    const { cloudBaseUrl, getCloudDeviceId } = get();
+    const { cloudBaseUrl } = get();
     if (!cloudBaseUrl) {
       set({ cloudUsage: null, cloudUsageError: 'Samwell Cloud is not configured for this build.' });
       return;
     }
 
     try {
-      const deviceId = await getCloudDeviceId();
       const res = await fetch(`${cloudBaseUrl}/usage`, {
-        headers: { 'x-samwell-device-id': deviceId },
+        headers: await cloudHeaders(),
       });
       if (!res.ok) throw new Error(`Usage request failed (${res.status})`);
       const usage = (await res.json()) as CloudUsageState;
       set({ cloudUsage: usage, cloudUsageError: null });
     } catch (err) {
+      // `NotSignedIn` reads correctly as it stands ("Sign in to use Grand
+      // Maester Samwell"), so it needs no special case here: the panel draws
+      // whatever this says in place of the bars.
       set({
+        cloudUsage: null,
         cloudUsageError: err instanceof Error ? err.message : 'Could not load cloud usage.',
       });
     }

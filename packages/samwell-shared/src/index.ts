@@ -1,3 +1,4 @@
+export * from './account';
 export * from './character';
 export * from './chat-title';
 export * from './compass';

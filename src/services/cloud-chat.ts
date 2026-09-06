@@ -49,6 +49,7 @@ import {
   type SearchResult,
   type ToolCallContext,
 } from '@/services/chat-tools';
+import { cloudHeaders } from '@/services/cloud-identity';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { buildJourneySnapshot } from '@/services/journey';
 import {
@@ -83,7 +84,6 @@ type ApprovalRequest = {
 
 export interface CloudChatTurnOptions {
   baseUrl: string;
-  deviceId: string;
   modelId: string;
   sessionId: string;
   bookId: string | null;
@@ -619,7 +619,6 @@ export async function preflightCloudServer(baseUrl: string): Promise<void> {
 
 export async function sendCloudChatTurn({
   baseUrl,
-  deviceId,
   modelId,
   sessionId,
   bookId,
@@ -696,12 +695,18 @@ export async function sendCloudChatTurn({
   const flushThinking = createThrottle(onThinkingContent, 120);
   const flushStreaming = createThrottle(onStreamingContent, 50);
 
+  // Resolved once, here, rather than passed in: who the turn belongs to is
+  // not the caller's business, and a fresh `ChatClient` is built per turn, so
+  // a token that expired during a long conversation is refreshed on the next
+  // message without anything having to notice.
+  const headers = await cloudHeaders();
+
   const client = new ChatClient({
     id: `samwell-cloud-${sessionId}`,
     threadId: sessionId,
     initialMessages,
     connection: xhrHttpStream(`${baseUrl}/chat/http`, {
-      headers: { 'x-samwell-device-id': deviceId },
+      headers,
     }),
     forwardedProps: {
       modelId,

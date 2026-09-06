@@ -11,7 +11,8 @@ import {
 
 import { runStructuredAnalysis } from './structured-analysis.js';
 import { listCloudModels, reserveUsageEvent, resolveModelId } from './db.js';
-import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
+import { requireOpenRouterKey } from './http-helpers.js';
+import { readIdentity } from './identity.js';
 
 export const takeawayRoutes = new Hono();
 
@@ -30,7 +31,7 @@ export const takeawayRoutes = new Hono();
  */
 takeawayRoutes.post('/takeaway', async (c) => {
   requireOpenRouterKey();
-  const deviceId = readDeviceId(c);
+  const { id: accountId } = await readIdentity(c);
 
   const parsed = GoalTakeawayRequestSchema.safeParse(await c.req.json());
   if (!parsed.success) {
@@ -46,7 +47,7 @@ takeawayRoutes.post('/takeaway', async (c) => {
 
   const reservation = await reserveUsageEvent({
     id: usageEventId,
-    deviceId,
+    accountId,
     modelId,
     countsTowardLimit: true,
     kind: 'goal_takeaway',

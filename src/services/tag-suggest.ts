@@ -8,6 +8,7 @@ import {
 
 import { db } from '@/db/client';
 import { goals } from '@/db/schema';
+import { cloudJsonHeaders } from '@/services/cloud-identity';
 import * as Inference from '@/services/inference';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -51,8 +52,7 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
     goal: clamp(goal ?? undefined, 200),
   };
 
-  const { samwellMode, cloudBaseUrl, cloudModelId, getCloudDeviceId } =
-    useSettingsStore.getState();
+  const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
 
   if (samwellMode === 'cloud') {
     if (!cloudBaseUrl) {
@@ -67,10 +67,7 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
     try {
       res = await fetch(`${cloudBaseUrl}/tags/suggest`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-samwell-device-id': await getCloudDeviceId(),
-        },
+        headers: await cloudJsonHeaders(),
         body: JSON.stringify({ ...payload, modelId: cloudModelId }),
         signal: controller.signal,
       });

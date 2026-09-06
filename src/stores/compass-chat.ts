@@ -19,6 +19,7 @@ import { showToast } from '@/components/toast/toast-provider';
 import { useApprovalStore } from '@/stores/approval';
 import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
+import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
 
 /**
@@ -257,9 +258,15 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
     const sessionId = get().activeSessionId;
     if (!sessionId) return;
 
-    const { cloudBaseUrl, getCloudDeviceId, cloudModelId } = useSettingsStore.getState();
+    const { cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
     if (!cloudBaseUrl) {
       set({ error: 'Samwell Cloud is not configured for this build.' });
+      return;
+    }
+    // Compass is cloud-only and the cloud runs on accounts. The empty state
+    // already says so and offers the way out; this is the floor under it.
+    if (useAccountStore.getState().status !== 'signedIn') {
+      set({ error: 'Sign in to use Grand Maester Samwell.' });
       return;
     }
 
@@ -293,7 +300,6 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       // different versions of what Samwell knows about the same person.
       const reply = await sendCloudChatTurn({
         baseUrl: cloudBaseUrl,
-        deviceId: await getCloudDeviceId(),
         modelId: cloudModelId,
         sessionId,
         bookId: null,

@@ -54,7 +54,6 @@ import { useAllBooks, useBooksStore } from '@/stores/books';
 import { useChatStore, type ChatSession } from '@/stores/chat';
 import { HUB, useHubStore } from '@/stores/hub';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
-import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
 
 // The content column: centred and capped on wide screens, pixel-identical on
@@ -115,11 +114,6 @@ export function SamwellPage() {
   // Field-by-field selectors rather than one whole-store subscription: this
   // screen is the app's largest render, and a single unrelated field change
   // (model download progress, a settings flip) used to re-run all of it.
-  const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
-  const samwellMode = useSettingsStore((s) => s.samwellMode);
-  const cloudReady = samwellMode === 'cloud' && cloudBaseUrl.length > 0;
-  const notConfigured = cloudBaseUrl.length === 0;
-
   const sessions = useChatStore((s) => s.sessions);
   const activeSession = useChatStore((s) => s.activeSession);
   const messages = useChatStore((s) => s.messages);
@@ -137,6 +131,16 @@ export function SamwellPage() {
   const deleteSession = useChatStore((s) => s.deleteSession);
 
   const readiness = useSamwellReadiness();
+  /*
+   * Whether Compass has anything to talk to.
+   *
+   * Derived from readiness rather than worked out here from the base URL and
+   * the mode, which is how it used to be done and is exactly the second copy
+   * of one rule this codebase keeps paying for. Compass is cloud-only, so
+   * "nothing in the way of the cloud" is the whole condition — and since
+   * Grand Maester Samwell now runs on accounts, that includes being signed in.
+   */
+  const cloudReady = readiness.cloudBlocker === null;
   const chat = useChatSessions();
   // The composer's input, so "work on it more" can put the cursor in it with
   // the draft still on screen. This is the wire the old REFINE button lacked.
@@ -661,8 +665,7 @@ export function SamwellPage() {
             ) : (
               <CompassBody
                 conversation={compass}
-                cloudReady={cloudReady}
-                notConfigured={notConfigured}
+                cloudBlocker={readiness.cloudBlocker}
                 onOpenSettings={openSamwellSettings}
                 trackableTitles={trackableTitles}
                 contentColumn={contentColumn}

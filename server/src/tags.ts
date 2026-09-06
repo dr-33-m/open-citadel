@@ -10,13 +10,14 @@ import {
 
 import { runStructuredAnalysis } from './structured-analysis.js';
 import { listCloudModels, reserveUsageEvent, resolveModelId } from './db.js';
-import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
+import { requireOpenRouterKey } from './http-helpers.js';
+import { readIdentity } from './identity.js';
 
 export const tagsRoutes = new Hono();
 
 tagsRoutes.post('/suggest', async (c) => {
   requireOpenRouterKey();
-  const deviceId = readDeviceId(c);
+  const { id: accountId } = await readIdentity(c);
 
   const parsed = SuggestTagsRequestSchema.safeParse(await c.req.json());
   if (!parsed.success) {
@@ -32,7 +33,7 @@ tagsRoutes.post('/suggest', async (c) => {
 
   const reservation = await reserveUsageEvent({
     id: usageEventId,
-    deviceId,
+    accountId,
     modelId,
     countsTowardLimit: true,
     kind: 'tag_suggest',

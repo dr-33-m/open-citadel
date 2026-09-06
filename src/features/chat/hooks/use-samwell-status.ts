@@ -90,7 +90,7 @@ export function useSamwellStatus({
     ? { label: 'SWITCH TO CLOUD', onPress: () => void switchToCloud() }
     : { label: 'SET UP CLOUD', onPress: onOpenSettings };
 
-  const { ready, downloaded, loading, loadError, initContext, mode, cloudUnavailable } = readiness;
+  const { ready, downloaded, loading, loadError, initContext, mode, cloudBlocker } = readiness;
 
   if (mode === 'offline' && deviceLimit === 'context') {
     return {
@@ -115,7 +115,7 @@ export function useSamwellStatus({
     };
   }
 
-  if (cloudUnavailable) {
+  if (cloudBlocker === 'notConfigured') {
     // Also carried no action until now, which stranded anyone who reached it
     // — including from the device-limit banner above. Settings is where the
     // base URL is entered and where switching back offline lives, so it is
@@ -124,6 +124,14 @@ export function useSamwellStatus({
       title: 'Samwell Cloud is not set up.',
       message: 'This build has no cloud server, so there is nothing to talk to yet.',
       actions: [{ label: 'OPEN SETTINGS', onPress: onOpenSettings }],
+    };
+  }
+
+  if (cloudBlocker === 'needsAccount') {
+    return {
+      title: 'Grand Maester Samwell works from your account.',
+      message: 'Sign in and he can pick up where you left off, on any device you read on.',
+      actions: [{ label: 'SIGN IN', onPress: onOpenSettings }],
     };
   }
 

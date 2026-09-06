@@ -43,6 +43,7 @@ import {
 import { runMigrations } from '@/db/migrations';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
+import { useAccountStore } from '@/stores/account';
 import { useBooksStore } from '@/stores/books';
 import { importIncomingFile } from '@/services/book-import';
 import { reanchorLocalPaths } from '@/services/path-reanchor';
@@ -146,6 +147,11 @@ export default function RootLayout() {
         useModelStore.getState().loadModels().catch((err) => {
           console.error('Model hydration failed:', err);
         });
+        // Read the account left on this device, on the same terms: fire and
+        // forget, never in front of the splash. It is a local storage read,
+        // and nothing that sends a request reads its result anyway (see
+        // `services/account`), so there is nothing here worth waiting for.
+        void useAccountStore.getState().restore();
       })
       .catch((err) => {
         console.error('Startup failed:', err);

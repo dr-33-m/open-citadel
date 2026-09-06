@@ -28,13 +28,24 @@ export function SamwellBanner({ readiness, onOpenSettings }: SamwellBannerProps)
     '--color-destructive',
   ]);
 
-  const { ready, downloaded, loading, loadError, initContext, mode, cloudUnavailable } = readiness;
+  const { ready, downloaded, loading, loadError, initContext, mode, cloudBlocker } = readiness;
 
-  if (cloudUnavailable) {
+  if (cloudBlocker === 'notConfigured') {
     return <Banner message="Grand Maester Samwell is not set up in this build yet." color={asColor(mutedForeground)} />;
   }
 
-  // Cloud is either configured or it is not; there is nothing local to wake.
+  if (cloudBlocker === 'needsAccount') {
+    return (
+      <Banner
+        message="Grand Maester Samwell works from your account. Sign in to talk to him."
+        color={asColor(mutedForeground)}
+        action={{ label: 'SIGN IN', onPress: onOpenSettings }}
+      />
+    );
+  }
+
+  // Past the two branches above, cloud has nothing left to report: there is no
+  // local model to wake and no local failure to explain.
   if (mode === 'cloud') return null;
 
   if (!downloaded) {

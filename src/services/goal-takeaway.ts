@@ -4,6 +4,7 @@ import {
   type GoalTakeawayRequest,
 } from 'samwell-shared';
 
+import { cloudJsonHeaders } from '@/services/cloud-identity';
 import { useSettingsStore } from '@/stores/settings';
 
 /**
@@ -23,7 +24,7 @@ import { useSettingsStore } from '@/stores/settings';
 export async function requestGoalTakeaway(
   payload: Omit<GoalTakeawayRequest, 'modelId'>,
 ): Promise<string> {
-  const { cloudBaseUrl, cloudModelId, getCloudDeviceId } = useSettingsStore.getState();
+  const { cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
   if (!cloudBaseUrl) {
     throw new Error('Grand Maester Samwell is not set up in this build.');
   }
@@ -34,10 +35,7 @@ export async function requestGoalTakeaway(
   try {
     res = await fetch(`${cloudBaseUrl}/compass/takeaway`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-samwell-device-id': await getCloudDeviceId(),
-      },
+      headers: await cloudJsonHeaders(),
       body: JSON.stringify({ ...payload, modelId: cloudModelId }),
       signal: controller.signal,
     });

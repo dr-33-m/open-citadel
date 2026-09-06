@@ -29,6 +29,7 @@ import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import * as Inference from '@/services/inference';
 import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
+import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
 
 /**
@@ -491,12 +492,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       samwellMode,
       cloudBaseUrl,
       cloudModelId,
-      getCloudDeviceId,
       loadCloudUsage,
     } = useSettingsStore.getState();
     const { enableToolCalling, enableThinking } = useModelStore.getState().inference;
     if (samwellMode === 'offline' && !Inference.isModelLoaded()) return;
     if (samwellMode === 'cloud' && !cloudBaseUrl) return;
+    // Grand Maester Samwell runs on accounts, so a turn with nobody behind it
+    // has nothing to bill and is not sent. The composer is already disabled
+    // and the banner already says why (see `use-samwell-readiness`); this is
+    // the floor under both, for anything that reaches here another way.
+    if (samwellMode === 'cloud' && useAccountStore.getState().status !== 'signedIn') return;
 
     const userMsg: ChatMessage = {
       id: uuid(),
@@ -523,10 +528,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       cloudAbort = new AbortController();
       try {
         const history = get().messages.filter((m) => m.id !== userMsg.id);
-        const deviceId = await getCloudDeviceId();
         finalContent = await sendCloudChatTurn({
           baseUrl: cloudBaseUrl,
-          deviceId,
           modelId: cloudModelId,
           sessionId: activeSession.id,
           bookId: activeSession.bookId,

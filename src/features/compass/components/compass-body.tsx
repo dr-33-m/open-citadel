@@ -20,15 +20,45 @@ import { turnIndicator } from '@/features/chat/utils/agent-activity';
 import { transcriptContent } from '@/features/chat/utils/transcript-layout';
 import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
 import { GoalProposalCard } from '@/features/compass/components/goal-proposal-card';
+import type { CloudBlocker } from '@/features/chat/hooks/use-samwell-readiness';
 import type { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
 
 type Conversation = ReturnType<typeof useCompassConversation>;
 
+/**
+ * What to say for each way the cloud can be out of reach, and the way out.
+ *
+ * A table rather than nested ternaries inside the render: there are three of
+ * these now, and the next one is a line here instead of another branch in the
+ * JSX.
+ */
+const COMPASS_BLOCKED: Record<CloudBlocker, { message: string; action: string }> = {
+  offlineMode: {
+    message:
+      'Tap the button below to switch Samwell to cloud mode and get started with your goals.',
+    action: 'OPEN SETTINGS',
+  },
+  notConfigured: {
+    message: 'This build has no cloud server, so Samwell cannot help you plan a goal yet.',
+    action: 'OPEN SETTINGS',
+  },
+  needsAccount: {
+    message: 'Sign in and Samwell can hold your goals for you, wherever you read.',
+    action: 'SIGN IN',
+  },
+};
+
 interface CompassBodyProps {
   conversation: Conversation;
-  /** Compass is a cloud feature; without it there is nothing to talk to. */
-  cloudReady: boolean;
-  notConfigured: boolean;
+  /**
+   * Compass is a cloud feature; without it there is nothing to talk to.
+   *
+   * One value rather than a pair of booleans, and it comes from
+   * `useSamwellReadiness` — the same place the chat surface reads it from, so
+   * the two halves of this screen can never disagree about why Samwell is
+   * quiet. Null means there is nothing in the way.
+   */
+  cloudBlocker: CloudBlocker | null;
   onOpenSettings: () => void;
   /** Titles by trackable id, so an adjustment can name what it changes. */
   trackableTitles: Record<string, string>;
@@ -40,8 +70,7 @@ interface CompassBodyProps {
 
 export function CompassBody({
   conversation,
-  cloudReady,
-  notConfigured,
+  cloudBlocker,
   onOpenSettings,
   trackableTitles,
   contentColumn,
@@ -128,19 +157,23 @@ export function CompassBody({
   // its own. It had a full-width `GoldButton` where chat has a small bordered
   // one, so the two halves of one screen disagreed about how big "the way out
   // of this" is — and there is no reason for the answer to differ by tab.
-  if (!cloudReady) {
+  if (cloudBlocker) {
     return (
       <SamwellStatusEmptyState
         icon={Compass}
         style={floatingClearance}
         status={{
-          title: 'Compass needs Samwell Cloud.',
-          message: notConfigured
-            ? 'This build has no cloud server, so Samwell cannot help you plan a goal yet.'
-            : 'Tap button below to switch Samwell to cloud mode and get started with your goals.',
-          actions: notConfigured
-            ? undefined
-            : [{ label: 'OPEN SETTINGS', onPress: onOpenSettings }],
+          title:
+            cloudBlocker === 'needsAccount'
+              ? 'Compass works from your account.'
+              : 'Compass needs Samwell Cloud.',
+          message: COMPASS_BLOCKED[cloudBlocker].message,
+          // Nothing to offer when the build itself has no server: the way out
+          // of that is a different build, not a screen in this one.
+          actions:
+            cloudBlocker === 'notConfigured'
+              ? undefined
+              : [{ label: COMPASS_BLOCKED[cloudBlocker].action, onPress: onOpenSettings }],
         }}
       />
     );

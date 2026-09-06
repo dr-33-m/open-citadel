@@ -5,6 +5,7 @@ import {
   SuggestChatTitleResponseSchema,
 } from 'samwell-shared';
 
+import { cloudJsonHeaders } from '@/services/cloud-identity';
 import * as Inference from '@/services/inference';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -23,8 +24,7 @@ function clamp(value: string, max: number): string {
 export async function suggestChatTitle(conversation: string): Promise<string> {
   const payload = { conversation: clamp(conversation, 6000) };
 
-  const { samwellMode, cloudBaseUrl, cloudModelId, getCloudDeviceId } =
-    useSettingsStore.getState();
+  const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
 
   if (samwellMode === 'cloud') {
     if (!cloudBaseUrl) {
@@ -36,10 +36,7 @@ export async function suggestChatTitle(conversation: string): Promise<string> {
     try {
       res = await fetch(`${cloudBaseUrl}/chat/title`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-samwell-device-id': await getCloudDeviceId(),
-        },
+        headers: await cloudJsonHeaders(),
         body: JSON.stringify({ ...payload, modelId: cloudModelId }),
         signal: controller.signal,
       });

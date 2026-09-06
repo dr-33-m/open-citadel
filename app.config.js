@@ -30,6 +30,13 @@ module.exports = () => {
   const samwellCloudUrl =
     process.env.SAMWELL_CLOUD_URL || baseConfig.extra?.samwellCloudUrl || '';
 
+  // Logto, for the optional account. Neither of these is a secret — a native
+  // app is a public OIDC client and both values end up in the bundle either
+  // way — they are read from the environment so a build can be made without
+  // an account at all, which is what leaving them unset means.
+  const logtoEndpoint = process.env.LOGTO_ENDPOINT || baseConfig.extra?.logtoEndpoint || '';
+  const logtoAppId = process.env.LOGTO_APP_ID || baseConfig.extra?.logtoAppId || '';
+
   return {
     ...baseConfig,
     name: `${baseConfig.name}${variant.nameSuffix}`,
@@ -37,6 +44,8 @@ module.exports = () => {
     extra: {
       ...baseConfig.extra,
       samwellCloudUrl,
+      logtoEndpoint,
+      logtoAppId,
     },
     ios: {
       ...baseConfig.ios,

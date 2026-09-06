@@ -43,7 +43,8 @@ import {
   updateCloudModel,
   updateUsageEvent,
 } from './db.js';
-import { readDeviceId, requireOpenRouterKey } from './http-helpers.js';
+import { requireOpenRouterKey } from './http-helpers.js';
+import { readIdentity } from './identity.js';
 
 type RunAgentInput = {
   threadId?: string;
@@ -213,7 +214,10 @@ app.use(
   '*',
   cors({
     origin: process.env.SAMWELL_ALLOWED_ORIGIN ?? '*',
-    allowHeaders: ['Content-Type', 'x-samwell-device-id'],
+    // `Authorization` carries the Logto access token every metered route now
+    // requires. The device header it replaced is gone: Grand Maester Samwell
+    // runs on accounts, so there is nothing anonymous left to allow.
+    allowHeaders: ['Content-Type', 'Authorization'],
     allowMethods: ['GET', 'POST', 'OPTIONS'],
   }),
 );
@@ -349,8 +353,8 @@ app.put('/admin/models/default', async (c) => {
 });
 
 app.get('/usage', async (c) => {
-  const deviceId = readDeviceId(c);
-  return c.json(await getUsageState(deviceId));
+  const { id: accountId } = await readIdentity(c);
+  return c.json(await getUsageState(accountId));
 });
 
 app.route('/tags', tagsRoutes);
@@ -362,7 +366,7 @@ app.route('/compass', takeawayRoutes);
 app.post('/chat/http', async (c) => {
   requireOpenRouterKey();
 
-  const deviceId = readDeviceId(c);
+  const { id: accountId } = await readIdentity(c);
   const body = (await c.req.json()) as RunAgentInput;
   if (!Array.isArray(body.messages)) {
     throw new HTTPException(400, { message: 'messages must be an array.' });
@@ -386,7 +390,7 @@ app.post('/chat/http', async (c) => {
 
   const reservation = await reserveUsageEvent({
     id: usageEventId,
-    deviceId,
+    accountId,
     modelId,
     countsTowardLimit,
     // Metered separately so Compass spend is legible in the usage record,
@@ -480,7 +484,7 @@ app.post('/chat/http', async (c) => {
           // book you told it about two hundred messages ago.
           summarizeOldest({
             summarize: (dropped) =>
-              summarizeForCompaction({ dropped, modelId, deviceId }),
+              summarizeForCompaction({ dropped, modelId, accountId }),
           }),
           // Last resort, if summarising failed or was not enough.
           evictOldest(),
@@ -565,11 +569,11 @@ Leave out pleasantries, restated questions, and anything already obvious from th
 async function summarizeForCompaction({
   dropped,
   modelId,
-  deviceId,
+  accountId,
 }: {
   dropped: { role: string; content: unknown }[];
   modelId: string;
-  deviceId: string;
+  accountId: string;
 }): Promise<string> {
   const transcript = dropped
     .map((message) => {
@@ -584,7 +588,7 @@ async function summarizeForCompaction({
   const usageEventId = `compaction-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   await reserveUsageEvent({
     id: usageEventId,
-    deviceId,
+    accountId,
     modelId,
     countsTowardLimit: false,
     kind: 'compaction_summary',
