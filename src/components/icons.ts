@@ -54,7 +54,6 @@ export { default as LogIn } from 'lucide-react-native/icons/log-in';
 export { default as LogOut } from 'lucide-react-native/icons/log-out';
 export { default as Lock } from 'lucide-react-native/icons/lock';
 export { default as ListTodo } from 'lucide-react-native/icons/list-todo';
-export { default as Mail } from 'lucide-react-native/icons/mail';
 export { default as MemoryStick } from 'lucide-react-native/icons/memory-stick';
 export { default as MessageCircleHeart } from 'lucide-react-native/icons/message-circle-heart';
 export { default as MessageSquare } from 'lucide-react-native/icons/message-square';

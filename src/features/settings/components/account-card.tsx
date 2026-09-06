@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { LogOut, Mail, UserPlus, UserStar } from '@/components/icons';
+import { LogOut, UserPlus, UserStar } from '@/components/icons';
 import { ActionButton } from '@/components/action-button';
 import { SamwellText } from '@/components/samwell-text';
 import { ThemedText } from '@/components/themed-text';
@@ -77,10 +77,11 @@ export function AccountCard() {
             lines, so centring floated the badge between them instead of
             beside the thing it names. */}
         <View className="flex-row items-start gap-3">
-          {/* Signed out the card is about the idea of an account, so the mark
-              is a person; signed in it is about one address, so it is a
-              letter. */}
-          <PrefixIcon icon={signedIn ? Mail : UserStar} size={36} />
+          {/* The same mark signed in or out. The card is the account either
+              way, and swapping the icon on sign-in made the row look like it
+              had become a different setting rather than the same one with an
+              answer in it. */}
+          <PrefixIcon icon={UserStar} size={36} />
           <View className="flex-1 gap-0.5">
             {/* The name of the thing on the left, what it costs you on the
                 right. `justify-between` rather than a gap, so the badge holds
