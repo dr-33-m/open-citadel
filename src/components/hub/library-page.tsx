@@ -43,9 +43,10 @@ import {
   useCurrentlyReading,
   useFavoriteBooks,
   useQueuedBooks,
-  useSyncState,
+  useSyncRunning,
 } from "@/stores/books";
 import { useCollectionsStore } from "@/stores/collections";
+import { useShallow } from "zustand/shallow";
 
 type Book = typeof booksTable.$inferSelect;
 
@@ -103,9 +104,26 @@ export function LibraryPage() {
   // from this one reactive value — a stale snapshot desyncs scrollTo.
   const { width: windowWidth } = useWindowDimensions();
 
+  /*
+   * Selectors, never a bare `useBooksStore()`.
+   *
+   * That is what this was, and it re-ran the whole Library — every shelf,
+   * every book card — on every write the store made. It mattered little while
+   * a scan was something you went and asked for; it matters now that one runs
+   * at every launch, on the screen the app opens on. Measured on device: 18
+   * full renders of this tree over a single launch scan of nine files.
+   *
+   * The actions come through `useShallow` because they are defined once and
+   * never change, so the comparison always passes and this never re-renders
+   * for them. The two pieces of state that ARE read come through their own
+   * selectors, and the scan comes through as a BOOLEAN — the progress
+   * counters tick several times a second and only `SyncIndicator` reads them,
+   * which it does for itself.
+   */
+  const booksDirectoryUri = useBooksStore((s) => s.booksDirectoryUri);
+  const isLoading = useBooksStore((s) => s.isLoading);
+  const syncRunning = useSyncRunning();
   const {
-    booksDirectoryUri,
-    isLoading,
     loadBooks,
     loadDirectoryUri,
     setDirectoryUri,
@@ -118,9 +136,22 @@ export function LibraryPage() {
     toggleFavorite,
     deleteBook,
     updateBookTitle,
-  } = useBooksStore();
-
-  const sync = useSyncState();
+  } = useBooksStore(
+    useShallow((s) => ({
+      loadBooks: s.loadBooks,
+      loadDirectoryUri: s.loadDirectoryUri,
+      setDirectoryUri: s.setDirectoryUri,
+      initLibrary: s.initLibrary,
+      importBooks: s.importBooks,
+      syncBooks: s.syncBooks,
+      scanOnLaunch: s.scanOnLaunch,
+      hydrateSyncState: s.hydrateSyncState,
+      updateBookStatus: s.updateBookStatus,
+      toggleFavorite: s.toggleFavorite,
+      deleteBook: s.deleteBook,
+      updateBookTitle: s.updateBookTitle,
+    })),
+  );
 
   const [currentReadingIndex, setCurrentReadingIndex] = useState(0);
   const [actionBook, setActionBook] = useState<Book | null>(null);
@@ -270,7 +301,7 @@ export function LibraryPage() {
   const showEmptyState = !booted
     ? false
     : isIOS
-      ? allBooks.length === 0 && sync.status !== "running" && !isLoading
+      ? allBooks.length === 0 && !syncRunning && !isLoading
       : !booksDirectoryUri && !isLoading;
 
   // Boot-in-progress: the shape of the Library rather than either branch, so
@@ -307,7 +338,7 @@ export function LibraryPage() {
             replaces the header's bottom rule: content passes under the bar and
             fades rather than being cut off by a hard line. */}
         <PullToSync
-          sync={sync}
+          running={syncRunning}
           onSync={handlePullSync}
           contentContainerClassName="pt-6"
           contentContainerStyle={{

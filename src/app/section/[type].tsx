@@ -35,7 +35,7 @@ import {
   useCurrentlyReading,
   useFavoriteBooks,
   useQueuedBooks,
-  useSyncState,
+  useSyncRunning,
 } from "@/stores/books";
 import { useCollectionsStore, type CollectionWithCount } from "@/stores/collections";
 
@@ -170,7 +170,10 @@ export default function SectionScreen() {
   const toggleFavorite = useBooksStore((s) => s.toggleFavorite);
   const deleteBook = useBooksStore((s) => s.deleteBook);
   const updateBookTitle = useBooksStore((s) => s.updateBookTitle);
-  const sync = useSyncState();
+  // The boolean, not the whole scan: this screen only tints one icon with it,
+  // and the counters behind it change several times a second — which re-ran
+  // this grid of book cards at that rate for a colour that never moved.
+  const syncRunning = useSyncRunning();
 
   const readingBooks = useCurrentlyReading();
   const allBooks = useAllBooks();
@@ -412,7 +415,7 @@ export default function SectionScreen() {
               size={16}
               strokeWidth={2}
               color={
-                sync.status === "running"
+                syncRunning
                   ? asColor(primary)
                   : asColor(mutedForeground)
               }

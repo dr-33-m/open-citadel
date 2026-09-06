@@ -195,6 +195,71 @@ interface BooksState {
 const LOAD_BOOKS_EVERY_N = 50;
 let _preparedSinceLastLoad = 0;
 
+/**
+ * What the UI does with one report of a scan's progress.
+ *
+ * ONE copy. There were two — the scan a caller starts and the scan resumed at
+ * launch each had their own — and they had already drifted: only one of them
+ * refreshed the shelves when the import phase finished, so a resumed job's
+ * books did not appear until it was completely done.
+ *
+ * ## Why the reloads are guarded
+ *
+ * `loadBooks()` re-reads every row, and the rows come back as NEW objects, so
+ * all five shelf selectors see fresh identities and the whole Library
+ * re-renders — twice, since it flips `isLoading` on the way. It fired three
+ * times per scan whether or not a single book had moved: the importing-phase
+ * refresh ran even when nothing was imported, and `prepareDone ===
+ * prepareTotal` is true when both are zero, which is exactly the shape of a
+ * scan that found nothing to do.
+ *
+ * That was affordable while a scan was something you went and asked for. It is
+ * not now that one runs at every launch, on the screen the app opens on and
+ * during the seconds it is trying to become interactive. So the two
+ * in-progress refreshes only run when there is something new to show. The one
+ * at the end stays unconditional: it is the backstop that makes the shelves
+ * correct no matter what the phases did, including the books scanning removed
+ * because their files left the folder, which no counter tracks.
+ */
+function applySyncProgress(
+  job: SyncJobView,
+  set: (partial: Partial<BooksState>) => void,
+  get: () => BooksState,
+  notify: boolean,
+) {
+  set({ sync: jobToSyncState(job) });
+
+  // Books just landed: show them without waiting for their covers.
+  if (
+    job.phase === "importing" &&
+    job.addedCount > 0 &&
+    job.importDone === job.importTotal
+  ) {
+    get().loadBooks();
+  }
+
+  // Covers and titles arriving, in batches so a big folder does not reload
+  // the shelves once per book.
+  if (job.phase === "preparing" && job.prepareTotal > 0) {
+    _preparedSinceLastLoad++;
+    if (
+      _preparedSinceLastLoad >= LOAD_BOOKS_EVERY_N ||
+      job.prepareDone === job.prepareTotal
+    ) {
+      _preparedSinceLastLoad = 0;
+      get().loadBooks();
+    }
+  }
+
+  if (job.status === "completed" || job.status === "failed") {
+    get().loadBooks();
+    if (notify) showToast({ key: SCAN_TOAST, ...scanResultToast(job) });
+    if (job.status === "completed") {
+      setTimeout(() => set({ sync: IDLE_SYNC }), 2000);
+    }
+  }
+}
+
 export const useBooksStore = create<BooksState>((set, get) => ({
   books: [],
   booksDirectoryUri: null,
@@ -268,29 +333,11 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     // Restore banner immediately
     set({ sync: jobToSyncState(job) });
 
-    // Resume pipeline in background
+    // Resume pipeline in background. Silent: a job the last app kill
+    // interrupted is finishing work the reader already watched start, and a
+    // result toast for it at launch would be answering a question nobody asked.
     resumeRunningSyncIfAny((updatedJob) => {
-      set({ sync: jobToSyncState(updatedJob) });
-
-      // Refresh books list periodically during preparing phase
-      if (updatedJob.phase === "preparing") {
-        _preparedSinceLastLoad++;
-        if (
-          _preparedSinceLastLoad >= LOAD_BOOKS_EVERY_N ||
-          updatedJob.prepareDone === updatedJob.prepareTotal
-        ) {
-          _preparedSinceLastLoad = 0;
-          get().loadBooks();
-        }
-      }
-
-      // Final refresh when done
-      if (updatedJob.status === "completed" || updatedJob.status === "failed") {
-        get().loadBooks();
-        if (updatedJob.status === "completed") {
-          setTimeout(() => set({ sync: IDLE_SYNC }), 2000);
-        }
-      }
+      applySyncProgress(updatedJob, set, get, false);
     }).catch((e) => console.warn("[books-store] resume error", e));
   },
 
@@ -313,33 +360,7 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     const notify = options?.notify ?? false;
 
     await startOrResumeSync(booksDirectoryUri, (job) => {
-      set({ sync: jobToSyncState(job) });
-
-      // After importing phase: show books immediately
-      if (job.phase === "importing" && job.importDone === job.importTotal) {
-        get().loadBooks();
-      }
-
-      // During preparing: refresh every N books
-      if (job.phase === "preparing") {
-        _preparedSinceLastLoad++;
-        if (
-          _preparedSinceLastLoad >= LOAD_BOOKS_EVERY_N ||
-          job.prepareDone === job.prepareTotal
-        ) {
-          _preparedSinceLastLoad = 0;
-          get().loadBooks();
-        }
-      }
-
-      // Final refresh
-      if (job.status === "completed" || job.status === "failed") {
-        get().loadBooks();
-        if (notify) showToast({ key: SCAN_TOAST, ...scanResultToast(job) });
-        if (job.status === "completed") {
-          setTimeout(() => set({ sync: IDLE_SYNC }), 2000);
-        }
-      }
+      applySyncProgress(job, set, get, notify);
     });
   },
 
@@ -474,3 +495,14 @@ export const useFavoriteBooks = () =>
   useBooksStore(useShallow((s) => s.books.filter((b) => b.isFavorite === 1)));
 export const useAllBooks = () => useBooksStore(useShallow((s) => s.books));
 export const useSyncState = () => useBooksStore((s) => s.sync);
+/**
+ * Whether a scan is going on, and nothing else about it.
+ *
+ * A scan emits progress several times a second, and `useSyncState` hands back
+ * a fresh object each time — so a screen that only wants to know IS one
+ * running re-renders on every tick of one. The Library did, on its whole tree,
+ * and it now runs a scan at every launch. This is the same subscription
+ * narrowed to the one boolean those callers actually read.
+ */
+export const useSyncRunning = () =>
+  useBooksStore((s) => s.sync.status === "running");

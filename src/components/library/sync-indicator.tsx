@@ -4,7 +4,7 @@ import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { Loader } from '@/components/ui/loader';
-import type { SyncState } from '@/stores/books';
+import { useSyncState, type SyncState } from '@/stores/books';
 import { asColor } from '@/utils/colors';
 
 /**
@@ -56,18 +56,23 @@ function stepLabel(sync: SyncState): string {
  * no rounded corners anywhere else. It replaced `Spinner`, whose circle was
  * the one round thing on the Library.
  *
- * ## Shared on purpose
+ * ## Why this one reads the store
  *
- * The inline row and the pull-to-sync header draw the same thing, because they
- * ARE the same thing — one scan, reported from two places. Two copies is how
- * the phase labels drift, which this codebase has already paid for twice.
+ * Almost nothing in this app does, and this is the exception the rule is for.
+ * A scan emits progress several times a second and the step is the only thing
+ * on the screen that changes with it — so taking `sync` as a prop means every
+ * ancestor that has to pass it down re-renders at that rate too. Measured on
+ * device: the Library re-rendered its whole tree eighteen times over one
+ * launch scan, shelves and book cards included, to move one line of text.
+ *
+ * Subscribed HERE, the ticking stops at this leaf. Everything above it holds
+ * still, and the scroller it sits over is passed through as `children`, so
+ * React skips that subtree entirely.
  */
 export const SyncIndicator = React.memo(function SyncIndicator({
-  sync,
   label,
   className,
 }: {
-  sync: SyncState;
   /**
    * Said instead of the step, for the moment before a scan exists: the pull
    * asking to be let go of. The phase label is the right answer everywhere
@@ -77,6 +82,7 @@ export const SyncIndicator = React.memo(function SyncIndicator({
   /** Spacing for where it sits. The stack itself never varies. */
   className?: string;
 }) {
+  const sync = useSyncState();
   // Only the caption needs a literal: `ThemedText` takes a colour, while the
   // loader resolves the token itself.
   const mutedForeground = useCSSVariable('--color-muted-foreground');

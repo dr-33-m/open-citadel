@@ -5,6 +5,7 @@ import Animated, {
   useAnimatedReaction,
   useAnimatedScrollHandler,
   useAnimatedStyle,
+  useDerivedValue,
   useReducedMotion,
   useSharedValue,
   withTiming,
@@ -17,7 +18,6 @@ import { PageFade } from '@/components/scroll-fades';
 import { SyncIndicator } from '@/components/library/sync-indicator';
 import { easing, motion } from '@/constants/theme';
 import { haptics } from '@/utils/haptics';
-import type { SyncState } from '@/stores/books';
 
 /**
  * How tall the gap is once it is holding, in points.
@@ -28,8 +28,16 @@ import type { SyncState } from '@/stores/books';
  */
 const GAP = 72;
 
-/** How far you have to pull before letting go starts a scan. */
-const TRIGGER = 64;
+/**
+ * How far the gap has to be open before letting go starts a scan.
+ *
+ * Read against the RESISTED distance, not the finger's, so it is worth doing
+ * the arithmetic before changing it: `resist` is asymptotic to 115, and at 64
+ * it wanted 144 points of travel to arm — half again as far as a pull-to-
+ * refresh anywhere else. At 52 it arms at about 95, and the gap keeps opening
+ * a little past that, which reads as the pull confirming rather than stopping.
+ */
+const TRIGGER = 52;
 
 /**
  * How far the drag has to travel before the pull takes it.
@@ -68,6 +76,7 @@ const RELEASE_MS = 420;
  */
 function resist(distance: number) {
   'worklet';
+  // Callers pass a distance of zero or more; see the clamp in `onUpdate`.
   return (GAP * 1.6 * distance) / (distance + GAP * 1.6);
 }
 
@@ -75,8 +84,12 @@ export type PullToSyncProps = Pick<
   ScrollViewProps,
   'contentContainerStyle' | 'contentContainerClassName'
 > & {
-  /** The scan, for the indicator's step label and to hold the gap open. */
-  sync: SyncState;
+  /**
+   * Whether a scan is going on, which is all this needs to hold the gap open.
+   * A boolean and not the scan itself: the counters change several times a
+   * second and the indicator reads them for itself. See `SyncIndicator`.
+   */
+  running: boolean;
   /** Called once, on a release past `TRIGGER`. */
   onSync: () => void;
   children: React.ReactNode;
@@ -110,7 +123,7 @@ export type PullToSyncProps = Pick<
  * from the launch scan or from the button in All Books.
  */
 export function PullToSync({
-  sync,
+  running,
   onSync,
   contentContainerStyle,
   contentContainerClassName,
@@ -133,7 +146,6 @@ export function PullToSync({
     },
   });
 
-  const running = sync.status === 'running';
   React.useEffect(() => {
     hold.set(withTiming(running ? GAP : 0, { duration: motion.base, easing }));
   }, [running, hold]);
@@ -198,7 +210,21 @@ export function PullToSync({
       if (down > ACTIVATE) manager.activate();
     })
     .onUpdate((event) => {
-      drag.set(resist(event.translationY));
+      /*
+       * Measured from where the pull was CLAIMED, and never below zero.
+       *
+       * Both halves matter. Without the offset the gap jumps straight to the
+       * eleven points `ACTIVATE` had already travelled, so it opens with a
+       * pop instead of from nothing.
+       *
+       * Without the clamp it is worse than untidy: `resist` is only defined
+       * for a downward drag, its denominator crosses zero at -115, and past
+       * that it returns large POSITIVE numbers — so dragging back up to
+       * change your mind, which is the most ordinary thing to do with a pull
+       * you did not mean, threw the gap open to 271 points instead of
+       * closing it.
+       */
+      drag.set(resist(Math.max(0, event.translationY - ACTIVATE)));
     })
     .onEnd(() => {
       if (drag.get() >= TRIGGER) scheduleOnRN(onSync);
@@ -211,16 +237,22 @@ export function PullToSync({
       drag.set(reduced ? 0 : withTiming(0, { duration: motion.base, easing }));
     });
 
-  const gap = useAnimatedStyle(() => {
-    const open = Math.max(drag.get(), hold.get());
-    return {
-      opacity: Math.min(open / GAP, 1),
-      transform: [{ translateY: open }],
-    };
-  });
+  /*
+   * How far open the gap is: whichever of the two is holding it wider.
+   *
+   * Derived once rather than worked out inside each style below. Both need the
+   * same number every frame, and written twice it is also the same DECISION
+   * twice — the kind that drifts the moment one of them grows a condition.
+   */
+  const open = useDerivedValue(() => Math.max(drag.get(), hold.get()));
+
+  const gap = useAnimatedStyle(() => ({
+    opacity: Math.min(open.get() / GAP, 1),
+    transform: [{ translateY: open.get() }],
+  }));
 
   const content = useAnimatedStyle(() => ({
-    transform: [{ translateY: Math.max(drag.get(), hold.get()) }],
+    transform: [{ translateY: open.get() }],
   }));
 
   return (
@@ -232,7 +264,6 @@ export function PullToSync({
         className="inset-x-0 items-center justify-center"
       >
         <SyncIndicator
-          sync={sync}
           label={running ? undefined : armed ? 'RELEASE TO SYNC' : 'PULL TO SYNC'}
         />
       </Animated.View>
