@@ -8,7 +8,7 @@ import { ChevronRight, type LucideIcon } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
-import { iconSize } from '@/constants/theme';
+import { iconSize, motion } from '@/constants/theme';
 import { useCollapseHeight } from '@/hooks/use-collapse-height';
 import { cn } from '@/lib/cn';
 import { asColor } from '@/utils/colors';
@@ -37,6 +37,33 @@ const OVERLAP = 14;
  * nothing. Inset plus overlap is a stack; either alone is not.
  */
 const INSET = 8;
+
+/**
+ * How long after the drawer starts opening before its tools accept a press.
+ *
+ * Opening MOVES THE BUTTON YOU JUST PRESSED. The stack is anchored to the
+ * bottom of the screen and the drawer opens beneath the control unit, so the
+ * card lifts by the drawer's whole height — 112dp in chat, 263dp in Compass —
+ * and a tool row lands on the exact pixels the handle occupied a moment ago.
+ *
+ * That turned an impatient second tap into a trap. On device: tap the handle,
+ * the drawer opens, tap again where the handle was, and the row now sitting
+ * there fires — which shuts the drawer and raises a sheet. Dismiss the sheet
+ * and the drawer is closed, so the whole thing reads as "I pressed it three
+ * times and it never opened", with every press giving feedback and a tick.
+ *
+ * So the tools stay inert until the drawer has arrived and the hand has had a
+ * beat to catch up: the animation, plus half a second of grace. Measured on
+ * device, a repeat tap lands anywhere from 200ms to 550ms after the first, and
+ * reaching a row on purpose cannot beat that window — it means seeing the
+ * drawer, reading a label and moving a thumb the better part of the screen,
+ * which is most of a second before the finger is anywhere near.
+ *
+ * `SamwellControlCenter`'s handle is held for the same window by the caller,
+ * which is what stops the other version of the same bug — a double tap that
+ * opens and shuts the drawer inside 300ms, too fast to see.
+ */
+export const TOOLBOX_SETTLE = motion.base + 500;
 
 /*
  * Constant styles, hoisted out of render.
@@ -138,6 +165,13 @@ const Tool = React.memo(function Tool({
         )}
         onPress={item.onPress}
         onLongPress={item.onLongPress}
+        // A tool with nothing to open is dimmed AND inert. Without the
+        // `disabled`, leaving `onPress` off only removed the action: the row
+        // still dimmed under the finger and still ticked, so it answered a
+        // press with the full vocabulary of a working button and then did
+        // nothing — which is the exact shape of "it reacts, it just doesn't
+        // do anything".
+        disabled={!item.onPress}
         haptic="select"
         accessibilityRole="button"
         accessibilityState={{ selected: item.active, disabled: !item.onPress }}
@@ -261,6 +295,21 @@ export const SamwellToolbox = React.memo(function SamwellToolbox({
    */
   const { progress, height, onLayout } = useCollapseHeight(open);
 
+  /*
+   * The tools are dead until the drawer has settled — see `TOOLBOX_SETTLE`.
+   * `pointerEvents` rather than disabling each row, so a stray tap falls
+   * through to the page instead of lighting up a control that ignores it.
+   */
+  const [armed, setArmed] = React.useState(false);
+  React.useEffect(() => {
+    if (!open) {
+      setArmed(false);
+      return;
+    }
+    const timer = setTimeout(() => setArmed(true), TOOLBOX_SETTLE);
+    return () => clearTimeout(timer);
+  }, [open]);
+
   const frameStyle = useAnimatedStyle(() => ({
     height: progress.value * height.value,
     marginTop: progress.value * -OVERLAP,
@@ -271,7 +320,11 @@ export const SamwellToolbox = React.memo(function SamwellToolbox({
   const ordered = lead ? [lead, ...items.filter((item) => item !== lead)] : items;
 
   return (
-    <Animated.View style={frameStyle} className="overflow-hidden">
+    <Animated.View
+      style={frameStyle}
+      pointerEvents={armed ? 'auto' : 'none'}
+      className="overflow-hidden"
+    >
       <Card
         onLayout={onLayout}
         // Pinned to the BOTTOM of the frame: see the motion note above. This

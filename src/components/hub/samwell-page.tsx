@@ -22,7 +22,11 @@ import { Archive, BookOpen, CalendarDays, History, ListTodo, TrendingUp } from '
 import { DeferredBody } from '@/components/navigation/deferred-body';
 import { Reveal } from '@/components/navigation/reveal';
 import { SamwellControlCenter } from '@/components/samwell/samwell-control-center';
-import { SamwellToolbox, type ToolboxItem } from '@/components/samwell/samwell-toolbox';
+import {
+  SamwellToolbox,
+  TOOLBOX_SETTLE,
+  type ToolboxItem,
+} from '@/components/samwell/samwell-toolbox';
 import { ThemedText } from '@/components/themed-text';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { MaxContentWidth, spacing } from '@/constants/theme';
@@ -417,6 +421,25 @@ export function SamwellPage() {
   const [toolboxOpen, setToolboxOpen] = React.useState(false);
   const closeToolbox = React.useCallback(() => setToolboxOpen(false), []);
 
+  /*
+   * The handle ignores a second press while the drawer is still settling.
+   *
+   * Opening lifts this whole card by the drawer's height, so the handle jumps
+   * out from under the finger — and a press that lands before the eye has
+   * caught up is a bounce, not a decision. Without this, a quick double tap
+   * opened and shut the drawer inside 300ms and read as nothing happening.
+   *
+   * The same window keeps the drawer's own tools inert; see `TOOLBOX_SETTLE`,
+   * which is where the number and the reasoning live.
+   */
+  const settledAt = React.useRef(0);
+  const toggleToolbox = React.useCallback(() => {
+    const now = Date.now();
+    if (now < settledAt.current) return;
+    settledAt.current = now + TOOLBOX_SETTLE;
+    setToolboxOpen((v) => !v);
+  }, []);
+
   /** Open a sheet from a tool: put the drawer away, then raise the sheet. */
   const fromToolbox = React.useCallback(
     (open: (v: boolean) => void) => () => {
@@ -678,7 +701,7 @@ export function SamwellPage() {
                   onSelectMode={setMode}
                   lockMode={locked}
                   toolboxOpen={toolboxOpen}
-                  onToggleToolbox={() => setToolboxOpen((v) => !v)}
+                  onToggleToolbox={toggleToolbox}
                   hasTools={toolboxItems.length > 0}
                   inputRef={composerRef}
                   text={text}
