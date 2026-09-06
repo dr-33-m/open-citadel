@@ -118,8 +118,15 @@ One Native application, plus one API resource with the identifier
 `https://api.open-citadel.online` (the value of `SAMWELL_API_RESOURCE` in
 `packages/samwell-shared`). The resource is what makes Logto issue a JWT this
 server can verify by itself; without one the access token is opaque and only
-Logto can read it. It is an identifier, not an address — nothing fetches it,
-and it never has to resolve.
+Logto can read it.
+
+It is `api.open-citadel.online` rather than whatever host the server answers
+on today, and that is deliberate. Nothing fetches a resource indicator — it is
+compared as a string — but it is written into every token already issued and
+registered by hand in the console, which makes it the one value here that is
+genuinely awkward to change. Naming the official domain now means moving the
+server costs a `SAMWELL_CLOUD_URL` and nothing else: no new API resource, no
+re-registration, no window where issued tokens name the wrong audience.
 
 The resource needs **no permissions**. This server authorises on identity, not
 on scope: it checks the signature, the issuer, the audience and the expiry, and
