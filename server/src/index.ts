@@ -228,6 +228,12 @@ app.get('/health', async (c) => {
     ok: true,
     service: 'samwell-cloud',
     chatReady: Boolean(process.env.OPENROUTER_API_KEY),
+    // Alongside `chatReady`, and for the same reason: this is the one piece of
+    // configuration whose absence has no symptom until somebody tries to use
+    // the thing. Without it every metered route answers 500, and from outside
+    // that is indistinguishable from the server being broken. One curl now
+    // says which it is.
+    accountsReady: Boolean(process.env.LOGTO_ENDPOINT),
     models: models.map((model) => model.id),
   });
 });

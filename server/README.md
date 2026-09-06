@@ -25,6 +25,12 @@ LOGTO_ENDPOINT=https://your-tenant.logto.app
 Samwell Cloud runs on accounts: there is no anonymous path, and a request
 without a valid Logto access token for the Samwell API resource is a 401.
 
+**Deploy this before shipping an app build that expects it.** The two halves
+changed together: the app stopped sending `x-samwell-device-id` and started
+sending `Authorization`, and a server still on the old build rejects every one
+of those as a missing device header. There is no version in which both work,
+so the server goes first.
+
 ## Run
 
 ```bash
@@ -140,7 +146,10 @@ Every route below that spends money or counts against an allowance takes
 `Authorization: Bearer <logto access token>`, and answers 401 without one.
 `/health` and `/models` are open.
 
-- `GET /health`
+- `GET /health` — reports `chatReady` and `accountsReady`, which are just
+  "is `OPENROUTER_API_KEY` set" and "is `LOGTO_ENDPOINT` set". Worth curling
+  after a deploy: without the second one every metered route answers 500, and
+  nothing else says so.
 - `GET /models`
 - `GET /usage`
 - `POST /chat/http`
