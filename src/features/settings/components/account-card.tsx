@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { LogOut, UserPlus, UserStar } from '@/components/icons';
+import { LogIn, LogOut, UserPlus, UserStar } from '@/components/icons';
 import { ActionButton } from '@/components/action-button';
 import { SamwellText } from '@/components/samwell-text';
 import { ThemedText } from '@/components/themed-text';
@@ -10,8 +10,10 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { GoldButton } from '@/components/ui/gold-button';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
+import { Touchable } from '@/components/ui/touchable';
 import { showToast } from '@/components/toast/toast-provider';
 import { ACCOUNT_ENABLED } from '@/constants/logto';
+import { CloudAccountSheet } from '@/features/settings/components/cloud-account-sheet';
 import { ConfirmSignOutSheet } from '@/features/settings/components/confirm-sign-out-sheet';
 import { useAccountStore } from '@/stores/account';
 import { asColor } from '@/utils/colors';
@@ -45,6 +47,7 @@ export function AccountCard() {
   const signOut = useAccountStore((s) => s.signOut);
 
   const [confirming, setConfirming] = React.useState(false);
+  const [explaining, setExplaining] = React.useState(false);
 
   // A build made with no Logto credentials has no accounts, which is a
   // configuration and not a fault. Nothing is drawn and nothing explains
@@ -92,12 +95,28 @@ export function AccountCard() {
                 {signedIn ? (email ?? name ?? 'Cloud Account') : 'Cloud Account'}
               </ThemedText>
               {/* Only while signed out. Once there is an account, saying it
-                  was optional is answering a question nobody is still asking. */}
-              {/* Filled rather than outlined. This card already carries the
-                  card's own rule, the icon's, and the buttons' — a fourth
-                  1px rectangle at the same weight made a label look like a
-                  control, and left nothing on the card looking dominant. */}
-              {!signedIn && <Badge variant="secondary">Optional</Badge>}
+                  was optional is answering a question nobody is still asking.
+
+                  Filled rather than outlined: this card already carries the
+                  card's own rule, the icon's, and the buttons' — a fourth 1px
+                  rectangle at the same weight made a label look like a
+                  control, and left nothing on the card looking dominant.
+
+                  It IS tappable, which a filled chip does not advertise, and
+                  that is the right trade here: "Optional" is a claim, and the
+                  people who want it backed up are exactly the people who will
+                  try pressing it. `hitSlop` because the chip itself is barely
+                  a finger tall. */}
+              {!signedIn && (
+                <Touchable
+                  onPress={() => setExplaining(true)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Why an account is optional"
+                >
+                  <Badge variant="secondary">Optional</Badge>
+                </Touchable>
+              )}
             </View>
             {/* `SamwellText`, so his name carries the gold here as it does in
                 every other sentence about him. */}
@@ -130,10 +149,18 @@ export function AccountCard() {
             />
           ) : (
             <>
+              {/* `small`, not `compact`: it shares a baseline with an
+                  ActionButton, and `compact`'s 40pt stood 6pt taller than its
+                  neighbour. `loading` covers the wait nobody sees coming —
+                  the browser closes, and reading the session back off the
+                  device takes long enough that the card looked like it had
+                  ignored the whole thing. */}
               <GoldButton
                 label="SIGN IN"
-                size="compact"
+                icon={LogIn}
+                size="small"
                 disabled={busy}
+                loading={busy}
                 onPress={() => void enter('sign_in')}
               />
               <ActionButton
@@ -155,6 +182,8 @@ export function AccountCard() {
           </ThemedText>
         )}
       </Card>
+
+      <CloudAccountSheet visible={explaining} onClose={() => setExplaining(false)} />
 
       <ConfirmSignOutSheet
         visible={confirming}

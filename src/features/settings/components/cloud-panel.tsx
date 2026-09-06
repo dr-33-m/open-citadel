@@ -5,8 +5,9 @@ import { useCSSVariable } from 'uniwind';
 import { Card } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
-import { List, SlidersHorizontal } from '@/components/icons';
+import { List, LogIn, SlidersHorizontal } from '@/components/icons';
 import { GoldButton } from '@/components/ui/gold-button';
+import { Spinner } from '@/components/ui/spinner';
 import { ActionButton } from '@/components/action-button';
 import { Touchable } from '@/components/ui/touchable';
 import { Progress } from '@/components/ui/progress';
@@ -30,6 +31,8 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
   const cloudModels = useSettingsStore((s) => s.cloudModels);
   const cloudUsage = useSettingsStore((s) => s.cloudUsage);
   const cloudUsageError = useSettingsStore((s) => s.cloudUsageError);
+  const cloudUsageLoading = useSettingsStore((s) => s.cloudUsageLoading);
+  const cloudModelsLoading = useSettingsStore((s) => s.cloudModelsLoading);
   const setCloudModelId = useSettingsStore((s) => s.setCloudModelId);
   const loadCloudUsage = useSettingsStore((s) => s.loadCloudUsage);
   const loadCloudModels = useSettingsStore((s) => s.loadCloudModels);
@@ -83,7 +86,7 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
           </ThemedText>
         </View>
         <View className="flex-row">
-          <GoldButton label="SIGN IN" size="compact" onPress={onRequestAccount} />
+          <GoldButton label="SIGN IN" icon={LogIn} size="small" onPress={onRequestAccount} />
         </View>
       </Card>
     );
@@ -108,9 +111,25 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1 gap-1">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>MODEL</ThemedText>
-            <ThemedText type="bodyMd" numberOfLines={2}>
-              {activeModel?.label ?? 'Choose a model'}
-            </ThemedText>
+            {/* Three states, not two. "Choose a model" is only honest once the
+                catalogue is in and the stored ID genuinely matches nothing in
+                it; said while the list is still arriving it asks for a choice
+                that may be about to make itself. The spinner is only for the
+                case where there is nothing to show yet — a known model stays
+                on screen through a refresh rather than blinking out of it. */}
+            {activeModel ? (
+              <ThemedText type="bodyMd" numberOfLines={2}>
+                {activeModel.label}
+              </ThemedText>
+            ) : cloudModelsLoading ? (
+              <View className="py-1">
+                <Spinner size="sm" label="Checking which model is active" />
+              </View>
+            ) : (
+              <ThemedText type="bodyMd" numberOfLines={2}>
+                Choose a model
+              </ThemedText>
+            )}
           </View>
           <View className="flex-row gap-2">
             {/* Prefix icons, matching the offline card. These two were the
@@ -136,9 +155,17 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
         <View className="gap-3">
           <View className="flex-row items-center justify-between">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>USAGE</ThemedText>
-            <Touchable onPress={loadCloudUsage}>
-              <ThemedText type="labelSm" color={asColor(primary)}>REFRESH</ThemedText>
-            </Touchable>
+            {/* The ring stands where the word was rather than beside it, so
+                the row does not change width mid-request and shove the label
+                across. Tapping again while it turns would only queue a second
+                read of the same number. */}
+            {cloudUsageLoading ? (
+              <Spinner size="sm" label="Checking your usage" />
+            ) : (
+              <Touchable onPress={loadCloudUsage}>
+                <ThemedText type="labelSm" color={asColor(primary)}>REFRESH</ThemedText>
+              </Touchable>
+            )}
           </View>
           {cloudUsage ? (
             <>

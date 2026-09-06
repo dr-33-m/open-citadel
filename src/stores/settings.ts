@@ -51,8 +51,18 @@ type SettingsState = {
   cloudThinkingBudget: CloudThinkingBudget;
   cloudUsage: CloudUsageState | null;
   cloudUsageError: string | null;
+  /** A usage read is in flight. The panel shows it instead of REFRESH. */
+  cloudUsageLoading: boolean;
   cloudModels: CloudModelOption[];
   cloudModelsError: string | null;
+  /**
+   * The catalogue is being read from the server.
+   *
+   * Which model is active cannot be answered until it lands, and "Choose a
+   * model" is an answer — the wrong one, given nobody has been asked to
+   * choose anything. The panel shows the wait instead.
+   */
+  cloudModelsLoading: boolean;
   ttsVoice: string | null;
   ttsVoiceLanguage: string | null;
   ttsRate: number;  isLoaded: boolean;
@@ -90,8 +100,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   cloudThinkingBudget: 'medium',
   cloudUsage: null,
   cloudUsageError: null,
+  cloudUsageLoading: false,
   cloudModels: CLOUD_MODEL_CATALOG,
   cloudModelsError: null,
+  cloudModelsLoading: false,
   ttsVoice: null,
   ttsVoiceLanguage: null,
   ttsRate: 1.0,  isLoaded: false,
@@ -158,6 +170,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return;
     }
 
+    set({ cloudUsageLoading: true });
     try {
       const res = await fetch(`${cloudBaseUrl}/usage`, {
         headers: await cloudHeaders(),
@@ -173,6 +186,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         cloudUsage: null,
         cloudUsageError: err instanceof Error ? err.message : 'Could not load cloud usage.',
       });
+    } finally {
+      set({ cloudUsageLoading: false });
     }
   },
 
@@ -180,24 +195,43 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { cloudBaseUrl, cloudModelId } = get();
     if (!cloudBaseUrl) return;
 
+    set({ cloudModelsLoading: true });
     try {
       const res = await fetch(`${cloudBaseUrl}/models`);
       if (!res.ok) throw new Error(`Models request failed (${res.status})`);
       const data = (await res.json()) as { models: CloudModelOption[]; defaultModelId: string };
       if (Array.isArray(data.models) && data.models.length > 0) {
-        set({ cloudModels: data.models, cloudModelsError: null });
+        /*
+         * The list and the ID land in ONE `set`, and that is the whole point.
+         *
+         * A model retired on the server must not keep being requested by a
+         * device that still holds its ID, so it falls back to the server's
+         * default. That healing used to happen after the list had already
+         * been published, and behind an `await` on a SQLite write — which
+         * left a window where the store held the new catalogue and an ID
+         * missing from it. Anything doing `models.find(m => m.id === id)`
+         * during that window got `undefined`, and the settings panel read
+         * that as "Choose a model" and said so, about a choice nobody had
+         * been asked to make.
+         *
+         * Writing both at once means the pair is never observably out of
+         * step. The persistence is fire-and-forget after the fact: losing it
+         * costs the healing its memory across a restart, where the next
+         * refresh does it again, and that is worth less than the flash.
+         */
+        const healed = data.models.some((m) => m.id === cloudModelId)
+          ? cloudModelId
+          : data.defaultModelId;
 
-        // A model retired on the server must not keep being requested by a
-        // device that still holds its ID: fall back to what the server now
-        // considers the default, and persist the healing so it sticks.
-        if (!data.models.some((m) => m.id === cloudModelId)) {
-          await get().setCloudModelId(data.defaultModelId);
-        }
+        set({ cloudModels: data.models, cloudModelsError: null, cloudModelId: healed });
+        if (healed !== cloudModelId) void saveSetting('cloud.modelId', healed);
       }
     } catch (err) {
       set({
         cloudModelsError: err instanceof Error ? err.message : 'Could not load cloud models.',
       });
+    } finally {
+      set({ cloudModelsLoading: false });
     }
   },
 
