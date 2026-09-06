@@ -277,11 +277,27 @@ export function goalOutcome(
 
   const unit = goal.outcomeUnit.toLowerCase();
   let value = 0;
+  /*
+   * Whether anything can ever move this number.
+   *
+   * A goal states its outcome in a unit, and only trackables measured in that
+   * same unit feed it. Nothing enforces the match at creation, so a goal can
+   * ask for 12 books while its trackable counts pages, or ask for 5,000 USD
+   * while its trackable is a plain tick. That goal is not at zero — it is
+   * unmeasurable, and reporting `0 of 12` would tell a reader who has logged
+   * every single day that they have achieved nothing. So an outcome no
+   * trackable feeds is no outcome, and the card says so instead.
+   *
+   * A goal WITH a feeding trackable and no logs yet is a real zero and still
+   * reports one.
+   */
+  let fed = false;
 
   for (const trackable of trackables) {
     const { measurement } = trackable;
     if (measurement.type === 'COMPLETION' || measurement.type === 'RATING') continue;
     if (measurement.unit.toLowerCase() !== unit) continue;
+    fed = true;
 
     for (const log of logsByTrackable.get(trackable.id) ?? []) {
       if (log.completed === 0) continue;
@@ -289,6 +305,7 @@ export function goalOutcome(
     }
   }
 
+  if (!fed) return null;
   return { value, target: goal.outcomeTarget, unit: goal.outcomeUnit };
 }
 

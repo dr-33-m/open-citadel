@@ -3,8 +3,8 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
-import { fontFamily, MaxContentWidth } from '@/constants/theme';
-import { Touchable } from '@/components/ui/touchable';
+import { MaxContentWidth, fontFamily } from '@/constants/theme';
+import { IconButton, IconButtonSpacer } from '@/components/icon-button';
 
 type ScreenHeaderProps = {
   title: string;
@@ -43,10 +43,13 @@ type ScreenHeaderProps = {
   children?: React.ReactNode;
 };
 
-/** Same 40dp box on every screen, so the three headers read as one bar that
- * changes contents rather than three different headers. */
-const ICON_BOX = 'h-10 w-10 items-center justify-center border border-border';
-
+/**
+ * The same 40dp card on every screen, so the headers read as one bar that
+ * changes contents rather than as several different headers.
+ *
+ * `IconButton` owns the treatment now — this used to keep a private copy, and
+ * the three hand-rolled headers elsewhere in the app each kept another.
+ */
 function HeaderButton({
   icon,
   onPress,
@@ -57,20 +60,10 @@ function HeaderButton({
   label?: string;
 }) {
   if (icon == null) return null;
-  if (!onPress) return <View className={ICON_BOX}>{icon}</View>;
   return (
-    <Touchable
-      onPress={onPress}
-      // The box stays 40dp because that is the size the design wants; the
-      // slop is what takes the actual target past the 44dp minimum.
-      hitSlop={8}
-      haptic="select"
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      className={ICON_BOX}
-    >
+    <IconButton onPress={onPress} label={label ?? ''}>
       {icon}
-    </Touchable>
+    </IconButton>
   );
 }
 
@@ -154,7 +147,7 @@ export function ScreenHeader({
         ) : (
           // Held even when empty: without it a title that fills the row would
           // slide under the notch edge the moment the button went away.
-          <View className="h-10 w-10" />
+          <IconButtonSpacer />
         )}
       </View>
     );
@@ -172,7 +165,7 @@ export function ScreenHeader({
       {leftIcon != null ? (
         <HeaderButton icon={leftIcon} onPress={onLeftPress} label={leftLabel} />
       ) : (
-        <View className="h-10 w-10" />
+        <IconButtonSpacer />
       )}
 
       <View className="flex-1 items-center gap-[2px]">
@@ -190,7 +183,7 @@ export function ScreenHeader({
       {rightIcon != null ? (
         <HeaderButton icon={rightIcon} onPress={onRightPress} label={rightLabel} />
       ) : (
-        <View className="h-10 w-10" />
+        <IconButtonSpacer />
       )}
     </View>
   );

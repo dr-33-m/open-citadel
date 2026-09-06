@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
-import { Download, MemoryStick, Power, SlidersHorizontal, Trash2 } from '@/components/icons';
+import { Download, List, MemoryStick, Power, SlidersHorizontal, Trash2 } from '@/components/icons';
 
 import { useModelSheet } from '@/features/settings/hooks/use-model-sheet';
 import { ModelPickerSheet } from '@/features/settings/components/model-picker-sheet';
@@ -12,10 +12,10 @@ import { MemoryInfoSheet } from '@/features/settings/components/memory-info-shee
 import { ThemedText } from '@/components/themed-text';
 import { usePulse } from '@/hooks/use-pulse';
 import { Card } from '@/components/ui/card';
+import { ActionButton } from '@/components/action-button';
 import { Touchable } from '@/components/ui/touchable';
 import { useModelStore } from '@/stores/model';
 import { asColor } from '@/utils/colors';
-import { cn } from '@/lib/cn';
 import { formatBytes } from '@/utils/format';
 
 /**
@@ -82,19 +82,21 @@ export function OfflineModelCard() {
               </ThemedText>
             )}
           </View>
-          <Touchable
-            className="flex-row items-center gap-2 bg-muted px-3 py-2"
+          <ActionButton
+            icon={List}
+            label="CHANGE"
+            tint={asColor(mutedForeground)}
             onPress={modelSheet.open}
-          >
-            <ThemedText type="labelSm" color={asColor(mutedForeground)}>CHANGE</ThemedText>
-          </Touchable>
+            accessibilityLabel="Change the model"
+          />
         </View>
 
         {downloadProgress[activeModel.id] !== undefined && (
           <View className="gap-1">
-            <View className="h-1 overflow-hidden rounded-[2px] bg-surface-tertiary">
+            {/* Square, like every other meter in the app. */}
+            <View className="h-1 overflow-hidden bg-surface-tertiary">
               <View
-                className="h-1 rounded-[2px] bg-primary"
+                className="h-1 bg-primary"
                 style={{ width: `${Math.round((downloadProgress[activeModel.id] ?? 0) * 100)}%` }}
               />
             </View>
@@ -110,59 +112,60 @@ export function OfflineModelCard() {
         )}
 
         {activeModel.isDownloaded && memoryStatus !== 'fits' && (
-          <Touchable
-            className="flex-row items-center gap-2 bg-muted px-3 py-2 self-start"
+          <ActionButton
+            className="self-start"
+            icon={MemoryStick}
+            label={memoryStatus === 'wont_fit' ? 'TOO LARGE' : 'TIGHT'}
+            tint={memoryStatus === 'wont_fit' ? asColor(destructive) : '#f97316'}
+            // The one button here that warns rather than acts, so it keeps its
+            // own tinted ground.
             style={{ backgroundColor: memoryStatus === 'wont_fit' ? '#e5393520' : '#f9731620' }}
             onPress={() => setMemoryVisible(true)}
-          >
-            <MemoryStick size={14} color={memoryStatus === 'wont_fit' ? asColor(destructive) : '#f97316'} />
-            <ThemedText type="labelSm" color={memoryStatus === 'wont_fit' ? asColor(destructive) : '#f97316'}>
-              {memoryStatus === 'wont_fit' ? 'TOO LARGE' : 'TIGHT'}
-            </ThemedText>
-          </Touchable>
+          />
         )}
 
         {!downloading && (
           <View className="flex-row flex-wrap gap-2">
             {!activeModel.isDownloaded && (
-              <Touchable
-                className={cn('flex-row items-center gap-2 bg-muted px-3 py-2', isDownloading && 'opacity-50')}
+              <ActionButton
+                icon={Download}
+                label="DOWNLOAD"
+                tint={asColor(primary)}
                 disabled={isDownloading}
                 onPress={async () => {
                   setIsDownloading(true);
                   try { await downloadModel(activeModel.id); } finally { setIsDownloading(false); }
                 }}
-              >
-                <Download size={14} color={asColor(primary)} />
-                <ThemedText type="labelSm" color={asColor(primary)}>DOWNLOAD</ThemedText>
-              </Touchable>
+              />
             )}
             {activeModel.isDownloaded && (
               <>
-                <Touchable
-                  className={cn('flex-row items-center gap-2 bg-muted px-3 py-2', busy && 'opacity-50')}
-                  onPress={isLoaded ? releaseContext : () => useModelStore.getState().initContext()}
+                <ActionButton
+                  // The glyph pulses while the model loads, so it is composed
+                  // here rather than named by the `icon` prop.
+                  leading={
+                    <Animated.View style={powerPulseStyle}>
+                      <Power size={14} color={modelLoading ? asColor(primary) : isLoaded ? '#4caf50' : asColor(mutedForeground)} />
+                    </Animated.View>
+                  }
+                  label={isLoaded ? 'SLEEP' : 'WAKEN'}
+                  tint={isLoaded ? undefined : asColor(mutedForeground)}
                   disabled={busy}
-                >
-                  <Animated.View style={powerPulseStyle}>
-                    <Power size={14} color={modelLoading ? asColor(primary) : isLoaded ? '#4caf50' : asColor(mutedForeground)} />
-                  </Animated.View>
-                  <ThemedText type="labelSm" color={isLoaded ? undefined : asColor(mutedForeground)}>
-                    {isLoaded ? 'SLEEP' : 'WAKEN'}
-                  </ThemedText>
-                </Touchable>
-                <Touchable
-                  className={cn('flex-row items-center gap-2 bg-muted px-3 py-2', busy && 'opacity-50')}
+                  onPress={isLoaded ? releaseContext : () => useModelStore.getState().initContext()}
+                />
+                <ActionButton
+                  icon={SlidersHorizontal}
+                  label="TUNE"
+                  tint={asColor(foreground)}
                   disabled={busy}
                   onPress={() => setTuneVisible(true)}
-                >
-                  <SlidersHorizontal size={14} color={asColor(foreground)} />
-                  <ThemedText type="labelSm">TUNE</ThemedText>
-                </Touchable>
+                />
               </>
             )}
-            <Touchable
-              className={cn('flex-row items-center gap-2 bg-muted px-3 py-2', busy && 'opacity-50')}
+            <ActionButton
+              icon={Trash2}
+              label="DELETE"
+              tint={asColor(destructive)}
               disabled={busy}
               onPress={async () => {
                 if (isLoaded) {
@@ -171,10 +174,7 @@ export function OfflineModelCard() {
                 }
                 setConfirmDeleteId(activeModel.id);
               }}
-            >
-              <Trash2 size={14} color={asColor(destructive)} />
-              <ThemedText type="labelSm" color={asColor(destructive)}>DELETE</ThemedText>
-            </Touchable>
+            />
           </View>
         )}
       </Card>

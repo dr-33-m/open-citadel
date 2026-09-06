@@ -21,7 +21,7 @@
  * outside it on a fixed "Compass" bar, from back when a Compass conversation
  * was not something you could name or return to.
  */
-import { ArrowLeft, Settings } from '@/components/icons';
+import { ChevronLeft, Settings } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
@@ -69,7 +69,7 @@ export function ChatHeader({
     <ScreenHeader
       title={named ? title : fallbackTitle}
       align={named ? 'start' : 'center'}
-      leftIcon={<ArrowLeft size={iconSize.default} color={asColor(foreground)} />}
+      leftIcon={<ChevronLeft size={iconSize.default} color={asColor(foreground)} />}
       leftLabel={backLabel}
       onLeftPress={onBack}
       rightIcon={<Settings size={iconSize.default} color={asColor(foreground)} />}

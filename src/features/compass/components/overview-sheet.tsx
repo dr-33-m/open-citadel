@@ -1,27 +1,29 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Star, Target } from '@/components/icons';
+import { ChevronLeft } from '@/components/icons';
+import { Pressable } from 'react-native-gesture-handler';
 import { useCSSVariable } from 'uniwind';
 
 import { GOAL_CATEGORIES, type GoalCategory } from 'samwell-shared';
 
 import { ThemedText } from '@/components/themed-text';
-import { paceTone, toneColor } from '@/components/compass/format';
 import { PageFade } from '@/components/scroll-fades';
 import { Card } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { RadarChart } from '@/components/ui/radar-chart';
 import { Sheet } from '@/components/ui/sheet';
-import { Tabs } from '@/components/ui/tabs';
 import { OverviewSkeleton } from '@/components/skeletons/compass-skeletons';
-import { GoalDot } from '@/features/compass/components/goal-dot';
-import { InsightsBody } from '@/features/compass/components/insights-body';
+import { GoalAbandonDialog } from '@/features/compass/components/goal-abandon-dialog';
+import { GoalAwardDialog } from '@/features/compass/components/goal-award-dialog';
+import { GoalDetailPanel } from '@/features/compass/components/goal-detail-panel';
 import { OverviewGoalRow } from '@/features/compass/components/overview-goal-row';
+import { OverviewMainGoal } from '@/features/compass/components/overview-main-goal';
 import { categoryLabel } from '@/features/compass/utils/category';
-import { useGoalInsights } from '@/features/compass/hooks/use-goal-insights';
+import { useBackHandler } from '@/hooks/use-back-handler';
+import { useToday } from '@/hooks/use-today';
 import { leanSignal } from '@/services/consistency';
 import type { GoalConsistency, GoalRow } from '@/stores/compass';
 import { asColor } from '@/utils/colors';
+import { haptics } from '@/utils/haptics';
 
 type OverviewSheetProps = {
   visible: boolean;
@@ -30,23 +32,27 @@ type OverviewSheetProps = {
   goals: GoalRow[];
   primaryGoalId: string | null;
   consistencyByGoal: Map<string, GoalConsistency>;
-  /** Point the whole of Compass at another goal. */
-  onSelectGoal: (goalId: string) => void;
   /** Move the primary mark. */
   onMakePrimary: (goalId: string) => void;
+  /** Close a goal out, or retire it early with the reader's reason. */
+  onFinishGoal: (goalId: string) => Promise<void>;
+  onAbandonGoal: (goalId: string, reason: string | null) => Promise<void>;
 };
 
 const SNAP_RATIOS = [0.62, 0.95];
-const OVERVIEW_TAB = 'overview';
 
 /**
- * Tab labels: the goal's title, capped so one long goal cannot eat the tab
- * row. The full title is everywhere else it matters — the goal list, the
- * tab's own Insights card.
+ * Axes below which a radar is not a shape.
+ *
+ * Two spokes are a line and three is the first real polygon. Below that the
+ * card was drawn as a row of bars, and that is exactly what this screen no
+ * longer does: with one goal per category those bars were the goal list again
+ * with the goals' names replaced by their categories', which is the same
+ * reading twice and the less specific one first. The radar earns its place at
+ * three because a shape says something a list cannot — whether the effort is
+ * spread or lopsided — so it is drawn then and not otherwise.
  */
-function tabLabel(title: string): string {
-  return title.length > 14 ? `${title.slice(0, 13).trimEnd()}…` : title;
-}
+const MIN_RADAR_AXES = 3;
 
 /** One radar axis: a category, and the execution it is running at. */
 type CategoryRow = { category: GoalCategory; pct: number | null };
@@ -84,12 +90,11 @@ function categoryRows(
 }
 
 /**
- * The shape of execution when there are enough axes to draw one.
+ * The shape of execution across the categories the goals fall in.
  *
- * The reveal grows the polygon out of the centre, and it is gated on the
- * sheet's settled context: the whole body mounts through `Sheet.Deferred`
- * once the rise is over, so the chart is born still and plays then, rather
- * than animating against the sheet's own spring.
+ * Gated on the sheet's settled context: the whole body mounts through
+ * `Sheet.Deferred` once the rise is over, so the chart is born still and plays
+ * then, rather than animating against the sheet's own spring.
  */
 function CategoryRadar({ rows, gold }: { rows: CategoryRow[]; gold: string }) {
   const data = React.useMemo(
@@ -103,9 +108,10 @@ function CategoryRadar({ rows, gold }: { rows: CategoryRow[]; gold: string }) {
       axisKey="axis"
       domain={[0, 100]}
       size={168}
-      accessibilityLabel="Execution by category"
+      accessibilityLabel="Consistency by category"
       accessibilityLabelForDatum={(datum) => {
-        const pct = typeof datum.execution === 'number' ? `${datum.execution}%` : 'not yet measurable';
+        const pct =
+          typeof datum.execution === 'number' ? `${datum.execution}%` : 'not yet measurable';
         return `${datum.axis}, ${pct}`;
       }}
     >
@@ -117,176 +123,34 @@ function CategoryRadar({ rows, gold }: { rows: CategoryRow[]; gold: string }) {
 }
 
 /**
- * The same reading with one or two axes, where a radar does not exist: two
- * spokes make a line, so the categories stand as bars and say it plainly.
- */
-function CategoryBars({ rows, dim }: { rows: CategoryRow[]; dim?: string }) {
-  return (
-    <View className="gap-3">
-      {rows.map((row) => (
-        <View key={row.category} className="gap-1.5">
-          <View className="flex-row items-baseline justify-between gap-3">
-            <ThemedText type="bodySm">{categoryLabel(row.category)}</ThemedText>
-            <ThemedText type="labelMd" color={dim}>
-              {row.pct == null ? '—' : `${row.pct}%`}
-            </ThemedText>
-          </View>
-          <Progress
-            value={row.pct ?? 0}
-            size="sm"
-            color="primary"
-            accessibilityLabel={`${categoryLabel(row.category)} execution ${
-              row.pct == null ? 'not yet measurable' : `${row.pct}%`
-            }`}
-          />
-        </View>
-      ))}
-    </View>
-  );
-}
-
-/**
- * One goal's Insights, as a tab of the overview.
+ * Every active goal at once, and a way into each one.
  *
- * The goal is not the one Compass is pointed at, so its trackables and logs
- * are read on demand — the first visit to a tab costs the read, and the panel
- * only mounts once the sheet has settled.
- */
-function GoalInsightsPanel({
-  goal,
-  consistency,
-}: {
-  goal: GoalRow;
-  consistency: GoalConsistency | null;
-}) {
-  const data = useGoalInsights(goal.id);
-  if (!data) return null;
-  return (
-    <InsightsBody
-      goal={goal}
-      consistency={consistency}
-      trackables={data.trackables}
-      logsByTrackable={data.logsByTrackable}
-    />
-  );
-}
-
-/**
- * One compared number: the goal it belongs to on the left, the figure doing
- * the talking on the right. The shape is StatCard's — label small, number at
- * display weight — turned into a row so two of them can sit against each
- * other and the gap between the figures IS the message.
- */
-function LeanRow({
-  goal,
-  subtext,
-  pct,
-  color,
-  dim,
-  starred,
-}: {
-  goal: GoalRow;
-  subtext: string;
-  pct: number;
-  color: string;
-  dim?: string;
-  starred?: boolean;
-}) {
-  return (
-    <View className="flex-row items-center justify-between gap-3">
-      <View className="flex-1 flex-row items-center gap-2.5">
-        <GoalDot category={goal.category} />
-        <View className="flex-1">
-          <View className="flex-row items-center gap-1.5">
-            <ThemedText type="bodySm" numberOfLines={1}>
-              {goal.title}
-            </ThemedText>
-            {starred && <Star size={10} color={color} fill={color} />}
-          </View>
-          <ThemedText type="labelSm" color={dim}>
-            {subtext}
-          </ThemedText>
-        </View>
-      </View>
-      <ThemedText type="headlineMd" color={color}>
-        {`${pct}%`}
-      </ThemedText>
-    </View>
-  );
-}
-
-/**
- * The lean signal, as Apple presents a comparison: not a sentence but a card,
- * a small labelled row up top, two figures at display weight, and one line of
- * guidance in footnote text. The tones are the app's own pace colours, so the
- * numbers say what the header claims — the side goal genuinely finishing well
- * against a main goal that is not.
- */
-function LeanCard({
-  leader,
-  primary,
-  leaderRatio,
-  primaryRatio,
-}: {
-  leader: GoalRow;
-  primary: GoalRow;
-  leaderRatio: number;
-  primaryRatio: number;
-}) {
-  const [primaryToken, mutedForeground] = useCSSVariable([
-    '--color-primary',
-    '--color-muted-foreground',
-  ]);
-  const gold = asColor(primaryToken) ?? '#f2ca50';
-  const dim = asColor(mutedForeground);
-  // A consistency ratio is already measured against what was due to date, so
-  // the clock does not get a second say here.
-  const leaderColor = toneColor(paceTone(leaderRatio, null), gold);
-  const primaryColor = toneColor(paceTone(primaryRatio, null), gold);
-
-  return (
-    <Card>
-      <Card.Content className="gap-3 p-4">
-        <View className="flex-row items-center gap-1.5">
-          <Target size={12} color={dim} strokeWidth={2} />
-          <ThemedText type="labelSm" color={dim}>
-            MAIN GOAL TRAILING
-          </ThemedText>
-        </View>
-
-        <LeanRow
-          goal={leader}
-          subtext="SIDE GOAL"
-          pct={Math.round(leaderRatio * 100)}
-          color={leaderColor}
-          dim={dim}
-        />
-        <View className="h-px bg-border" />
-        <LeanRow
-          goal={primary}
-          subtext="MAIN GOAL"
-          pct={Math.round(primaryRatio * 100)}
-          color={primaryColor}
-          dim={dim}
-          starred
-        />
-
-        <ThemedText type="bodySm" color={dim}>
-          The main goal is where the prize is.
-        </ThemedText>
-      </Card.Content>
-    </Card>
-  );
-}
-
-/**
- * Every active goal at once: the execution shape across their categories, the
- * goals themselves, and the lean card when the main prize is being left
- * behind — plus a tab per goal carrying that goal's full Insights view, so
- * the set and its members read from one place.
+ * ## Why this is a drill-down and not tabs
  *
- * With a single active goal this sheet never opens — the insights button goes
- * straight to that goal's Insights — so the Overview tab is all about the set.
+ * It was a tab bar: Overview, then one tab per goal. Goal titles are sentences
+ * the reader wrote — "100 TikTok videos by December 1" — so every tab was
+ * elided to fourteen characters, and both of the reader's goals began with
+ * words that survived the cut while the part telling them apart did not. No
+ * amount of styling fixes that, and five goals makes it worse. "Overview" was
+ * also sitting as a peer of the goals while being a different kind of thing
+ * entirely: a summary of the set, not a member of it.
+ *
+ * A list that opens into a detail says the same structure without labels it
+ * cannot fit — the set first, one goal one level deeper — and it gives the row
+ * a single meaning. Before, the row repointed all of Compass at a goal and
+ * closed the sheet while the tab merely showed that goal's numbers, so the two
+ * ways into a goal did two unrelated things and neither said which.
+ *
+ * ## Why the overview is three things and not five
+ *
+ * Every card here answers a different question, which is the rule the
+ * single-goal Insights view follows and the reason it reads well. The main
+ * goal is the hero because Compass's whole claim is that one goal is where the
+ * prize is; the radar under it is the shape of the whole set; and the side
+ * goals are a lighter list below, most specific and so last. The lean signal
+ * moved inside the hero, since it is a statement about the main goal. What went is the duplication: with
+ * two goals the old screen stated the same two percentages three times over,
+ * in three cards, the least specific one first.
  */
 export function OverviewSheet({
   visible,
@@ -294,8 +158,9 @@ export function OverviewSheet({
   goals,
   primaryGoalId,
   consistencyByGoal,
-  onSelectGoal,
   onMakePrimary,
+  onFinishGoal,
+  onAbandonGoal,
 }: OverviewSheetProps) {
   const [primaryToken, mutedForeground] = useCSSVariable([
     '--color-primary',
@@ -304,29 +169,113 @@ export function OverviewSheet({
   const gold = asColor(primaryToken) ?? '#f2ca50';
   const dim = asColor(mutedForeground);
 
-  // Land on the overview each time the sheet opens; a goal tab is a detour,
-  // not a place to live. Reset during render on the visible flip — the
-  // sanctioned pattern, not an effect chasing it.
-  const [tab, setTab] = React.useState(OVERVIEW_TAB);
+  // Land on the overview each time the sheet opens; a goal is a detour, not a
+  // place to live. Reset during render on the visible flip — the sanctioned
+  // pattern, not an effect chasing it.
+  const [openGoalId, setOpenGoalId] = React.useState<string | null>(null);
   const [wasVisible, setWasVisible] = React.useState(false);
   if (visible !== wasVisible) {
     setWasVisible(visible);
-    if (!visible) setTab(OVERVIEW_TAB);
+    if (!visible) setOpenGoalId(null);
   }
 
-  const rows = React.useMemo(() => categoryRows(goals, consistencyByGoal), [goals, consistencyByGoal]);
+  const rows = React.useMemo(
+    () => categoryRows(goals, consistencyByGoal),
+    [goals, consistencyByGoal],
+  );
 
   const primary = goals.find((g) => g.id === primaryGoalId) ?? null;
-  const lean = React.useMemo(() => {
+  const others = goals.filter((g) => g.id !== primary?.id);
+
+  /**
+   * What is beating the main goal, worded for the band on its card.
+   *
+   * `leanSignal` names the single best side goal that is strictly ahead, and
+   * returns nothing when the main goal is level or in front — so most days
+   * there is no band at all, which is what keeps it a nudge rather than
+   * furniture. When more than one is ahead, naming only the leader would be
+   * true and misleading in the same breath, so the count speaks instead: the
+   * point stops being which goal and starts being how many.
+   */
+  const outpacedBy = React.useMemo(() => {
     if (!primary) return null;
-    return leanSignal(
-      consistencyByGoal.get(primary.id)?.execution ?? null,
-      goals
-        .filter((g) => g.id !== primary.id)
-        .map((g) => ({ id: g.id, execution: consistencyByGoal.get(g.id)?.execution ?? null })),
-    );
+    const primaryExecution = consistencyByGoal.get(primary.id)?.execution ?? null;
+    const others = goals
+      .filter((g) => g.id !== primary.id)
+      .map((g) => ({ id: g.id, execution: consistencyByGoal.get(g.id)?.execution ?? null }));
+
+    const lean = leanSignal(primaryExecution, others);
+    if (!lean) return null;
+
+    const ahead = others.filter(
+      (other) =>
+        other.execution?.ratio != null &&
+        lean.primaryRatio != null &&
+        other.execution.ratio > lean.primaryRatio,
+    ).length;
+    if (ahead > 1) return `${ahead} side goals are running`;
+
+    const leader = goals.find((g) => g.id === lean.leaderId);
+    return leader ? `${leader.title} is running` : null;
   }, [goals, primary, consistencyByGoal]);
-  const leanLeader = lean ? (goals.find((g) => g.id === lean.leaderId) ?? null) : null;
+
+  const openGoal = openGoalId ? (goals.find((g) => g.id === openGoalId) ?? null) : null;
+  const closeGoal = React.useCallback(() => setOpenGoalId(null), []);
+
+  /*
+   * Ending a goal, in two acts.
+   *
+   * `awarded` holds the title of the goal just finished rather than a boolean,
+   * because by the time the dialog is on screen the goal is no longer in
+   * `goals` — it has left the active set — and a dialog that congratulated you
+   * on nothing would be the result of reading it back out of a list it is no
+   * longer in.
+   *
+   * The reason itself is not here at all: `GoalAbandonDialog` owns its own
+   * field and hands the text up on confirm. This sheet used to keep a mirror
+   * of it, reset it by hand, and read it back — three places holding one
+   * string.
+   */
+  const [awarded, setAwarded] = React.useState<string | null>(null);
+  const [abandoning, setAbandoning] = React.useState<GoalRow | null>(null);
+
+  // Plain handlers, not `useCallback`: nothing below is memoized on their
+  // identity, and wrapping a function that reads a ref only gives the compiler
+  // a memo it cannot preserve.
+  const finishGoal = () => {
+    if (!openGoal) return;
+    const title = openGoal.title;
+    setOpenGoalId(null);
+    void onFinishGoal(openGoal.id).then(() => setAwarded(title));
+  };
+
+  const startAbandon = () => {
+    if (!openGoal) return;
+    setAbandoning(openGoal);
+  };
+
+  const confirmAbandon = (reason: string) => {
+    const goal = abandoning;
+    if (!goal) return;
+    setAbandoning(null);
+    setOpenGoalId(null);
+    void onAbandonGoal(goal.id, reason || null);
+  };
+
+  // One clock for the whole sheet, handed down. See `useToday`: a day count
+  // read during render is frozen at whatever day that render happened on.
+  const today = useToday();
+
+  /*
+   * Hardware back leaves the goal before it leaves the sheet.
+   *
+   * `Sheet` registers its own handler to dismiss, and a subscription added
+   * later is called first — this one is added when a goal opens, so it wins
+   * for exactly as long as there is a goal to close. Without it, back from a
+   * goal threw away the sheet as well, which is the same accidental exit the
+   * back control's small tap target was causing.
+   */
+  useBackHandler(openGoal !== null, closeGoal);
 
   return (
     <Sheet
@@ -339,85 +288,152 @@ export function OverviewSheet({
       {/* Charts and a list of meters: held until the sheet has settled, like
           the insights body, so the mount never competes with the rise. */}
       <Sheet.Deferred skeleton={<OverviewSkeleton />}>
-        <Tabs value={tab} onValueChange={setTab} defaultValue={OVERVIEW_TAB} className="flex-1">
-          {/* Pinned above the scroll, so switching never means scrolling back
-              up first. Scrollable: goal titles are the labels, and five of
-              them do not fit a row. The wrapper matters: a horizontal
-              ScrollView carries RN's default flexGrow of 1, so bare in the
-              flex-1 tab set it would fight the panel for the sheet's height
-              and stretch every trigger into a slab. */}
-          <View className="flex-none">
-            <Tabs.List scrollable className="px-4 pt-2">
-              <Tabs.Trigger value={OVERVIEW_TAB}>Overview</Tabs.Trigger>
-              {goals.map((goal) => (
-                <Tabs.Trigger key={goal.id} value={goal.id}>
-                  {tabLabel(goal.title)}
-                </Tabs.Trigger>
-              ))}
-            </Tabs.List>
+        {/* Pinned above the scroll, so the way back is never something you
+            have to scroll up to find. No transition between the two levels:
+            the goal's view mounts rings and a heatmap, and the house rule is
+            not to mount expensive content while anything is still moving. */}
+        {openGoal && (
+          /*
+           * A Gesture Handler `Pressable`, not the app's `Touchable`, and the
+           * whole 44pt row rather than the words.
+           *
+           * This row is the sheet's only chrome OUTSIDE `Sheet.ScrollView`,
+           * and that turns out to matter a great deal. The backdrop's
+           * press-to-close is a Gesture Handler tap over the WHOLE screen,
+           * including the part the sheet covers. Gesture Handler does not
+           * take part in React Native's responder system, so an ordinary
+           * Pressable cannot claim a touch away from it: both fired for the
+           * same press, and tapping this control went back AND dismissed the
+           * sheet underneath. Missing it dismissed without going back. Inside
+           * the scroll view none of this happens, because a scrollable
+           * registers a native handler that wins the arbitration — which is
+           * why the gutter beside a card is harmless and this row was not.
+           *
+           * So the control has to be a gesture too, and then it wins the same
+           * way. Its own press dim stands in for `Touchable`'s, since that is
+           * the piece being given up. Anything else ever pinned above the
+           * scroll in a sheet needs the same treatment.
+           */
+          <View className="flex-none px-4 pb-1 pt-2">
+            <Pressable
+              onPress={() => {
+                haptics.select();
+                closeGoal();
+              }}
+              hitSlop={{ top: 4, bottom: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Back to all goals"
+              style={({ pressed }) => ({
+                height: 44,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                opacity: pressed ? 0.6 : 1,
+              })}
+            >
+              <ChevronLeft size={18} color={gold} strokeWidth={2} />
+              <ThemedText type="labelSm" color={gold}>
+                ALL GOALS
+              </ThemedText>
+            </Pressable>
           </View>
+        )}
 
-          <PageFade edges="both" surface="popover">
-            <Sheet.ScrollView contentContainerClassName="gap-4 px-4 pb-6">
-              <Tabs.Content value={OVERVIEW_TAB} className="gap-4">
-                {rows.length > 0 && (
+        <PageFade edges="both" surface="popover">
+          <Sheet.ScrollView contentContainerClassName="gap-4 px-4 pb-6 pt-2">
+            {openGoal ? (
+              <GoalDetailPanel
+                goal={openGoal}
+                consistency={consistencyByGoal.get(openGoal.id) ?? null}
+                isPrimary={openGoal.id === primaryGoalId}
+                onMakePrimary={() => onMakePrimary(openGoal.id)}
+                onFinish={finishGoal}
+                onAbandon={startAbandon}
+              />
+            ) : (
+              <>
+                {primary && (
+                  <OverviewMainGoal
+                    goal={primary}
+                    consistency={consistencyByGoal.get(primary.id) ?? null}
+                    today={today}
+                    outpacedBy={outpacedBy}
+                    onOpen={() => setOpenGoalId(primary.id)}
+                  />
+                )}
+
+                {/* Straight after the hero, and before the goals it is made
+                    of. The screen then reads main goal, then the shape of the
+                    whole set, then the members: summary before detail, with
+                    the longest and most specific thing last. It answers a
+                    question the list below cannot — whether the effort is
+                    spread or lopsided — which is why it is worth a card, and
+                    why it is not worth one when there are too few axes to
+                    have a shape. */}
+                {rows.length >= MIN_RADAR_AXES && (
                   <Card>
                     <Card.Content className="gap-3 p-4">
                       <ThemedText type="labelSm" color={dim}>
-                        EXECUTION BY CATEGORY
+                        CONSISTENCY BY CATEGORY
                       </ThemedText>
-                      {rows.length >= 3 ? (
-                        <View className="items-center py-1">
-                          <CategoryRadar rows={rows} gold={gold} />
-                        </View>
-                      ) : (
-                        <CategoryBars rows={rows} dim={dim} />
-                      )}
+                      <View className="items-center py-1">
+                        <CategoryRadar rows={rows} gold={gold} />
+                      </View>
+                      {/* The scale, stated. A radar with no ring labelled is
+                          a shape with no size: the reader can see which spoke
+                          is longest and has no way to know whether the
+                          longest one is good. Under the chart and on the
+                          trailing edge, where the heatmap keeps its own key,
+                          because a key belongs after the thing it explains.
+
+                          The numbers themselves stay off the spokes. Every
+                          category here is one goal's category most of the
+                          time, so printing them would be the list above read
+                          out a second time; what this card is for is the
+                          shape, which the list cannot show. */}
+                      <View className="flex-row items-center justify-end">
+                        <ThemedText type="labelSm" color={dim}>
+                          OUTER RING IS 100%
+                        </ThemedText>
+                      </View>
                     </Card.Content>
                   </Card>
                 )}
-
-                <View className="gap-2">
-                  <ThemedText type="labelSm" color={dim}>
-                    GOALS
-                  </ThemedText>
-                  {goals.map((goal) => (
-                    <OverviewGoalRow
-                      key={goal.id}
-                      goal={goal}
-                      isPrimary={goal.id === primaryGoalId}
-                      consistency={consistencyByGoal.get(goal.id) ?? null}
-                      onSelect={() => onSelectGoal(goal.id)}
-                      onMakePrimary={() => onMakePrimary(goal.id)}
-                    />
-                  ))}
-                </View>
-
-                {/* Exactly one card, and only when the primary is actually
-                    being beaten — a nudge that shows on an ordinary day is
-                    not a nudge. */}
-                {lean && leanLeader && primary && (
-                  <LeanCard
-                    leader={leanLeader}
-                    primary={primary}
-                    leaderRatio={lean.leaderRatio}
-                    primaryRatio={lean.primaryRatio}
-                  />
+                {others.length > 0 && (
+                  <View className="gap-2">
+                    <ThemedText type="labelSm" color={dim}>
+                      SIDE GOALS
+                    </ThemedText>
+                    {others.map((goal) => (
+                      <OverviewGoalRow
+                        key={goal.id}
+                        goal={goal}
+                        consistency={consistencyByGoal.get(goal.id) ?? null}
+                        today={today}
+                        onOpen={() => setOpenGoalId(goal.id)}
+                      />
+                    ))}
+                  </View>
                 )}
-              </Tabs.Content>
 
-              {goals.map((goal) => (
-                <Tabs.Content key={goal.id} value={goal.id} className="gap-4">
-                  <GoalInsightsPanel
-                    goal={goal}
-                    consistency={consistencyByGoal.get(goal.id) ?? null}
-                  />
-                </Tabs.Content>
-              ))}
-            </Sheet.ScrollView>
-          </PageFade>
-        </Tabs>
+              </>
+            )}
+          </Sheet.ScrollView>
+        </PageFade>
       </Sheet.Deferred>
+
+      {/* Siblings of the sheet's body, drawn through a portal above it: a
+          second modal would dismiss the sheet underneath, and these are
+          questions asked ON BEHALF of what is still open behind them. */}
+      <GoalAwardDialog title={awarded} onClose={() => setAwarded(null)} />
+      {/* Keyed by the goal: a different goal is a different instance, so the
+          reason field starts empty without anyone clearing it. */}
+      <GoalAbandonDialog
+        key={abandoning?.id ?? 'none'}
+        title={abandoning?.title ?? null}
+        onConfirm={confirmAbandon}
+        onCancel={() => setAbandoning(null)}
+      />
     </Sheet>
   );
 }

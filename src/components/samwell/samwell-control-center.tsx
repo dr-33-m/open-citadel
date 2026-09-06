@@ -1,11 +1,12 @@
-import { Image } from 'expo-image';
-import { BookOpen, CalendarDays, Compass, History, ListTodo, MessageSquare, Send, Square, TrendingUp } from '@/components/icons';
+import { ArrowBigDownDash, ArrowBigUpDash, Compass, MessageSquare, Send, Square } from '@/components/icons';
 import React from 'react';
 import { TextInput, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { SamwellPlaceholder } from '@/components/samwell-placeholder';
+import { ToggleButton } from '@/components/ui/toggle-button';
 import { Touchable } from '@/components/ui/touchable';
-import { elevation, fontFamily, iconSize } from '@/constants/theme';
+import { elevation, fontFamily, iconSize, stackedShadow } from '@/constants/theme';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
 
@@ -16,6 +17,18 @@ type SamwellControlCenterProps = {
    * screen out from under a reply that is still arriving, and in chat mode it
    * also risks a second caller reaching the engine. */
   lockMode?: boolean;
+  /** Whether the drawer under this card is out. Owned by the caller, which
+   * renders the drawer itself — this card only holds the handle. */
+  toolboxOpen: boolean;
+  onToggleToolbox: () => void;
+  /**
+   * Whether this mode has any tools to show.
+   *
+   * False offline in Compass, where every tool would open a sheet onto an
+   * empty store. The handle goes away with them rather than staying to open an
+   * empty drawer, which is the same rule the mode's own controls follow.
+   */
+  hasTools?: boolean;
   text: string;
   onChangeText: (t: string) => void;
   onSend: () => void;
@@ -34,30 +47,6 @@ type SamwellControlCenterProps = {
    * actively generating, matching the old per-session chat screen. */
   showStop?: boolean;
   onStop?: () => void;
-  // Chat mode only.
-  /** Whether the book button is worth showing at all — hidden once a session
-   * has started without a book, since it would just be an inert icon. */
-  showBookButton?: boolean;
-  pendingBookTitle?: string | null;
-  pendingBookCover?: string | null;
-  onOpenBookPicker?: () => void;
-  /** Long-press the book button to drop it — only offered before a session
-   * exists; once a chat has actually started, its book is fixed context. */
-  onClearBook?: () => void;
-  onOpenHistory?: () => void;
-  // Compass mode only.
-  hasGoal?: boolean;
-  /**
-   * The goal-switcher chip — names the goal every Compass control here is
-   * scoped to, and opens the way to another. Built by the caller with the
-   * goal data and rendered above the field; nothing when there is no goal.
-   */
-  goalSwitcher?: React.ReactNode;
-  /** How many activities are still owed today; badges the log button. */
-  dueCount?: number;
-  onOpenDeck?: () => void;
-  onOpenPlanner?: () => void;
-  onOpenInsights?: () => void;
   /**
    * The composer's own input, handed up so a caller can focus it.
    *
@@ -68,15 +57,27 @@ type SamwellControlCenterProps = {
 };
 
 /**
- * The single input hub for the merged Chat/Compass screen — everything the
- * user does (send a message, switch mode, pick a book, open goal/milestone
- * detail) routes through this one surface.
+ * The control unit: what you are writing, and which mode you are in.
+ *
+ * It used to hold everything, and in Compass that had grown to seven targets
+ * in one row — a two-cell mode switch, three sheets, history and send. Once a
+ * row is that long the thing you press every morning is the same size and
+ * weight as the thing you press twice a month, and the next surface either
+ * makes it worse or does not get a button at all.
+ *
+ * So the row keeps only what is true of every session: the field, the mode
+ * switch, and send. Everything a mode brings with it went into the drawer
+ * underneath, behind the handle beside the switch. The drawer is the caller's
+ * to render (`SamwellToolbox`) because it belongs to the floating stack rather
+ * than to this card; this card just holds the handle.
  */
 export function SamwellControlCenter({
   mode,
-  lockMode,
-
   onSelectMode,
+  lockMode,
+  toolboxOpen,
+  onToggleToolbox,
+  hasTools = true,
   text,
   onChangeText,
   onSend,
@@ -85,29 +86,20 @@ export function SamwellControlCenter({
   unavailable = false,
   showStop = false,
   onStop,
-  showBookButton = true,
-  pendingBookTitle,
-  pendingBookCover,
-  onOpenBookPicker,
-  onClearBook,
-  onOpenHistory,
-  hasGoal,
-  goalSwitcher,
-  dueCount = 0,
-  onOpenDeck,
-  onOpenPlanner,
-  onOpenInsights,
   inputRef,
 }: SamwellControlCenterProps) {
   // Literal colours for consumers a className can't reach: lucide icon props
   // and TextInput's placeholderTextColor.
-  const [primary, primaryForeground, mutedForeground, surfaceTertiary, foreground] = useCSSVariable([
-    '--color-primary',
-    '--color-primary-foreground',
-    '--color-muted-foreground',
-    '--color-surface-tertiary',
-    '--color-foreground',
-  ]);
+  const [primary, primaryForeground, mutedForeground, foreground, shadowStacked] =
+    useCSSVariable([
+      '--color-primary',
+      '--color-primary-foreground',
+      '--color-muted-foreground',
+      '--color-foreground',
+      // Theme-aware: heavy enough to land on obsidian is a bruise on
+      // parchment. See `stackedShadow`.
+      '--color-shadow-stacked',
+    ]);
   const canSend = text.trim().length > 0 && !busy && !unavailable;
 
   // "Stop was tapped and the turn has not wound down." Reset on the edge where
@@ -124,32 +116,59 @@ export function SamwellControlCenter({
     // The drag handle that used to sit at the top of this card is gone with
     // the floating nav it collapsed: there is no bar under the card to hide
     // any more, so the card is just a card.
-    <View className="gap-2 border border-border bg-card p-3" style={elevation.card}>
+    //
+    // `zIndex` so it paints last. It is the earlier sibling of the toolbox, so
+    // without it the toolbox draws over this card and the overlap runs the
+    // wrong way round. With it, this card lies ON the toolbox and hides its
+    // top edge, which is the whole of what makes the two read as a stack.
+    //
+    // The shadow steps up to `stacked` while the toolbox is out, because it is
+    // then falling on a card of the same colour rather than on the page, and
+    // `card`'s ambient wash cannot be seen doing that. Shut, there is nothing
+    // underneath to separate from and the ordinary elevation is right.
+    <View
+      className="gap-2 border border-border bg-card p-3"
+      style={[
+        toolboxOpen ? stackedShadow(asColor(shadowStacked)) : elevation.card,
+        { zIndex: 1 },
+      ]}
+    >
       {/* The goal every Compass control below is scoped to, and the way to
           another. Above the field because it is context, not an action. */}
-      {mode === 'compass' && !unavailable && goalSwitcher ? (
-        <View className="flex-row">{goalSwitcher}</View>
-      ) : null}
 
       {/* No border/background of its own — reads as part of the same card
-          surface rather than a boxed field inside it. */}
-      <TextInput
-        ref={inputRef}
-        className="max-h-[120px] min-h-[40px] px-2 py-2 text-[16px] text-foreground"
-        style={{ fontFamily: fontFamily.sans, lineHeight: 24 }}
-        multiline
-        placeholder={placeholder}
-        placeholderTextColor={asColor(mutedForeground)}
-        value={text}
-        onChangeText={onChangeText}
-        editable={!busy && !unavailable}
-      />
+          surface rather than a boxed field inside it.
+
+          The placeholder is drawn over the field rather than set on it, so his
+          name can be gold inside it. See `SamwellPlaceholder`: the padding
+          here is what the overlay is positioned against. */}
+      <View>
+        <TextInput
+          ref={inputRef}
+          className="max-h-[120px] min-h-[40px] px-2 py-2 text-[16px] text-foreground"
+          style={{ fontFamily: fontFamily.sans, lineHeight: 24, textAlignVertical: 'top' }}
+          multiline
+          value={text}
+          onChangeText={onChangeText}
+          editable={!busy && !unavailable}
+        />
+        <SamwellPlaceholder
+          text={placeholder}
+          visible={text.length === 0}
+          color={asColor(mutedForeground)}
+        />
+      </View>
 
       <View className="flex-row items-center gap-2">
         {/* Segmented chat/compass switch — same idea as an OS light/dark
             toggle, icon-only and built from Citadel Frame parts: a bordered
             track, sharp corners throughout, the active cell lifted with a
-            contrasting fill instead of a sliding rounded pill. */}
+            contrasting fill instead of a sliding rounded pill.
+
+            It stays on the card rather than moving into the drawer. Which
+            mode you are in is the one thing that changes what everything else
+            on this screen means, including what is in the drawer, so it is
+            not something to go looking for. */}
         <View className="flex-row border border-border bg-muted">
           <Touchable
             className={cn(
@@ -185,97 +204,35 @@ export function SamwellControlCenter({
           </Touchable>
         </View>
 
-        {mode === 'chat' && (
-          <>
-            {showBookButton && (
-              <Touchable
-                className="h-10 w-10 items-center justify-center border border-border"
-                onPress={onOpenBookPicker}
-                onLongPress={onClearBook}
-              >
-                {pendingBookCover ? (
-                  // Fills the button edge to edge (matching its inner box, border
-                  // excluded) rather than floating with gaps on the sides.
-                  <Image source={{ uri: pendingBookCover }} style={{ width: 38, height: 38 }} contentFit="cover" />
-                ) : (
-                  <BookOpen
-                    size={iconSize.default}
-                    color={asColor(pendingBookTitle ? primary : mutedForeground)}
-                    strokeWidth={2}
-                  />
-                )}
-              </Touchable>
-            )}
-          </>
-        )}
+        {/* The drawer handle, next to the switch: the mode, then the mode's
+            own tools. The arrow points the way the surfaces move — up to pull
+            the drawer out and lift the card, down to put it away.
 
-        {mode === 'compass' && !unavailable && (
-          <>
-            {/* The screen's one gold control: today's activities. It stays
-                lit whenever there is a goal — the count that used to sit
-                beside it repeated what the deck says on its own first card,
-                and a badge that is nearly always showing stops being news. */}
-            <Touchable
-              className="h-10 w-10 items-center justify-center border border-border"
-              onPress={hasGoal && dueCount > 0 ? onOpenDeck : undefined}
-              accessibilityRole="button"
-              accessibilityLabel={
-                dueCount > 0 ? `Log today, ${dueCount} to go` : 'Nothing due today'
-              }
-            >
-              <ListTodo
-                size={iconSize.default}
-                color={asColor(hasGoal && dueCount > 0 ? primary : mutedForeground)}
-                strokeWidth={2}
-              />
-            </Touchable>
-
-            <Touchable
-              className="h-10 w-10 items-center justify-center border border-border"
-              onPress={hasGoal ? onOpenPlanner : undefined}
-              accessibilityRole="button"
-              accessibilityLabel="Planner"
-            >
-              <CalendarDays
-                size={iconSize.default}
-                color={asColor(hasGoal ? primary : mutedForeground)}
-                strokeWidth={2}
-              />
-            </Touchable>
-
-            <Touchable
-              className="h-10 w-10 items-center justify-center border border-border"
-              onPress={hasGoal ? onOpenInsights : undefined}
-              accessibilityRole="button"
-              accessibilityLabel="Insights"
-            >
-              <TrendingUp
-                size={iconSize.default}
-                color={asColor(hasGoal ? primary : mutedForeground)}
-                strokeWidth={2}
-              />
-            </Touchable>
-          </>
-        )}
-
-        {/* Both modes. A Compass conversation is a chat with its own history,
-            so the way back into an earlier one is the same control in the
-            same place rather than something Compass invents for itself.
-            Hidden only where Compass has no server to reach, alongside the
-            three controls above it, since none of them can do anything then. */}
-        {mode === 'compass' && unavailable ? null : (
-          <Touchable
-            className="h-10 w-10 items-center justify-center border border-border"
-            onPress={onOpenHistory}
-            accessibilityRole="button"
-            accessibilityLabel={mode === 'compass' ? 'Past conversations' : 'Chat history'}
-          >
-            <History
+            Vendored ToggleButton, squared off and given the same bordered box
+            as the switch beside it, so the row still reads as one set. */}
+        {hasTools && (
+        <ToggleButton
+          variant="ghost"
+          iconOnly
+          className={cn(
+            'h-10 w-10 rounded-none border border-border',
+            toolboxOpen && 'bg-muted',
+          )}
+          selected={toolboxOpen}
+          onSelectedChange={onToggleToolbox}
+          haptics
+          accessibilityLabel={toolboxOpen ? 'Close the toolbox' : 'Open the toolbox'}
+        >
+          {toolboxOpen ? (
+            <ArrowBigDownDash size={iconSize.default} color={asColor(primary)} strokeWidth={2} />
+          ) : (
+            <ArrowBigUpDash
               size={iconSize.default}
-              color={asColor(onOpenHistory ? mutedForeground : surfaceTertiary)}
+              color={asColor(mutedForeground)}
               strokeWidth={2}
             />
-          </Touchable>
+          )}
+        </ToggleButton>
         )}
 
         <View className="flex-1" />

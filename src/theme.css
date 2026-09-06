@@ -53,6 +53,19 @@
    */
   --color-inset: unset;
   /*
+   * The colour of the shadow one card casts onto another it is lying on.
+   *
+   * A token and not a constant, because the two themes need opposite weights
+   * and a single value cannot serve both. On obsidian the shadow lands on a
+   * surface that is already near black, so it has to be heavy to register at
+   * all. On parchment the same value is a bruise: the ground is L* 95 and any
+   * dark cast reads at full strength, so it wants a fraction of it, warmed to
+   * the theme's ink rather than pure black.
+   *
+   * Only for stacked surfaces. A card on the page uses `elevation.card`.
+   */
+  --color-shadow-stacked: unset;
+  /*
    * The dim behind an overlay — and, in a dark theme, what it dims *toward*.
    *
    * A token rather than a fixed `bg-black/N` for the same reason `--color-
@@ -229,6 +242,7 @@
       --color-overlay-foreground: #1C1510;
       /* the sunken band under a card or dialog: ink at 5% */
       --color-inset: rgba(0, 0, 0, 0.05);
+      --color-shadow-stacked: rgba(28, 21, 16, 0.16);
       /* overlay dim: parchment can take a heavy one and wants it */
       --color-scrim: rgba(0, 0, 0, 0.45);
 
@@ -363,6 +377,7 @@
       --color-overlay-foreground: #d0c5af;
       /* the sunken band under a card or dialog: black at 22% */
       --color-inset: rgba(0, 0, 0, 0.22);
+      --color-shadow-stacked: rgba(0, 0, 0, 0.55);
       /*
        * Overlay dim: `--color-background` itself at 60%, not black. Over the
        * background it is a no-op by construction, so the largest area of the

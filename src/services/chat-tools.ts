@@ -15,6 +15,8 @@ import {
 } from '@/services/tool-limits';
 import { useBooksStore } from '@/stores/books';
 import { useCollectionsStore } from '@/stores/collections';
+import { useReaderStore } from '@/stores/reader';
+import { useTimelineStore } from '@/stores/timeline';
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
@@ -642,7 +644,16 @@ export const TOOL_STATUS: Record<string, string> = {
   create_collection: 'Creating collection…',
   add_book_to_collection: 'Adding to collection…',
   remove_book_from_collection: 'Updating collection…',
+  delete_collection: 'Removing that collection…',
   list_collections: 'Looking over your collections…',
+  start_reading: 'Opening that up…',
+  clear_queue: 'Clearing your queue…',
+  rename_book: 'Fixing that title…',
+  delete_book: 'Removing that from your library…',
+  add_note_to_highlight: 'Writing that down…',
+  update_note: 'Rewriting that note…',
+  delete_note: 'Removing that note…',
+  update_thought: 'Rewriting that…',
 
   // Compass. Same table as the library tools, because the status line is the
   // same question ("what is he doing right now") whichever surface is asking.
@@ -652,6 +663,11 @@ export const TOOL_STATUS: Record<string, string> = {
   log_trackable: 'Writing that down…',
   propose_goal: 'Putting a plan together…',
   propose_adjustments: 'Working out what to change…',
+  finish_goal: 'Closing that goal out…',
+  stop_goal: 'Retiring that goal…',
+  set_primary_goal: 'Moving your main goal…',
+  pause_trackable: 'Pausing that…',
+  resume_trackable: 'Starting that again…',
   search_journey: 'Remembering…',
 };
 
@@ -773,6 +789,59 @@ export async function executeToolCall(
     case 'mark_as_finished':
       return {
         result: await setBookStatusBatch(args.book_titles as string[] | undefined, 'archived', ctx),
+        status: toolStatus(name),
+      };
+    case 'delete_collection':
+      return {
+        result: await deleteCollectionForModel(args.collection_name as string),
+        status: toolStatus(name),
+      };
+    case 'rename_book':
+      return {
+        result: await renameBookForModel(
+          args.book_title as string | undefined,
+          args.new_title as string,
+          ctx,
+        ),
+        status: toolStatus(name),
+      };
+    case 'delete_book':
+      return {
+        result: await deleteBooksForModel(args.book_titles as string[] | undefined, ctx),
+        status: toolStatus(name),
+      };
+    case 'clear_queue':
+      return { result: await clearQueueForModel(), status: toolStatus(name) };
+    case 'start_reading':
+      return {
+        result: await setBookStatusBatch(args.book_titles as string[] | undefined, 'reading', ctx),
+        status: toolStatus(name),
+      };
+    case 'add_note_to_highlight':
+      return {
+        result: await addNoteForModel(args.highlight_id as string, args.text as string),
+        status: toolStatus(name),
+      };
+    case 'update_note':
+      return {
+        result: await updateNoteForModel(
+          args.note_id as string,
+          args.highlight_id as string,
+          args.text as string,
+        ),
+        status: toolStatus(name),
+      };
+    case 'delete_note':
+      return {
+        result: await deleteNoteForModel(
+          args.note_id as string,
+          args.highlight_id as string,
+        ),
+        status: toolStatus(name),
+      };
+    case 'update_thought':
+      return {
+        result: await updateThoughtForModel(args.id as string, args.text as string),
         status: toolStatus(name),
       };
     case 'create_collection':
@@ -1813,7 +1882,7 @@ function resolveBooksByTitles(
  * calling remove_from_queue on a book that's actually Currently Reading). */
 async function setBookStatusBatch(
   bookTitles: string[] | undefined,
-  newStatus: 'queued' | 'archived' | null,
+  newStatus: 'reading' | 'queued' | 'archived' | null,
   ctx: ToolCallContext,
   requireStatus?: 'reading' | 'queued' | 'archived',
 ): Promise<BookBatchActionResult> {
@@ -1888,6 +1957,26 @@ async function toggleFavoriteForModel(
   return { ok: failed.length === 0, succeeded, failed };
 }
 
+interface DeleteCollectionResult {
+  ok: boolean;
+  name?: string;
+  bookCount?: number;
+  error?: string;
+}
+
+interface RenameBookResult {
+  ok: boolean;
+  from?: string;
+  to?: string;
+  error?: string;
+}
+
+interface NoteResult {
+  ok: boolean;
+  noteId?: string;
+  error?: string;
+}
+
 interface CreateCollectionResult {
   ok: boolean;
   collectionId?: string;
@@ -1908,6 +1997,148 @@ interface CollectionBatchActionResult {
   succeeded: string[];
   failed: BookActionFailure[];
   error?: string;
+}
+
+/**
+ * Delete a collection, leaving its books alone.
+ *
+ * The count goes back in the result because the approval dialog says it out
+ * loud: "3 books" is the difference between a grouping somebody forgot about
+ * and one they have been filling for a month, and it is the only fact that
+ * makes the confirmation worth reading.
+ */
+async function deleteCollectionForModel(
+  collectionName: string,
+): Promise<DeleteCollectionResult> {
+  const resolution = resolveCollectionByName(collectionName);
+  if (!resolution.ok) return { ok: false, error: resolution.error };
+
+  const { collection } = resolution;
+  const bookCount = (await useCollectionsStore.getState().getCollectionBooks(collection.id)).length;
+  await useCollectionsStore.getState().deleteCollection(collection.id);
+  return { ok: true, name: collection.name, bookCount };
+}
+
+/** Correct one book's title. */
+async function renameBookForModel(
+  bookTitle: string | undefined,
+  newTitle: string,
+  ctx: ToolCallContext,
+): Promise<RenameBookResult> {
+  const trimmed = newTitle?.trim();
+  if (!trimmed) return { ok: false, error: 'title_required' };
+
+  const { books: resolved, failed } = resolveBooksByTitles(
+    bookTitle ? [bookTitle] : undefined,
+    ctx,
+  );
+  const book = resolved[0];
+  if (!book) return { ok: false, error: failed[0]?.error ?? 'book_not_found' };
+
+  await useBooksStore.getState().updateBookTitle(book.id, trimmed);
+  return { ok: true, from: book.title, to: trimmed };
+}
+
+/**
+ * Delete books from the library.
+ *
+ * Takes everything with them — highlights, notes, progress — which is why the
+ * tool description says so and the approval copy repeats it. The UI puts this
+ * behind its own confirm for the same reason.
+ */
+async function deleteBooksForModel(
+  bookTitles: string[] | undefined,
+  ctx: ToolCallContext,
+): Promise<BookBatchActionResult> {
+  const { books: resolved, failed } = resolveBooksByTitles(bookTitles, ctx);
+  const succeeded: string[] = [];
+
+  for (const book of resolved) {
+    await useBooksStore.getState().deleteBook(book.id);
+    succeeded.push(book.title);
+  }
+
+  return { ok: succeeded.length > 0, succeeded, failed };
+}
+
+/** Empty the queue. The books stay in the library. */
+async function clearQueueForModel(): Promise<BookBatchActionResult> {
+  const queued = useBooksStore
+    .getState()
+    .books.filter((book) => book.status === 'queued')
+    .map((book) => book.title);
+
+  await useBooksStore.getState().clearQueue();
+  return { ok: true, succeeded: queued, failed: [] };
+}
+
+/** Write a note on a highlight. */
+async function addNoteForModel(highlightId: string, text: string): Promise<NoteResult> {
+  const trimmed = text?.trim();
+  if (!trimmed) return { ok: false, error: 'text_required' };
+
+  const row = db
+    .select({ id: highlights.id })
+    .from(highlights)
+    .where(eq(highlights.id, highlightId))
+    .get();
+  if (!row) return { ok: false, error: 'highlight_not_found' };
+
+  await useReaderStore.getState().addNote(highlightId, trimmed);
+  return { ok: true };
+}
+
+/** Rewrite a note. */
+async function updateNoteForModel(
+  noteId: string,
+  highlightId: string,
+  text: string,
+): Promise<NoteResult> {
+  const trimmed = text?.trim();
+  if (!trimmed) return { ok: false, error: 'text_required' };
+
+  await useReaderStore.getState().updateNote(noteId, highlightId, trimmed);
+  return { ok: true, noteId };
+}
+
+/** Delete a note, leaving its highlight. */
+async function deleteNoteForModel(
+  noteId: string,
+  highlightId: string,
+): Promise<NoteResult> {
+  await useReaderStore.getState().deleteNote(noteId, highlightId);
+  return { ok: true, noteId };
+}
+
+/**
+ * Rewrite a thought.
+ *
+ * Colour and tags are left exactly as they were: the model is changing words,
+ * and silently resetting the rest because it did not pass them would lose work
+ * the user did by hand.
+ */
+async function updateThoughtForModel(
+  id: string,
+  text: string,
+): Promise<{ ok: boolean; id?: string; type?: 'thought'; error?: string }> {
+  const trimmed = text?.trim();
+  if (!trimmed) return { ok: false, error: 'text_required' };
+
+  const row = db
+    .select({ id: thoughts.id, color: thoughts.color, tags: thoughts.tags })
+    .from(thoughts)
+    .where(eq(thoughts.id, id))
+    .get();
+  if (!row) return { ok: false, error: 'thought_not_found' };
+
+  // Colour and tags read back off the row and handed straight through, so the
+  // update touches only the text. `updateThought` takes all four and would
+  // otherwise blank the two the model never mentioned.
+  const tags: string[] = row.tags ? JSON.parse(row.tags) : [];
+  // `color` is nullable on the row; the store wants a string. An untinted
+  // thought stays untinted.
+  await useTimelineStore.getState().updateThought(id, trimmed, row.color ?? '', tags);
+  return { ok: true, id, type: 'thought' };
 }
 
 async function updateBookCollectionBatch(

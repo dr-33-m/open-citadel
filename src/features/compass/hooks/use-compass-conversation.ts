@@ -27,7 +27,7 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
   const draft = useSamwellSessionStore((s) => s.compassDraft);
   const setSession = useSamwellSessionStore((s) => s.set);
 
-  const activeGoalId = useCompassStore((s) => s.activeGoalId);
+  const activeGoals = useCompassStore((s) => s.activeGoals);
   const committing = useCompassStore((s) => s.committing);
   const commitProposal = useCompassStore((s) => s.commitProposal);
   const applyCheckinDraft = useCompassStore((s) => s.applyCheckinDraft);
@@ -49,7 +49,7 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
   const openSession = useCompassChatStore((s) => s.openSession);
   const deleteSession = useCompassChatStore((s) => s.deleteSession);
 
-  const kind: CompassConversationKind = activeGoalId ? 'checkin' : 'plan';
+  const kind: CompassConversationKind = activeGoals.length > 0 ? 'checkin' : 'plan';
 
   const approve = React.useCallback(async () => {
     if (!draft) return;

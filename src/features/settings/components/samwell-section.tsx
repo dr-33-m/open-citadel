@@ -10,6 +10,7 @@ import { EngineInfoSheet, type EngineMode } from '@/components/settings/engine-i
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
+import { SamwellText } from '@/components/samwell-text';
 import { Touchable } from '@/components/ui/touchable';
 import { isNativeAvailable } from '@/services/inference';
 import { useSettingsStore } from '@/stores/settings';
@@ -109,9 +110,12 @@ function ModeCard({
             {label}
           </ThemedText>
         </View>
-        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+        {/* His name in gold here as everywhere else. These two lines were
+            missed by the first sweep because they arrive as a prop rather than
+            as literal text in the JSX. */}
+        <SamwellText type="bodySm" color={asColor(mutedForeground)}>
           {description}
-        </ThemedText>
+        </SamwellText>
         <Touchable className="absolute right-2 top-2" onPress={onInfo} hitSlop={10}>
           <Info size={15} color={asColor(mutedForeground)} />
         </Touchable>

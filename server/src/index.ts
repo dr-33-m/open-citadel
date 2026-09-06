@@ -29,6 +29,7 @@ import {
 import { runStructuredAnalysis } from './structured-analysis.js';
 import { fetchOpenRouterModel, startModelContextRefresh } from './model-context.js';
 import { tagsRoutes } from './tags.js';
+import { takeawayRoutes } from './takeaway.js';
 import {
   deleteCloudModel,
   getDefaultModelId,
@@ -354,6 +355,9 @@ app.get('/usage', async (c) => {
 
 app.route('/tags', tagsRoutes);
 app.route('/chat', chatTitleRoutes);
+// The reconciliation of a goal that just ended, beside the Compass routes it
+// belongs to.
+app.route('/compass', takeawayRoutes);
 
 app.post('/chat/http', async (c) => {
   requireOpenRouterKey();

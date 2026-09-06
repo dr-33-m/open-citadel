@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { useRouter } from 'expo-router';
-import { ArrowRight, Calendar, MessageSquare, Pencil, Share, Trash2 } from '@/components/icons';
+import { Calendar, ChevronRight, MessageSquare, Pencil, Share, Trash2 } from '@/components/icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
@@ -11,6 +11,7 @@ import { PageFade } from '@/components/scroll-fades';
 import { DeferredBody } from '@/components/navigation/deferred-body';
 import { Reveal } from '@/components/navigation/reveal';
 import { CalendarPicker } from '@/components/timeline/calendar-picker';
+import { useToday } from '@/hooks/use-today';
 import { ExportImageCard } from '@/components/export/export-image-card';
 import { captureAndShare } from '@/utils/export-image';
 import { NewThoughtSheet } from '@/components/timeline/new-thought-sheet';
@@ -96,6 +97,28 @@ export function TimelinePage() {
       fetchAllTags().then(setAllTags);
     }
   }, [showThoughtSheet]);
+
+  /*
+   * Follow the day over when the reader was sitting on today.
+   *
+   * `selectedDate` is seeded once, when the store module is first evaluated,
+   * so an app left open across midnight kept yesterday selected. Nothing was
+   * broken enough to notice at a glance either: the label recomputes against
+   * the real clock, so the screen quietly relabelled itself "Yesterday" and
+   * stayed there, showing a day the reader had not chosen.
+   *
+   * Only when they were on the old today. Somebody who deliberately paged back
+   * to last Tuesday should still be on last Tuesday at 00:01, and having the
+   * screen jump under them would be the worse bug of the two.
+   */
+  const today = useToday();
+  const previousToday = useRef(today);
+  useEffect(() => {
+    if (previousToday.current === today) return;
+    const wasOnToday = selectedDate === previousToday.current;
+    previousToday.current = today;
+    if (wasOnToday) setSelectedDate(today);
+  }, [today, selectedDate, setSelectedDate]);
 
   const dateLabel = formatDateLabel(selectedDate);
   const dateDisplay = dateLabel === 'Today' || dateLabel === 'Yesterday'
@@ -214,7 +237,7 @@ export function TimelinePage() {
         leftIcon={<Calendar size={iconSize.default} color={asColor(foreground)} />}
         leftLabel="Pick a day"
         onLeftPress={() => setShowCalendar(true)}
-        rightIcon={<ArrowRight size={iconSize.default} color={asColor(foreground)} />}
+        rightIcon={<ChevronRight size={iconSize.default} color={asColor(foreground)} />}
         rightLabel="Library"
         onRightPress={() => goTo(HUB.library)}
       />

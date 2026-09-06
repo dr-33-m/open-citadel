@@ -83,7 +83,9 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
           ]}
         />
       </Animated.View>
-      <ThemedText type="labelSm" color={asColor(mutedForeground)} style={{ fontSize: 11 }}>
+      {/* Only ever his name, so the whole string is his colour rather than a
+          span inside a sentence. */}
+      <ThemedText type="labelSm" color={asColor(primary)} style={{ fontSize: 11 }}>
         {statusText}
       </ThemedText>
     </Touchable>

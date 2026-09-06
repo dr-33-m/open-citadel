@@ -29,6 +29,7 @@ import { ThemedView } from "@/components/themed-view";
 import { Fab, fabClearance } from "@/components/ui/fab";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SectionHeader } from "@/components/ui/section-header";
+import { LibrarySkeleton } from "@/components/skeletons/library-skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { MaxContentWidth, iconSize, layout } from "@/constants/theme";
 import type { books as booksTable } from "@/db/schema";
@@ -78,6 +79,9 @@ function LibraryHeader({
   onOpenSamwell: () => void;
 }) {
   const foreground = useCSSVariable("--color-foreground");
+  // His mark carries the gold everywhere it appears, so the one control on
+  // this header that is him reads as him.
+  const primary = useCSSVariable("--color-primary");
   return (
     <ScreenHeader
       title="Library"
@@ -86,7 +90,7 @@ function LibraryHeader({
       }
       leftLabel="Timeline"
       onLeftPress={onOpenTimeline}
-      rightIcon={<ZodiacPisces size={iconSize.default} color={asColor(foreground)} />}
+      rightIcon={<ZodiacPisces size={iconSize.default} color={asColor(primary)} />}
       rightLabel="Samwell"
       onRightPress={onOpenSamwell}
     />
@@ -244,15 +248,15 @@ export function LibraryPage() {
       ? allBooks.length === 0 && sync.status !== "running" && !isLoading
       : !booksDirectoryUri && !isLoading;
 
-  // Boot-in-progress: a neutral spinner instead of either branch, so neither
-  // the setup prompt nor an empty library scaffold can flash.
+  // Boot-in-progress: the shape of the Library rather than either branch, so
+  // neither the setup prompt nor an empty scaffold can flash. A skeleton and
+  // not a spinner — this is the first screen anyone sees, and it should arrive
+  // as the page filling in rather than as a jump from nothing.
   if (!booted) {
     return (
         <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
           <LibraryHeader onOpenTimeline={openTimeline} onOpenSamwell={openSamwell} />
-          <View className="flex-1 items-center justify-center">
-            <Spinner size="sm" />
-          </View>
+          <LibrarySkeleton />
         </ThemedView>
     );
   }

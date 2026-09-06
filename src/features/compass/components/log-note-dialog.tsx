@@ -7,7 +7,11 @@ import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { GoldButton } from '@/components/ui/gold-button';
 import { KeyboardAvoider } from '@/components/ui/keyboard-avoider';
+import { FieldHint } from '@/components/field-hint';
 import { Portal } from '@/components/ui/portal';
+import { NOTE_HINTS } from '@/lib/note-hints';
+import { useTextValidity } from '@/hooks/use-text-validity';
+import { NoteText } from '@/lib/text-fields';
 import { Touchable } from '@/components/ui/touchable';
 import { fontFamily, motion } from '@/constants/theme';
 import { asColor } from '@/utils/colors';
@@ -64,6 +68,23 @@ export function LogNoteDialog({
     '--color-foreground',
     '--color-scrim',
   ]);
+
+  /*
+   * Validity only — the note's text belongs to the deck, which already keeps
+   * it in a ref and commits it. This adds the one derived fact the button
+   * needs without a keystroke re-rendering the dialog.
+   *
+   * Reset on `fieldKey`, the same prop that hands the field a fresh buffer per
+   * card: the dialog stays mounted between cards, so without this the previous
+   * card's note would leave the button lit over an empty field.
+   */
+  const { isValid, check, reset } = useTextValidity(NoteText);
+  const [keyedTo, setKeyedTo] = React.useState(fieldKey);
+  if (fieldKey !== keyedTo) {
+    setKeyedTo(fieldKey);
+    reset();
+  }
+
   if (outcome === null) return null;
 
   const muted = asColor(mutedForeground);
@@ -128,12 +149,25 @@ export function LogNoteDialog({
                 placeholder={placeholder}
                 placeholderTextColor={muted}
                 defaultValue=""
-                onChangeText={onChangeText}
+                onChangeText={(next) => {
+                  onChangeText(next);
+                  check(next);
+                }}
                 accessibilityLabel="Note"
               />
 
+              <FieldHint>{NOTE_HINTS.log}</FieldHint>
+
               <View className="gap-2">
-                <GoldButton label="SAVE THE NOTE" onPress={onSave} />
+                {/* Inert until there is something to save. Empty, this button
+                    used to commit `note.trim() || null` — which is exactly
+                    what SKIP THE NOTE below it does, so the two controls
+                    quietly did the same thing and only one said so. */}
+                <GoldButton
+                  label="SAVE THE NOTE"
+                  onPress={onSave}
+                  disabled={!isValid}
+                />
                 <Touchable
                   className="items-center py-3"
                   onPress={onSkip}

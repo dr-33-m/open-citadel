@@ -5,6 +5,8 @@ import { useCSSVariable } from 'uniwind';
 import { Card } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
+import { List, SlidersHorizontal } from '@/components/icons';
+import { ActionButton } from '@/components/action-button';
 import { Touchable } from '@/components/ui/touchable';
 import { Progress } from '@/components/ui/progress';
 import { CloudTuneSheet } from '@/features/settings/components/cloud-tune-sheet';
@@ -66,18 +68,23 @@ export function CloudPanel() {
             </ThemedText>
           </View>
           <View className="flex-row gap-2">
-            <Touchable
-              className="flex-row items-center gap-2 bg-muted px-3 py-2"
+            {/* Prefix icons, matching the offline card. These two were the
+                only model buttons in the app without them, which made the two
+                panels read as different features rather than two halves of
+                one choice. */}
+            <ActionButton
+              icon={SlidersHorizontal}
+              label="TUNE"
+              tint={asColor(mutedForeground)}
               onPress={() => setTuneVisible(true)}
-            >
-              <ThemedText type="labelSm" color={asColor(mutedForeground)}>TUNE</ThemedText>
-            </Touchable>
-            <Touchable
-              className="flex-row items-center gap-2 bg-muted px-3 py-2"
+            />
+            <ActionButton
+              icon={List}
+              label="CHANGE"
+              tint={asColor(mutedForeground)}
               onPress={() => setPickerVisible(true)}
-            >
-              <ThemedText type="labelSm" color={asColor(mutedForeground)}>CHANGE</ThemedText>
-            </Touchable>
+              accessibilityLabel="Change the model"
+            />
           </View>
         </View>
 

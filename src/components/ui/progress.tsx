@@ -30,8 +30,21 @@ const progressVariants = tv({
   slots: {
     root: 'w-full gap-2',
     header: 'flex-row items-center justify-between',
-    track: 'w-full overflow-hidden rounded-full',
-    indicator: 'h-full rounded-full',
+    /*
+     * LOCAL EDIT (Open Citadel): `rounded-full` -> square on both.
+     *
+     * Citadel Frame has no round corners anywhere — cards, buttons, sheets and
+     * the calendar's days are all square — and a pill-shaped bar was the last
+     * soft shape left. It matters most on the meters this app leans on: a
+     * goal's clock sits directly under square stat cards on the same surface.
+     *
+     * The indicator has to lose its radius with the track, not just the track:
+     * a square track clipping a pill indicator leaves the fill's leading edge
+     * rounded while its trailing edge is cut, which reads as a rendering bug
+     * at low percentages.
+     */
+    track: 'w-full overflow-hidden',
+    indicator: 'h-full',
   },
   variants: {
     color: {

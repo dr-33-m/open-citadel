@@ -32,17 +32,24 @@ export function TTSControls({
     <View className="flex-row items-center justify-center gap-4">
       <Touchable
         onPress={onSkipPrevious}
-        className="h-9 w-9 items-center justify-center rounded-full bg-muted"
+        className="h-9 w-9 items-center justify-center border border-border bg-card shadow-sm"
         hitSlop={8}
         haptic="tap"
+        accessibilityRole="button"
+        accessibilityLabel="Previous"
       >
-        <SkipBack size={16} color={foreground} />
+        <SkipBack size={16} color={foreground} strokeWidth={2} />
       </Touchable>
       <Touchable
         onPress={onPlayPause}
-        className="h-11 w-11 items-center justify-center rounded-full bg-muted"
+        // Bigger than its neighbours and squared like them. Transport controls
+        // earn a size hierarchy — this is the one you reach for — but the round
+        // pill was the last soft shape in the reader.
+        className="h-11 w-11 items-center justify-center border border-border bg-card shadow-sm"
         hitSlop={8}
         haptic="tap"
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
       >
         {/* Keyed on play state: the glyph pops out and the new one pops in,
             rather than swapping instantly. */}
@@ -66,11 +73,13 @@ export function TTSControls({
       </Touchable>
       <Touchable
         onPress={onSkipNext}
-        className="h-9 w-9 items-center justify-center rounded-full bg-muted"
+        className="h-9 w-9 items-center justify-center border border-border bg-card shadow-sm"
         hitSlop={8}
         haptic="tap"
+        accessibilityRole="button"
+        accessibilityLabel="Next"
       >
-        <SkipForward size={16} color={foreground} />
+        <SkipForward size={16} color={foreground} strokeWidth={2} />
       </Touchable>
     </View>
   );

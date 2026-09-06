@@ -7,6 +7,7 @@ import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
+import { TitleText, isFilled } from '@/lib/text-fields';
 import type { books as booksTable } from '@/db/schema';
 
 import { asColor } from '@/utils/colors';
@@ -45,6 +46,8 @@ export function EditTitleSheet({
     }
   }, [visible, book]);
 
+  const canSave = isFilled(TitleText, title);
+
   const handleSave = () => {
     const trimmed = title.trim();
     if (!trimmed || !book) return;
@@ -74,7 +77,7 @@ export function EditTitleSheet({
           onSubmitEditing={handleSave}
         />
         <View className="gap-3">
-          <GoldButton label="SAVE" onPress={handleSave} />
+          <GoldButton label="SAVE" onPress={handleSave} disabled={!canSave} />
           <Touchable onPress={handleClose} className="items-center py-3">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>
               CANCEL

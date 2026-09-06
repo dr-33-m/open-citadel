@@ -14,7 +14,7 @@
  */
 import React from 'react';
 
-import { useChatStore } from '@/stores/chat';
+import { NEW_CHAT_TITLE, useChatStore } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -91,7 +91,7 @@ export function useChatSessions() {
         if (!activeSession) {
           const sessionId = await createSession({
             bookId: pendingBook?.id,
-            title: pendingBook?.title ?? 'New chat',
+            title: pendingBook?.title ?? NEW_CHAT_TITLE,
           });
           await openSession(sessionId);
         }

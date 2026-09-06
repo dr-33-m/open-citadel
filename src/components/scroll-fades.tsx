@@ -1,11 +1,24 @@
 /**
- * The app's two scroll fades.
+ * The app's scroll fades.
  *
  * PanelUI's `ScrollFade` is the mechanism — it holds scroll offset, content
  * size and viewport size in shared values and drives the gradients on the UI
- * thread, so scrolling never re-renders React. These two wrappers are the
+ * thread, so scrolling never re-renders React. These wrappers are the
  * *decisions*: how deep the fade goes, which edges get one, and whether the
  * wrapper carries the flex.
+ *
+ * ## Why not `ScrollBlur`
+ *
+ * It was tried, and on Android it cannot draw. `expo-blur` there does not blur
+ * what is behind a view; it blurs a view you nominate through `blurTarget`,
+ * and silently falls back to nothing without one. Wrapping the scroller in a
+ * `BlurTargetView` and pointing every band at it — with `blurMethod` set to
+ * the SDK-31 path, since the legacy one drew nothing either — still produced a
+ * plain gradient on an API 36 device.
+ *
+ * So the blur cost a native dependency, a rebuild and a vendored rewrite, and
+ * looked exactly like this. Reverted. Worth revisiting only if `expo-blur`'s
+ * Android story changes, and worth testing with a bare `BlurView` first.
  *
  * They exist so those decisions live in one file rather than in a `size=` at
  * every call site. Change a number here and every shelf or page in the app
@@ -100,9 +113,10 @@ export function PageFade({
  *
  * A transcript's scrollable is the library's, and it owns its scroll events:
  * following the live edge, holding position through a prepend and opening on
- * the right turn are all reactions to them. So the fade cannot wrap the
+ * the right turn are all reactions to them. So the edge cannot wrap the
  * scrollable and put a handler of its own on it; it takes the distances the
  * scroller is already tracking. Must be rendered inside a `MessageScroller`.
+
  */
 export function TranscriptFade({
   edges = 'both',

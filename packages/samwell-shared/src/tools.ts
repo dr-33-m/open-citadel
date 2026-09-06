@@ -173,6 +173,58 @@ export const CreateCollectionResultSchema = z.object({
   error: z.string().optional(),
 });
 
+export const DeleteCollectionInputSchema = z.object({
+  collection_name: z
+    .string()
+    .min(1)
+    .describe('The name of the collection to delete (partial match ok).'),
+});
+
+export const DeleteCollectionResultSchema = z.object({
+  ok: z.boolean(),
+  name: z.string().optional(),
+  /** How many books it held. The user is told before it goes. */
+  bookCount: z.number().optional(),
+  error: z.string().optional(),
+});
+
+export const RenameBookInputSchema = z.object({
+  book_title: z
+    .string()
+    .optional()
+    .describe('Title of the book to rename (partial match ok). Omit for the book this chat is about.'),
+  new_title: z.string().min(1).describe('The corrected title.'),
+});
+
+export const RenameBookResultSchema = z.object({
+  ok: z.boolean(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export const NoteInputSchema = z.object({
+  highlight_id: z.string().describe('The highlight the note belongs to.'),
+  text: z.string().min(1).describe("The note, in the user's own framing."),
+});
+
+export const UpdateNoteInputSchema = z.object({
+  note_id: z.string(),
+  highlight_id: z.string(),
+  text: z.string().min(1),
+});
+
+export const NoteResultSchema = z.object({
+  ok: z.boolean(),
+  noteId: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export const UpdateThoughtInputSchema = z.object({
+  id: z.string(),
+  text: z.string().min(1).describe('The rewritten thought. Replaces the text entirely.'),
+});
+
 export const CollectionBooksInputSchema = z.object({
   book_titles: z
     .array(z.string())
@@ -392,6 +444,87 @@ export const removeBookFromCollectionTool = toolDefinition({
   needsApproval: true,
 });
 
+export const deleteCollectionTool = toolDefinition({
+  name: 'delete_collection',
+  description:
+    'Permanently delete a collection. The books in it are NOT deleted, only the grouping. Only call this when the user explicitly asks to delete or remove a collection. Requires user approval.',
+  inputSchema: DeleteCollectionInputSchema,
+  outputSchema: DeleteCollectionResultSchema,
+  needsApproval: true,
+});
+
+export const renameBookTool = toolDefinition({
+  name: 'rename_book',
+  description:
+    "Correct a book's title in the library. For fixing a title that imported badly, not for renaming a book to something it is not. Requires user approval.",
+  inputSchema: RenameBookInputSchema,
+  outputSchema: RenameBookResultSchema,
+  needsApproval: true,
+});
+
+export const deleteBookTool = toolDefinition({
+  name: 'delete_book',
+  description:
+    "Permanently remove a book from the library, along with its highlights, notes and reading progress. Only call this when the user explicitly asks to delete a book. This cannot be undone. Requires user approval.",
+  inputSchema: BookTitlesInputSchema,
+  outputSchema: BookBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const clearQueueTool = toolDefinition({
+  name: 'clear_queue',
+  description:
+    'Empty the reading queue completely. The books stay in the library. Requires user approval.',
+  inputSchema: z.object({}),
+  outputSchema: BookBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const startReadingTool = toolDefinition({
+  name: 'start_reading',
+  description:
+    'Move one or more books into Currently Reading. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.',
+  inputSchema: BookTitlesInputSchema,
+  outputSchema: BookBatchActionResultSchema,
+  needsApproval: true,
+});
+
+export const addNoteToHighlightTool = toolDefinition({
+  name: 'add_note_to_highlight',
+  description:
+    "Write a note on a highlight. ASK FIRST: if the user has not already said what the note should say, ask them what they want it to say and wait for their answer before calling this. Their note is their thinking about the passage, and a note you composed for them is worth nothing to them later. Once they have told you, write it in their words and framing, tidied but not rewritten. Only compose it yourself when they explicitly ask you to. Requires user approval.",
+  inputSchema: NoteInputSchema,
+  outputSchema: NoteResultSchema,
+  needsApproval: true,
+});
+
+export const updateNoteTool = toolDefinition({
+  name: 'update_note',
+  description:
+    "Rewrite an existing note on a highlight, replacing its text entirely. ASK FIRST: read the current note back to the user and ask what they want it to say instead, unless they have already told you. Never quietly reword something they wrote. Requires user approval.",
+  inputSchema: UpdateNoteInputSchema,
+  outputSchema: NoteResultSchema,
+  needsApproval: true,
+});
+
+export const deleteNoteTool = toolDefinition({
+  name: 'delete_note',
+  description:
+    'Permanently delete a note from a highlight. The highlight itself stays. Requires user approval.',
+  inputSchema: UpdateNoteInputSchema.omit({ text: true }),
+  outputSchema: NoteResultSchema,
+  needsApproval: true,
+});
+
+export const updateThoughtTool = toolDefinition({
+  name: 'update_thought',
+  description:
+    "Rewrite a thought's text, replacing it entirely, so include everything that should remain. ASK FIRST: read the thought back and ask what they want it to say, unless they have already told you. These are the user's own words about their own life — only ever change them on their instruction, and keep their voice rather than improving it into yours. Requires user approval.",
+  inputSchema: UpdateThoughtInputSchema,
+  outputSchema: DeleteResultSchema,
+  needsApproval: true,
+});
+
 export const listCollectionsTool = toolDefinition({
   name: 'list_collections',
   description: "List the user's collections with how many books are in each.",
@@ -436,7 +569,16 @@ export const SAMWELL_TOOL_DEFINITIONS = [
   createCollectionTool,
   addBookToCollectionTool,
   removeBookFromCollectionTool,
+  deleteCollectionTool,
   listCollectionsTool,
+  renameBookTool,
+  deleteBookTool,
+  clearQueueTool,
+  startReadingTool,
+  addNoteToHighlightTool,
+  updateNoteTool,
+  deleteNoteTool,
+  updateThoughtTool,
   searchJourneyTool,
 ] as const;
 

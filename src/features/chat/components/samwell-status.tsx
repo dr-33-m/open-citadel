@@ -12,6 +12,7 @@ import React from 'react';
 import { View, type ViewStyle } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { SamwellText, useSamwellSpans } from '@/components/samwell-text';
 import { ThemedText } from '@/components/themed-text';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
@@ -70,6 +71,7 @@ export function SamwellStatusEmptyState({
 
   const title = status ? status.title : IDLE_TITLE;
   const message = status ? status.message : IDLE_MESSAGE;
+  const messageSpans = useSamwellSpans(message ?? '');
 
   return (
     <EmptyState size="sm" style={style}>
@@ -89,15 +91,24 @@ export function SamwellStatusEmptyState({
           )}
         </EmptyState.Media>
         {title ? (
-          <ThemedText
-            type="headlineSm"
-            className={cn('text-center', status?.isError && 'text-destructive')}
-          >
-            {title}
-          </ThemedText>
+          // `SamwellText`: his name carries the gold here as it does
+          // everywhere else. An error title is destructive-coloured end to
+          // end, because there the whole line is the warning.
+          status?.isError ? (
+            <ThemedText type="headlineSm" className="text-center text-destructive">
+              {title}
+            </ThemedText>
+          ) : (
+            <SamwellText type="headlineSm" className="text-center">
+              {title}
+            </SamwellText>
+          )
         ) : null}
+        {/* `useSamwellSpans` rather than `SamwellText`: this is PanelUI's own
+            description text, and wrapping it would throw away its size and
+            colour. The spans nest inside it and only set the name's colour. */}
         <EmptyState.Description className={cn(status?.isError && 'text-destructive')}>
-          {message}
+          {status?.isError ? message : messageSpans}
         </EmptyState.Description>
       </EmptyState.Header>
       {status?.actions ? (

@@ -102,6 +102,23 @@ interface ChatStore {
 // persist or trigger re-renders.
 const titledMessageCounts = new Map<string, number>();
 
+/**
+ * What a bookless conversation is called before it has been named.
+ *
+ * Exported because it is not just a label: it is how the retitling below tells
+ * a conversation that has a name from one that is still waiting for one, so
+ * the row that creates a session and the code that decides whether to rename
+ * it have to mean the same string.
+ */
+export const NEW_CHAT_TITLE = 'New chat';
+
+/**
+ * The rename currently running, so a second caller joins it rather than
+ * starting another. Module state for the same reason as the map above, and
+ * one at a time is enough: there is only ever one open conversation to name.
+ */
+let titleRefineInFlight: Promise<string | null> | null = null;
+
 function realMessageCount(messages: ChatMessage[]): number {
   return messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
 }
@@ -404,6 +421,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       content: r.content,
       createdAt: r.createdAt,
     }));
+
+    /*
+     * What this conversation's name already covers.
+     *
+     * `titledMessageCounts` only remembers what THIS run of the app titled, so
+     * a conversation opened from history looked unnamed to `pendingTitleRefine`
+     * and every visit re-titled it — reading one back without saying anything
+     * spent a request and raised a toast for a name that did not change.
+     * Opening a named conversation records that its name covers everything in
+     * it, so leaving only renames it if something was said meanwhile.
+     *
+     * A placeholder is not a name, so it covers nothing and stays at zero: a
+     * conversation whose first title never landed can still pick one up on the
+     * way out.
+     */
+    titledMessageCounts.set(
+      id,
+      session && session.title !== NEW_CHAT_TITLE ? realMessageCount(messages) : 0,
+    );
 
     set({
       activeSession: session,
@@ -880,32 +916,57 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   async refineSessionTitleOnExit(): Promise<string | null> {
+    /*
+     * A rename already running is joined, not turned away.
+     *
+     * Leaving a conversation has several triggers now — a session switch, the
+     * mode switch, swiping off the hub page, leaving the route — and two can
+     * land in the same breath. `titledMessageCounts` cannot dedupe them: it is
+     * only written once the call comes back, so both would go out and both
+     * would toast. Returning early instead would be worse for the one caller
+     * that awaits this on purpose — offline, `selectSession` waits so the
+     * switch does not reset the local engine underneath a title still using
+     * it, and a caller told "nothing to do" would walk straight into that
+     * race. Handing back the promise satisfies both: one request, and every
+     * caller still waits for it.
+     */
+    if (titleRefineInFlight) return titleRefineInFlight;
+
     const { activeSession, messages } = get();
     if (!pendingTitleRefine(activeSession, messages) || !activeSession) return null;
 
+    // Snapshotted before anything awaits, so the rename lands on the
+    // conversation being left even once the switch has moved on.
+    const session = activeSession;
     const count = realMessageCount(messages);
+    const conversation = messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
+      .join('\n');
+
     set({ titleRefreshing: true });
-    try {
-      const conversation = messages
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
-        .join('\n');
-      const title = await suggestChatTitle(conversation);
-      // Unchanged is not renamed: the background callers treat a null return
-      // as "nothing to report", and a toast for a title the reader already
-      // knows is noise.
-      if (!title || title === activeSession.title) return null;
-      await get().updateSessionTitle(activeSession.id, title);
-      titledMessageCounts.set(activeSession.id, count);
-      // One place raises this notice, so chat and Compass announce a rename
-      // the same way and no caller has to remember to.
-      showToast({ message: `Renamed to "${title}"`, tone: 'success' });
-      return title;
-    } catch (err) {
-      console.warn('[Chat] Could not refine session title:', err);
-      return null;
-    } finally {
-      set({ titleRefreshing: false });
-    }
+    titleRefineInFlight = (async () => {
+      try {
+        const title = await suggestChatTitle(conversation);
+        // Unchanged is not renamed: the background callers treat a null return
+        // as "nothing to report", and a toast for a title the reader already
+        // knows is noise.
+        if (!title || title === session.title) return null;
+        await get().updateSessionTitle(session.id, title);
+        titledMessageCounts.set(session.id, count);
+        // One place raises this notice, so chat and Compass announce a rename
+        // the same way and no caller has to remember to.
+        showToast({ message: `Renamed to "${title}"`, tone: 'success' });
+        return title;
+      } catch (err) {
+        console.warn('[Chat] Could not refine session title:', err);
+        return null;
+      } finally {
+        set({ titleRefreshing: false });
+        titleRefineInFlight = null;
+      }
+    })();
+
+    return titleRefineInFlight;
   },
 }));

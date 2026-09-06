@@ -1,6 +1,6 @@
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Plus, Search, Trash2, X } from "@/components/icons";
+import { ChevronDown, Plus, Search, Trash2, X } from "@/components/icons";
 import React, { useCallback, useMemo, useState } from "react";
 import { TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
 import { TransitionFlatList } from "@/components/navigation/transition-scroll";
@@ -9,6 +9,7 @@ import { Handover } from "@/components/navigation/handover";
 import { BookGridSkeleton } from "@/components/skeletons/book-grid-skeleton";
 import { useScreenSettled } from "@/navigation/use-screen-settled";
 
+import { IconButton } from "@/components/icon-button";
 import { Touchable } from "@/components/ui/touchable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
@@ -75,13 +76,11 @@ export default function CollectionScreen() {
 
   const settled = useScreenSettled();
 
-  const [primary, mutedForeground, foreground, surfaceTertiary] =
-    useCSSVariable([
-      "--color-primary",
-      "--color-muted-foreground",
-      "--color-foreground",
-      "--color-surface-tertiary",
-    ]);
+  const [mutedForeground, foreground, surfaceTertiary] = useCSSVariable([
+    "--color-muted-foreground",
+    "--color-foreground",
+    "--color-surface-tertiary",
+  ]);
 
   const {
     collections,
@@ -195,32 +194,26 @@ export default function CollectionScreen() {
         className="flex-row items-center gap-3 px-4 py-4"
         style={contentColumn}
       >
-        <Touchable
-          onPress={() => router.back()}
-          className="h-9 w-9 items-center justify-center"
-        >
-          <ArrowLeft size={22} color={asColor(primary)} />
-        </Touchable>
-        <ThemedText type="headlineSm" className="flex-1">
-          {collection?.name ?? "Collection"}
-        </ThemedText>
-        <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-          {books.length}
-        </ThemedText>
-        <Touchable
-          onPress={() => setShowAddBooks(true)}
-          className="h-9 w-9 items-center justify-center"
-          hitSlop={8}
-        >
-          <Plus size={18} color={asColor(foreground)} />
-        </Touchable>
-        <Touchable
-          onPress={handleDeleteCollection}
-          className="h-9 w-9 items-center justify-center"
-          hitSlop={8}
-        >
-          <Trash2 size={16} color={asColor(mutedForeground)} />
-        </Touchable>
+        <IconButton onPress={() => router.back()} label="Close">
+          {/* Down, not back. This screen arrives on the `drawer` transition —
+              the same one Settings uses — so it leaves by going down, and the
+              control should point where the screen actually goes. */}
+          <ChevronDown size={20} color={asColor(foreground)} strokeWidth={2} />
+        </IconButton>
+        <View className="flex-1">
+          <ThemedText type="headlineSm" numberOfLines={1}>
+            {collection?.name ?? "Collection"}
+          </ThemedText>
+          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+            {`${books.length} ${books.length === 1 ? "BOOK" : "BOOKS"}`}
+          </ThemedText>
+        </View>
+        <IconButton onPress={() => setShowAddBooks(true)} label="Add books">
+          <Plus size={18} color={asColor(foreground)} strokeWidth={2} />
+        </IconButton>
+        <IconButton onPress={handleDeleteCollection} label="Delete collection">
+          <Trash2 size={16} color={asColor(mutedForeground)} strokeWidth={2} />
+        </IconButton>
       </View>
 
       {/* Search — wrapped in the content column because its own `mx-6` margin

@@ -68,6 +68,53 @@ function logApprovalCopy(input: unknown): ApprovalCopy {
 function getApprovalCopy({ toolName, input }: PendingApproval): ApprovalCopy {
   if (toolName === 'log_trackable') return logApprovalCopy(input);
 
+  /*
+   * Compass's own writes. Each one ends or reshapes something the user has
+   * been running for weeks, so the copy names the consequence rather than the
+   * action: what a pause does to consistency, what stopping keeps.
+   */
+  switch (toolName) {
+    case 'finish_goal':
+      return {
+        title: 'Finish this goal?',
+        body: 'Samwell wants to close this goal out as finished. It moves to your past goals.',
+        confirmLabel: 'FINISH IT',
+        destructive: false,
+      };
+    case 'stop_goal': {
+      const reason = stringField(input, 'reason');
+      return {
+        title: 'Stop this goal?',
+        body: `Samwell wants to retire this goal before its end.${
+          reason ? ` Your reason: "${reason}"` : ''
+        }`,
+        confirmLabel: 'STOP IT',
+        destructive: true,
+      };
+    }
+    case 'set_primary_goal':
+      return {
+        title: 'Change your main goal?',
+        body: 'Samwell wants to move the main-goal mark to a different goal.',
+        confirmLabel: 'CHANGE IT',
+        destructive: false,
+      };
+    case 'pause_trackable':
+      return {
+        title: 'Pause this activity?',
+        body: 'Samwell wants to pause it. The days it stays paused will not count against your consistency.',
+        confirmLabel: 'PAUSE IT',
+        destructive: false,
+      };
+    case 'resume_trackable':
+      return {
+        title: 'Resume this activity?',
+        body: 'Samwell wants to start it counting again from today.',
+        confirmLabel: 'RESUME IT',
+        destructive: false,
+      };
+  }
+
   if (toolName === 'delete_highlight' || toolName === 'delete_thought') {
     const entryType = toolName.endsWith('_highlight') ? 'highlight' : 'thought';
     return {
@@ -118,6 +165,50 @@ function getApprovalCopy({ toolName, input }: PendingApproval): ApprovalCopy {
       const collectionName = stringField(input, 'collection_name') ?? 'a collection';
       return approve('Remove from collection?', `Samwell wants to remove ${bookWord} from "${collectionName}".`);
     }
+    case 'start_reading':
+      return approve(
+        'Start reading?',
+        `Samwell wants to move ${bookWord} into Currently Reading.`,
+      );
+    case 'clear_queue':
+      return approve(
+        'Clear the queue?',
+        'Samwell wants to empty your reading queue. The books stay in your library.',
+      );
+    case 'rename_book': {
+      const newTitle = stringField(input, 'new_title') ?? 'something else';
+      return approve('Rename this book?', `Samwell wants to retitle it to "${newTitle}".`);
+    }
+    case 'delete_book':
+      // The one book action that takes other things with it, so it says so.
+      return approve(
+        'Delete from your library?',
+        `Samwell wants to permanently delete ${bookWord}, along with its highlights, notes and reading progress. This can't be undone.`,
+      );
+    case 'delete_collection': {
+      const name = stringField(input, 'collection_name') ?? 'a collection';
+      return approve(
+        'Delete this collection?',
+        `Samwell wants to delete "${name}". The books in it stay in your library.`,
+      );
+    }
+    case 'add_note_to_highlight':
+      return approve('Add this note?', 'Samwell wants to write a note on a highlight.');
+    case 'update_note':
+      return approve(
+        'Rewrite this note?',
+        "Samwell wants to replace a note's text with something new.",
+      );
+    case 'delete_note':
+      return approve(
+        'Delete this note?',
+        "Samwell wants to permanently delete a note. The highlight it is on stays. This can't be undone.",
+      );
+    case 'update_thought':
+      return approve(
+        'Rewrite this thought?',
+        'Samwell wants to replace the words of a thought. Its colour and tags stay as they are.',
+      );
     default:
       return approve('Approve this action?', 'Samwell wants to make a change.');
   }

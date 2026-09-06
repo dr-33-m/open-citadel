@@ -270,6 +270,23 @@ async function ensureCompassSchema(): Promise<void> {
   db.run(sql`CREATE INDEX IF NOT EXISTS \`trackable_logs_trackable_date_idx\`
     ON \`trackable_logs\` (\`trackable_id\`, \`date\`)`);
 
+  // How each ended goal ended. Separate from `goals` rather than more columns
+  // on it: every row here is written once and never updated except to fill in
+  // the takeaway, and a goal that is still running has nothing to say in any
+  // of them.
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`goal_outcomes\` (
+    \`goal_id\` text PRIMARY KEY NOT NULL REFERENCES \`goals\`(\`id\`) ON DELETE cascade,
+    \`completed\` integer NOT NULL,
+    \`ended_on\` text NOT NULL,
+    \`execution_ratio\` real,
+    \`outcome_value\` real,
+    \`outcome_target\` real,
+    \`outcome_unit\` text,
+    \`reason\` text,
+    \`takeaway\` text,
+    \`created_at\` text NOT NULL
+  )`);
+
   // A Compass conversation is an ordinary chat session pointed at a goal.
   const sessionInfo: { name: string }[] = db.all(
     sql`PRAGMA table_info(chat_sessions)`,

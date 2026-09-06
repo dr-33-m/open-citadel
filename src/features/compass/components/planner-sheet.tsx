@@ -18,6 +18,7 @@ import {
   type PlannerCell,
 } from '@/features/compass/utils/planner-entries';
 import type { LogView, TrackableView } from '@/services/occurrences';
+import { useToday } from '@/hooks/use-today';
 import { asColor } from '@/utils/colors';
 import {
   endOfMonthYmd,
@@ -93,9 +94,29 @@ export const PlannerSheet = React.memo(function PlannerSheet({
     ]);
   const muted = asColor(mutedForeground);
 
-  const today = localDayString();
+  // State, not a bare read: the month a day is judged against has to notice
+  // the date changing under it. See `useToday`.
+  const today = useToday();
   const [month, setMonth] = React.useState(() => toDate(startOfMonthYmd(today)));
   const [openDay, setOpenDay] = React.useState<Ymd | null>(null);
+
+  /*
+   * Every opening starts on this month.
+   *
+   * The sheet stays mounted for the life of the Samwell screen, so its month
+   * survives being closed: page to November, close, reopen, and you are still
+   * looking at November with no memory of having gone there. The timeline's
+   * calendar had the same fault and was fixed the same way. Reset on the way
+   * IN rather than out, so nothing changes under the closing animation.
+   */
+  const [wasVisible, setWasVisible] = React.useState(false);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) {
+      setMonth(toDate(startOfMonthYmd(today)));
+      setOpenDay(null);
+    }
+  }
 
   /*
    * Every colour the month draws in, read once here rather than six times in

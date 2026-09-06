@@ -320,16 +320,34 @@ export function saveGoalFinishedNote(
     completed: boolean;
     /** 0..1, or null when nothing was ever expected of it. */
     executionRatio: number | null;
+    /** What the goal banked against its number, when it carried one. */
+    outcomeSummary?: string | null;
+    /**
+     * Why it was abandoned, in the reader's own words.
+     *
+     * The most valuable sentence in the whole note and the only part no
+     * amount of data could reconstruct. A goal that was dropped because the
+     * plan was wrong and one dropped because the reader stopped caring look
+     * identical in the numbers, and they should lead to completely different
+     * conversations the next time something like it is proposed.
+     */
+    reason?: string | null;
+    /** Samwell's reading of how it went, when he has written one. */
+    takeaway?: string | null;
   },
 ): void {
   const consistency =
     outcome.executionRatio == null
       ? ''
       : ` Consistency across its life: ${Math.round(outcome.executionRatio * 100)}%.`;
+  const banked = outcome.outcomeSummary ? ` Reached ${outcome.outcomeSummary}.` : '';
+  const why = outcome.reason?.trim() ? ` They said: "${outcome.reason.trim()}"` : '';
+  const read = outcome.takeaway?.trim() ? ` ${outcome.takeaway.trim()}` : '';
 
-  const text = outcome.completed
-    ? `Completed goal "${title}".${consistency}`
-    : `Stopped goal "${title}" before the end.${consistency}`;
+  const text =
+    (outcome.completed
+      ? `Completed goal "${title}".${consistency}${banked}`
+      : `Stopped goal "${title}" before the end.${consistency}${banked}${why}`) + read;
 
   db.insert(journeyNotes)
     .values({

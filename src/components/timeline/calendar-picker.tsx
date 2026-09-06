@@ -7,6 +7,7 @@ import { Sheet } from '@/components/ui/sheet';
 import { db } from '@/db/client';
 import { readingDays } from '@/db/schema';
 import { didReadOn, readingDotStrength } from '@/services/reading-day';
+import { useToday } from '@/hooks/use-today';
 import { isValidYmd, localDayString, parseYmd, type Ymd } from '@/utils/day';
 
 type CalendarPickerProps = {
@@ -52,7 +53,17 @@ export const CalendarPicker = React.memo(function CalendarPicker({
   minDate,
   maxDate,
 }: CalendarPickerProps) {
-  const today = localDayString();
+  /*
+   * State, not a read.
+   *
+   * `localDayString()` here was only correct for as long as the render that
+   * produced it. This component is `React.memo` and stays mounted for the life
+   * of the screen, so leaving the app open across midnight left `today` on
+   * yesterday: `max` then capped the grid a day short and the day it had just
+   * become was drawn disabled. See `useToday`, which also refreshes when the
+   * app returns to the foreground, for the phone that slept through midnight.
+   */
+  const today = useToday();
 
   // "Legacy" (timeline) mode = no bounds passed: activity dots on, no future.
   const legacyMode = !minDate && !maxDate;

@@ -115,20 +115,28 @@ export type CalendarDisabled =
  *
  * A number rather than a class because the band's four corners are set
  * independently from the flags below, which no single `rounded-*` can express.
+ *
+ * LOCAL EDIT (Open Citadel): 8 -> 0. Citadel Frame is square everywhere —
+ * cards, buttons, sheets, the planner's own day cells — so a rounded day here
+ * made the timeline's calendar the one surface in the app with soft corners,
+ * sitting a swipe away from the planner's square ones.
  */
-const DAY_RADIUS = 8;
+const DAY_RADIUS = 0;
 
 const calendarVariants = tv({
   slots: {
     root: 'gap-3',
     header: 'h-10 flex-row items-center justify-between gap-2',
-    nav: 'h-8 w-8 items-center justify-center rounded-full',
+    // LOCAL EDIT (Open Citadel): `rounded-full` -> square, per the note on
+    // DAY_RADIUS. These are the month arrows.
+    nav: 'h-8 w-8 items-center justify-center',
     caption: 'flex-1 flex-row items-center justify-center gap-1',
   },
   variants: {
     /** Draw the calendar's own panel, for one standing on the page. */
     bordered: {
-      true: { root: 'rounded-3xl border border-border bg-card p-3' },
+      // LOCAL EDIT (Open Citadel): `rounded-3xl` -> square, per DAY_RADIUS.
+      true: { root: 'border border-border bg-card p-3' },
     },
   },
   defaultVariants: {
@@ -142,12 +150,16 @@ const dayVariants = tv({
     /** The range band, drawn behind the number so it can run cell to cell. */
     band: 'absolute inset-y-0.5 bg-accent',
     /**
-     * The fill on a selected day, or the ring on today. Square-ish rather than
+     * The fill on a selected day, or the ring on today. Square rather than
      * round: a circle has one point of contact with the band beside it, so a
-     * range reads as beads on a string. A rounded rectangle meets the band
-     * along its whole edge and the two become one shape.
+     * range reads as beads on a string. A rectangle meets the band along its
+     * whole edge and the two become one shape.
+     *
+     * LOCAL EDIT (Open Citadel): `rounded-lg` -> square, per DAY_RADIUS. The
+     * upstream reasoning already pointed this way; the app just takes it all
+     * the way to a corner.
      */
-    disc: 'h-9 w-9 items-center justify-center rounded-lg',
+    disc: 'h-9 w-9 items-center justify-center',
     label: 'text-sm',
   },
   variants: {
@@ -848,7 +860,8 @@ function CaptionDropdown({
                 accessibilityState={{ selected }}
                 style={{ height: OPTION_HEIGHT }}
                 className={cn(
-                  'flex-row items-center justify-between gap-2 rounded-xl px-3',
+                  // LOCAL EDIT (Open Citadel): square, per DAY_RADIUS.
+                  'flex-row items-center justify-between gap-2 px-3',
                   selected ? 'bg-accent' : 'active:bg-accent'
                 )}
               >
@@ -883,7 +896,8 @@ function CaptionChip({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ expanded }}
-      className="flex-row items-center gap-1 rounded-lg px-2 py-1.5 active:bg-accent"
+      // LOCAL EDIT (Open Citadel): square, per DAY_RADIUS.
+      className="flex-row items-center gap-1 px-2 py-1.5 active:bg-accent"
     >
       <Text weight="semibold">{label}</Text>
       {/*

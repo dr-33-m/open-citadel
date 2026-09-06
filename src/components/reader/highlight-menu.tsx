@@ -1,4 +1,4 @@
-import { Check, MessageSquare, Pencil, Share, Sparkles, StickyNote, Trash2, X } from "@/components/icons";
+import { Check, MessageSquare, Pencil, Share, StickyNote, Trash2, X, ZodiacPisces } from "@/components/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -20,7 +20,11 @@ import { Touchable } from "@/components/ui/touchable";
 import { useSamwellWake } from "@/hooks/use-samwell-wake";
 
 import { ThemedText } from "@/components/themed-text";
+import { ActionButton } from "@/components/action-button";
+import { FieldHint } from "@/components/field-hint";
 import { GoldButton } from "@/components/ui/gold-button";
+import { NOTE_HINTS } from "@/lib/note-hints";
+import { NoteText, isFilled } from "@/lib/text-fields";
 import { easing, fontFamily, motion, spacing } from "@/constants/theme";
 import { cn } from "@/lib/cn";
 import { asColor } from "@/utils/colors";
@@ -195,6 +199,8 @@ export function HighlightMenu({
     }
   };
 
+  const canSaveNote = isFilled(NoteText, noteText);
+
   const handleSave = () => {
     const trimmed = noteText.trim();
     if (!trimmed) return;
@@ -348,6 +354,8 @@ export function HighlightMenu({
             multiline
           />
 
+          <FieldHint>{NOTE_HINTS.highlight}</FieldHint>
+
           {/* Colour and tags are two facets of the highlight, not one
               cluster. Unlabelled and 24 below the note field but only 12
               above the tag box, the swatches read as belonging to the tags —
@@ -431,22 +439,18 @@ export function HighlightMenu({
 
               {onSuggestTags && (
                 <View className="flex-row flex-wrap items-center gap-2">
-                  <Touchable
-                    className="flex-row items-center gap-1 py-1"
-                    onPress={handleSuggestTags}
+                  {/* No empty-text gate here, unlike the thought sheet: this
+                      one reads the highlighted passage, which always exists by
+                      the time this menu is open. */}
+                  <ActionButton
+                    className="bg-card"
+                    icon={suggesting ? undefined : ZodiacPisces}
+                    leading={suggesting ? <Spinner size="sm" /> : undefined}
+                    label={suggesting ? "SUGGESTING…" : "SUGGEST TAGS"}
+                    tint={asColor(primary)}
                     disabled={suggesting}
-                    haptic="tap"
-                    hitSlop={6}
-                  >
-                    {suggesting ? (
-                      <Spinner size="sm" />
-                    ) : (
-                      <Sparkles size={14} color={asColor(primary)} />
-                    )}
-                    <ThemedText type="labelSm" color={asColor(primary)}>
-                      {suggesting ? "SUGGESTING…" : "SUGGEST TAGS"}
-                    </ThemedText>
-                  </Touchable>
+                    onPress={handleSuggestTags}
+                  />
                   {aiSuggestions.map((tag, index) => {
                     const isAdded = tags.some(
                       (t) => t.toLowerCase() === tag.toLowerCase(),
@@ -540,6 +544,7 @@ export function HighlightMenu({
             <GoldButton
                 label={editingNote ? "UPDATE NOTE" : "ADD NOTE"}
                 onPress={handleSave}
+                disabled={!canSaveNote}
               />
               <View className="flex-row justify-evenly">
                 <Touchable

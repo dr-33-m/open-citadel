@@ -1,13 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  ArrowLeft,
-  Plus,
-  RefreshCw,
-  Search,
-  SquareLibrary,
-  Trash2,
-  X,
-} from "@/components/icons";
+import { ChevronDown, Plus, RefreshCw, Search, SquareLibrary, Trash2, X } from "@/components/icons";
 import React, { useCallback, useMemo, useState } from "react";
 import { TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
 import {
@@ -20,6 +12,7 @@ import { CollectionGridSkeleton } from "@/components/skeletons/collection-grid-s
 import { useScreenSettled } from "@/navigation/use-screen-settled";
 
 import { Card } from "@/components/ui/card";
+import { IconButton } from "@/components/icon-button";
 import { Touchable } from "@/components/ui/touchable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
@@ -111,9 +104,17 @@ const CollectionCell = React.memo(function CollectionCell({
 }) {
   return (
     <Touchable className="flex-1" onPress={() => onPress(id)}>
-      <Card className="gap-2 p-5">
+      {/* `flex-1` on the CARD, not only on the Touchable around it. The row
+          stretches both Touchables to the taller of the two, but the card
+          inside sizes to its own content unless it is told to fill — so a
+          one-line name sat in a short card beside a two-line one. The same
+          fix the Samwell mode cards in Settings needed. */}
+      <Card className="flex-1 gap-2 p-5">
         <SquareLibrary size={22} color={asColor(primary)} />
-        <ThemedText type="bodyMd" numberOfLines={2}>
+        {/* The name reserves both its lines whether or not it needs them, so
+            cards match across ROWS too and not just within one. `numberOfLines`
+            caps a long name; it does not hold space for a short one. */}
+        <ThemedText type="bodyMd" numberOfLines={2} className="flex-1">
           {name}
         </ThemedText>
         <ThemedText type="labelSm" color={asColor(primary)}>
@@ -282,25 +283,25 @@ export default function SectionScreen() {
           className="flex-row items-center gap-3 px-4 py-4"
           style={contentColumn}
         >
-          <Touchable
-            onPress={() => router.back()}
-            className="h-9 w-9 items-center justify-center"
-          >
-            <ArrowLeft size={22} color={asColor(primary)} />
-          </Touchable>
-          <ThemedText type="headlineSm" className="flex-1">
-            {title}
-          </ThemedText>
-          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-            {collections.length}
-          </ThemedText>
-          <Touchable
-            onPress={() => setShowNewCollection(true)}
-            className="h-9 w-9 items-center justify-center"
-            hitSlop={8}
-          >
-            <Plus size={18} color={asColor(foreground)} />
-          </Touchable>
+        <IconButton onPress={() => router.back()} label="Close">
+            {/* Down, not back: this screen arrives on the `drawer` transition,
+                the same one Settings uses, so it leaves by going down. */}
+            <ChevronDown size={20} color={asColor(foreground)} strokeWidth={2} />
+          </IconButton>
+          {/* The count belongs to the title, not to the buttons. Loose in the
+              row it read as a control that had lost its box, now that the
+              controls beside it are cards. */}
+          <View className="flex-1">
+            <ThemedText type="headlineSm" numberOfLines={1}>
+              {title}
+            </ThemedText>
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+              {`${collections.length} ${collections.length === 1 ? 'COLLECTION' : 'COLLECTIONS'}`}
+            </ThemedText>
+          </View>
+          <IconButton onPress={() => setShowNewCollection(true)} label="New collection">
+            <Plus size={18} color={asColor(foreground)} strokeWidth={2} />
+          </IconButton>
         </View>
 
         {/* Search — wrapped in the content column because its own `mx-6`
@@ -389,42 +390,39 @@ export default function SectionScreen() {
         className="flex-row items-center gap-3 px-4 py-4"
         style={contentColumn}
       >
-        <Touchable
-          onPress={() => router.back()}
-          className="h-9 w-9 items-center justify-center"
-        >
-          <ArrowLeft size={22} color={asColor(primary)} />
-        </Touchable>
-        <ThemedText type="headlineSm" className="flex-1">
-          {title}
-        </ThemedText>
-        <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-          {sectionBooks.length}
-        </ThemedText>
+        <IconButton onPress={() => router.back()} label="Close">
+          {/* Down, not back. This screen arrives on the `drawer` transition —
+              the same one Settings uses — so it leaves by going down, and the
+              control should point where the screen actually goes. */}
+          <ChevronDown size={20} color={asColor(foreground)} strokeWidth={2} />
+        </IconButton>
+        <View className="flex-1">
+          <ThemedText type="headlineSm" numberOfLines={1}>
+            {title}
+          </ThemedText>
+          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+            {`${sectionBooks.length} ${sectionBooks.length === 1 ? 'BOOK' : 'BOOKS'}`}
+          </ThemedText>
+        </View>
         {type === "all" && (
-          <Touchable
-            onPress={syncBooks}
-            className="h-9 w-9 items-center justify-center"
-            hitSlop={8}
-          >
+          <IconButton onPress={syncBooks} label="Rescan the library">
+            {/* Gold only while it is actually running, which is a state and
+                not decoration. */}
             <RefreshCw
               size={16}
+              strokeWidth={2}
               color={
                 sync.status === "running"
                   ? asColor(primary)
                   : asColor(mutedForeground)
               }
             />
-          </Touchable>
+          </IconButton>
         )}
         {type === "queue" && (
-          <Touchable
-            onPress={clearQueue}
-            className="h-9 w-9 items-center justify-center"
-            hitSlop={8}
-          >
-            <Trash2 size={16} color={asColor(mutedForeground)} />
-          </Touchable>
+          <IconButton onPress={clearQueue} label="Clear the queue">
+            <Trash2 size={16} color={asColor(mutedForeground)} strokeWidth={2} />
+          </IconButton>
         )}
       </View>
 

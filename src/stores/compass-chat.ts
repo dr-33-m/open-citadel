@@ -50,6 +50,17 @@ const PLACEHOLDER_TITLE = 'New conversation';
  */
 const titledMessageCounts = new Map<string, number>();
 
+/**
+ * Sessions with a rename already in flight.
+ *
+ * There are four ways to leave a Compass conversation and two of them can land
+ * in the same breath — flipping the mode switch and then swiping to the
+ * Library. `titledMessageCounts` cannot stop that on its own, since it is only
+ * written once the cloud call comes back: without this the same transcript is
+ * titled twice, which is two requests and two toasts for one rename.
+ */
+const titlingInFlight = new Set<string>();
+
 function uuid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -133,6 +144,11 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
 
   newSession: async () => {
     const previous = get().activeSessionId;
+    // The conversation being left gets its last chance at a name first. Not
+    // awaited: everything the rename needs is read synchronously inside, so
+    // the snapshot is of the conversation you are leaving even though the
+    // cloud call lands after the switch. See `refineTitleOnExit`.
+    void get().refineTitleOnExit().catch(() => {});
     set({ switching: 'new' });
     try {
       /*
@@ -153,7 +169,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
           // The goal this conversation started against, recorded rather than
           // filtered on: the conversation that talked someone into their goal
           // belongs to that goal's history too.
-          goalId: useCompassStore.getState().activeGoalId,
+          goalId: useCompassStore.getState().primaryGoalId,
           kind: 'compass',
           title: PLACEHOLDER_TITLE,
           contextText: null,
@@ -174,6 +190,8 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
   openSession: async (id) => {
     if (get().activeSessionId === id) return;
     const previous = get().activeSessionId;
+    // Same as `newSession`: name what you are leaving before you leave it.
+    void get().refineTitleOnExit().catch(() => {});
     set({ switching: id });
     try {
       if (previous && previous !== id && isEmptySession(previous)) removeSession(previous);
@@ -181,9 +199,29 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       // A proposal belongs to the conversation that made it, so it does not
       // follow you into a different one.
       useSamwellSessionStore.getState().set({ compassDraft: null, refining: false });
+      const messages = readMessages(id);
+      /*
+       * What this conversation's name already covers.
+       *
+       * `titledMessageCounts` only remembers what THIS run of the app titled,
+       * so a conversation opened from history looked unnamed to the guard and
+       * every visit re-titled it — reading one back without saying anything
+       * spent a request and raised a toast for a name that did not change.
+       * Opening a named conversation records that its name covers everything
+       * in it, so leaving only renames it if something was said meanwhile.
+       *
+       * A placeholder is not a name, so it covers nothing and stays at zero:
+       * a conversation whose first title never landed (offline, a failed call)
+       * can still pick one up on the way out.
+       */
+      const named = get().sessions.find((s) => s.id === id)?.title;
+      titledMessageCounts.set(
+        id,
+        named && named !== PLACEHOLDER_TITLE ? realMessageCount(messages) : 0,
+      );
       set({
         activeSessionId: id,
-        messages: readMessages(id),
+        messages,
         streamingThinking: '',
         streamingThinkingSeconds: null,
         error: null,
@@ -349,20 +387,34 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
   },
 
   refineTitleOnExit: async () => {
+    /*
+     * Everything the rename needs is read here, synchronously, before the
+     * first `await`. That is what lets every caller fire this and move on:
+     * the session switch that follows can replace `activeSessionId` and
+     * `messages` freely, because the cloud call already holds the id and the
+     * transcript of the conversation being left. Move a read below the await
+     * and a switch will rename the wrong conversation.
+     */
     const { activeSessionId, messages } = get();
     if (!activeSessionId) return;
     const count = realMessageCount(messages);
     // Needs at least one full exchange beyond whatever the quick title saw.
     if (count < 2 || count <= (titledMessageCounts.get(activeSessionId) ?? 0)) return;
+    if (titlingInFlight.has(activeSessionId)) return;
 
     const conversation = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
       .join('\n');
-    // Announce this one: it is a rename of a conversation the reader has a
-    // name for already, the same event reading chat toasts on leaving.
-    await titleFrom(activeSessionId, set, conversation, count, true);
-    await get().loadSessions();
+    titlingInFlight.add(activeSessionId);
+    try {
+      // Announce this one: it is a rename of a conversation the reader has a
+      // name for already, the same event reading chat toasts on leaving.
+      await titleFrom(activeSessionId, set, conversation, count, true);
+      await get().loadSessions();
+    } finally {
+      titlingInFlight.delete(activeSessionId);
+    }
   },
 
   clearError: () => set({ error: null }),

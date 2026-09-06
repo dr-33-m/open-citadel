@@ -7,4 +7,5 @@ export * from './limits';
 export * from './models';
 export * from './persona';
 export * from './tags';
+export * from './takeaway';
 export * from './tools';

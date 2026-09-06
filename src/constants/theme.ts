@@ -134,6 +134,25 @@ export const elevation = {
   },
 } as const;
 
+/**
+ * One card lying ON another — the only shadow in the app that is theme-aware.
+ *
+ * The two rungs above are ambient: an even glow that says "this floats",
+ * drawn against the page, and one value serves both themes because the page is
+ * the same distance away in each. This one is directional and lands on another
+ * card a few points below, which is a job the two themes need opposite weights
+ * for. Heavy enough to register on obsidian is a bruise on parchment, so the
+ * colour comes from `--color-shadow-stacked` and only the geometry lives here.
+ *
+ * Apple's rule is the same: shadow should be context-aware, heavier where it
+ * has to separate, lighter over plain ground.
+ *
+ * Only for stacked surfaces. A lone card on the page wants `elevation.card`.
+ */
+export function stackedShadow(color: string | undefined) {
+  return { boxShadow: `0 6px 14px ${color ?? 'rgba(0, 0, 0, 0.35)'}` };
+}
+
 /** Stroke icons only, never filled. */
 export const iconSize = {
   default: 22,

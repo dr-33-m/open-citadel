@@ -8,6 +8,7 @@ import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
+import { CollectionName, isFilled } from '@/lib/text-fields';
 import { asColor } from '@/utils/colors';
 
 type NewCollectionPromptProps = {
@@ -31,6 +32,8 @@ export function NewCollectionPrompt({
    * the buffer where it actually lives.
    */
   const fieldRef = useRef<TextInput>(null);
+
+  const canCreate = isFilled(CollectionName, name);
 
   const handleCreate = () => {
     const trimmed = name.trim();
@@ -58,7 +61,7 @@ export function NewCollectionPrompt({
           onSubmitEditing={handleCreate}
         />
         <View className="gap-3">
-          <GoldButton label="CREATE" onPress={handleCreate} />
+          <GoldButton label="CREATE" onPress={handleCreate} disabled={!canCreate} />
           <Touchable onPress={handleClose} className="items-center py-3">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>CANCEL</ThemedText>
           </Touchable>

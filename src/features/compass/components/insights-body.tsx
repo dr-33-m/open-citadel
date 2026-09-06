@@ -7,23 +7,25 @@ import { ThemedText } from '@/components/themed-text';
 import { RowFade } from '@/components/scroll-fades';
 import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
-import { HeatmapChart } from '@/components/ui/heatmap-chart';
 import { Progress } from '@/components/ui/progress';
+import { LineChart } from '@/components/ui/line-chart';
 import { RingChart } from '@/components/ui/ring-chart';
 import {
   compact,
+  consistencyScore,
+  consistencyTone,
   formatCompassDate,
   paceTone,
-  ratioScore,
   toneColor,
 } from '@/components/compass/format';
+import { LogHeatmapCard } from '@/features/compass/components/log-heatmap-card';
 import { StatCard } from '@/features/compass/components/stat-card';
-import { buildHeatmapColumns } from '@/features/compass/utils/heatmap-columns';
+import { buildOutcomeSeries } from '@/features/compass/utils/outcome-series';
 import type { LogView, TrackableView } from '@/services/occurrences';
 import type { GoalConsistency, GoalRow } from '@/stores/compass';
-import { fontFamily } from '@/constants/theme';
+import { useToday } from '@/hooks/use-today';
 import { asColor } from '@/utils/colors';
-import { daysBetween, localDayString, minYmd } from '@/utils/day';
+import { daysBetween } from '@/utils/day';
 
 type InsightsBodyProps = {
   goal: GoalRow | null;
@@ -31,9 +33,6 @@ type InsightsBodyProps = {
   trackables: TrackableView[];
   logsByTrackable: Map<string, LogView[]>;
 };
-
-/** The five steps of the heatmap ramp, for the legend beside its header. */
-const RAMP_STEPS = [0.12, 0.32, 0.55, 0.78, 1];
 
 /**
  * One goal's record, as the Insights screens read it: what the goal is, how
@@ -70,18 +69,22 @@ export function InsightsBody({
   const neutralOutcome = gold;
   const neutralExecution = asColor(bone) ?? gold;
 
-  const today = localDayString();
+  // State, not a read: a card counting down to a date has to notice the date
+  // changing under it. See `useToday`.
+  const today = useToday();
   const execution = consistency?.execution ?? null;
   const outcome = consistency?.outcome ?? null;
 
-  const columns = React.useMemo(() => {
-    if (!goal) return [];
-    return buildHeatmapColumns(goal.startDate, minYmd(today, goal.endDate), logsByTrackable);
-  }, [goal, logsByTrackable, today]);
-
-  const totalLogs = React.useMemo(
-    () => columns.reduce((sum, col) => sum + col.bins.reduce((n, b) => n + b.count, 0), 0),
-    [columns],
+  /**
+   * The outcome's run against the pace the schedule asks for, on goals that
+   * carry a number.
+   *
+   * Empty for a purely behavioural goal — a cold shower has no y-axis — which
+   * is what decides whether the card below is drawn at all.
+   */
+  const pace = React.useMemo(
+    () => (goal ? buildOutcomeSeries(goal, trackables, logsByTrackable, today) : []),
+    [goal, trackables, logsByTrackable, today],
   );
 
   /**
@@ -102,8 +105,9 @@ export function InsightsBody({
     outcome && outcome.target > 0 ? outcome.value / outcome.target : null;
   const outcomeTone = paceTone(outcomeRatio, elapsed);
   // A consistency ratio is already measured against what was due to date, so
-  // comparing it to the calendar again would double-count the pace.
-  const executionTone = paceTone(execution?.ratio ?? null, null);
+  // comparing it to the calendar again would double-count the pace. Held
+  // neutral until enough has come due to judge — see `consistencyTone`.
+  const executionTone = consistencyTone(execution);
 
   // Outermost ring is the outcome, inner is execution. Both coloured by score
   // psychology rather than the series ramp: these are judgements about how it
@@ -137,7 +141,7 @@ export function InsightsBody({
    */
   const [activeRing, setActiveRing] = React.useState(-1);
 
-  const executionScore = ratioScore(execution?.ratio);
+  const executionScore = consistencyScore(execution);
   const daysLeft = goal ? Math.max(0, daysBetween(today, goal.endDate)) : 0;
 
   return (
@@ -232,7 +236,9 @@ export function InsightsBody({
                       haptic="select"
                       accessibilityRole="button"
                       accessibilityState={{ selected: activeRing === index }}
-                      accessibilityLabel={`${ring.label}, ${pct} percent`}
+                      accessibilityLabel={
+                        `${ring.label}, ${pct} percent`
+                      }
                     >
                       {/* The dim lives on an inner view, not on the
                           Touchable: `AnimatedPressable` drives its own
@@ -264,13 +270,18 @@ export function InsightsBody({
             <StatCard
               className="flex-1"
               icon={Target}
-              label="EXECUTION"
+              label="CONSISTENCY"
               value={executionScore == null ? '—' : String(executionScore)}
               unit={executionScore == null ? undefined : '%'}
               valueColor={toneColor(executionTone, neutralExecution)}
+              /* "so far" is what makes the number honest, and it is all this
+                 needed. A bare 100% reads as finished; consistency is measured
+                 against what has already come due, so it says nothing has
+                 slipped YET. Naming the denominator says that in three words,
+                 where withholding the figure said it in none. */
               caption={
                 execution && execution.expected > 0
-                  ? `${execution.completed} of ${execution.expected} done`
+                  ? `${execution.completed} of ${execution.expected} so far`
                   : 'Too early to say'
               }
             />
@@ -281,63 +292,75 @@ export function InsightsBody({
               value={outcome ? compact(outcome.value) : '—'}
               unit={outcome ? `of ${compact(outcome.target)}` : undefined}
               valueColor={outcome ? toneColor(outcomeTone, neutralOutcome) : undefined}
-              caption={outcome ? outcome.unit : 'This goal has no number'}
+              /* Three different states, and they are not the same news. A
+                 goal with no number never wanted one; a goal whose number no
+                 trackable feeds wanted one and is not going to get it, which
+                 is something to fix rather than something to accept. */
+              caption={
+                outcome
+                  ? outcome.unit
+                  : goal.outcomeUnit
+                    ? `Nothing tracked in ${goal.outcomeUnit}`
+                    : 'This goal has no number'
+              }
             />
           </View>
 
-          {columns.length > 0 && (
+          {/* The outcome against an even pace, for a goal that carries a
+              number. This is the only thing on the card that answers "am I on
+              track": the ring and the stat both say 2 of 100, which is fine in
+              week one and a disaster in week eleven, and only the distance
+              between these two lines tells them apart.
+
+              Above the grid, because it is about the target and the grid is
+              about the habit — the same order the two stat cards are in. */}
+          {pace.length > 1 && outcome && (
             <Card>
               <Card.Content className="gap-3 p-4">
-                {/* One line: the number bold, the rest of the sentence at
-                    the same size beside it. Two sizes stacked in three rows
-                    spent the card's whole top on a figure that reads fine
-                    inline, and that height is better given to the grid. */}
-                <ThemedText type="bodyMd" color={dim}>
-                  <ThemedText type="bodyMd" style={{ fontFamily: fontFamily.sansBold }}>
-                    {String(totalLogs)}
-                  </ThemedText>
-                  {` ${totalLogs === 1 ? 'log' : 'logs'} since ${formatCompassDate(
-                    goal.startDate,
-                  )}`}
-                </ThemedText>
-
-                <RowFade surface="popover">
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <HeatmapChart
-                    data={columns}
-                    layout="fluid"
-                    binSize={17}
-                    gap={3}
-                    cornerRadius={0}
-                    weekStartDay={1}
-                    color="--color-primary"
-                    emptyColor="--color-muted"
-                  >
-                      <HeatmapChart.XAxis />
-                      <HeatmapChart.Cells />
-                    </HeatmapChart>
-                  </ScrollView>
-                </RowFade>
-
-                {/* Under the grid rather than over it, on the trailing edge.
-                    It is a key, so it belongs after the thing it explains. */}
-                <View className="flex-row items-center justify-end gap-1.5">
+                <View className="flex-row items-baseline justify-between gap-3">
                   <ThemedText type="labelSm" color={dim}>
-                    LESS
+                    PACE TO TARGET
                   </ThemedText>
-                  {RAMP_STEPS.map((opacity) => (
-                    <View
-                      key={opacity}
-                      style={{ width: 10, height: 10, backgroundColor: gold, opacity }}
-                    />
-                  ))}
                   <ThemedText type="labelSm" color={dim}>
-                    MORE
+                    {`${compact(outcome.target)} ${outcome.unit.toUpperCase()}`}
                   </ThemedText>
+                </View>
+
+                <LineChart data={pace} xDataKey="label" aspectRatio={1.8} curve="linear">
+                  <LineChart.Grid rows={3} />
+                  {/* Dashed and second, so actual and target are told apart by
+                      shape as well as by colour — the chart still reads with
+                      the gold and the bone at the same lightness. */}
+                  <LineChart.Line dataKey="pace" colorIndex={3} strokeWidth={1.5} dashArray="5,5" />
+                  <LineChart.Area dataKey="actual" colorIndex={1} />
+                  <LineChart.Line dataKey="actual" colorIndex={1} />
+                  <LineChart.XAxis ticks={4} />
+                </LineChart>
+
+                <View className="flex-row items-center justify-end gap-3">
+                  <View className="flex-row items-center gap-1.5">
+                    <View style={{ width: 10, height: 3, backgroundColor: gold }} />
+                    <ThemedText type="labelSm" color={dim}>
+                      LOGGED
+                    </ThemedText>
+                  </View>
+                  <View className="flex-row items-center gap-1.5">
+                    <View style={{ width: 10, height: 3, backgroundColor: dim, opacity: 0.7 }} />
+                    <ThemedText type="labelSm" color={dim}>
+                      IDEAL PACE
+                    </ThemedText>
+                  </View>
                 </View>
               </Card.Content>
             </Card>
           )}
+
+          <LogHeatmapCard
+            startDate={goal.startDate}
+            endDate={goal.endDate}
+            upTo={today}
+            logsByTrackable={logsByTrackable}
+          />
 
           {/* Only worth its own section with more than one trackable —
               otherwise it just restates the goal's execution number. */}
@@ -362,7 +385,7 @@ export function InsightsBody({
                     contentContainerClassName="gap-3 px-4"
                   >
                 {execution.breakdown.map((result) => {
-                  const score = ratioScore(result.ratio);
+                  const score = consistencyScore(result);
                   return (
                     <StatCard
                       key={result.trackableId}
@@ -370,11 +393,11 @@ export function InsightsBody({
                       label={result.title.toUpperCase()}
                       value={score == null ? '—' : String(score)}
                       unit={score == null ? undefined : '%'}
-                      valueColor={toneColor(paceTone(result.ratio, null), neutralExecution)}
+                      valueColor={toneColor(consistencyTone(result), neutralExecution)}
                       caption={
                         result.expected === 0
                           ? 'Nothing due yet'
-                          : `${result.completed} of ${result.expected}`
+                          : `${result.completed} of ${result.expected} so far`
                       }
                     />
                   );

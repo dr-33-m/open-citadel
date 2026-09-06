@@ -66,10 +66,20 @@ type ActiveGoal = {
 };
 
 function activeGoal(): ActiveGoal | null {
-  const { goals, activeGoalId, trackables, logsByTrackable } = useCompassStore.getState();
-  const goal = goals.find((g) => g.id === activeGoalId);
+  const { activeGoals, primaryGoalId, dataByGoal, trackables, logsByTrackable } =
+    useCompassStore.getState();
+  // The primary, or the first active goal when nothing holds the mark. There
+  // is no "goal on screen" any more, and the primary is the one Compass says
+  // the prize is on.
+  const goal = activeGoals.find((g) => g.id === primaryGoalId) ?? activeGoals[0];
   if (!goal) return null;
-  return { goal, trackables, logsByTrackable, today: localDayString() };
+  const data = dataByGoal.get(goal.id);
+  return {
+    goal,
+    trackables: data?.views ?? trackables,
+    logsByTrackable: data?.logsByTrackable ?? logsByTrackable,
+    today: localDayString(),
+  };
 }
 
 /**
@@ -91,8 +101,12 @@ function detailFor(
 ): GoalDetail | null {
   const goal = store.goals.find((g) => g.id === goalId);
   if (!goal) return null;
-  if (goalId === store.activeGoalId) {
-    return { goal, trackables: store.trackables, logsByTrackable: store.logsByTrackable };
+  // Every active goal's data is already in the store, so a detail block for
+  // any of them costs no query. Only a goal that is no longer active falls
+  // through to a read.
+  const held = store.dataByGoal.get(goalId);
+  if (held) {
+    return { goal, trackables: held.views, logsByTrackable: held.logsByTrackable };
   }
   const data = readGoals([goalId]).get(goalId);
   return data ? { goal, trackables: data.views, logsByTrackable: data.logsByTrackable } : null;
@@ -144,7 +158,7 @@ function trackableContext(trackableId: string): (GoalDetail & { trackable: Track
 /**
  * The trackable rows for one goal's detail block: schedule, measurement, the
  * per-trackable consistency, and the weakest link marked. The per-trackable
- * ratio is always included now that the goal's own EXECUTION line sits in the
+ * ratio is always included now that the goal's own CONSISTENCY line sits in the
  * summary above — the row is the only place that connects an id to a number,
  * and the model may only quote numbers the tool gave it.
  */
@@ -197,7 +211,7 @@ function trackableLines(detail: GoalDetail, today: Ymd): string[] {
 
 export function formatCompassStatus(): string {
   const store = useCompassStore.getState();
-  const { activeGoals, primaryGoalId, activeGoalId, consistencyByGoal } = store;
+  const { activeGoals, primaryGoalId, consistencyByGoal } = store;
   if (activeGoals.length === 0) return NO_GOAL;
 
   const today = localDayString();
@@ -218,24 +232,25 @@ export function formatCompassStatus(): string {
     const outcome = consistency?.outcome
       ? `${consistency.outcome.value} of ${consistency.outcome.target} ${consistency.outcome.unit}`
       : 'no numeric outcome';
-    const marks = [
-      goal.id === primaryGoalId ? 'PRIMARY' : null,
-      goal.id === activeGoalId ? 'CURRENT' : null,
-    ]
-      .filter(Boolean)
-      .join(', ');
+    const marks = goal.id === primaryGoalId ? 'PRIMARY' : '';
     lines.push(
-      `- ${goal.title}${marks ? ` [${marks}]` : ''} — ${goal.category} — EXECUTION ${execution} — OUTCOME ${outcome}`,
+      `- ${goal.title}${marks ? ` [${marks}]` : ''} — ${goal.category} — CONSISTENCY ${execution} — OUTCOME ${outcome}`,
     );
   }
 
   /*
-   * Full detail on the primary and the goal being viewed — the two the
-   * conversation can act on. They are usually the same goal, which is one
-   * block, not two.
+   * Full detail on EVERY active goal, primary first.
+   *
+   * It used to be the primary plus whichever goal was on screen, because the
+   * app pointed at one goal at a time and that was the one you could act on.
+   * Nothing points at a goal any more, so limiting the detail would leave the
+   * trackable ids of the other goals unadvertised — and those ids are how a
+   * log gets written. The set is capped at five, so this stays bounded.
    */
   const detailIds = [
-    ...new Set([primaryGoalId, activeGoalId].filter((id): id is string => id != null)),
+    ...new Set([primaryGoalId, ...activeGoals.map((g) => g.id)].filter(
+      (id): id is string => id != null,
+    )),
   ];
   const details = detailIds
     .map((id) => detailFor(id, store, today))
@@ -244,12 +259,7 @@ export function formatCompassStatus(): string {
   if (details.length > 0) {
     lines.push('', 'DETAIL (use the trackable id in square brackets when you call a tool):');
     for (const detail of details) {
-      const marks = [
-        detail.goal.id === primaryGoalId ? 'PRIMARY' : null,
-        detail.goal.id === activeGoalId ? 'CURRENT' : null,
-      ]
-        .filter(Boolean)
-        .join(', ');
+      const marks = detail.goal.id === primaryGoalId ? 'PRIMARY' : '';
       lines.push(
         '',
         `${detail.goal.title}${marks ? ` [${marks}]` : ''} — runs ${detail.goal.startDate} to ${detail.goal.endDate}. ${Math.max(0, daysBetween(today, detail.goal.endDate))} days left. Status ${detail.goal.status}.`,
@@ -544,4 +554,139 @@ export function runProposeAdjustments(input: CompassCheckinDraftModel): {
     ok: true,
     formatted: `${draft.adjustments.length} adjustment(s) are on screen for the user to approve. Say something short; do not repeat the card back to them.`,
   };
+}
+
+// ── The goal's life ─────────────────────────────────────────────────────────
+
+/**
+ * Ending, re-pointing and pausing, from a conversation.
+ *
+ * Every one of these reaches the same store action the sheet's button does, so
+ * there is one implementation of what finishing a goal means and Samwell
+ * cannot take a shortcut the UI would not.
+ *
+ * They all return prose rather than a status object. A tool result is read by
+ * the model before it writes its reply, and a sentence it can quote produces a
+ * better next turn than `{ ok: true }` does.
+ */
+
+function goalById(goalId: string) {
+  return useCompassStore.getState().goals.find((g) => g.id === goalId) ?? null;
+}
+
+export async function runFinishGoal(input: { goal_id: string }) {
+  const goal = goalById(input.goal_id);
+  if (!goal) {
+    return {
+      ok: false,
+      formatted: `There is no goal with id ${input.goal_id}. Call get_compass_status for the real ids.`,
+    };
+  }
+  if (goal.status !== 'ACTIVE') {
+    return { ok: false, formatted: `"${goal.title}" has already ended.` };
+  }
+
+  /*
+   * The same lock the button has: the end date, OR the number being reached.
+   * Repeated here rather than trusted to the prompt, because a model that
+   * finishes a habit on its third good day hands the user permission to stop
+   * as the reward for having started — which is the exact failure Compass is
+   * built against.
+   */
+  const consistency = useCompassStore.getState().consistencyByGoal.get(goal.id) ?? null;
+  const outcome = consistency?.outcome ?? null;
+  const reachedTarget = outcome != null && outcome.target > 0 && outcome.value >= outcome.target;
+  const runEnded = localDayString() >= goal.endDate;
+  if (!runEnded && !reachedTarget) {
+    return {
+      ok: false,
+      formatted: `"${goal.title}" cannot be finished yet. It runs to ${goal.endDate}, and it unlocks then or as soon as it reaches its number. Tell the user that rather than trying again.`,
+    };
+  }
+
+  await useCompassStore.getState().finishGoal(goal.id);
+  return { ok: true, formatted: `Closed out "${goal.title}" as finished.` };
+}
+
+export async function runStopGoal(input: { goal_id: string; reason: string }) {
+  const goal = goalById(input.goal_id);
+  if (!goal) {
+    return {
+      ok: false,
+      formatted: `There is no goal with id ${input.goal_id}. Call get_compass_status for the real ids.`,
+    };
+  }
+  if (goal.status !== 'ACTIVE') {
+    return { ok: false, formatted: `"${goal.title}" has already ended.` };
+  }
+
+  const reason = input.reason?.trim();
+  if (!reason) {
+    return {
+      ok: false,
+      formatted:
+        'Stopping a goal needs a reason in the user\'s own words. Ask them why before calling this again.',
+    };
+  }
+
+  await useCompassStore.getState().abandonGoal(goal.id, reason);
+  return { ok: true, formatted: `Stopped "${goal.title}" before the end, and kept their reason.` };
+}
+
+export async function runSetPrimaryGoal(input: { goal_id: string }) {
+  const goal = goalById(input.goal_id);
+  if (!goal) {
+    return {
+      ok: false,
+      formatted: `There is no goal with id ${input.goal_id}. Call get_compass_status for the real ids.`,
+    };
+  }
+  if (goal.status !== 'ACTIVE') {
+    return { ok: false, formatted: `"${goal.title}" has ended, so it cannot be the main goal.` };
+  }
+  if (useCompassStore.getState().primaryGoalId === goal.id) {
+    return { ok: true, formatted: `"${goal.title}" is already the main goal.` };
+  }
+
+  await useCompassStore.getState().setPrimaryGoal(goal.id);
+  return { ok: true, formatted: `"${goal.title}" is now the main goal.` };
+}
+
+function trackableById(trackableId: string) {
+  return useCompassStore.getState().trackables.find((t) => t.id === trackableId) ?? null;
+}
+
+export async function runPauseTrackable(input: { trackable_id: string }) {
+  const trackable = trackableById(input.trackable_id);
+  if (!trackable) {
+    return {
+      ok: false,
+      formatted: `There is no activity with id ${input.trackable_id}. Call get_compass_status for the real ids.`,
+    };
+  }
+  if (trackable.status === 'PAUSED') {
+    return { ok: true, formatted: `${trackable.title} is already paused.` };
+  }
+
+  await useCompassStore.getState().pauseTrackable(trackable.id);
+  return {
+    ok: true,
+    formatted: `Paused ${trackable.title}. The days it stays paused will not count against consistency.`,
+  };
+}
+
+export async function runResumeTrackable(input: { trackable_id: string }) {
+  const trackable = trackableById(input.trackable_id);
+  if (!trackable) {
+    return {
+      ok: false,
+      formatted: `There is no activity with id ${input.trackable_id}. Call get_compass_status for the real ids.`,
+    };
+  }
+  if (trackable.status !== 'PAUSED') {
+    return { ok: true, formatted: `${trackable.title} is already running.` };
+  }
+
+  await useCompassStore.getState().resumeTrackable(trackable.id);
+  return { ok: true, formatted: `${trackable.title} is running again from today.` };
 }

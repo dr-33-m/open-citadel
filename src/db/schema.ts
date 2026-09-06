@@ -386,6 +386,49 @@ export const trackableLogs = sqliteTable(
 
 // ── Journey memory (on-device; the arc of the user's reading + execution) ─────
 
+/**
+ * How a goal ended: the reconciliation, written once when it is closed out.
+ *
+ * The logs survive archiving, so most of a past goal's page can be recomputed
+ * from them. Three things cannot. The consistency figure has to be the one the
+ * reader was looking at when they pressed the button, because the denominator
+ * keeps growing after the end date and a number that drifted afterwards would
+ * disagree with the note in their journal. The reason someone stopped exists
+ * nowhere else at all. And Samwell's takeaway is written once, from the whole
+ * run, and is not something to re-ask the model for every time the sheet opens.
+ *
+ * One row per ended goal, keyed by the goal, so re-finishing is a replace
+ * rather than a second history.
+ */
+export const goalOutcomes = sqliteTable("goal_outcomes", {
+  goalId: text("goal_id")
+    .primaryKey()
+    .references(() => goals.id, { onDelete: "cascade" }),
+  /** `1` finished, `0` stopped early. The difference the whole table exists for. */
+  completed: integer("completed").notNull(),
+  /** The local day it was closed out, `YYYY-MM-DD`. Not the goal's end date:
+   *  a goal can be finished early on its number, or stopped months before. */
+  endedOn: text("ended_on").notNull(),
+  /** 0..1 as it stood at that moment, or null when nothing was ever due. */
+  executionRatio: real("execution_ratio"),
+  /** What it banked against its number, frozen the same way. Null when the
+   *  goal carried no numeric outcome. */
+  outcomeValue: real("outcome_value"),
+  outcomeTarget: real("outcome_target"),
+  outcomeUnit: text("outcome_unit"),
+  /** Why they stopped, in their own words. Null on a finished goal. */
+  reason: text("reason"),
+  /**
+   * Samwell's reading of the run.
+   *
+   * Null until it arrives: it is a cloud call made after the goal is already
+   * archived, so the sheet has to be able to draw a past goal that has no
+   * takeaway yet, and one that never got a takeaway because the request failed.
+   */
+  takeaway: text("takeaway"),
+  createdAt: text("created_at").notNull(),
+});
+
 export const journeyNotes = sqliteTable("journey_notes", {
   id: text("id").primaryKey(),
   /** 'reflection' = distilled from a night check-in; 'book_finished'/'goal_finished' = deterministic */

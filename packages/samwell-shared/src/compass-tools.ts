@@ -121,6 +121,75 @@ export const logTrackableTool = toolDefinition({
   needsApproval: true,
 });
 
+// ── The goal's life ─────────────────────────────────────────────────────────
+
+export const GoalIdInputSchema = z.object({
+  goal_id: z
+    .string()
+    .describe('The goal to act on. Call get_compass_status first so the id is real.'),
+});
+
+export const StopGoalInputSchema = GoalIdInputSchema.extend({
+  reason: z
+    .string()
+    .min(1)
+    .max(1000)
+    .describe(
+      "Why they are stopping, in their own words. Ask them; do not write it for them. This is the one sentence the archive cannot reconstruct.",
+    ),
+});
+
+export const TrackableIdInputSchema = z.object({
+  trackable_id: z
+    .string()
+    .describe('The trackable to act on. Call get_compass_status first so the id is real.'),
+});
+
+export const finishGoalTool = toolDefinition({
+  name: 'finish_goal',
+  description:
+    "Close a goal out as finished. Only when its end date has passed or it has reached its number — otherwise the app refuses, and rightly: finishing early on a whim is the procrastination this is built against, pointed the other way. The user confirms before it is written.",
+  inputSchema: GoalIdInputSchema,
+  outputSchema: WriteOutputSchema,
+  needsApproval: true,
+});
+
+export const stopGoalTool = toolDefinition({
+  name: 'stop_goal',
+  description:
+    "Retire a goal before its end. Never suggest this yourself when a week has gone badly — a bad week is what the goal is for. Call it when the user has decided, and put their reason in the note. The user confirms before it is written.",
+  inputSchema: StopGoalInputSchema,
+  outputSchema: WriteOutputSchema,
+  needsApproval: true,
+});
+
+export const setPrimaryGoalTool = toolDefinition({
+  name: 'set_primary_goal',
+  description:
+    'Move the main-goal mark to a different goal. The main goal is the one you steer back toward and the one the overview leads with. The user confirms before it is written.',
+  inputSchema: GoalIdInputSchema,
+  outputSchema: WriteOutputSchema,
+  needsApproval: true,
+});
+
+export const pauseTrackableTool = toolDefinition({
+  name: 'pause_trackable',
+  description:
+    "Pause one activity, so the days it is paused stop counting against consistency. This is the honest tool for a real interruption — illness, travel, a broken week — and it is why a paused day is not a missed day. The user confirms before it is written.",
+  inputSchema: TrackableIdInputSchema,
+  outputSchema: WriteOutputSchema,
+  needsApproval: true,
+});
+
+export const resumeTrackableTool = toolDefinition({
+  name: 'resume_trackable',
+  description:
+    'Bring a paused activity back. It starts counting again from today, not retroactively. The user confirms before it is written.',
+  inputSchema: TrackableIdInputSchema,
+  outputSchema: WriteOutputSchema,
+  needsApproval: true,
+});
+
 // ── Proposing ───────────────────────────────────────────────────────────────
 
 export const proposeGoalTool = toolDefinition({
@@ -146,6 +215,11 @@ export const COMPASS_TOOL_DEFINITIONS = [
   getTodayTool,
   getTrackableHistoryTool,
   logTrackableTool,
+  finishGoalTool,
+  stopGoalTool,
+  setPrimaryGoalTool,
+  pauseTrackableTool,
+  resumeTrackableTool,
   proposeGoalTool,
   proposeAdjustmentsTool,
   /*
@@ -186,7 +260,16 @@ export const COMPASS_CLIENT_TOOL_DEFINITIONS = COMPASS_TOOL_DEFINITIONS.map((too
  * The two `propose_*` tools are absent on purpose: they write nothing. They
  * render a card, and the card has its own approve button.
  */
-export const COMPASS_APPROVAL_REQUIRED_TOOLS: ReadonlySet<string> = new Set(['log_trackable']);
+export const COMPASS_APPROVAL_REQUIRED_TOOLS: ReadonlySet<string> = new Set([
+  'log_trackable',
+  // Every one of these ends or reshapes something the user has been running
+  // for weeks, and none of them is undoable from a conversation.
+  'finish_goal',
+  'stop_goal',
+  'set_primary_goal',
+  'pause_trackable',
+  'resume_trackable',
+]);
 
 export const COMPASS_TOOL_NAMES: ReadonlySet<string> = new Set(
   COMPASS_TOOL_DEFINITIONS.map((tool) => tool.name),

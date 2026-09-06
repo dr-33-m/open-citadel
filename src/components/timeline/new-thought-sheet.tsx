@@ -9,9 +9,13 @@ import { Input } from '@/components/ui/input';
 import { Sheet } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { Touchable } from '@/components/ui/touchable';
-import { Check, Sparkles } from '@/components/icons';
+import { Check, ZodiacPisces } from '@/components/icons';
 
+import { ActionButton } from '@/components/action-button';
+import { FieldHint } from '@/components/field-hint';
 import { ThemedText } from '@/components/themed-text';
+import { NOTE_HINTS } from '@/lib/note-hints';
+import { ThoughtText, isFilled } from '@/lib/text-fields';
 import { ColorSwatch, ColorSwatchRow, HIGHLIGHT_COLORS } from '@/components/color-swatch';
 import { GoldButton } from '@/components/ui/gold-button';
 import { cn } from '@/lib/cn';
@@ -134,6 +138,10 @@ export function NewThoughtSheet({
     }
   };
 
+  /* The save button reads the same schema the handler refuses on, so the two
+     can never disagree about what "empty" is. */
+  const canSave = isFilled(ThoughtText, text);
+
   const handleSave = () => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -201,6 +209,8 @@ export function NewThoughtSheet({
           onChangeText={setText}
           multiline
         />
+
+        <FieldHint>{NOTE_HINTS.thought}</FieldHint>
 
         {/* Colour and tags are two facets of the thought, not one cluster.
             Unlabelled and 24 below the field but only 12 above the tag box,
@@ -272,21 +282,26 @@ export function NewThoughtSheet({
           />
 
           <View className="flex-row flex-wrap items-center gap-2">
-            <Touchable
-              className="flex-row items-center gap-1 py-1"
+            {/*
+              Grey until there is a thought to read, and the colour is what
+              says so — not opacity.
+
+              `AnimatedPressable` drives opacity from the UI thread for its
+              press feedback, so a static dim on the button is overwritten
+              every frame. More importantly a bare gold word with no edge gave
+              no clue it was inert: it had to be tapped and tapped before the
+              rule revealed itself. As a card that goes grey, the state is
+              legible before the first tap.
+            */}
+            <ActionButton
+              className="bg-card"
+              icon={suggesting ? undefined : ZodiacPisces}
+              leading={suggesting ? <Spinner size="sm" className="h-3.5 w-3.5" /> : undefined}
+              label={suggesting ? 'SUGGESTING…' : 'SUGGEST TAGS'}
+              tint={canSave ? asColor(primary) : asColor(mutedForeground)}
+              disabled={suggesting || !canSave}
               onPress={handleSuggestTags}
-              disabled={suggesting || !text.trim()}
-              hitSlop={6}
-            >
-              {suggesting ? (
-                <Spinner size="sm" className="h-3.5 w-3.5" />
-              ) : (
-                <Sparkles size={14} color={asColor(primary)} />
-              )}
-              <ThemedText type="labelSm" color={asColor(primary)}>
-                {suggesting ? 'SUGGESTING…' : 'SUGGEST TAGS'}
-              </ThemedText>
-            </Touchable>
+            />
             {aiSuggestions.map((tag) => {
               const isAdded = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
               return (
@@ -360,6 +375,7 @@ export function NewThoughtSheet({
           <GoldButton
             label={isEditing ? 'SAVE CHANGES' : 'SAVE THOUGHT'}
             onPress={handleSave}
+            disabled={!canSave}
           />
           <Touchable onPress={handleClose} className="items-center py-3">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>CANCEL</ThemedText>

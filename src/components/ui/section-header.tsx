@@ -62,7 +62,17 @@ export function SectionHeader({
           </Touchable>
         )}
         {rightAction && (
-          <Touchable onPress={rightAction.onPress}>
+          // A card, like every other button in the app: a surface a step off
+          // its ground with the soft weight under it. A gold outline on the
+          // page was the odd one out, and coloured text alone before that read
+          // as a label the same weight as the section title beside it.
+          <Touchable
+            className="border border-border bg-card px-2.5 py-1.5 shadow-sm"
+            onPress={rightAction.onPress}
+            haptic="select"
+            accessibilityRole="button"
+            accessibilityLabel={rightAction.text}
+          >
             <ThemedText type="labelSm" color={primaryColor}>
               {rightAction.text}
             </ThemedText>

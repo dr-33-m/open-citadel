@@ -10,6 +10,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { SamwellText } from '@/components/samwell-text';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import type { SamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
@@ -82,9 +83,12 @@ function Banner({
 
   return (
     <View className="m-3 gap-2 border border-surface-tertiary bg-muted p-3">
-      <ThemedText type="bodySm" color={color}>
+      {/* His name in gold wherever it lands in the sentence. `color` still
+          drives the rest of the line, so an error banner stays destructive
+          around it. */}
+      <SamwellText type="bodySm" color={color}>
         {message}
-      </ThemedText>
+      </SamwellText>
       {action ? (
         <Touchable
           className={cn('self-start bg-primary px-3 py-1', action.disabled && 'opacity-50')}

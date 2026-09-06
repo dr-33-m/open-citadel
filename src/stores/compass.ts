@@ -10,7 +10,7 @@ import {
 } from 'samwell-shared';
 
 import { db } from '@/db/client';
-import { goals, trackableLogs, trackablePauses, trackables } from '@/db/schema';
+import { goalOutcomes, goals, trackableLogs, trackablePauses, trackables } from '@/db/schema';
 import {
   goalExecution,
   goalOutcome,
@@ -19,7 +19,7 @@ import {
   type GoalExecution,
   type GoalOutcome,
 } from '@/services/consistency';
-import { saveJourneyReflection } from '@/services/journey';
+import { saveGoalFinishedNote, saveJourneyReflection } from '@/services/journey';
 import {
   byTimeThenTitle,
   dueOn,
@@ -42,6 +42,14 @@ export type GoalConsistency = {
   outcome: GoalOutcome | null;
 };
 
+export type GoalOutcomeRow = typeof goalOutcomes.$inferSelect;
+
+/** An ended goal and its reconciliation, paired the way the archive shows it. */
+export type PastGoal = {
+  goal: GoalRow;
+  outcome: GoalOutcomeRow;
+};
+
 type CompassState = {
   goals: GoalRow[];
   /**
@@ -50,12 +58,22 @@ type CompassState = {
    * merges over, and the overview charts.
    */
   activeGoals: GoalRow[];
-  activeGoalId: string | null;
   /** The one active goal marked `isPrimary`, or null when none is. */
   primaryGoalId: string | null;
-  /** Trackables of the active goal, with their JSON columns already parsed. */
+  /**
+   * Every active goal's trackables and logs, merged into one set.
+   *
+   * There used to be a "current" goal here and these held only its slice, so
+   * the planner drew one goal's month and Samwell was told the ids of one
+   * goal's trackables. Nothing points at a single goal any more: the deck was
+   * always one day across every goal, and the planner and the tools are now
+   * the same. `dataByGoal` is what a surface reads when it does want one goal
+   * on its own.
+   */
   trackables: TrackableView[];
   logsByTrackable: Map<string, LogView[]>;
+  /** The same, kept per goal, so a single-goal view costs no second read. */
+  dataByGoal: Map<string, GoalData>;
 
   /**
    * Derived data, held as STORED fields and recomputed on every write.
@@ -71,17 +89,30 @@ type CompassState = {
    * card with its goal.
    */
   due: DueItem[];
-  /** Consistency + outcome for the active goal — the per-goal Insights view. */
-  consistency: GoalConsistency | null;
-  /** The same, per active goal, for the overview. Keyed by goal id. */
+  /** Consistency + outcome per active goal, keyed by goal id. */
   consistencyByGoal: Map<string, GoalConsistency>;
+  /**
+   * The goals that have ended, most recently ended first, each with how it
+   * ended.
+   *
+   * Held here rather than derived in a selector for the same reason as the
+   * fields above: a selector building this array would hand back a new
+   * reference on every store change, and this list sits under a screen that
+   * updates on every streamed token.
+   *
+   * A goal whose status is COMPLETED or CANCELLED but which has no
+   * `goal_outcomes` row is left out. Those are the ones the two unwired legacy
+   * actions could produce — archived with nothing recorded about how — and a
+   * page about a goal that can say nothing about how it went is worse than
+   * that goal not being listed.
+   */
+  pastGoals: PastGoal[];
 
   isLoaded: boolean;
   committing: boolean;
   error: string | null;
 
   loadCompass: () => Promise<void>;
-  selectGoal: (goalId: string) => Promise<void>;
   /** Move the primary mark to `goalId` (clearing it from wherever it was).
    *  A no-op if that goal is already primary. */
   setPrimaryGoal: (goalId: string) => Promise<void>;
@@ -103,8 +134,29 @@ type CompassState = {
 
   pauseTrackable: (trackableId: string) => Promise<void>;
   resumeTrackable: (trackableId: string) => Promise<void>;
+  /**
+   * End a goal, and remember how it ended.
+   *
+   * `completeGoal` and `cancelGoal` only moved a status column, which is why
+   * neither was ever wired to anything: a goal that simply disappears from the
+   * active list teaches nobody anything. These two write the journal note as
+   * well, so the way this goal went is still there to be read the next time a
+   * goal like it is proposed.
+   */
+  finishGoal: (goalId: string) => Promise<void>;
+  /** Retire a goal early. The reason is the reader's own words and is the part
+   *  no amount of logged data could reconstruct. */
+  abandonGoal: (goalId: string, reason: string | null) => Promise<void>;
   completeGoal: (goalId: string) => Promise<void>;
   cancelGoal: (goalId: string) => Promise<void>;
+  /**
+   * Store Samwell's reading of a finished goal.
+   *
+   * Written once, after the fact: the goal is already archived by the time the
+   * cloud answers, and the archive page draws fine without it. Silently does
+   * nothing if there is no outcome row to attach it to.
+   */
+  saveTakeaway: (goalId: string, takeaway: string) => Promise<void>;
 
   clearError: () => void;
 };
@@ -173,7 +225,6 @@ function goalConsistency(
 export type GoalData = { views: TrackableView[]; logsByTrackable: Map<string, LogView[]> };
 
 function computeDerived(
-  activeGoal: GoalRow | null,
   activeGoals: GoalRow[],
   dataByGoal: Map<string, GoalData>,
   today: string,
@@ -181,34 +232,29 @@ function computeDerived(
   trackables: TrackableView[];
   logsByTrackable: Map<string, LogView[]>;
   due: DueItem[];
-  consistency: GoalConsistency | null;
   consistencyByGoal: Map<string, GoalConsistency>;
 } {
   const consistencyByGoal = new Map<string, GoalConsistency>();
   const dueItems: DueItem[] = [];
+  const trackables: TrackableView[] = [];
+  const logsByTrackable = new Map<string, LogView[]>();
 
   for (const goal of activeGoals) {
     const data = dataByGoal.get(goal.id) ?? { views: [], logsByTrackable: new Map() };
     consistencyByGoal.set(goal.id, goalConsistency(goal, data.views, data.logsByTrackable, today));
     // Merged and re-sorted below, not per goal — the deck is one day, not one
-    // goal's day.
+    // goal's day, and so is the planner's month.
     dueItems.push(...dueOn(today, data.views, data.logsByTrackable));
+    trackables.push(...data.views);
+    // Keyed by trackable id, which is unique across goals, so goals cannot
+    // collide here however many are running.
+    for (const [trackableId, logs] of data.logsByTrackable) {
+      logsByTrackable.set(trackableId, logs);
+    }
   }
   dueItems.sort(byTimeThenTitle);
 
-  const active = activeGoal ? dataByGoal.get(activeGoal.id) : undefined;
-
-  return {
-    trackables: active?.views ?? [],
-    logsByTrackable: active?.logsByTrackable ?? new Map(),
-    due: dueItems,
-    consistency:
-      activeGoal && active
-        ? (consistencyByGoal.get(activeGoal.id) ??
-          goalConsistency(activeGoal, active.views, active.logsByTrackable, today))
-        : null,
-    consistencyByGoal,
-  };
+  return { trackables, logsByTrackable, due: dueItems, consistencyByGoal };
 }
 
 /**
@@ -297,6 +343,39 @@ export function readGoals(goalIds: string[]): Map<string, GoalData> {
 }
 
 /**
+ * The ended goals, most recently ended first, paired with how they ended.
+ *
+ * Goals arrive here from a list that has already been read, so this is one
+ * extra query rather than two. An archived goal with no `goal_outcomes` row is
+ * dropped: those can only come from the two legacy actions that moved a status
+ * column and recorded nothing, and a page that can say nothing about how a
+ * goal went is worse than that goal not being in the list.
+ */
+function readPastGoals(all: GoalRow[]): PastGoal[] {
+  const ended = all.filter((g) => g.status === 'COMPLETED' || g.status === 'CANCELLED');
+  if (ended.length === 0) return [];
+
+  const rows = db
+    .select()
+    .from(goalOutcomes)
+    .where(
+      inArray(
+        goalOutcomes.goalId,
+        ended.map((g) => g.id),
+      ),
+    )
+    .all();
+  const byGoal = new Map(rows.map((r) => [r.goalId, r]));
+
+  return ended
+    .flatMap((goal) => {
+      const outcome = byGoal.get(goal.id);
+      return outcome ? [{ goal, outcome }] : [];
+    })
+    .sort((a, b) => b.outcome.endedOn.localeCompare(a.outcome.endedOn));
+}
+
+/**
  * The active goals, primary first then newest, capped at the max.
  *
  * `goals` arrives newest-first from `loadCompass`, so a stable partition keeps
@@ -349,13 +428,13 @@ function readActiveTrackable(get: () => CompassState, trackableId: string): Trac
 export const useCompassStore = create<CompassState>((set, get) => ({
   goals: [],
   activeGoals: [],
-  activeGoalId: null,
   primaryGoalId: null,
   trackables: [],
   logsByTrackable: new Map(),
+  dataByGoal: new Map(),
   due: [],
-  consistency: null,
   consistencyByGoal: new Map(),
+  pastGoals: [],
   isLoaded: false,
   committing: false,
   error: null,
@@ -365,52 +444,40 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     const allGoals = db.select().from(goals).orderBy(desc(goals.createdAt)).all();
     const activeGoals = orderActiveGoals(allGoals);
     const primaryGoalId = activeGoals.find((g) => g.isPrimary)?.id ?? null;
+    const pastGoals = readPastGoals(allGoals);
 
-    // What the per-goal surfaces (Insights, Planner, the conversation) point
-    // at: the goal the reader last chose if it is still around, else the
-    // primary, else the newest active one, else any goal at all.
-    const activeGoal =
-      allGoals.find((g) => g.id === get().activeGoalId) ??
-      activeGoals.find((g) => g.id === primaryGoalId) ??
-      activeGoals[0] ??
-      allGoals[0] ??
-      null;
-
-    if (!activeGoal && activeGoals.length === 0) {
+    if (activeGoals.length === 0) {
       set({
         goals: allGoals,
+        pastGoals,
         activeGoals: [],
-        activeGoalId: null,
         primaryGoalId: null,
         trackables: [],
         logsByTrackable: new Map(),
+        dataByGoal: new Map(),
         due: [],
-        consistency: null,
         consistencyByGoal: new Map(),
         isLoaded: true,
       });
       return;
     }
 
-    // The viewed goal may not be active (an old goal's Insights), so read it
-    // alongside the active set rather than assuming it is in it.
-    const idsToRead = new Set(activeGoals.map((g) => g.id));
-    if (activeGoal) idsToRead.add(activeGoal.id);
-    const dataByGoal = readGoals([...idsToRead]);
+    // Every active goal, in one batched read. There is no separate "viewed"
+    // goal to fetch alongside them any more: every surface either wants the
+    // whole set or picks one out of `dataByGoal`. A goal that is no longer
+    // active — an old goal's Insights — is still read on demand by the view
+    // that asks for it.
+    const dataByGoal = readGoals(activeGoals.map((g) => g.id));
 
     set({
       goals: allGoals,
+      pastGoals,
       activeGoals,
-      activeGoalId: activeGoal?.id ?? null,
       primaryGoalId,
-      ...computeDerived(activeGoal, activeGoals, dataByGoal, today),
+      dataByGoal,
+      ...computeDerived(activeGoals, dataByGoal, today),
       isLoaded: true,
     });
-  },
-
-  selectGoal: async (goalId) => {
-    set({ activeGoalId: goalId });
-    await get().loadCompass();
   },
 
   setPrimaryGoal: async (goalId) => {
@@ -487,7 +554,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
           .run();
       }
 
-      set({ activeGoalId: goalId, committing: false });
+      set({ committing: false });
       await get().loadCompass();
       return goalId;
     } catch (err) {
@@ -499,7 +566,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   applyCheckinDraft: async (draft) => {
     const today = localDayString();
     const now = new Date().toISOString();
-    const { activeGoalId } = get();
+    const { primaryGoalId } = get();
 
     for (const adjustment of draft.adjustments) {
       // Adjustments may name a side goal's trackable — the tool layer validates
@@ -539,7 +606,7 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     }
 
     if (draft.journeyNote) {
-      saveJourneyReflection(draft.journeyNote, activeGoalId ? `goal:${activeGoalId}` : 'compass');
+      saveJourneyReflection(draft.journeyNote, primaryGoalId ? `goal:${primaryGoalId}` : 'compass');
     }
 
     await get().loadCompass();
@@ -565,11 +632,9 @@ export const useCompassStore = create<CompassState>((set, get) => ({
   },
 
   undoLastLog: async () => {
-    // Every active goal's trackables, not just the viewed goal's — the log
-    // being undone may have come from a deck card of a side goal.
+    // Every active goal's trackables: the log being undone may have come
+    // from any goal's card in the deck.
     const goalIds = new Set(get().activeGoals.map((g) => g.id));
-    const viewedId = get().activeGoalId;
-    if (viewedId) goalIds.add(viewedId);
     const ids =
       goalIds.size === 0
         ? []
@@ -637,6 +702,20 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     await get().loadCompass();
   },
 
+  finishGoal: async (goalId) => {
+    archiveGoal(get(), goalId, true, null);
+    const now = new Date().toISOString();
+    db.update(goals).set({ status: 'COMPLETED', updatedAt: now }).where(eq(goals.id, goalId)).run();
+    await get().loadCompass();
+  },
+
+  abandonGoal: async (goalId, reason) => {
+    archiveGoal(get(), goalId, false, reason);
+    const now = new Date().toISOString();
+    db.update(goals).set({ status: 'CANCELLED', updatedAt: now }).where(eq(goals.id, goalId)).run();
+    await get().loadCompass();
+  },
+
   completeGoal: async (goalId) => {
     const now = new Date().toISOString();
     db.update(goals).set({ status: 'COMPLETED', updatedAt: now }).where(eq(goals.id, goalId)).run();
@@ -647,6 +726,20 @@ export const useCompassStore = create<CompassState>((set, get) => ({
     const now = new Date().toISOString();
     db.update(goals).set({ status: 'CANCELLED', updatedAt: now }).where(eq(goals.id, goalId)).run();
     await get().loadCompass();
+  },
+
+  saveTakeaway: async (goalId, takeaway) => {
+    const text = takeaway.trim();
+    if (!text) return;
+    db.update(goalOutcomes)
+      .set({ takeaway: text })
+      .where(eq(goalOutcomes.goalId, goalId))
+      .run();
+
+    // Only the archive changes, so only the archive is re-read. A full
+    // `loadCompass` here would rebuild the deck and every goal's consistency
+    // to record a sentence about a goal that is no longer running.
+    set({ pastGoals: readPastGoals(get().goals) });
   },
 
   clearError: () => set({ error: null }),
@@ -686,14 +779,68 @@ function patchAfterWrite(
   set: (patch: Partial<CompassState>) => void,
   get: () => CompassState,
 ): void {
-  const { activeGoalId, activeGoals, goals: allGoals } = get();
-  const activeGoal = allGoals.find((g) => g.id === activeGoalId) ?? null;
+  const { activeGoals } = get();
+  const dataByGoal = readGoals(activeGoals.map((g) => g.id));
 
-  const ids = new Set(activeGoals.map((g) => g.id));
-  if (activeGoalId) ids.add(activeGoalId);
-  const dataByGoal = readGoals([...ids]);
+  set({ dataByGoal, ...computeDerived(activeGoals, dataByGoal, localDayString()) });
+}
 
-  set(computeDerived(activeGoal, activeGoals, dataByGoal, localDayString()));
+/**
+ * Write the permanent note about how a goal ended, before it is archived.
+ *
+ * Read from the store's own derived numbers rather than recomputed: those are
+ * the figures the reader was looking at when they pressed the button, and a
+ * note that disagreed with the screen it was written from would be worse than
+ * no note. Called before the status changes, while the goal is still in the
+ * active set and its consistency is still there to read.
+ */
+function archiveGoal(
+  state: CompassState,
+  goalId: string,
+  completed: boolean,
+  reason: string | null,
+): void {
+  const goal = state.goals.find((g) => g.id === goalId);
+  if (!goal) return;
+  const consistency = state.consistencyByGoal.get(goalId) ?? null;
+  const outcome = consistency?.outcome ?? null;
+
+  saveGoalFinishedNote(goalId, goal.title, {
+    completed,
+    executionRatio: consistency?.execution.ratio ?? null,
+    outcomeSummary: outcome ? `${outcome.value} of ${outcome.target} ${outcome.unit}` : null,
+    reason,
+  });
+
+  // The same figures, kept structured, because the past-goal page draws them
+  // rather than reading the note's prose. `onConflictDoUpdate` rather than
+  // insert: nothing should be able to leave a goal with two endings.
+  db.insert(goalOutcomes)
+    .values({
+      goalId,
+      completed: completed ? 1 : 0,
+      endedOn: localDayString(),
+      executionRatio: consistency?.execution.ratio ?? null,
+      outcomeValue: outcome?.value ?? null,
+      outcomeTarget: outcome?.target ?? null,
+      outcomeUnit: outcome?.unit ?? null,
+      reason: reason?.trim() || null,
+      takeaway: null,
+      createdAt: new Date().toISOString(),
+    })
+    .onConflictDoUpdate({
+      target: goalOutcomes.goalId,
+      set: {
+        completed: completed ? 1 : 0,
+        endedOn: localDayString(),
+        executionRatio: consistency?.execution.ratio ?? null,
+        outcomeValue: outcome?.value ?? null,
+        outcomeTarget: outcome?.target ?? null,
+        outcomeUnit: outcome?.unit ?? null,
+        reason: reason?.trim() || null,
+      },
+    })
+    .run();
 }
 
 /** The picture of the goal that a check-in conversation is grounded in. */
@@ -703,13 +850,11 @@ function patchAfterWrite(
 // whole-store form re-renders a chat screen on every streamed token.
 
 export const useCompassDue = () => useCompassStore((s) => s.due);
-export const useCompassConsistency = () => useCompassStore((s) => s.consistency);
 export const useCompassTrackables = () => useCompassStore((s) => s.trackables);
 export const useCompassError = () => useCompassStore((s) => s.error);
-export const useActiveGoal = () =>
-  useCompassStore((s) => s.goals.find((g) => g.id === s.activeGoalId) ?? null);
 export const useCompassActiveGoals = () => useCompassStore((s) => s.activeGoals);
 export const usePrimaryGoal = () =>
   useCompassStore((s) => s.activeGoals.find((g) => g.id === s.primaryGoalId) ?? null);
 export const useCompassConsistencyByGoal = () =>
   useCompassStore((s) => s.consistencyByGoal);
+export const useCompassPastGoals = () => useCompassStore((s) => s.pastGoals);

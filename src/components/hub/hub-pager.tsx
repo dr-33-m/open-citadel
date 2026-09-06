@@ -8,7 +8,6 @@ import { SamwellPage } from '@/components/hub/samwell-page';
 import { TimelinePage } from '@/components/hub/timeline-page';
 import { useAfterFirstPaint } from '@/navigation/use-after-first-paint';
 import { HUB, useHubStore, type HubPage } from '@/stores/hub';
-import { haptics } from '@/utils/haptics';
 
 /**
  * The hub: Timeline, Library and Samwell as three pages of one screen.
@@ -74,10 +73,10 @@ export function HubPager() {
       const position = event.nativeEvent.position as HubPage;
       if (position === shown.current) return;
       shown.current = position;
-      // The page catching is the moment worth feeling, and it is one per
-      // gesture. `onPageSelected` fires on a settled page, so this lands with
-      // the page arriving rather than partway through the drag.
-      haptics.select();
+      // No haptic here. Moving between Timeline, Library and Samwell is
+      // navigation, not a commit — nothing has changed by arriving, and the
+      // page sliding into place is its own feedback. A thump on every swipe
+      // made the three pages feel like three decisions.
       settled(position);
     },
     [settled],

@@ -18,9 +18,11 @@ import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-re
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCSSVariable } from 'uniwind';
 
+import { Archive, BookOpen, CalendarDays, History, ListTodo, TrendingUp } from '@/components/icons';
 import { DeferredBody } from '@/components/navigation/deferred-body';
 import { Reveal } from '@/components/navigation/reveal';
 import { SamwellControlCenter } from '@/components/samwell/samwell-control-center';
+import { SamwellToolbox, type ToolboxItem } from '@/components/samwell/samwell-toolbox';
 import { ThemedText } from '@/components/themed-text';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { MaxContentWidth, spacing } from '@/constants/theme';
@@ -33,14 +35,15 @@ import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness
 import { useSamwellStatus } from '@/features/chat/hooks/use-samwell-status';
 import { turnIndicator } from '@/features/chat/utils/agent-activity';
 import { CompassBody } from '@/features/compass/components/compass-body';
-import { GoalSwitcher } from '@/features/compass/components/goal-switcher';
 import { InsightsSheet } from '@/features/compass/components/insights-sheet';
 import { LogDeckSheet } from '@/features/compass/components/log-deck-sheet';
 import { OverviewSheet } from '@/features/compass/components/overview-sheet';
+import { PastGoalsSheet } from '@/features/compass/components/past-goals-sheet';
 import { PlannerSheet } from '@/features/compass/components/planner-sheet';
 import { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
+import { useGoalEnding } from '@/features/compass/hooks/use-goal-ending';
 import { useCompassChatStore } from '@/stores/compass-chat';
-import { useCompassStore } from '@/stores/compass';
+import { useCompassPastGoals, useCompassStore } from '@/stores/compass';
 import { useAfterFirstPaint } from '@/navigation/use-after-first-paint';
 import { isVisibleChatMessage } from '@/services/chat-transcript';
 import { useAllBooks, useBooksStore } from '@/stores/books';
@@ -59,6 +62,24 @@ const contentColumn: ViewStyle = {
   width: '100%',
   alignSelf: 'center',
 };
+
+/**
+ * The conversation you are leaving gets its last chance at a better title.
+ *
+ * Both stores are asked, whichever mode was on screen: each one already knows
+ * whether it has anything to rename — the transcript has to have grown past
+ * what the quick title saw, and a title that comes back unchanged raises no
+ * notice — so branching on the mode here would be a second opinion about the
+ * same question, in the one place least able to answer it.
+ *
+ * Never awaited. Both snapshot the conversation synchronously before their
+ * first `await`, so the rename lands on what was left even though the cloud
+ * call outlives the switch, and a slow model never holds up a swipe.
+ */
+function refineLeavingTitles() {
+  void useChatStore.getState().refineSessionTitleOnExit().catch(() => {});
+  void useCompassChatStore.getState().refineTitleOnExit().catch(() => {});
+}
 
 export function SamwellPage() {
   // Library and Timeline are peer pages of this one, reached by moving the
@@ -123,16 +144,24 @@ export function SamwellPage() {
     compass.sessions.find((session) => session.id === compass.activeSessionId)?.title ?? null;
 
   const loadCompass = useCompassStore((s) => s.loadCompass);
-  const activeGoal = useCompassStore((s) => s.goals.find((g) => g.id === s.activeGoalId) ?? null);
   const compassActiveGoals = useCompassStore((s) => s.activeGoals);
-  const compassActiveGoalId = useCompassStore((s) => s.activeGoalId);
   const compassPrimaryGoalId = useCompassStore((s) => s.primaryGoalId);
-  const selectGoal = useCompassStore((s) => s.selectGoal);
   const setPrimaryGoal = useCompassStore((s) => s.setPrimaryGoal);
+  const compassPastGoals = useCompassPastGoals();
+  /* Ending a goal is two things — the archive write, and Samwell's reading of
+     it — and this owns the seam between them. See `useGoalEnding`. */
+  const { finishGoal, abandonGoal, writingTakeaway, retryTakeaway } = useGoalEnding();
+  /*
+   * The goal the single-goal Insights sheet shows: the primary, or the only
+   * one there is. Nothing "points at" a goal any more — the deck, the planner
+   * and Samwell's tools all span the whole active set — so this is just which
+   * goal that sheet is about, and it only opens at all when there is one.
+   */
+  const activeGoal =
+    compassActiveGoals.find((g) => g.id === compassPrimaryGoalId) ?? compassActiveGoals[0] ?? null;
   const compassTrackables = useCompassStore((s) => s.trackables);
   const compassLogs = useCompassStore((s) => s.logsByTrackable);
   const compassDue = useCompassStore((s) => s.due);
-  const compassConsistency = useCompassStore((s) => s.consistency);
   const compassConsistencyByGoal = useCompassStore((s) => s.consistencyByGoal);
   const compassError = useCompassStore((s) => s.error);
 
@@ -157,8 +186,15 @@ export function SamwellPage() {
   const text = useSamwellSessionStore((s) => s.draft);
   const pendingBook = useSamwellSessionStore((s) => s.pendingBook);
   const setSession = useSamwellSessionStore((s) => s.set);
+  // Flipping the mode switch leaves a conversation as surely as walking off
+  // the screen does, so it names the one being left. Read from the store
+  // rather than from the `mode` above, so a double tap on the mode already
+  // showing is not treated as leaving anything.
   const setMode = React.useCallback(
-    (next: 'chat' | 'compass') => setSession({ mode: next }),
+    (next: 'chat' | 'compass') => {
+      if (next !== useSamwellSessionStore.getState().mode) refineLeavingTitles();
+      setSession({ mode: next });
+    },
     [setSession],
   );
   const setText = React.useCallback((next: string) => setSession({ draft: next }), [setSession]);
@@ -172,6 +208,7 @@ export function SamwellPage() {
   const [showPlanner, setShowPlanner] = React.useState(false);
   const [showInsights, setShowInsights] = React.useState(false);
   const [showOverview, setShowOverview] = React.useState(false);
+  const [showPastGoals, setShowPastGoals] = React.useState(false);
   // Held, not inline: the planner is memoized so that a reply streaming behind
   // it does not redraw a month grid per token, and a fresh closure per render
   // would defeat that on its own.
@@ -183,18 +220,32 @@ export function SamwellPage() {
   // collapses when dragged away.
   const [floatingBottomHeight, setFloatingBottomHeight] = React.useState(0);
 
-  // Leaving this screen is where a conversation gets its last chance to pick
-  // up a better title from its full transcript — the same thing `chat/[id]`
-  // does on its own blur. Both modes, since both keep named history and only
-  // the mode you were actually in has anything to re-title.
-  useFocusEffect(
-    React.useCallback(() => {
-      return () => {
-        void useChatStore.getState().refineSessionTitleOnExit();
-        void useCompassChatStore.getState().refineTitleOnExit();
-      };
-    }, []),
-  );
+  // Leaving the hub route — a book, Settings, a chat opened on its own — is
+  // one of the ways out, the same thing `chat/[id]` does on its own blur.
+  useFocusEffect(React.useCallback(() => refineLeavingTitles, []));
+
+  /*
+   * And swiping off this page is the other, far more common one.
+   *
+   * This screen is the third page of a pager, not a route: all three are
+   * mounted at once and moving between them is deliberately not navigation,
+   * so `useFocusEffect` above never fires for it. Without this, walking back
+   * to the Library — which is how anyone actually leaves a conversation —
+   * skipped the rename entirely.
+   *
+   * Subscribed imperatively rather than through a selector: this is the app's
+   * largest render, and reading the page through `useHubStore` would re-run
+   * all of it every time the pager settles anywhere, to answer a question
+   * nothing on screen draws from.
+   */
+  React.useEffect(() => {
+    let wasHere = useHubStore.getState().page === HUB.samwell;
+    return useHubStore.subscribe((state) => {
+      const isHere = state.page === HUB.samwell;
+      if (wasHere && !isHere) refineLeavingTitles();
+      wasHere = isHere;
+    });
+  }, []);
 
   // No KeyboardAvoidingView: this screen is edge-to-edge, so the window never
   // resizes for the keyboard and a KAV can only fight the absolute layout —
@@ -333,13 +384,183 @@ export function SamwellPage() {
   // A focused text input's keyboard dismissing at the same time a bottom
   // sheet is trying to present is a common cause of the sheet silently
   // failing to reach its snap point — settle the keyboard first.
-  function openSheet(open: (v: boolean) => void) {
+  //
+  // `useCallback` because the toolbox's item list is memoised on it: a fresh
+  // identity here every render would defeat that memo entirely.
+  const openSheet = React.useCallback((open: (v: boolean) => void) => {
     Keyboard.dismiss();
     open(true);
-  }
+  }, []);
 
   const busy = mode === 'chat' ? chatInputBusy : compass.isBusy;
   const locked = isGenerating || chat.switching !== null || compass.isBusy;
+
+  /*
+   * The drawer under the control unit, and what the current mode puts in it.
+   *
+   * MEMOISED, and it matters more than it looks. This screen subscribes to
+   * `streamingContent`, so it re-renders on every token of a reply — and an
+   * un-memoised list rebuilt five item objects with five fresh closures each
+   * time, re-rendering five `Tool` rows, each an `AnimatedPressable` with two
+   * texts and two icons, for a drawer that is shut and invisible. That is
+   * roughly twenty-five component renders per token, spent on nothing.
+   *
+   * An earlier comment here argued a memo would be re-run anyway because the
+   * entries close over turn-scoped values. That was wrong twice: most of those
+   * values are stable through a turn (counts, ids, which book is pinned), and
+   * "the deps change sometimes" is an argument for listing them, not for
+   * rebuilding unconditionally on the app's hottest render path.
+   *
+   * A tool that opens a sheet shuts the drawer on the way, so coming back from
+   * the sheet lands on the plain card rather than on the state you left.
+   */
+  const [toolboxOpen, setToolboxOpen] = React.useState(false);
+  const closeToolbox = React.useCallback(() => setToolboxOpen(false), []);
+
+  /** Open a sheet from a tool: put the drawer away, then raise the sheet. */
+  const fromToolbox = React.useCallback(
+    (open: (v: boolean) => void) => () => {
+      closeToolbox();
+      openSheet(open);
+    },
+    [closeToolbox, openSheet],
+  );
+
+  const chatSessionCount = sessions.length;
+  const compassSessionCount = compass.sessions.length;
+  const dueCount = compassDue.length;
+  const trackableCount = compassTrackables.length;
+  const activeGoalCount = compassActiveGoals.length;
+  const pastGoalCount = compassPastGoals.length;
+
+  const toolboxItems: ToolboxItem[] = React.useMemo(() =>
+    mode === 'chat'
+      ? [
+          // The book this chat is pinned to. Its cover stands in for the icon
+          // once one is picked, which is the whole answer to "which book is
+          // Samwell reading with me" without a line of text for it.
+          ...(showBookButton
+            ? [
+                {
+                  id: 'book',
+                  icon: BookOpen,
+                  label: 'Book',
+                  lead: true,
+                  detail: displayedBookTitle ?? 'None yet',
+                  image: displayedBookCover,
+                  active: displayedBookTitle != null,
+                  onPress:
+                    activeSession || isGenerating || chat.switching
+                      ? undefined
+                      : fromToolbox(setShowBookPicker),
+                  // Long-press to drop it, only before a session exists: once
+                  // a chat has started, its book is fixed context.
+                  onLongPress:
+                    activeSession || !pendingBook || isGenerating || chat.switching
+                      ? undefined
+                      : () => setSession({ pendingBook: null }),
+                } satisfies ToolboxItem,
+              ]
+            : []),
+          {
+            id: 'history',
+            icon: History,
+            label: 'History',
+            detail: chatSessionCount > 0 ? `${chatSessionCount} saved` : 'Nothing yet',
+            // Picking a conversation mid-turn is what used to race the engine.
+            onPress:
+              isGenerating || chat.switching ? undefined : fromToolbox(setShowHistory),
+          },
+        ]
+      : cloudReady
+        ? [
+            {
+              id: 'deck',
+              // What Compass is FOR, so it leads the drawer at full width.
+              // The count belongs here now rather than as a badge on a bare
+              // icon: this row has somewhere to say it in words, and "3 to
+              // log" answers the question a badge only hints at.
+              icon: ListTodo,
+              label: 'Log today',
+              lead: true,
+              detail: dueCount > 0 ? `${dueCount} to log` : 'All done',
+              active: activeGoal != null && dueCount > 0,
+              onPress:
+                activeGoal != null && dueCount > 0 ? fromToolbox(setShowDeck) : undefined,
+            },
+            {
+              id: 'planner',
+              icon: CalendarDays,
+              label: 'Planner',
+              detail: `${trackableCount} ${trackableCount === 1 ? 'activity' : 'activities'}`,
+              onPress: activeGoal != null ? fromToolbox(setShowPlanner) : undefined,
+            },
+            {
+              id: 'insights',
+              icon: TrendingUp,
+              label: 'Insights',
+              detail: `${activeGoalCount} ${activeGoalCount === 1 ? 'goal' : 'goals'}`,
+              // One goal is that goal's Insights; two or more make the same
+              // tool open the overview of the set.
+              onPress:
+                activeGoal != null
+                  ? fromToolbox(activeGoalCount >= 2 ? setShowOverview : setShowInsights)
+                  : undefined,
+            },
+            {
+              id: 'history',
+              icon: History,
+              label: 'History',
+              detail:
+                compassSessionCount > 0 ? `${compassSessionCount} saved` : 'Nothing yet',
+              onPress:
+                compass.submitting || compass.switching
+                  ? undefined
+                  : fromToolbox(setShowCompassHistory),
+            },
+            // Only once something has actually ended. An archive with nothing
+            // in it teaches nobody anything, and the first goal a reader
+            // closes out is exactly when this becomes worth finding.
+            ...(pastGoalCount > 0
+              ? [
+                  {
+                    id: 'past-goals',
+                    icon: Archive,
+                    label: 'Past goals',
+                    detail: `${pastGoalCount} closed`,
+                    onPress: fromToolbox(setShowPastGoals),
+                  } satisfies ToolboxItem,
+                ]
+              : []),
+          ]
+        : // Offline, Compass has no server to reach: every tool here would
+          // open a sheet onto an empty store. The empty state above already
+          // says what to do about it.
+          [],
+  [
+    mode,
+    fromToolbox,
+    // Chat
+    showBookButton,
+    displayedBookCover,
+    displayedBookTitle,
+    activeSession,
+    isGenerating,
+    chat.switching,
+    pendingBook,
+    setSession,
+    chatSessionCount,
+    // Compass
+    cloudReady,
+    activeGoal,
+    dueCount,
+    trackableCount,
+    activeGoalCount,
+    pastGoalCount,
+    compassSessionCount,
+    compass.submitting,
+    compass.switching,
+  ]);
 
   return (
     <View className="flex-1 bg-background">
@@ -456,18 +677,9 @@ export function SamwellPage() {
                   mode={mode}
                   onSelectMode={setMode}
                   lockMode={locked}
-                  goalSwitcher={
-                    compassActiveGoals.length > 0 ? (
-                      <GoalSwitcher
-                        goals={compassActiveGoals}
-                        activeGoalId={compassActiveGoalId}
-                        primaryGoalId={compassPrimaryGoalId}
-                        onSelect={selectGoal}
-                        onNewGoal={() => void compass.newSession()}
-                        disabled={locked}
-                      />
-                    ) : undefined
-                  }
+                  toolboxOpen={toolboxOpen}
+                  onToggleToolbox={() => setToolboxOpen((v) => !v)}
+                  hasTools={toolboxItems.length > 0}
                   inputRef={composerRef}
                   text={text}
                   onChangeText={setText}
@@ -485,48 +697,24 @@ export function SamwellPage() {
                         ? 'What do you want to work on?'
                         : 'Talk to Samwell about it…'
                   }
-                  showBookButton={showBookButton}
-                  pendingBookTitle={displayedBookTitle}
-                  pendingBookCover={displayedBookCover}
-                  onOpenBookPicker={
-                    activeSession || isGenerating || chat.switching
-                      ? undefined
-                      : () => openSheet(setShowBookPicker)
-                  }
-                  onClearBook={
-                    activeSession || !pendingBook || isGenerating || chat.switching
-                      ? undefined
-                      : () => setSession({ pendingBook: null })
-                  }
-                  // Disabled while generating or switching — selecting a
-                  // session while either is happening is what raced the engine.
-                  // Disabled while a turn or a switch is in flight on the
-                  // mode being asked: picking a conversation mid-turn is what
-                  // used to race the engine.
-                  onOpenHistory={
-                    mode === 'compass'
-                      ? compass.submitting || compass.switching
-                        ? undefined
-                        : () => openSheet(setShowCompassHistory)
-                      : isGenerating || chat.switching
-                        ? undefined
-                        : () => openSheet(setShowHistory)
-                  }
-                  /* Offline, Compass has no server to reach, so its three
-                      controls would open sheets onto an empty store and the
-                      field would take a message nothing can answer. */
+                  /* Offline, Compass has no server to reach, so the field
+                      would take a message nothing can answer. Its tools go
+                      away with it — see `toolboxItems`. */
                   unavailable={mode === 'compass' && !cloudReady}
-                  hasGoal={activeGoal != null}
-                  dueCount={compassDue.length}
-                  onOpenDeck={() => openSheet(setShowDeck)}
-                  onOpenPlanner={() => openSheet(setShowPlanner)}
-                  // One goal is that goal's Insights; two or more make the
-                  // same button open the overview of the set.
-                  onOpenInsights={() =>
-                    openSheet(
-                      compassActiveGoals.length >= 2 ? setShowOverview : setShowInsights,
-                    )
-                  }
+                />
+
+                {/* Under the card, sharing its bottom edge. The stack is
+                    anchored to the bottom of the screen, so opening the drawer
+                    lifts the control unit rather than pushing anything off:
+                    the field you were writing in stays where your eye is, and
+                    the tools arrive in the space that opens beneath it. */}
+                {/* `&&` rather than `toolboxOpen` alone: a mode with no tools
+                    hides the handle, and a drawer left open behind a handle
+                    that is gone could never be shut again. Switching into
+                    offline Compass with it out closes it on the way. */}
+                <SamwellToolbox
+                  open={toolboxOpen && toolboxItems.length > 0}
+                  items={toolboxItems}
                 />
               </View>
             </Reveal>
@@ -637,9 +825,9 @@ export function SamwellPage() {
             visible={showInsights}
             onClose={() => setShowInsights(false)}
             goal={activeGoal}
-            consistency={compassConsistency}
-            trackables={compassTrackables}
-            logsByTrackable={compassLogs}
+            consistency={activeGoal ? (compassConsistencyByGoal.get(activeGoal.id) ?? null) : null}
+            onFinishGoal={finishGoal}
+            onAbandonGoal={abandonGoal}
           />
 
           <OverviewSheet
@@ -648,11 +836,17 @@ export function SamwellPage() {
             goals={compassActiveGoals}
             primaryGoalId={compassPrimaryGoalId}
             consistencyByGoal={compassConsistencyByGoal}
-            onSelectGoal={(goalId) => {
-              setShowOverview(false);
-              void selectGoal(goalId);
-            }}
             onMakePrimary={(goalId) => void setPrimaryGoal(goalId)}
+            onFinishGoal={finishGoal}
+            onAbandonGoal={abandonGoal}
+          />
+
+          <PastGoalsSheet
+            visible={showPastGoals}
+            onClose={() => setShowPastGoals(false)}
+            entries={compassPastGoals}
+            writingTakeaway={writingTakeaway}
+            onRetryTakeaway={(goalId) => void retryTakeaway(goalId)}
           />
         </>
       </DeferredBody>

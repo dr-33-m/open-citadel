@@ -10,14 +10,21 @@
 // icons/ (kebab-case) and add a line below. Import from here, never from
 // 'lucide-react-native' directly.
 
+export { default as Archive } from 'lucide-react-native/icons/archive';
+export { default as ArrowBigDownDash } from 'lucide-react-native/icons/arrow-big-down-dash';
+export { default as ArrowBigUpDash } from 'lucide-react-native/icons/arrow-big-up-dash';
 export { default as ArrowLeft } from 'lucide-react-native/icons/arrow-left';
 export { default as ArrowRight } from 'lucide-react-native/icons/arrow-right';
 export { default as AudioLines } from 'lucide-react-native/icons/audio-lines';
+export { default as Award } from 'lucide-react-native/icons/award';
 export { default as BookOpen } from 'lucide-react-native/icons/book-open';
 export { default as Bookmark } from 'lucide-react-native/icons/bookmark';
 export { default as BookmarkCheck } from 'lucide-react-native/icons/bookmark-check';
 export { default as Calendar } from 'lucide-react-native/icons/calendar';
+export { default as CalendarCheck2 } from 'lucide-react-native/icons/calendar-check-2';
+export { default as CalendarClock } from 'lucide-react-native/icons/calendar-clock';
 export { default as CalendarDays } from 'lucide-react-native/icons/calendar-days';
+export { default as CalendarX2 } from 'lucide-react-native/icons/calendar-x-2';
 export { default as ChartNoAxesGantt } from 'lucide-react-native/icons/chart-no-axes-gantt';
 export { default as Check } from 'lucide-react-native/icons/check';
 export { default as ChevronDown } from 'lucide-react-native/icons/chevron-down';
@@ -43,6 +50,7 @@ export { default as Info } from 'lucide-react-native/icons/info';
 export { default as LibraryBig } from 'lucide-react-native/icons/library-big';
 export { default as Lightbulb } from 'lucide-react-native/icons/lightbulb';
 export { default as List } from 'lucide-react-native/icons/list';
+export { default as Lock } from 'lucide-react-native/icons/lock';
 export { default as ListTodo } from 'lucide-react-native/icons/list-todo';
 export { default as MemoryStick } from 'lucide-react-native/icons/memory-stick';
 export { default as MessageCircleHeart } from 'lucide-react-native/icons/message-circle-heart';
@@ -60,6 +68,7 @@ export { default as RotateCcw } from 'lucide-react-native/icons/rotate-ccw';
 export { default as Search } from 'lucide-react-native/icons/search';
 export { default as Send } from 'lucide-react-native/icons/send';
 export { default as Settings } from 'lucide-react-native/icons/settings';
+export { default as Shapes } from 'lucide-react-native/icons/shapes';
 export { default as Share } from 'lucide-react-native/icons/share';
 export { default as SkipBack } from 'lucide-react-native/icons/skip-back';
 export { default as SkipForward } from 'lucide-react-native/icons/skip-forward';
@@ -74,6 +83,7 @@ export { default as StickyNote } from 'lucide-react-native/icons/sticky-note';
 export { default as Sun } from 'lucide-react-native/icons/sun';
 export { default as Target } from 'lucide-react-native/icons/target';
 export { default as Trash2 } from 'lucide-react-native/icons/trash-2';
+export { default as TrendingDown } from 'lucide-react-native/icons/trending-down';
 export { default as TrendingUp } from 'lucide-react-native/icons/trending-up';
 export { default as Undo2 } from 'lucide-react-native/icons/undo-2';
 export { default as User } from 'lucide-react-native/icons/user';

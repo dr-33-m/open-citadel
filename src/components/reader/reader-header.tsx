@@ -1,8 +1,9 @@
-import { ArrowLeft, AudioLines, Bookmark, BookmarkCheck, List } from '@/components/icons';
+import { AudioLines, Bookmark, BookmarkCheck, ChevronLeft, List } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { IconButton } from '@/components/icon-button';
 import { Touchable } from '@/components/ui/touchable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -70,38 +71,61 @@ export function ReaderHeader({
       style={{ paddingTop: insets.top + spacing[2] }}
       onPress={onToggle}
     >
-      <Touchable onPress={onBack} className="h-9 w-9 items-center justify-center">
-        <ArrowLeft size={22} color={asColor(primary)} />
-      </Touchable>
+      <IconButton onPress={onBack} label="Back to the library">
+        <ChevronLeft size={20} color={asColor(foreground)} strokeWidth={2} />
+      </IconButton>
 
-      <ThemedText
-        type="bodySm"
-        color={asColor(mutedForeground)}
-        numberOfLines={1}
-        className="flex-1 text-center"
-      >
-        {title}
-      </ThemedText>
+      {/*
+        The progress sits UNDER the title, not in the row of controls.
+        It is metadata about the book, and the three things to its right are
+        actions; at the same level in the same row a bare "3%" read as a
+        fourth control that had lost its box. Under the title it is attached to
+        the thing it describes, which is the app's own "status line under a
+        centered title" pattern from `ScreenHeader`.
 
-      <View className="flex-row items-center gap-1">
-        <Touchable onPress={onBookmarkToggle} className="h-9 w-9 items-center justify-center">
-          {isBookmarked ? (
-            <BookmarkCheck size={20} color={asColor(primary)} />
-          ) : (
-            <Bookmark size={20} color={asColor(foreground)} />
-          )}
-        </Touchable>
-        <Touchable onPress={onContents} className="h-9 w-9 items-center justify-center">
-          <List size={20} color={asColor(foreground)} />
-        </Touchable>
-        <Touchable onPress={onTTSToggle} className="h-9 w-9 items-center justify-center">
-          <AudioLines size={20} color={isTTSActive ? asColor(primary) : asColor(foreground)} />
-        </Touchable>
+        "READ" earns its place rather than padding the line: a percentage on
+        its own in a reader could be battery, position or download. Adding the
+        one word is what makes it a statement instead of a number.
+      */}
+      <View className="flex-1 items-center">
+        <ThemedText type="bodySm" color={asColor(mutedForeground)} numberOfLines={1}>
+          {title}
+        </ThemedText>
         {progress !== undefined && (
-          <ThemedText type="labelSm" color={asColor(mutedForeground)} style={{ fontVariant: ['tabular-nums'] }}>
-            {Math.round(progress * 100)}%
+          <ThemedText
+            type="labelSm"
+            color={asColor(mutedForeground)}
+            // Tabular figures so the number does not jitter as it ticks up.
+            style={{ fontVariant: ['tabular-nums'], fontSize: 10 }}
+          >
+            {`${Math.round(progress * 100)}% READ`}
           </ThemedText>
         )}
+      </View>
+
+      <View className="flex-row items-center gap-1">
+        {/* Gold only when the page IS bookmarked — a state, not decoration. */}
+        <IconButton
+          onPress={onBookmarkToggle}
+          label={isBookmarked ? 'Remove the bookmark' : 'Bookmark this page'}
+        >
+          {isBookmarked ? (
+            <BookmarkCheck size={20} color={asColor(primary)} strokeWidth={2} />
+          ) : (
+            <Bookmark size={20} color={asColor(foreground)} strokeWidth={2} />
+          )}
+        </IconButton>
+        <IconButton onPress={onContents} label="Contents">
+          <List size={20} color={asColor(foreground)} strokeWidth={2} />
+        </IconButton>
+        {/* Gold only while it is reading aloud. */}
+        <IconButton onPress={onTTSToggle} label={isTTSActive ? 'Stop reading aloud' : 'Read aloud'}>
+          <AudioLines
+            size={20}
+            strokeWidth={2}
+            color={isTTSActive ? asColor(primary) : asColor(foreground)}
+          />
+        </IconButton>
       </View>
     </Touchable>
   );
