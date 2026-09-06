@@ -67,20 +67,32 @@ const config: LogtoNativeConfig = {
   // only Logto can say who it belongs to.
   resources: [SAMWELL_API_RESOURCE],
   /*
-   * Ask for the password every time, rather than taking the browser's word.
+   * BOTH of these, and neither one is optional. Dropping either breaks
+   * something that does not look related to prompts at all.
    *
-   * The SDK's own default is `Prompt.Consent` — its type says otherwise, but
-   * the constructor reads `{ prompt: [Prompt.Consent], ...config }` and
-   * Logto's sample app overrides it for the same reason. Consent alone reuses
-   * a live Logto session, and on Android the sign-in runs in a Chrome Custom
-   * Tab that shares Chrome's cookies, so the session outlives a sign-out that
-   * only clears this app's tokens.
+   * `Login` forces re-authentication. Without it the SDK's default is
+   * `Consent` alone, which reuses a live Logto session — and on Android the
+   * flow runs in a Chrome Custom Tab sharing Chrome's cookies, so that
+   * session outlives a sign-out that only clears this app's tokens. Sign out,
+   * sign in, and you are back in the same account having been asked nothing.
    *
-   * The result without this: SIGN OUT, then SIGN IN, and you are instantly
-   * back in the same account having been asked nothing — which reads as sign
-   * out being broken, and leaves no way to sign in as anybody else.
+   * `Consent` is what keeps `offline_access`, and therefore the refresh
+   * token, and therefore Samwell Cloud. OpenID Connect Core §11 says the
+   * server must ignore `offline_access` unless `prompt` contains `consent`,
+   * and `node-oidc-provider` enforces it by silently splicing the scope out
+   * (`lib/actions/authorization/scopes.js`):
+   *
+   *     (PARAM_LIST.has('prompt') && !prompts.has('consent'))
+   *
+   * Note the `PARAM_LIST.has('prompt')` half: sending NO prompt keeps
+   * `offline_access`, and sending one without `consent` loses it. So adding
+   * `Login` on its own is worse than adding nothing. That is exactly what
+   * happened here — sign-in succeeded, the ID token arrived, the account card
+   * showed the right email, and every cloud call then failed with "Not
+   * authenticated" because `getAccessToken` had no refresh token to spend.
+   * Nothing in that chain mentions prompts.
    */
-  prompt: Prompt.Login,
+  prompt: [Prompt.Login, Prompt.Consent],
 };
 
 let client: LogtoClient | null = null;
