@@ -1,5 +1,5 @@
 import { Check } from "@/components/icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Image, View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
@@ -120,13 +120,29 @@ export function AddBooksSheet({
     '--color-muted-foreground',
     '--color-primary-foreground',
   ]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() =>
+    visible ? new Set(existingBookIds) : new Set(),
+  );
 
-  useEffect(() => {
-    if (visible) {
-      setSelectedIds(new Set(existingBookIds));
-    }
-  }, [visible, existingBookIds]);
+  /*
+   * Seeded on the edge where the sheet opens, and only there.
+   *
+   * This was an effect keyed on `visible` AND `existingBookIds`, and the
+   * caller builds that array inline — `books.map((b) => b.id)` — so it was a
+   * new reference on every render of the screen behind the sheet. Any store
+   * write while the sheet was open re-ran the effect and threw the reader's
+   * ticks away mid-edit, back to the books already in the collection. A sync
+   * finishing was enough, and one now runs at every launch.
+   *
+   * Opening is the only moment the existing membership is the right answer,
+   * so it is read once, on that edge. setState during render for a prop
+   * change is React's sanctioned reset and does not cascade.
+   */
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) setSelectedIds(new Set(existingBookIds));
+  }
 
   const toggle = useCallback((bookId: string) => {
     setSelectedIds((prev) => {

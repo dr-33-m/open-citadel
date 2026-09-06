@@ -184,23 +184,37 @@ export function LibraryPage() {
      is the whole point of memoizing it. */
   const allBooksPreview = React.useMemo(() => allBooks.slice(0, 20), [allBooks]);
 
-  // Auto-scroll back when a currently-reading book is removed. Also re-scrubs
-  // the scroll target when the window width changes (rotation/foldables), so
-  // the offset stays synced to the same width the pages are laid out with.
+  /*
+   * The page actually being shown, clamped where it is READ.
+   *
+   * `currentReadingIndex` is ground truth about the pager: the last page it
+   * reported settling on. The list under it shrinks on its own, when the book
+   * you were on is archived or deleted, and that does not make the pager's
+   * report wrong — it makes it out of range. Deriving the valid index keeps
+   * those two facts apart, and means there is never a frame drawn with an
+   * index pointing past the end of the list.
+   *
+   * It used to be an effect that noticed afterwards and set the index back,
+   * which is a render too late and the thing React now flags outright. The
+   * stored index is left where it is; the next swipe overwrites it.
+   */
+  const readingIndex = Math.min(
+    currentReadingIndex,
+    Math.max(0, currentlyReading.length - 1),
+  );
+
+  // The pager still has to be TOLD. It holds its scroll offset natively and
+  // nothing about the list shrinking moves it, so the one thing the old effect
+  // did that deriving cannot replace stays here. Also re-scrubs when the
+  // window width changes (rotation, foldables), so the offset stays synced to
+  // the width the pages are laid out with.
   useEffect(() => {
-    if (currentlyReading.length === 0) {
-      setCurrentReadingIndex(0);
-      return;
-    }
-    if (currentReadingIndex >= currentlyReading.length) {
-      const next = currentlyReading.length - 1;
-      setCurrentReadingIndex(next);
-      readingScrollRef.current?.scrollTo({
-        x: next * windowWidth,
-        animated: true,
-      });
-    }
-  }, [currentlyReading.length, windowWidth]);
+    if (currentReadingIndex <= readingIndex) return;
+    readingScrollRef.current?.scrollTo({
+      x: readingIndex * windowWidth,
+      animated: true,
+    });
+  }, [currentReadingIndex, readingIndex, windowWidth]);
 
   useEffect(() => {
     const boot = async () => {
@@ -430,7 +444,7 @@ export function LibraryPage() {
                         key={i}
                         className={cn(
                           "h-1.5 w-1.5 rounded-full bg-surface-tertiary",
-                          i === currentReadingIndex && "w-4 bg-primary",
+                          i === readingIndex && "w-4 bg-primary",
                         )}
                       />
                     ))}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { View, type TextInput } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
@@ -40,11 +40,23 @@ export function EditTitleSheet({
   const fieldRef = useRef<TextInput>(null);
   const [openEpoch, setOpenEpoch] = useState(0);
 
-  useEffect(() => {
-    if (visible && book) {
-      setTitle(book.title);
-    }
-  }, [visible, book]);
+  /*
+   * Seeded on the edge where the sheet opens on a book, not in an effect.
+   *
+   * setState during render for a prop change is React's sanctioned reset and
+   * does not cascade — the same shape `SamwellControlCenter` uses for its Stop
+   * button. An effect gets there a render late, so the first frame of the
+   * sheet shows the mirror left over from the last book it was opened on.
+   *
+   * Keyed on the book's id rather than on `visible` alone, because opening it
+   * on a different book while it is already up is the same event.
+   */
+  const openedOn = visible && book ? book.id : null;
+  const [seededFor, setSeededFor] = useState(openedOn);
+  if (openedOn !== seededFor) {
+    setSeededFor(openedOn);
+    if (book && openedOn) setTitle(book.title);
+  }
 
   const canSave = isFilled(TitleText, title);
 
