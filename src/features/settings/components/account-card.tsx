@@ -103,7 +103,7 @@ export function AccountCard() {
                 every other sentence about him. */}
             <SamwellText type="bodySm" color={asColor(mutedForeground)} numberOfLines={2}>
               {signedIn
-                ? 'Grand Maester Samwell works with this account.'
+                ? 'Grand Maester Samwell is all yours.'
                 : 'Sign in or create account to use Grand Maester Samwell.'}
             </SamwellText>
           </View>
