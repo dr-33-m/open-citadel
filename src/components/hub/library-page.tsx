@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
-import { PageFade, RowFade } from "@/components/scroll-fades";
+import { RowFade } from "@/components/scroll-fades";
 import { ArchivedCards } from "@/components/library/archived-card";
 import { BookActionSheet } from "@/components/library/book-action-sheet";
 import { BookQueue } from "@/components/library/book-queue";
@@ -24,13 +24,12 @@ import { CurrentlyReadingCard } from "@/components/library/currently-reading-car
 import { DirectoryPrompt } from "@/components/library/directory-prompt";
 import { Favorites } from "@/components/library/favorites";
 import { NewCollectionPrompt } from "@/components/library/new-collection-prompt";
-import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Fab, fabClearance } from "@/components/ui/fab";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SectionHeader } from "@/components/ui/section-header";
 import { LibrarySkeleton } from "@/components/skeletons/library-skeleton";
-import { Spinner } from "@/components/ui/spinner";
+import { PullToSync } from "@/components/library/pull-to-sync";
 import { MaxContentWidth, iconSize, layout } from "@/constants/theme";
 import type { books as booksTable } from "@/db/schema";
 import { cn } from "@/lib/cn";
@@ -103,7 +102,6 @@ export function LibraryPage() {
   // The pager's page width, its scrollTo math and its index math all derive
   // from this one reactive value — a stale snapshot desyncs scrollTo.
   const { width: windowWidth } = useWindowDimensions();
-  const mutedForeground = useCSSVariable("--color-muted-foreground");
 
   const {
     booksDirectoryUri,
@@ -114,6 +112,7 @@ export function LibraryPage() {
     initLibrary,
     importBooks,
     syncBooks,
+    scanOnLaunch,
     hydrateSyncState,
     updateBookStatus,
     toggleFavorite,
@@ -176,11 +175,27 @@ export function LibraryPage() {
         await loadBooks();
         await hydrateSyncState();
         // Enough state has loaded to decide empty vs configured — hand off
-        // before the iOS cold-start scan, which flips sync.status to running
-        // and shows its own indicator.
+        // before the launch scan, which flips sync.status to running and shows
+        // its own indicator.
         setBooted(true);
-        // iOS: cold-start scan so anything dropped in via the Files app is imported.
-        if (process.env.EXPO_OS === "ios") await syncBooks();
+        /*
+         * The launch scan, on both platforms and announced by a toast.
+         *
+         * Here rather than in the root layout because this is the hub's
+         * initial page and mounts with the app, so "the Library booted" and
+         * "the app opened" are the same moment — and because the ordering that
+         * matters is the one above it: `hydrateSyncState` has to have picked
+         * up a job the last app kill interrupted before the scan can decide it
+         * has nothing to add.
+         *
+         * It used to be iOS-only, on the reasoning that Android books arrive
+         * through a folder the user picked rather than through the Files app.
+         * That is true of how they get INTO the folder and says nothing about
+         * when the app should look at it, which is the whole complaint: a book
+         * dropped in from a browser download sat there until the reader went
+         * to All Books and pressed a button.
+         */
+        await scanOnLaunch();
       } catch (err) {
         console.error("Library boot failed:", err);
         // Never strand the user on the spinner — the empty state's own
@@ -210,6 +225,16 @@ export function LibraryPage() {
       loadCollections();
     }, [loadBooks, loadCollections]),
   );
+
+  /*
+   * A pull says "look again", and it is answered whether or not there is
+   * anything to find: the same notice the launch scan raises, so a pull that
+   * turns up nothing says "No new books" rather than opening a gap, closing it
+   * and leaving the reader to guess.
+   */
+  const handlePullSync = useCallback(() => {
+    void syncBooks({ notify: true });
+  }, [syncBooks]);
 
   const handleSelectDirectory = async () => {
     const uri = await pickBooksDirectory();
@@ -276,42 +301,21 @@ export function LibraryPage() {
       <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
         <LibraryHeader onOpenTimeline={openTimeline} onOpenSamwell={openSamwell} />
 
-        {sync.status === "running" && (
-          <View className="flex-row items-center justify-center gap-3 py-2">
-            <Spinner size="sm" />
-            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-              {sync.phase === "scanning"
-                ? sync.total > 0
-                  ? `SCANNING ${sync.done}/${sync.total}`
-                  : "SCANNING..."
-                : sync.phase === "importing"
-                  ? sync.total > 0
-                    ? `IMPORTING ${sync.done}/${sync.total}`
-                    : "IMPORTING..."
-                  : sync.phase === "preparing"
-                    ? sync.total > 0
-                      ? `PREPARING ${sync.done}/${sync.total}`
-                      : "PREPARING..."
-                    : sync.phase === "finalizing"
-                      ? "FINALIZING..."
-                      : "SYNCING BOOKS..."}
-            </ThemedText>
-          </View>
-        )}
-
-        {/* Replaces the header's bottom rule: content passes under the
-            bar and fades, rather than being cut off by a hard line. */}
-        <PageFade>
-          <ScrollView
-            className="flex-1"
-            contentContainerClassName="pt-6"
-            contentContainerStyle={{
-              paddingBottom:
-                layout.scrollBottom +
-                (isIOS ? fabClearance(insets.bottom) : insets.bottom),
-            }}
-            showsVerticalScrollIndicator={false}
-          >
+        {/* Pull down at the top to start a scan, and the gap it opens is
+            where every scan reports itself — the one at launch and the button
+            in All Books included. It carries the page's scroll fade, which
+            replaces the header's bottom rule: content passes under the bar and
+            fades rather than being cut off by a hard line. */}
+        <PullToSync
+          sync={sync}
+          onSync={handlePullSync}
+          contentContainerClassName="pt-6"
+          contentContainerStyle={{
+            paddingBottom:
+              layout.scrollBottom +
+              (isIOS ? fabClearance(insets.bottom) : insets.bottom),
+          }}
+        >
             {/* Currently Reading */}
             {currentlyReading.length > 0 && (
               <View className="gap-4 mb-8">
@@ -468,8 +472,7 @@ export function LibraryPage() {
                 </View>
               )}
             </View>
-          </ScrollView>
-        </PageFade>
+        </PullToSync>
 
         {/* Adding books moved off the header when both of its sides became
             navigation. It is this screen's one creative action, so it gets the

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 
+import { showToast } from "@/components/toast/toast-provider";
 import { db } from "@/db/client";
 import { appSettings, books } from "@/db/schema";
 import { deleteBookWithFile } from "@/services/book-delete";
@@ -11,6 +12,7 @@ import {
   ensureOwnedDir,
   pickAndImportEpubs,
 } from "@/services/book-import";
+import type { ToastOptions } from "@/components/toast/types";
 import {
   getActiveSyncJob,
   resumeRunningSyncIfAny,
@@ -79,6 +81,47 @@ function jobToSyncState(job: SyncJobView): SyncState {
   };
 }
 
+/**
+ * The name the scan notice runs under.
+ *
+ * One key for every scan in the app, so a launch scan and a pull that overlap
+ * write to one toast instead of arguing in a pile of two.
+ */
+const SCAN_TOAST = "library-scan";
+
+/**
+ * What the scan found, in one line.
+ *
+ * Kept here beside `jobToSyncState` rather than in the pipeline, because it is
+ * a copy decision and the pipeline deals in counters. The counters it reads
+ * are the two the pipeline had to be taught: `importDone` counts every file it
+ * walked past and `failedCount` only counts what broke on this run, so neither
+ * on its own answers "what happened".
+ *
+ * Books that could not be read are reported as SKIPPED and not as an error.
+ * There is nothing to do about them in the app — the file does not open — and
+ * the answer is to take it out of the folder, so the notice says what happened
+ * and gets out of the way rather than offering a retry nobody wants.
+ */
+function scanResultToast(job: SyncJobView): ToastOptions {
+  if (job.status === "failed") {
+    return { message: "Could not check your folder" };
+  }
+  // A file that gave up this run is remembered from now on, so to the reader
+  // it is the same thing as one that was passed over: it did not get in.
+  const missed = job.skippedCount + job.failedCount;
+  const missedNote = missed > 0 ? `, skipped ${missed} that will not open` : "";
+
+  if (job.addedCount === 0) {
+    return { message: `No new books${missedNote}` };
+  }
+  const noun = job.addedCount === 1 ? "book" : "books";
+  return {
+    message: `Added ${job.addedCount} ${noun}${missedNote}`,
+    tone: "success",
+  };
+}
+
 // ── Store ────────────────────────────────────────────────────────────────────
 
 interface BooksState {
@@ -96,8 +139,30 @@ interface BooksState {
   importBooks: () => Promise<number>;
   /** Hydrate sync state from DB on app launch (restores progress banner) */
   hydrateSyncState: () => Promise<void>;
-  /** Start a new sync or attach to an existing running one */
-  syncBooks: () => Promise<void>;
+  /**
+   * Start a new sync or attach to an existing running one.
+   *
+   * `notify` raises a toast with what the scan FOUND, once it is over. Only
+   * the result: while it runs, the Library's own indicator is already saying
+   * "SCANNING 4/10" a few points below where the toast would land, and two
+   * things narrating one scan is one thing too many.
+   *
+   * For the two scans nobody asked for out loud — the one at launch, and the
+   * one a pull starts — where without it a scan that finds nothing is
+   * indistinguishable from a scan that never ran. The sync that follows
+   * picking a folder says nothing, because the books arriving IS the answer.
+   */
+  syncBooks: (options?: { notify?: boolean }) => Promise<void>;
+  /**
+   * The one look at the folder taken when the app opens.
+   *
+   * Loads the scan root itself rather than trusting a caller to have done it,
+   * so "the app opened" is the only thing it needs to be true. Does nothing
+   * when there is no folder yet (the empty state is already saying so) or when
+   * a job interrupted by the last app kill is still finishing, which is
+   * already narrating itself.
+   */
+  scanOnLaunch: () => Promise<void>;
   updateBookStatus: (
     bookId: string,
     status: BookStatus | null,
@@ -229,7 +294,14 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     }).catch((e) => console.warn("[books-store] resume error", e));
   },
 
-  syncBooks: async () => {
+  scanOnLaunch: async () => {
+    if (!get().booksDirectoryUri) await get().loadDirectoryUri();
+    if (!get().booksDirectoryUri) return;
+    if (get().sync.status === "running") return;
+    await get().syncBooks({ notify: true });
+  },
+
+  syncBooks: async (options) => {
     const { booksDirectoryUri } = get();
     if (!booksDirectoryUri) return;
 
@@ -237,6 +309,8 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     if (get().sync.status === "running") return;
 
     _preparedSinceLastLoad = 0;
+
+    const notify = options?.notify ?? false;
 
     await startOrResumeSync(booksDirectoryUri, (job) => {
       set({ sync: jobToSyncState(job) });
@@ -261,6 +335,7 @@ export const useBooksStore = create<BooksState>((set, get) => ({
       // Final refresh
       if (job.status === "completed" || job.status === "failed") {
         get().loadBooks();
+        if (notify) showToast({ key: SCAN_TOAST, ...scanResultToast(job) });
         if (job.status === "completed") {
           setTimeout(() => set({ sync: IDLE_SYNC }), 2000);
         }

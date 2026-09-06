@@ -151,6 +151,20 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /*
+   * Written over in place: the content changed under a reader who may have
+   * only just started on the old line, so the three seconds start again.
+   *
+   * Keyed on the revision rather than the message, so a replacement that only
+   * changes the tone still resets the clock, and a re-render that changes
+   * nothing does not.
+   */
+  const firstRevision = React.useRef(toast.revision);
+  React.useEffect(() => {
+    if (toast.revision === firstRevision.current) return;
+    restartTimer();
+  }, [toast.revision, restartTimer]);
+
   React.useEffect(() => {
     if (exiting.current) return;
     const y = index * STACK_PEEK;

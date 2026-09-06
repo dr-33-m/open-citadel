@@ -20,6 +20,7 @@ import m0016 from "./0016_queue_order.js";
 import m0017 from "./0017_milestone_last_reported.js";
 import m0018 from "./0018_trackables.js";
 import m0019 from "./0019_goal_primary.js";
+import m0020 from "./0020_sync_skips.js";
 import journal from "./meta/_journal.json";
 
 export default {
@@ -45,5 +46,6 @@ export default {
     m0017,
     m0018,
     m0019,
+    m0020,
   },
 };

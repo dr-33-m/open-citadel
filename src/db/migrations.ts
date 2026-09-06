@@ -66,6 +66,31 @@ async function ensureSyncPipelineSchema(): Promise<void> {
     \`updated_at\` text NOT NULL
   )`);
 
+  // ── Counters added after sync_jobs shipped ────────────────────────────────
+  const jobsInfo: { name: string }[] = db.all(
+    sql`PRAGMA table_info(sync_jobs)`,
+  ) as { name: string }[];
+  const jobsCols = new Set(jobsInfo.map((r) => r.name));
+
+  if (!jobsCols.has("added_count")) {
+    db.run(
+      sql`ALTER TABLE \`sync_jobs\` ADD \`added_count\` integer NOT NULL DEFAULT 0`,
+    );
+  }
+  if (!jobsCols.has("skipped_count")) {
+    db.run(
+      sql`ALTER TABLE \`sync_jobs\` ADD \`skipped_count\` integer NOT NULL DEFAULT 0`,
+    );
+  }
+
+  // ── Files that will not import, remembered across jobs ────────────────────
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`sync_skips\` (
+    \`source_uri\` text PRIMARY KEY NOT NULL,
+    \`fingerprint\` text NOT NULL,
+    \`error\` text,
+    \`failed_at\` text NOT NULL
+  )`);
+
   // ── Indexes (IF NOT EXISTS is safe) ───────────────────────────────────────
   db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS \`sync_items_job_uri_idx\`
     ON \`sync_items\` (\`job_id\`, \`source_uri\`)`);

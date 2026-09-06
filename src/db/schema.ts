@@ -221,6 +221,12 @@ export const syncJobs = sqliteTable("sync_jobs", {
   prepareDone: integer("prepare_done").notNull().default(0),
   prepareTotal: integer("prepare_total").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
+  /** New books this run actually put in the library. `importTotal` counts
+   * every file in the folder, so it cannot answer "what did this sync add". */
+  addedCount: integer("added_count").notNull().default(0),
+  /** Files passed over because they already failed on this exact version.
+   * See `sync_skips` — this is the number the scan notice reports. */
+  skippedCount: integer("skipped_count").notNull().default(0),
   startedAt: text("started_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   finishedAt: text("finished_at"),
@@ -245,6 +251,32 @@ export const syncItems = sqliteTable("sync_items", {
   error: text("error"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+});
+
+/**
+ * Files that will not import, remembered so they are never tried again.
+ *
+ * A book whose EPUB cannot be read fails three times with backoff before the
+ * pipeline gives up, which is about eighty-five seconds of a sync spent on a
+ * file that was never going to open. Without a record of that, the next scan
+ * starts the same eighty-five seconds over, and every scan after it.
+ *
+ * Keyed by the file, qualified by its fingerprint: the claim is not "this
+ * book is broken" but "this exact version of this file did not open". Replace
+ * the file in the folder and the fingerprint moves, so the skip no longer
+ * matches and it is tried again on its own. Delete it from the folder and the
+ * row goes with it on the next scan.
+ *
+ * Separate from `sync_items`, which are per-job and go away with their job —
+ * this has to outlive every job to be worth anything.
+ */
+export const syncSkips = sqliteTable("sync_skips", {
+  /** The file. One row per source, replaced when a new version fails too. */
+  sourceUri: text("source_uri").primaryKey(),
+  /** The version that failed. A different one is a different question. */
+  fingerprint: text("fingerprint").notNull(),
+  error: text("error"),
+  failedAt: text("failed_at").notNull(),
 });
 
 // ── Compass: Goal → Trackable → Schedule → Measurement → Log ────────────────

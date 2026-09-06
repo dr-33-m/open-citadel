@@ -45,8 +45,30 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<ToastEntry[]>([]);
   const nextId = React.useRef(1);
 
+  /*
+   * A keyed toast writes over the one already on screen under that key rather
+   * than joining the pile behind it. See `key` in `types.ts` for why.
+   *
+   * One that is already fading is past arguing with: it keeps its id out of
+   * the way and the new notice arrives as its own toast, so a reply that comes
+   * back after the opening line has timed out is still seen.
+   */
   const enqueue = React.useCallback((options: ToastOptions) => {
-    setToasts((current) => [...current, { id: nextId.current++, ...options }]);
+    setToasts((current) => {
+      const live =
+        options.key != null
+          ? current.findIndex((t) => t.key === options.key && !t.exiting)
+          : -1;
+      if (live === -1) {
+        return [...current, { id: nextId.current++, revision: 0, ...options }];
+      }
+      const previous = current[live];
+      const next = [...current];
+      // The id is kept, which is what keeps it in place in the pile instead of
+      // dropping to the front as a new arrival.
+      next[live] = { ...options, id: previous.id, revision: previous.revision + 1 };
+      return next;
+    });
   }, []);
 
   // The one live provider owns the imperative bridge for as long as it is

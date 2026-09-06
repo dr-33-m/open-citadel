@@ -23,7 +23,7 @@ import {
 } from "expo-file-system/legacy";
 
 import { db } from "@/db/client";
-import { books, syncItems, syncJobs } from "@/db/schema";
+import { books, syncItems, syncJobs, syncSkips } from "@/db/schema";
 import { deleteBookData } from "./book-delete";
 import { extractEpubMetadata } from "./book-sync";
 
@@ -44,6 +44,10 @@ export type SyncJobView = {
   prepareDone: number;
   prepareTotal: number;
   failedCount: number;
+  /** New books this run put in the library. */
+  addedCount: number;
+  /** Files passed over because this exact version already failed. */
+  skippedCount: number;
   startedAt: string;
   updatedAt: string;
   finishedAt: string | null;
@@ -321,13 +325,73 @@ async function phaseScanning(
     existingItems.map((i) => [i.sourceUri, i]),
   );
 
+  /*
+   * The files that already refused to open, so this scan does not spend
+   * eighty-five seconds each re-proving it. See `sync_skips` in the schema.
+   *
+   * Also self-heals a device that failed books before this table existed: a
+   * `meta_failed` row is the same claim written in the old place, so it is
+   * copied across here and then treated like any other skip.
+   */
+  const skipRows = await db.select().from(syncSkips);
+  const skipByUri = new Map(skipRows.map((r) => [r.sourceUri, r]));
+  for (const book of existingBooks) {
+    if (book.syncState !== "meta_failed" || !book.sourceUri) continue;
+    if (skipByUri.has(book.sourceUri)) continue;
+    const row = {
+      sourceUri: book.sourceUri,
+      fingerprint: book.metaFingerprint ?? "",
+      error: book.metaError ?? null,
+      failedAt: now(),
+    };
+    await db.insert(syncSkips).values(row).onConflictDoNothing();
+    skipByUri.set(book.sourceUri, row);
+  }
+
+  // A file that left the folder takes its skip with it: deleting the book is
+  // how the reader retracts one, and a stale row would mute a file that came
+  // back under the same name.
+  for (const uri of skipByUri.keys()) {
+    if (currentUriSet.has(uri)) continue;
+    await db.delete(syncSkips).where(eq(syncSkips.sourceUri, uri));
+    skipByUri.delete(uri);
+  }
+
   let scanDone = 0;
+  let skippedCount = 0;
   const ts = now();
+  /** What the rest of the pipeline is allowed to touch: the skips are gone. */
+  const importableUris: string[] = [];
 
   for (const uri of bookUris) {
     const fingerprint = await getFileFingerprint(uri);
     const existing = existingByUri.get(uri);
     const existingItem = existingItemsByUri.get(uri);
+    const skip = skipByUri.get(uri);
+
+    // Qualified by fingerprint, so replacing the file in the folder is all it
+    // takes to have another go — the skip is about a version, not a name.
+    if (skip && skip.fingerprint === fingerprint) {
+      skippedCount++;
+      /*
+       * Passed over, and that is all. The row it may already have is left
+       * exactly where it is.
+       *
+       * Deleting it was tempting — a book that will not open is not a book —
+       * and it is the wrong call: a file that fails a metadata read today may
+       * be one the reader has been in for weeks, and reading progress,
+       * highlights and notes are not the sync pipeline's to throw away over
+       * it. Removing it is the reader's move, and doing it from the app takes
+       * the file with it, which is what actually stops it coming back.
+       */
+      scanDone++;
+      await updateJob(jobId, { scanDone, skippedCount });
+      const skippedJob = await getJob(jobId);
+      if (skippedJob) emitProgress(skippedJob);
+      continue;
+    }
+
+    importableUris.push(uri);
 
     // Determine if this file needs metadata enrichment
     const needsMeta =
@@ -367,19 +431,23 @@ async function phaseScanning(
 
   await updateJob(jobId, {
     scanDone: bookUris.length,
-    importTotal: bookUris.length,
+    skippedCount,
+    importTotal: importableUris.length,
     prepareTotal: pendingItems.length,
   });
 
-  // Store the full URI list for importing phase in app_settings (as JSON)
+  // Store the URI list for importing phase in app_settings (as JSON)
   // We store it as a setting keyed by jobId so importing phase can read it
   const { appSettings } = await import("@/db/schema");
   await db
     .insert(appSettings)
-    .values({ key: `sync_uris_${jobId}`, value: JSON.stringify(bookUris) })
+    .values({
+      key: `sync_uris_${jobId}`,
+      value: JSON.stringify(importableUris),
+    })
     .onConflictDoUpdate({
       target: appSettings.key,
-      set: { value: JSON.stringify(bookUris) },
+      set: { value: JSON.stringify(importableUris) },
     });
 
   const updatedJob = await getJob(jobId);
@@ -410,6 +478,10 @@ async function phaseImporting(jobId: string): Promise<void> {
 
   const ts = now();
   let importDone = job.importDone;
+  /* What this run actually ADDED. `importDone` counts every file it walked
+   * past, most of which were already in the library, so it cannot answer the
+   * one question the scan notice asks. */
+  let addedCount = job.addedCount;
 
   // Process in chunks to avoid blocking the JS thread
   for (
@@ -451,9 +523,10 @@ async function phaseImporting(jobId: string): Promise<void> {
         .where(and(eq(syncItems.jobId, jobId), eq(syncItems.sourceUri, uri)));
 
       importDone++;
+      addedCount++;
     }
 
-    await updateJob(jobId, { importDone });
+    await updateJob(jobId, { importDone, addedCount });
     const updatedJob = await getJob(jobId);
     if (updatedJob) emitProgress(updatedJob);
 
@@ -464,7 +537,7 @@ async function phaseImporting(jobId: string): Promise<void> {
   // Clean up the temporary URI list
   await db.delete(appSettings).where(eq(appSettings.key, `sync_uris_${jobId}`));
 
-  await updateJob(jobId, { importDone: bookUris.length });
+  await updateJob(jobId, { importDone: bookUris.length, addedCount });
   const updatedJob = await getJob(jobId);
   if (updatedJob) emitProgress(updatedJob, true);
 }
@@ -542,6 +615,75 @@ async function phasePreparing(jobId: string): Promise<void> {
 
         if (bookId) {
           const meta = await extractEpubMetadata(base64, bookId);
+
+          /*
+           * Read the whole file and got NOTHING out of it: no title, no
+           * author, no cover. That is a file that will not open, and it is the
+           * shape most of them take — `extractEpubMetadata` catches its own
+           * parse errors and answers with three nulls, so a corrupt EPUB never
+           * throws and never reaches the retry limit below.
+           *
+           * Which made it the expensive one. Marked `ready`, it still had no
+           * cover and an author of "Unknown", and those are two of the things
+           * scanning tests to decide a book needs enriching — so every scan
+           * re-queued it, read the entire file into base64 again, got the same
+           * three nulls, and marked it ready again. Forever, on every scan,
+           * for a book that was never going to arrive.
+           *
+           * There is nothing to retry: the bytes do not change between
+           * attempts. So it is recorded as a skip on the spot and no later
+           * scan looks at it again.
+           *
+           * The row is left where it is. The reader can see a book did not
+           * come in and delete it, which takes the file with it — and deleting
+           * a row here could take reading progress and highlights with it
+           * instead, over a metadata read.
+           */
+          if (!meta.title && !meta.author && !meta.coverPath) {
+            const message = "No metadata could be read from this file";
+            const ts3 = now();
+            await db
+              .insert(syncSkips)
+              .values({
+                sourceUri: item.sourceUri,
+                fingerprint: item.fingerprint,
+                error: message,
+                failedAt: ts3,
+              })
+              .onConflictDoUpdate({
+                target: syncSkips.sourceUri,
+                set: {
+                  fingerprint: item.fingerprint,
+                  error: message,
+                  failedAt: ts3,
+                },
+              });
+            await db
+              .update(books)
+              .set({
+                syncState: "meta_failed",
+                metaFingerprint: item.fingerprint,
+                metaError: message,
+              })
+              .where(eq(books.id, bookId));
+            await db
+              .update(syncItems)
+              .set({ status: "failed", error: message, updatedAt: ts3 })
+              .where(eq(syncItems.id, item.id));
+
+            const nothingJob = await getJob(jobId);
+            if (nothingJob) {
+              await updateJob(jobId, {
+                failedCount: nothingJob.failedCount + 1,
+                prepareDone: nothingJob.prepareDone + 1,
+              });
+              const refreshed = await getJob(jobId);
+              if (refreshed) emitProgress(refreshed);
+            }
+            await new Promise((r) => setTimeout(r, 0));
+            continue;
+          }
+
           const updates: Record<string, string | null> = {
             syncState: "ready",
             metaFingerprint: item.fingerprint,
@@ -581,22 +723,52 @@ async function phasePreparing(jobId: string): Promise<void> {
 
         if (attempts >= MAX_ATTEMPTS) {
           // Permanently failed
+          const message = String(e?.message ?? e);
           await db
             .update(syncItems)
             .set({
               status: "failed",
               attempts,
-              error: String(e?.message ?? e),
+              error: message,
               updatedAt: ts2,
             })
             .where(eq(syncItems.id, item.id));
+
+          /*
+           * Remember it, so no future scan pays for this file again.
+           *
+           * Written against the fingerprint that failed rather than the one
+           * on the book row: those agree for a file this pipeline imported,
+           * but not for one that was already in the library and only started
+           * failing later, and the honest claim is about the version that was
+           * actually read here.
+           *
+           * `onConflictDoUpdate` because a file that failed, was replaced,
+           * and failed again is one file with a newer verdict, not two.
+           */
+          await db
+            .insert(syncSkips)
+            .values({
+              sourceUri: item.sourceUri,
+              fingerprint: item.fingerprint,
+              error: message,
+              failedAt: ts2,
+            })
+            .onConflictDoUpdate({
+              target: syncSkips.sourceUri,
+              set: {
+                fingerprint: item.fingerprint,
+                error: message,
+                failedAt: ts2,
+              },
+            });
 
           if (item.bookId) {
             await db
               .update(books)
               .set({
                 syncState: "meta_failed",
-                metaError: String(e?.message ?? e),
+                metaError: message,
               })
               .where(eq(books.id, item.bookId));
           }
