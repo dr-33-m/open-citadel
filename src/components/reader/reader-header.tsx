@@ -87,7 +87,11 @@ export function ReaderHeader({
         its own in a reader could be battery, position or download. Adding the
         one word is what makes it a statement instead of a number.
       */}
-      <View className="flex-1 items-center">
+      {/* Start-aligned, matching the section and collection headers: title on
+          one line, its metadata under it, both against the leading edge. A
+          centred block put the title and the percentage on two different
+          optical axes, since the title truncates and the percentage does not. */}
+      <View className="flex-1 items-start">
         <ThemedText type="bodySm" color={asColor(mutedForeground)} numberOfLines={1}>
           {title}
         </ThemedText>
