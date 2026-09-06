@@ -557,9 +557,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               // Thinking pauses while a tool runs. Clearing the flag on the
               // way OUT too turned the gap between a tool finishing and the
               // model thinking again into a false "Processing…" blink —
-              // resuming is the reasoning stream's own job. A tool taking the
-              // floor also clears any pre-call narration from the bubble.
-              ...(status !== null ? { isThinking: false, streamingContent: '' } : {}),
+              // resuming is the reasoning stream's own job.
+              //
+              // The narration is NOT cleared. The stream reports the assistant
+              // message's whole accumulated text rather than a delta, so
+              // wiping it here only meant the next flush replayed it from the
+              // top with the continuation appended. See the same note in the
+              // Compass store, where it was loud enough to be reported.
+              ...(status !== null ? { isThinking: false } : {}),
             }));
           },
         });

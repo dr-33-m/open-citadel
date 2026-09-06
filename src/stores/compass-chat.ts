@@ -308,9 +308,22 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
           set({
             toolStatus: status,
             toolName: name,
-            // A tool taking the floor clears any pre-call narration so the
-            // tool row is the only thing on screen.
-            ...(status !== null ? { streamingReply: '' } : {}),
+            /*
+             * The narration STAYS. Blanking it here is what made a turn look
+             * like it restreamed from scratch.
+             *
+             * `activeAssistantText` reports the assistant message's whole
+             * accumulated text, not a delta, and the model keeps writing into
+             * the same message after a tool returns. So wiping the bubble on
+             * the call did not remove that text from the stream — the very
+             * next flush delivered it again, with the continuation appended,
+             * and the reader watched a paragraph they had already read type
+             * itself out a second time.
+             *
+             * Leaving it alone costs nothing: text is suppressed while a tool
+             * call is pending, so the bubble simply holds what he had said and
+             * grows when he resumes.
+             */
           }),
       });
 
