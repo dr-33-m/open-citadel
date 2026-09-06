@@ -167,8 +167,13 @@ export function LibraryPage() {
   const [booted, setBooted] = useState(false);
   const readingScrollRef = useRef<ScrollView>(null);
 
-  const { collections, loadCollections, createCollection } =
-    useCollectionsStore();
+  // Selectors, for the same reason as the books store above: a bare
+  // `useCollectionsStore()` re-ran this screen on the store's `isLoading`
+  // flip as well as on the collections themselves, and this screen has never
+  // read that flag. The actions are defined once and never change.
+  const collections = useCollectionsStore((s) => s.collections);
+  const loadCollections = useCollectionsStore((s) => s.loadCollections);
+  const createCollection = useCollectionsStore((s) => s.createCollection);
 
   const currentlyReading = useCurrentlyReading();
   const queuedBooks = useQueuedBooks();
@@ -203,7 +208,9 @@ export function LibraryPage() {
         // iOS: ensure the owned library folder exists and is the scan root.
         if (process.env.EXPO_OS === "ios") await initLibrary();
         await loadDirectoryUri();
-        await loadBooks();
+        // Independent reads of a migrated schema — books never touch
+        // collections — so they overlap rather than chain.
+        await Promise.all([loadBooks(), loadCollections()]);
         await hydrateSyncState();
         // Enough state has loaded to decide empty vs configured — hand off
         // before the launch scan, which flips sync.status to running and shows
@@ -248,10 +255,30 @@ export function LibraryPage() {
     return () => sub.remove();
   }, [syncBooks]);
 
-  // Reload books when tab is focused so status changes made in the reader
-  // (e.g. a book moving to "currently reading") are reflected immediately.
+  /*
+   * Reload when the screen is focused AGAIN, so a status change made in the
+   * reader — a book moving to "currently reading" — is on the shelf when you
+   * come back to it.
+   *
+   * Not on the first focus. That one fires on mount, alongside a boot sequence
+   * that has just read both tables, so the launch paid for two full reads and
+   * two rounds of re-rendering every shelf to arrive at the same books twice.
+   *
+   * The skip lives here rather than in a "have I loaded" flag on the store
+   * because the duplication is between these two CALLERS, not inside the read.
+   * And boot keeps the first load rather than handing it to this: `booted` is
+   * what decides between the setup prompt and the library, and it means "the
+   * books have been read" only because the line above it awaited them.
+   * Leaving that to a focus callback would make the empty state depend on
+   * which effect happened to run first.
+   */
+  const focusedBefore = useRef(false);
   useFocusEffect(
     useCallback(() => {
+      if (!focusedBefore.current) {
+        focusedBefore.current = true;
+        return;
+      }
       loadBooks();
       loadCollections();
     }, [loadBooks, loadCollections]),

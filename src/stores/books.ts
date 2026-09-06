@@ -267,9 +267,19 @@ export const useBooksStore = create<BooksState>((set, get) => ({
   sync: IDLE_SYNC,
 
   loadBooks: async () => {
-    set({ isLoading: true });
+    /*
+     * `isLoading` is only ever asked one question: do we not know what is in
+     * the library yet. That is true exactly once, before the first read.
+     *
+     * Announcing every REFRESH through it cost a whole extra render of this
+     * screen for nothing — the shelves already hold books while it re-reads,
+     * and the only thing that reads the flag is the empty state, which cannot
+     * show while they do. A refresh now lands in one update instead of two.
+     */
+    const firstRead = get().books.length === 0;
+    if (firstRead) set({ isLoading: true });
     const allBooks = await db.select().from(books);
-    set({ books: allBooks, isLoading: false });
+    set(firstRead ? { books: allBooks, isLoading: false } : { books: allBooks });
   },
 
   loadDirectoryUri: async () => {
