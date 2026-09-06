@@ -30,6 +30,12 @@ export class NotSignedIn extends Error {
  * useful anonymous request to make, and a caller that forgot to check would
  * otherwise send one and read a 401 back as a server fault.
  *
+ * Two different throws, because they want opposite things said. `NotSignedIn`
+ * is nobody signed in, and the answer is to sign in. `AccountTokenUnavailable`
+ * comes back up from the SDK when there IS a session that Logto will not mint
+ * a Samwell Cloud token for, which is a setup fault and not something signing
+ * in again will fix. Both carry their own copy.
+ *
  * The token is asked for per request rather than cached here. The SDK holds
  * it, knows when it has expired and refreshes it, and a copy kept in this
  * module would be a second answer to the same question.

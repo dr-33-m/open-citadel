@@ -10,6 +10,7 @@ import { ActionButton } from '@/components/action-button';
 import { Touchable } from '@/components/ui/touchable';
 import { Progress } from '@/components/ui/progress';
 import { CloudTuneSheet } from '@/features/settings/components/cloud-tune-sheet';
+import { ACCOUNT_ENABLED } from '@/constants/logto';
 import { useSignedIn } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
 import { asColor } from '@/utils/colors';
@@ -58,21 +59,22 @@ export function CloudPanel() {
   return (
     <>
       <Card className="gap-3 p-4">
-        {!cloudBaseUrl && (
+        {/* One line, and it has to pick the true reason.
+            `ACCOUNT_ENABLED` sits with the missing base URL rather than with
+            the missing sign-in: a build without Logto draws no account card,
+            so telling the reader to sign in under Profile would point at
+            nothing. Same reasoning as `cloudBlocker` in `use-samwell-readiness`
+            — this panel is the settings-side view of the same three states. */}
+        {!cloudBaseUrl || !ACCOUNT_ENABLED ? (
           <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
             Grand Maester Samwell is not set up in this build yet.
           </ThemedText>
-        )}
-
-        {/* The model and the usage below are both real and both unreachable
-            without an account, so this says so once at the top rather than
-            leaving two halves of the card to fail separately. The way out is
-            the Profile section at the top of this same screen, which is why
-            there is no button here pointing anywhere. */}
-        {cloudBaseUrl && !signedIn && (
-          <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
-            He works from your account. Sign in under Profile to reach him.
-          </ThemedText>
+        ) : (
+          !signedIn && (
+            <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
+              He works from your account. Sign in under Profile to reach him.
+            </ThemedText>
+          )
         )}
 
         <View className="flex-row items-start justify-between gap-3">

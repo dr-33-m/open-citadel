@@ -11,6 +11,7 @@
  * screen on every token of a streaming reply, and the model store changes for
  * reasons the header does not care about.
  */
+import { ACCOUNT_ENABLED } from '@/constants/logto';
 import { useAccountStore } from '@/stores/account';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
@@ -26,10 +27,26 @@ import { useSettingsStore } from '@/stores/settings';
 export type CloudBlocker =
   /** Samwell is set to run on this device. Only Compass, which is cloud-only, cares. */
   | 'offlineMode'
-  /** No cloud server was configured into this build. Nothing to be done about it. */
+  /**
+   * This build cannot reach the cloud at all: no server URL, or no Logto to
+   * hold an account. Nothing the reader does will change either, so surfaces
+   * say what is true and offer nothing.
+   */
   | 'notConfigured'
   /** Configured, but nobody is signed in. Grand Maester Samwell runs on accounts. */
-  | 'needsAccount';
+  | 'needsAccount'
+  /**
+   * The stored session has not been read back yet.
+   *
+   * Its own case rather than folded into either neighbour, because the two
+   * questions surfaces ask have different right answers here. "What do I
+   * say?" is nothing — accusing someone of being signed out before looking is
+   * how you flash a sign-in prompt at somebody who is already signed in.
+   * "What do I enable?" is nothing either, and that half used to be wrong:
+   * treating not-yet-known as no-blocker left the Compass composer live for a
+   * moment, where a message typed into it was dropped without a word.
+   */
+  | 'checkingAccount';
 
 export interface SamwellReadiness {
   /** Can a message be sent right now. */
@@ -63,29 +80,36 @@ export function useSamwellReadiness(): SamwellReadiness {
 
   const isCloud = samwellMode === 'cloud';
   const activeModel = models.find((m) => m.id === activeModelId);
-  const signedIn = accountStatus === 'signedIn';
 
   /*
    * Read in order, and the account comes last on purpose.
    *
-   * `signedOut` rather than `!signedIn`: the moment between launch and the
-   * stored session being read is `unknown`, and treating that as a blocker
-   * would flash "sign in" at someone who is already signed in on every cold
-   * open. During that moment nothing is claimed — `ready` is false and no
-   * surface says why, which lasts about as long as a local storage read.
+   * `checkingAccount` is the launch window and says nothing out loud, so a
+   * reader who IS signed in never sees a sign-in prompt flash past on a cold
+   * open. It still blocks, which is the half that matters for anything
+   * enabling a control.
    */
   const cloudBlocker: CloudBlocker | null = !isCloud
     ? 'offlineMode'
-    : cloudBaseUrl.length === 0
+    : // `ACCOUNT_ENABLED` belongs beside the base URL, not after it. A build
+      // with a server but no Logto has no way to make an account, so calling
+      // that `needsAccount` sent the reader to a Settings screen that draws no
+      // account card — an instruction with nowhere to carry it out. Both are
+      // the same fact from the reader's side: this build cannot reach him.
+      cloudBaseUrl.length === 0 || !ACCOUNT_ENABLED
       ? 'notConfigured'
-      : accountStatus === 'signedOut'
-        ? 'needsAccount'
-        : null;
+      : accountStatus === 'unknown'
+        ? 'checkingAccount'
+        : accountStatus === 'signedOut'
+          ? 'needsAccount'
+          : null;
 
   return {
-    // Grand Maester Samwell runs on accounts now, so being signed in is as
-    // much a precondition of a cloud turn as the server itself is.
-    ready: isCloud ? cloudBaseUrl.length > 0 && signedIn : isLoaded,
+    // Read off the blocker rather than rebuilt from the same parts, so the
+    // two can never answer differently. They already did once: `ready` knew
+    // the account was still being read while the blocker said the way was
+    // clear, and every surface that trusted the second one enabled itself.
+    ready: isCloud ? cloudBlocker === null : isLoaded,
     // While the model list is still hydrating we do not know whether anything
     // is downloaded, so claim nothing: the alternative is telling an install
     // that is already set up to go and set Samwell up, on every cold open.

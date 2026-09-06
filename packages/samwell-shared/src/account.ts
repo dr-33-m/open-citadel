@@ -8,4 +8,4 @@
  *
  * It is an identifier, not an address. Nothing fetches it.
  */
-export const SAMWELL_API_RESOURCE = 'https://samwell.opencitadel.app/api';
+export const SAMWELL_API_RESOURCE = 'https://api.open-citadel.online';

@@ -101,11 +101,20 @@ LOGTO_APP_ID=your-native-app-id \
 
 ## Logto
 
-One Native application, plus one API resource named
-`https://samwell.opencitadel.app/api` (the value of `SAMWELL_API_RESOURCE` in
+One Native application, plus one API resource with the identifier
+`https://api.open-citadel.online` (the value of `SAMWELL_API_RESOURCE` in
 `packages/samwell-shared`). The resource is what makes Logto issue a JWT this
 server can verify by itself; without one the access token is opaque and only
-Logto can read it.
+Logto can read it. It is an identifier, not an address — nothing fetches it,
+and it never has to resolve.
+
+The resource needs **no permissions**. This server authorises on identity, not
+on scope: it checks the signature, the issuer, the audience and the expiry, and
+nothing reads the `scope` claim. A permission would only matter once something
+here refuses a token for lacking it, and a permission that is defined but not
+granted through a role does not appear in the token anyway — so adding one now
+buys nothing and can only lock people out later. The credit redesign is the
+point to add one, alongside whatever checks it.
 
 Register a redirect URI per build variant, since each has its own scheme:
 

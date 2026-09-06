@@ -32,7 +32,10 @@ type Conversation = ReturnType<typeof useCompassConversation>;
  * these now, and the next one is a line here instead of another branch in the
  * JSX.
  */
-const COMPASS_BLOCKED: Record<CloudBlocker, { message: string; action: string }> = {
+const COMPASS_BLOCKED: Record<
+  Exclude<CloudBlocker, 'checkingAccount'>,
+  { message: string; action: string }
+> = {
   offlineMode: {
     message:
       'Tap the button below to switch Samwell to cloud mode and get started with your goals.',
@@ -157,6 +160,11 @@ export function CompassBody({
   // its own. It had a full-width `GoldButton` where chat has a small bordered
   // one, so the two halves of one screen disagreed about how big "the way out
   // of this" is — and there is no reason for the answer to differ by tab.
+  // The stored session is still being read. Saying "sign in" here and taking
+  // it back a frame later is worse than a beat of nothing, and this beat is
+  // one local storage read long.
+  if (cloudBlocker === 'checkingAccount') return null;
+
   if (cloudBlocker) {
     return (
       <SamwellStatusEmptyState

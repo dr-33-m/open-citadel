@@ -36,6 +36,9 @@ function placeholderFor({ ready, downloaded, cloudBlocker }: SamwellReadiness): 
   if (!downloaded) return 'Set up Samwell in Settings…';
   if (cloudBlocker === 'notConfigured') return 'Cloud unavailable in this build…';
   if (cloudBlocker === 'needsAccount') return 'Sign in to reach Samwell…';
+  // Nothing to wake in cloud mode, so the offline copy below would be a lie.
+  // The field is disabled for this beat either way.
+  if (cloudBlocker === 'checkingAccount') return 'Message Samwell…';
   if (!ready) return 'Wake up Samwell…';
   return 'Message Samwell…';
 }

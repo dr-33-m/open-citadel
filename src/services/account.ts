@@ -21,6 +21,7 @@
 import {
   LogtoClient,
   LogtoNativeClientError,
+  Prompt,
   UserScope,
   type LogtoNativeConfig,
 } from '@logto/rn';
@@ -65,6 +66,21 @@ const config: LogtoNativeConfig = {
   // server can verify by itself. Without a resource the token is opaque and
   // only Logto can say who it belongs to.
   resources: [SAMWELL_API_RESOURCE],
+  /*
+   * Ask for the password every time, rather than taking the browser's word.
+   *
+   * The SDK's own default is `Prompt.Consent` — its type says otherwise, but
+   * the constructor reads `{ prompt: [Prompt.Consent], ...config }` and
+   * Logto's sample app overrides it for the same reason. Consent alone reuses
+   * a live Logto session, and on Android the sign-in runs in a Chrome Custom
+   * Tab that shares Chrome's cookies, so the session outlives a sign-out that
+   * only clears this app's tokens.
+   *
+   * The result without this: SIGN OUT, then SIGN IN, and you are instantly
+   * back in the same account having been asked nothing — which reads as sign
+   * out being broken, and leaves no way to sign in as anybody else.
+   */
+  prompt: Prompt.Login,
 };
 
 let client: LogtoClient | null = null;
@@ -138,22 +154,46 @@ export async function readProfile(): Promise<AccountProfile | null> {
 }
 
 /**
- * A token for Samwell Cloud, or null when nobody is signed in.
+ * Thrown when there IS a session but no token can be got for Samwell Cloud.
  *
- * The SDK refreshes it when it has expired, so this is the call every request
- * makes rather than something cached anywhere. It swallows its own failures:
- * a refresh that cannot reach Logto should leave the caller looking signed
- * out, not throw out of an unrelated request.
+ * Kept apart from "nobody is signed in" because the two look identical from
+ * the outside and want opposite things said about them. The usual cause is
+ * setup rather than the reader: the API resource named by
+ * `SAMWELL_API_RESOURCE` has to exist in the Logto console for Logto to issue
+ * a token with that audience, and it is the one step of the setup with no
+ * other symptom. Collapsing it into `null` produced the worst possible
+ * report — an account card showing your email beside a Samwell insisting you
+ * sign in, with nothing to try.
+ */
+export class AccountTokenUnavailable extends Error {
+  constructor(readonly cause: unknown) {
+    super('Your account could not be verified for Samwell Cloud.');
+    this.name = 'AccountTokenUnavailable';
+  }
+}
+
+/**
+ * A token for Samwell Cloud. Null means nobody is signed in.
+ *
+ * The SDK refreshes an expired one, so this is the call every request makes
+ * rather than something cached anywhere: a copy kept here would be a second
+ * answer to a question the SDK already owns.
  */
 export async function getAccountToken(): Promise<string | null> {
   const logto = getClient();
   if (!logto) return null;
+  if (!(await logto.isAuthenticated())) return null;
 
   try {
-    if (!(await logto.isAuthenticated())) return null;
     return await logto.getAccessToken(SAMWELL_API_RESOURCE);
   } catch (error) {
-    if (__DEV__) console.warn('[Account] Could not get an access token:', error);
-    return null;
+    if (__DEV__) {
+      console.warn(
+        `[Account] Signed in, but no access token for ${SAMWELL_API_RESOURCE}. ` +
+          'Is that API resource registered in Logto?',
+        error,
+      );
+    }
+    throw new AccountTokenUnavailable(error);
   }
 }
