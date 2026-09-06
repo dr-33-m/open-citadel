@@ -140,6 +140,11 @@ opencitadel-preview://callback
 Sign-in experience is console configuration and nothing in the app decides it:
 identifier `Email address`, with `Password` and `Verification code` enabled.
 
+The sign-in page's own styling lives at `branding/logto-sign-in.css` -- paste
+it into `Sign-in & account > Branding > Custom CSS`. It is a second copy of the
+dark palette in `src/theme.css`, so the two move together or they drift; the
+header of that file says which tokens it mirrors.
+
 ## Endpoints
 
 Every route below that spends money or counts against an allowance takes

@@ -1,0 +1,233 @@
+/*
+ * Open Citadel — Logto sign-in experience.
+ *
+ * Paste into Console > Sign-in & account > Branding > Custom CSS, then hit
+ * Live Preview and walk every page (sign in, register, verification code,
+ * password, error). Kept in the repo because it is a second copy of the
+ * palette in `src/theme.css` and the only way it stays honest is by sitting
+ * next to it: change a token there, change it here.
+ *
+ * This is Obsidian & Gold, the app's dark theme, and only that. The app ships
+ * `userInterfaceStyle: "dark"` and the sign-in page is a two-screen detour in
+ * the middle of it — following the system scheme here would mean handing a
+ * dark-app reader a white page halfway through signing in.
+ *
+ * ## The two rules that make it read as Open Citadel
+ *
+ * Nothing is rounded. `--radius-*` is 0px across the app (see `theme.css`),
+ * and Logto rounds everything by default, so every surface, field and button
+ * below is squared off explicitly. It is the single loudest signal.
+ *
+ * Headings are Newsreader, everything else is Manrope. Same pairing as the
+ * app: a serif for the thing being said, a sans for the machinery around it.
+ *
+ * ## On the selectors
+ *
+ * Logto uses CSS Modules, so class names carry a build hash and
+ * `[class*='name']` is the documented way to reach them. They are also an
+ * implementation detail of Logto's `packages/experience`, which means an
+ * upgrade can move them. If a rule stops biting, inspect the live preview and
+ * match the new name — the values below are the part worth keeping.
+ */
+
+/* Latin subsets only, pulled from the Google Fonts API rather than guessed.
+   Manrope is variable across 400-700, which is why one face covers the body
+   text and the uppercase labels both. */
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSg.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/newsreader/v26/cY9qfjOCX1hbuyalUrK49dLac06G1ZGsZBtoBCzBDXXD9JVF438wSo_wC-ZF.woff2')
+    format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* The palette, named as it is named in `src/theme.css` so the two can be read
+   side by side. Logto's own type tokens are set here too, which catches the
+   text this file never names directly. */
+#app {
+  --oc-background: #131313;
+  --oc-foreground: #d0c5af;
+  --oc-card: #1c1b1b;
+  --oc-muted: #252525;
+  --oc-muted-foreground: #8a8378;
+  --oc-border: rgba(208, 197, 175, 0.15);
+  --oc-primary: #f2ca50;
+  --oc-primary-deep: #d4af37;
+  --oc-primary-foreground: #131313;
+  --oc-destructive: #f2564f;
+}
+
+#app * {
+  font-family: 'Manrope', system-ui, sans-serif;
+  border-radius: 0 !important;
+  --color-type-primary: #d0c5af;
+  --color-type-secondary: #8a8378;
+}
+
+/* ── The page ──────────────────────────────────────────────────────── */
+
+#app > div[class$='viewBox'] {
+  background: var(--oc-background);
+}
+
+/* The card. A hairline border and no shadow, which is how every surface in
+   the app separates itself: one step of lightness plus a 15%-alpha rule. */
+#app main[class*='main'] {
+  background: var(--oc-card);
+  border: 1px solid var(--oc-border);
+  padding: 32px 24px 40px;
+}
+
+#app main[class*='main'] img[class*='logo'] {
+  margin: 4px 0 16px;
+  max-height: 72px;
+}
+
+/* ── Type ─────────────────────────────────────────────────────────── */
+
+/* Newsreader for the headline, at the app's `headlineMd`. Logto's headline
+   class has moved between versions, so both spellings are matched. */
+#app div[class*='headline'] > div[class*='title'],
+#app div[class*='header'] > div[class*='title'],
+#app h1,
+#app h2,
+#app h3 {
+  font-family: 'Newsreader', Georgia, serif !important;
+  font-weight: 500;
+  font-size: 26px;
+  line-height: 34px;
+  letter-spacing: 0;
+  color: var(--oc-foreground);
+}
+
+#app div[class*='headline'] > div[class*='description'],
+#app div[class*='header'] > div[class*='description'] {
+  color: var(--oc-muted-foreground);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* ── Fields ───────────────────────────────────────────────────────── */
+
+/* The sunken well the app uses for a field inside a card: a step darker than
+   the surface it sits on, with the same hairline. */
+#app form div[class*='inputField'] > div {
+  background-color: var(--oc-muted);
+  border: 1px solid var(--oc-border);
+  outline: none;
+}
+
+#app form div[class*='inputField'] > div:focus-within {
+  border-color: var(--oc-primary);
+}
+
+#app form div[class*='inputField'] input,
+#app form div[class*='inputField'] div[class$='countryCodeSelector'] {
+  background: initial;
+  background-color: transparent;
+  color: var(--oc-foreground);
+  font-size: 16px;
+  font-weight: 400;
+  caret-color: var(--oc-primary);
+}
+
+#app form div[class*='inputField'] input::placeholder {
+  color: var(--oc-muted-foreground);
+}
+
+/* Autofill paints its own background over everything above it. The long inset
+   shadow is the only way to beat it, and the matching text-fill-color is the
+   only way to keep the text readable once you have. */
+#app form div[class*='inputField'] input:-webkit-autofill,
+#app form div[class*='inputField'] input:-webkit-autofill:hover,
+#app form div[class*='inputField'] input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--oc-foreground);
+  -webkit-box-shadow: 0 0 0 1000px var(--oc-muted) inset;
+  caret-color: var(--oc-primary);
+}
+
+/* The boxes on the verification-code screen, which are inputs of their own. */
+#app div[class*='verificationCode'] input {
+  background-color: var(--oc-muted);
+  border: 1px solid var(--oc-border);
+  color: var(--oc-foreground);
+  font-size: 20px;
+}
+
+#app div[class*='verificationCode'] input:focus {
+  border-color: var(--oc-primary);
+}
+
+#app div[class*='error'],
+#app span[class*='error'] {
+  color: var(--oc-destructive);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────── */
+
+/* Uppercase Manrope with wide tracking is the app's `labelLg`, and it is what
+   every committing button in Open Citadel wears. */
+#app button {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+
+/* The gold gradient of the app's own GoldButton: `--color-primary` shading
+   into `--color-primary-deep`, dark ink on top. */
+#app button[type='submit'] {
+  background: linear-gradient(180deg, var(--oc-primary) 0%, var(--oc-primary-deep) 100%);
+  color: var(--oc-primary-foreground);
+  border: none;
+}
+
+#app button[type='submit']:hover {
+  background: linear-gradient(180deg, var(--oc-primary-deep) 0%, var(--oc-primary-deep) 100%);
+}
+
+/* Secondary and social buttons: a surface off the card, plus the hairline.
+   The same treatment the app's ActionButton uses inside a card. */
+#app div[class*='socialLinkList'] > button,
+#app button[class*='secondary'] {
+  background-color: var(--oc-muted);
+  border: 1px solid var(--oc-border);
+  color: var(--oc-foreground);
+}
+
+/* Text buttons and inline links carry the gold instead of wearing it. */
+#app a,
+#app button[class*='text'] {
+  color: var(--oc-primary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ── The small print ──────────────────────────────────────────────── */
+
+#app main[class*='main'] > div[class*='wrapper'] > div[class*='divider'],
+#app main[class*='main'] > div[class*='wrapper'] > form div[class*='content'],
+#app main[class*='main'] > div[class*='wrapper'] > form div[class*='content'] > span,
+#app div[class*='terms'],
+#app div[class*='createAccount'] {
+  color: var(--oc-muted-foreground);
+  font-size: 13px;
+}
+
+#app main[class*='main'] > div[class*='wrapper'] > div[class*='divider'] > i[class*='line'],
+#app main[class*='main'] > div[class*='wrapper'] > div[class*='terms'] > i[class*='divider']::after {
+  background: var(--oc-border);
+}
