@@ -90,7 +90,14 @@ environment variable in the matching `preview` or `production` environment.
 Do not store `OPENROUTER_API_KEY` in Expo/EAS app config; it belongs only in the
 Coolify server environment.
 
-For local Expo/dev-client runs, start Expo with the same variable:
+For local Expo/dev-client runs, copy the root `.env.example` to `.env` and
+fill it in once. Expo loads `.env` before evaluating `app.config.js`, so
+`pnpm start` needs no prefix after that. `.env` is gitignored, which is the
+point: this repo is public, and while none of these values are secrets (they
+all ship in the APK, and a native OIDC app is a public client), they name
+self-hosted infrastructure that is worth not advertising.
+
+Or pass them inline:
 
 ```bash
 SAMWELL_CLOUD_URL=https://your-coolify-domain.example \
