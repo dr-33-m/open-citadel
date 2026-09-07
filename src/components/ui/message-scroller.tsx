@@ -439,7 +439,22 @@ function MessageScrollerViewport({
 
     if (grew > 0) {
       if (following.current) {
-        scrollToEnd(true);
+        /*
+         * LOCAL EDIT: unanimated. Re-apply after `panelui-cli update`.
+         *
+         * This fires on every content growth, which during a streamed reply is
+         * every token that wraps a line. Animated, each one started a fresh
+         * ~250ms scroll on top of the one still running, so the transcript
+         * never settled — it chased the tail instead of holding it. Worst
+         * directly after a marker card, whose height puts the end of the
+         * bubble near the fold.
+         *
+         * An animation is for carrying the reader somewhere they are not.
+         * Staying pinned to the bottom while content grows underneath is not
+         * travel, so it should not be animated. Every deliberate call to
+         * `scrollToEnd` keeps its animation; only this follow does not.
+         */
+        scrollToEnd(false);
       } else if (preserveScrollOnPrepend) {
         // Content that appeared *above* the reader pushes everything down by
         // the same amount. Measuring that shift on a message they can already

@@ -54,7 +54,25 @@ export function Collapse({
   ...props
 }: CollapseProps) {
   const reducedMotion = useReducedMotion();
-  const [height, setHeight] = useState(0);
+  /*
+   * LOCAL EDIT: a shared value, not state. Re-apply after `panelui-cli update`.
+   *
+   * This is measured in `onLayout`, which runs AFTER paint. As JS state it
+   * seeded at 0, so an opening animation ran `progress * 0` for its first
+   * frames and then snapped once the measurement landed — the janky expand on
+   * the reasoning trace.
+   *
+   * It was also a re-render per measurement. A body whose content is still
+   * streaming relayouts constantly, and each one re-rendered this component
+   * and rebuilt the animated style, in the middle of the animation it was
+   * driving.
+   *
+   * On the UI thread neither happens: `onLayout` writes the number, the style
+   * worklet reads whatever is current on the frame it runs, and a height that
+   * arrives a frame late is simply picked up rather than needing a round trip
+   * through React to be seen.
+   */
+  const height = useSharedValue(0);
   const [animating, setAnimating] = useState(false);
   const progress = useSharedValue(open ? 1 : 0);
   const mounted = useRef(false);
@@ -79,7 +97,7 @@ export function Collapse({
   }, [open, reducedMotion, duration, progress]);
 
   const style = useAnimatedStyle(() => ({
-    height: progress.value * height,
+    height: progress.value * height.value,
     opacity: progress.value,
   }));
 
@@ -87,7 +105,8 @@ export function Collapse({
   // streaming in grows, and a height captured on the first frame would crop it.
   const onLayout = (event: LayoutChangeEvent) => {
     const next = event.nativeEvent.layout.height;
-    setHeight((current) => (Math.abs(current - next) < 1 ? current : next));
+    // Same 1px deadband as before, just without the re-render behind it.
+    if (Math.abs(height.value - next) >= 1) height.value = next;
   };
 
   /*

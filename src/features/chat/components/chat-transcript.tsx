@@ -45,8 +45,10 @@ interface ChatTranscriptProps {
    *  bubble. */
   lastStreamedMessageId: string | null;
   status: SamwellStatus | null;
-  /** The user's message, held locally until the store has it — see below. */
-  pendingUserMessage: string | null;
+  /** The user's message, held locally until the store has it — see below.
+   *  Carries the id it will be committed under, so it can be drawn as the
+   *  same element rather than one that gets replaced. */
+  pendingUserMessage: { id: string; content: string } | null;
   contentColumn: ViewStyle;
   floatingClearance: ViewStyle;
   onNavigateToHighlight: (bookId: string, locator: string) => void;
@@ -77,16 +79,47 @@ export function ChatTranscript({
     [floatingClearance],
   );
 
-  const isEmpty = messages.length === 0 && !streamingContent && !pendingUserMessage;
+  /*
+   * The turns to draw: what the store has, plus the one it does not have yet.
+   *
+   * ONE array, and that is the whole point. The pending message used to be
+   * rendered above this list as a loose child while the committed ones were
+   * each wrapped in a `MessageScroller.Item`. React cannot reconcile a bare
+   * child with an element in a different parent, so when the store caught up
+   * one bubble unmounted and another mounted somewhere else — the blink that
+   * read as two messages swapping. Suppressing its entrance animation hid half
+   * of it; the reparent was the rest.
+   *
+   * Because the pending message already carries the id it will be committed
+   * under (see `use-chat-sessions`), it lands here at the same position with
+   * the same key. React updates that one element in place and there is nothing
+   * to swap.
+   *
+   * It is appended only while the store has not got it. Once `sendMessage` has
+   * run, `messages` holds the real row under the same id and the pending copy
+   * would be a duplicate key.
+   */
+  const awaitingStore =
+    pendingUserMessage != null && !messages.some((m) => m.id === pendingUserMessage.id);
+
+  const turns = React.useMemo(() => {
+    if (pendingUserMessage == null || !awaitingStore) return messages;
+    return [
+      ...messages,
+      {
+        id: pendingUserMessage.id,
+        sessionId: sessionId ?? '',
+        role: 'user' as const,
+        content: pendingUserMessage.content,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+  }, [messages, pendingUserMessage, awaitingStore, sessionId]);
+
+  const isEmpty = turns.length === 0 && !streamingContent;
   if (isEmpty) {
     return <SamwellStatusEmptyState status={status} style={floatingClearance} />;
   }
-
-  // A brand-new session primes the engine with its system prompt before
-  // `sendMessage` ever reaches the store, and on a slow device that priming
-  // is a real wait. `pendingUserMessage` is what the reader sees in the
-  // meantime, so their own message does not vanish for a second and a half.
-  const showPending = pendingUserMessage != null && messages.length === 0;
 
   return (
     <>
@@ -104,11 +137,12 @@ export function ChatTranscript({
         <TranscriptFade edges="both">
           <MessageScroller.Viewport>
             <MessageScroller.Content style={contentStyle}>
-              {showPending && (
-                <ChatBubble role="user" content={pendingUserMessage} animateEntry />
-              )}
-
-              {messages.map((m) => (
+              {/* A brand-new session primes the engine with its system prompt
+                  before `sendMessage` ever reaches the store, and offline that
+                  priming is a real wait. The pending turn is already in
+                  `turns`, so the reader's own words are here from the first
+                  frame without vanishing when the store catches up. */}
+              {turns.map((m) => (
                 <MessageScroller.Item
                   key={m.id}
                   messageId={m.id}
@@ -144,7 +178,7 @@ export function ChatTranscript({
                 />
               )}
 
-              {showPending ? (
+              {awaitingStore ? (
                 // The store has nothing yet, so the indicator cannot know a
                 // turn is under way. Same orb and same words it will show a
                 // moment later, so the handover is invisible rather than a

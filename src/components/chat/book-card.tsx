@@ -34,9 +34,9 @@ interface CardData {
  */
 export const BookCard = React.memo(function BookCard({ id, onNavigate }: BookCardProps) {
   const [primary, mutedForeground] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
-  const [data, setData] = React.useState<CardData | null>(null);
-
-  React.useEffect(() => {
+  /* Read during render. See the note in `highlight-card` — an effect here
+     cost a frame and a 0-to-full-height jump mid-reply. */
+  const data = React.useMemo<CardData | null>(() => {
     const row = db
       .select({
         title: books.title,
@@ -50,7 +50,7 @@ export const BookCard = React.memo(function BookCard({ id, onNavigate }: BookCar
       .where(eq(books.id, id))
       .get();
 
-    setData(row ?? null);
+    return row ?? null;
   }, [id]);
 
   // A book that is no longer in the library leaves no trace: better a missing

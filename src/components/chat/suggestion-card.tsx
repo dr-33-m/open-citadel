@@ -1,5 +1,5 @@
 import { BookOpen, Check, Lightbulb, X } from '@/components/icons';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
@@ -42,21 +42,28 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
     '--color-primary',
     '--color-muted-foreground',
   ]);
-  const [data, setData] = useState<SuggestionData | null>(null);
-
-  useEffect(() => {
+  /*
+   * State, because Approve and Reject rewrite it — but seeded by a LAZY
+   * initialiser rather than an effect, so the card's first paint already has
+   * its content. The effect version rendered nothing on frame one and the
+   * whole card on frame two, which is a layout jump in the middle of a
+   * streaming reply. See the fuller note in `highlight-card`.
+   *
+   * The initialiser runs once per mount, and the transcript keys these by id,
+   * so a different suggestion is a different instance.
+   */
+  const [data, setData] = useState<SuggestionData | null>(() => {
     const row = db.select().from(chatSuggestions).where(eq(chatSuggestions.id, id)).get();
-    if (row) {
-      setData({
-        sessionId: row.sessionId,
-        status: row.status,
-        text: row.text,
-        tags: row.tags ? JSON.parse(row.tags) : [],
-        bookId: row.bookId,
-        locator: row.locator,
-      });
-    }
-  }, [id]);
+    if (!row) return null;
+    return {
+      sessionId: row.sessionId,
+      status: row.status,
+      text: row.text,
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      bookId: row.bookId,
+      locator: row.locator,
+    };
+  });
 
   if (!data) return null;
 

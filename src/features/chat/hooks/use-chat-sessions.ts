@@ -14,7 +14,7 @@
  */
 import React from 'react';
 
-import { NEW_CHAT_TITLE, useChatStore } from '@/stores/chat';
+import { NEW_CHAT_TITLE, useChatStore, uuid } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -33,7 +33,18 @@ export function useChatSessions() {
   const setSession = useSamwellSessionStore((s) => s.set);
 
   const [switching, setSwitching] = React.useState<SwitchingTarget>(null);
-  const [pendingUserMessage, setPendingUserMessage] = React.useState<string | null>(null);
+  /**
+   * The reader's message, shown before the store has it.
+   *
+   * Carries the id it WILL be committed under, not just its text. That is what
+   * lets the transcript render it as the same keyed element the committed one
+   * arrives as, so the two reconcile in place instead of one unmounting and
+   * another mounting somewhere else.
+   */
+  const [pendingUserMessage, setPendingUserMessage] = React.useState<{
+    id: string;
+    content: string;
+  } | null>(null);
 
   /**
    * The leaving conversation's last chance at a better title.
@@ -86,7 +97,18 @@ export function useChatSessions() {
 
   const send = React.useCallback(
     async (text: string) => {
-      setPendingUserMessage(text);
+      /*
+       * Minted here, spent below.
+       *
+       * `openSession` primes the engine (`Inference.resetConversation`), which
+       * offline is a real wait with the reader's own words not yet anywhere —
+       * which is why this optimistic message exists at all. Giving it the id
+       * `sendMessage` will commit it under means the transcript can draw one
+       * element the whole way through rather than swapping one for another
+       * when the store catches up.
+       */
+      const id = uuid();
+      setPendingUserMessage({ id, content: text });
       try {
         if (!activeSession) {
           const sessionId = await createSession({
@@ -95,7 +117,7 @@ export function useChatSessions() {
           });
           await openSession(sessionId);
         }
-        await sendMessage(text);
+        await sendMessage(text, id);
       } finally {
         setPendingUserMessage(null);
       }

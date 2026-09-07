@@ -1,5 +1,5 @@
 import { BookOpen, Lightbulb } from '@/components/icons';
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
@@ -37,9 +37,21 @@ export const HighlightCard = React.memo(function HighlightCard({
   // Literal colours for the lucide props, ThemedText's `color` prop, and the
   // entry colour fallback in the left border.
   const [primary, mutedForeground] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
-  const [data, setData] = useState<CardData | null>(null);
-
-  useEffect(() => {
+  /*
+   * Read during render, not in an effect.
+   *
+   * `.get()` on this driver is synchronous — the settings store calls it
+   * without awaiting — so an effect bought nothing and cost a frame: the card
+   * returned null on the first paint and its real height on the second, which
+   * is a 0-to-100px layout jump landing in the middle of a streaming reply.
+   * That is the blip. Reading here means the card's first paint is its only
+   * paint.
+   *
+   * `useMemo` keyed on the row it is showing. A highlight does not change
+   * under a chat bubble, and the list keys these by id, so a different id is a
+   * different instance rather than a re-read.
+   */
+  const data = useMemo<CardData | null>(() => {
     if (type === 'highlight') {
       const row = db
         .select({
@@ -55,16 +67,15 @@ export const HighlightCard = React.memo(function HighlightCard({
         .where(eq(highlights.id, id))
         .get();
 
-      if (row) {
-        setData({
-          text: row.text,
-          bookTitle: row.bookTitle,
-          bookId: row.bookId,
-          locator: row.locator,
-          color: row.color || null,
-          tags: row.tags ? JSON.parse(row.tags) : [],
-        });
-      }
+      if (!row) return null;
+      return {
+        text: row.text,
+        bookTitle: row.bookTitle,
+        bookId: row.bookId,
+        locator: row.locator,
+        color: row.color || null,
+        tags: row.tags ? JSON.parse(row.tags) : [],
+      };
     } else {
       const row = db
         .select()
@@ -72,16 +83,15 @@ export const HighlightCard = React.memo(function HighlightCard({
         .where(eq(thoughts.id, id))
         .get();
 
-      if (row) {
-        setData({
-          text: row.text,
-          bookTitle: null,
-          bookId: null,
-          locator: null,
-          color: row.color || null,
-          tags: row.tags ? JSON.parse(row.tags) : [],
-        });
-      }
+      if (!row) return null;
+      return {
+        text: row.text,
+        bookTitle: null,
+        bookId: null,
+        locator: null,
+        color: row.color || null,
+        tags: row.tags ? JSON.parse(row.tags) : [],
+      };
     }
   }, [id, type]);
 

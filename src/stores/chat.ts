@@ -81,7 +81,12 @@ interface ChatStore {
     contextLocator?: string;
   }): Promise<string>;
   openSession(id: string): Promise<void>;
-  sendMessage(content: string): Promise<void>;
+  /**
+   * @param id The id the caller has already rendered this message under, so
+   * the optimistic bubble and the committed one are the same React element
+   * rather than two that swap. Minted here when absent.
+   */
+  sendMessage(content: string, id?: string): Promise<void>;
   stopGeneration(): void;
   deleteSession(id: string): Promise<void>;
   updateSessionTitle(id: string, title: string): Promise<void>;
@@ -165,7 +170,15 @@ const BASE_SYSTEM_PROMPT =
  */
 
 
-function uuid(): string {
+/**
+ * How this store names a session or a message.
+ *
+ * Exported because `use-chat-sessions` has to mint a message id BEFORE
+ * `sendMessage` runs, so the optimistic bubble can be drawn under the id the
+ * message will be committed with. One definition, so the two can never
+ * disagree about the shape of an id.
+ */
+export function uuid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
@@ -479,7 +492,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  async sendMessage(content) {
+  async sendMessage(content, id) {
     const { activeSession } = get();
     if (!activeSession) return;
 
@@ -504,7 +517,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (samwellMode === 'cloud' && useAccountStore.getState().status !== 'signedIn') return;
 
     const userMsg: ChatMessage = {
-      id: uuid(),
+      id: id ?? uuid(),
       sessionId: activeSession.id,
       role: 'user',
       content,
