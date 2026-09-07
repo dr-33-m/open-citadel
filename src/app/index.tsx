@@ -1,5 +1,4 @@
-import { useIsFocused } from '@react-navigation/native';
-import { Redirect } from 'expo-router';
+import { Redirect, useIsFocused } from 'expo-router';
 import React from 'react';
 
 import { HubPager } from '@/components/hub/hub-pager';
@@ -24,6 +23,11 @@ import { useSettingsStore } from '@/stores/settings';
  * busiest frame. The gate only applies to a run that started pending, so
  * ordinary launches are untouched and the hub still stays mounted behind the
  * reader and Settings, which several screens depend on.
+ *
+ * `useIsFocused` comes from `expo-router`, which re-exports react-navigation's
+ * own hook. Importing it from `@react-navigation/native` directly is a build
+ * error as of SDK 56: expo-router owns the navigation tree now and refuses to
+ * bundle alongside a second copy of it.
  */
 export default function HubScreen() {
   const onboarding = useSettingsStore((s) => s.onboarding);
