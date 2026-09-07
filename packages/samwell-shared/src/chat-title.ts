@@ -41,7 +41,7 @@ export const SuggestChatTitleModelSchema = z.object({
 });
 
 export const SUGGEST_CHAT_TITLE_PROMPT =
-  `Task: write a short title for a chat conversation with Samwell, an AI reading companion. The user message is JSON: { conversation }, a transcript of the conversation so far (sometimes just its opening message).
+  `Task: write a short title for a chat conversation with Samwell, a self-development companion. The user message is JSON: { conversation }, a transcript of the conversation so far (sometimes just its opening message).
 
 - 3-6 words, plain English, no surrounding quotes, no trailing punctuation.
 - Describe what the conversation is actually about. Never use generic phrases like "Chat with Samwell" or "New conversation".
