@@ -5,6 +5,44 @@ import migrations from "../../drizzle/migrations";
 import { db } from "./client";
 
 /**
+ * `chat_sessions` in the shape it had before migration 0018, and the one table
+ * in this database that nothing in `drizzle/` creates.
+ *
+ * It exists only here, which is a genuine hole in the migration chain rather
+ * than a stylistic choice: `0018_trackables.sql` runs two
+ * `ALTER TABLE chat_sessions` statements, and on a database that has never
+ * been migrated there is no such table to alter. Drizzle applies the whole
+ * chain in ONE transaction, so that failure rolls back every migration before
+ * it too, and the app boots against a database with no tables at all. Every
+ * existing install works because its `chat_sessions` was created by the
+ * self-heal below, back when the self-heal ran on an already-migrated
+ * database. Only a first install ever sees it.
+ *
+ * So this runs BEFORE the migrator, and `ensureChatSchema` calls the same
+ * function afterwards rather than repeating the DDL: two copies of a table
+ * definition is two places for it to drift, and the shape here is load-bearing
+ * in a way that is easy to miss. It must NOT carry `goal_id` or `kind`, which
+ * 0018 adds; creating them here would turn the missing-table error into a
+ * duplicate-column one.
+ *
+ * `REFERENCES books(id)` before `books` exists is fine. SQLite resolves a
+ * foreign key when rows are written, not when the table is declared, which is
+ * exactly the difference that lets CREATE survive a forward reference where
+ * ALTER TABLE cannot.
+ */
+function ensureChatSessionsTable(): void {
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`chat_sessions\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`book_id\` text REFERENCES \`books\`(\`id\`) ON DELETE SET NULL,
+    \`title\` text NOT NULL,
+    \`context_text\` text,
+    \`context_locator\` text,
+    \`created_at\` text NOT NULL,
+    \`updated_at\` text NOT NULL
+  )`);
+}
+
+/**
  * Ensures the sync pipeline tables exist even if migration 0007 was partially
  * applied (e.g. the old broken JS format ran but only created some statements).
  * Uses IF NOT EXISTS / PRAGMA so it is always safe to call.
@@ -113,15 +151,7 @@ async function ensureChatSchema(): Promise<void> {
     \`downloaded_at\` text
   )`);
 
-  db.run(sql`CREATE TABLE IF NOT EXISTS \`chat_sessions\` (
-    \`id\` text PRIMARY KEY NOT NULL,
-    \`book_id\` text REFERENCES \`books\`(\`id\`) ON DELETE SET NULL,
-    \`title\` text NOT NULL,
-    \`context_text\` text,
-    \`context_locator\` text,
-    \`created_at\` text NOT NULL,
-    \`updated_at\` text NOT NULL
-  )`);
+  ensureChatSessionsTable();
 
   db.run(sql`CREATE TABLE IF NOT EXISTS \`chat_messages\` (
     \`id\` text PRIMARY KEY NOT NULL,
@@ -329,6 +359,10 @@ async function ensureCompassSchema(): Promise<void> {
 }
 
 export async function runMigrations() {
+  // Before the migrator, not after. See `ensureChatSessionsTable`: migration
+  // 0018 alters this table and nothing in `drizzle/` creates it, so on a first
+  // install the whole chain rolls back and the app starts with no schema.
+  ensureChatSessionsTable();
   await migrate(db, migrations);
   // Self-heal: ensure sync pipeline tables exist regardless of migration history
   await ensureSyncPipelineSchema();
