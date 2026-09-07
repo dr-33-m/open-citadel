@@ -565,19 +565,21 @@ export async function onboardingGrantOpen(accountId: string): Promise<boolean> {
  * The model the house pays for during onboarding.
  *
  * Not the reader's choice, because they have not been asked to make one yet
- * and because the bill is ours. Stored in `server_settings` beside the default
- * model so it can be swapped without a deploy, with an env override for a
- * machine that wants to pin it, and the ordinary default as the floor.
+ * and because the bill is ours.
+ *
+ * Three sources, most specific first. A `server_settings` row wins, so the
+ * model can be swapped by writing one value without a deploy; there is no
+ * setter for it yet, which is deliberate rather than missing — nothing should
+ * be able to change what the house pays for through an ordinary request, and
+ * an admin route can be added the day one is wanted. `ONBOARDING_MODEL_ID` is
+ * how it is actually pinned today. The ordinary default is the floor, so this
+ * always resolves to something.
+ *
+ * `/health` reports the result, because none of these three can be read back
+ * from outside and a wrong answer here has no symptom until somebody's first
+ * conversation is served by the wrong model.
  */
 export async function getOnboardingModelId(): Promise<string> {
   const stored = await readServerSetting('onboarding_model_id');
   return stored ?? process.env.ONBOARDING_MODEL_ID ?? (await getDefaultModelId());
-}
-
-export async function setOnboardingModelId(modelId: string): Promise<void> {
-  await db.execute({
-    sql: `INSERT INTO server_settings (key, value) VALUES ('onboarding_model_id', ?)
-          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    args: [modelId],
-  });
 }

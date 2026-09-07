@@ -38,6 +38,7 @@ import { takeawayRoutes } from './takeaway.js';
 import {
   deleteCloudModel,
   getDefaultModelId,
+  getOnboardingModelId,
   getUsageState,
   initDb,
   insertCloudModel,
@@ -248,6 +249,14 @@ app.get('/health', async (c) => {
     // says which it is.
     accountsReady: Boolean(process.env.LOGTO_ENDPOINT),
     models: models.map((model) => model.id),
+    // Which model the house is paying for on the onboarding route.
+    //
+    // Reported for the same reason as the two flags above: it is set by an
+    // environment variable or a settings row, neither of which can be read
+    // back from outside, and getting it wrong has no symptom until somebody's
+    // first conversation is served by the wrong model and quietly billed to
+    // nobody. Not sensitive — the catalogue is already in this response.
+    onboardingModel: await getOnboardingModelId(),
   });
 });
 
