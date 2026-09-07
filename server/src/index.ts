@@ -10,6 +10,9 @@ import { logger } from 'hono/logger';
 import {
   COMPASS_CLIENT_TOOL_DEFINITIONS,
   COMPASS_SYSTEM_PROMPT,
+  ONBOARDING_CLIENT_TOOL_DEFINITIONS,
+  ONBOARDING_SYSTEM_PROMPT,
+  SAMWELL_APP_GUIDE_TOOL_PROMPT,
   SAMWELL_CLIENT_TOOL_DEFINITIONS,
   SAMWELL_JOURNEY_TOOL_PROMPT,
   SAMWELL_SYSTEM_PROMPT,
@@ -19,6 +22,8 @@ import {
 import { z } from 'zod';
 
 import { chatTitleRoutes } from './chat-title.js';
+import { gutenbergRoutes } from './gutenberg.js';
+import { onboardingRoutes } from './onboarding.js';
 import {
   clearToolResults,
   composeStrategies,
@@ -72,18 +77,26 @@ function readModelId(body: RunAgentInput, knownModelIds: string[]): string {
 }
 
 /**
- * Which Samwell is answering: the reading companion, or Compass.
+ * Which Samwell is answering: the reading companion, Compass, or the
+ * introduction.
  *
  * Sent as a forwarded prop rather than inferred from the messages, because
- * the two surfaces can carry identical text and only the caller knows which
- * one it is. Anything unrecognised is reading chat, so a stale client that
- * predates Compass-over-chat still gets a working assistant.
+ * the surfaces can carry identical text and only the caller knows which one it
+ * is. Anything unrecognised is reading chat, so a stale client that predates
+ * Compass-over-chat still gets a working assistant.
+ *
+ * `onboarding` reaching THIS route means the free grant is spent — the app
+ * asked `/onboarding/status`, was told no, and sent the same conversation down
+ * the metered path instead. Same Samwell, same tools, same script; the reader
+ * is paying for it now. See `onboarding.ts`.
  */
-type SamwellMode = 'reading' | 'compass';
+type SamwellMode = 'reading' | 'compass' | 'onboarding';
 
 function readMode(body: RunAgentInput): SamwellMode {
   const raw = body.forwardedProps?.mode ?? body.data?.mode;
-  return raw === 'compass' ? 'compass' : 'reading';
+  if (raw === 'compass') return 'compass';
+  if (raw === 'onboarding') return 'onboarding';
+  return 'reading';
 }
 
 /*
@@ -368,6 +381,12 @@ app.route('/chat', chatTitleRoutes);
 // The reconciliation of a goal that just ended, beside the Compass routes it
 // belongs to.
 app.route('/compass', takeawayRoutes);
+// The free introduction. Authenticated like everything else, granted once per
+// account, and the only route here that never writes to `usage_events`.
+app.route('/onboarding', onboardingRoutes);
+// Free books for an empty library. Under /library because it is about what
+// goes into one, not about who is asking.
+app.route('/library', gutenbergRoutes);
 
 app.post('/chat/http', async (c) => {
   requireOpenRouterKey();
@@ -401,7 +420,14 @@ app.post('/chat/http', async (c) => {
     countsTowardLimit,
     // Metered separately so Compass spend is legible in the usage record,
     // even though it now travels the same route as reading chat.
-    ...(mode === 'compass' ? { kind: 'compass_chat' } : {}),
+    ...(mode === 'compass'
+      ? { kind: 'compass_chat' }
+      : mode === 'onboarding'
+        ? // Onboarding reaching the metered route at all means the free grant
+          // was spent. Recorded under its own kind so a repeat first run is
+          // legible as one rather than looking like ordinary chat.
+          { kind: 'onboarding_chat' }
+        : {}),
   });
   if (!reservation.allowed) {
     return c.json(
@@ -468,10 +494,17 @@ app.post('/chat/http', async (c) => {
       // engine, so the journey paragraph is added on this route alone.
       ...(mode === 'compass'
         ? [COMPASS_SYSTEM_PROMPT]
-        : [SAMWELL_SYSTEM_PROMPT, SAMWELL_JOURNEY_TOOL_PROMPT]),
+        : mode === 'onboarding'
+          ? [ONBOARDING_SYSTEM_PROMPT]
+          : [SAMWELL_SYSTEM_PROMPT, SAMWELL_JOURNEY_TOOL_PROMPT, SAMWELL_APP_GUIDE_TOOL_PROMPT]),
       ...sessionSystemPrompts,
     ],
-    tools: mode === 'compass' ? COMPASS_CLIENT_TOOL_DEFINITIONS : SAMWELL_CLIENT_TOOL_DEFINITIONS,
+    tools:
+      mode === 'compass'
+        ? COMPASS_CLIENT_TOOL_DEFINITIONS
+        : mode === 'onboarding'
+          ? ONBOARDING_CLIENT_TOOL_DEFINITIONS
+          : SAMWELL_CLIENT_TOOL_DEFINITIONS,
     threadId: body.threadId,
     runId: body.runId ?? usageEventId,
     middleware: [

@@ -264,6 +264,31 @@ export const ListCollectionsOutputSchema = z.object({
   formatted: z.string(),
 });
 
+export const ExplainAppInputSchema = z.object({});
+
+export const ExplainAppOutputSchema = z.object({
+  formatted: z.string(),
+});
+
+/**
+ * The app, in his own words rather than in his own guesses.
+ *
+ * Samwell lives inside Open Citadel and is asked about it constantly — what
+ * Compass is for, where highlights go, whether anything is uploaded. Without
+ * this he answers from whatever a model has absorbed about reading apps in
+ * general, which is confident, plausible and occasionally wrong about privacy.
+ *
+ * A tool rather than a paragraph in the persona because the guide is long and
+ * most conversations never ask. See `app-guide.ts`.
+ */
+export const explainAppTool = toolDefinition({
+  name: 'explain_app',
+  description:
+    "Read the Open Citadel guide: what the app is, what each screen is for, how the library and the reader work, the difference between running on the device and in the cloud, and what the account does and does not hold. Call this whenever the user asks how something in the app works, where something lives, or what a feature is for. Answer from what it returns rather than from what you assume about reading apps, especially about privacy and about what an account is for.",
+  inputSchema: ExplainAppInputSchema,
+  outputSchema: ExplainAppOutputSchema,
+});
+
 export const searchHighlightsTool = toolDefinition({
   name: 'search_highlights',
   description:
@@ -548,6 +573,7 @@ export const searchJourneyTool = toolDefinition({
 });
 
 export const SAMWELL_TOOL_DEFINITIONS = [
+  explainAppTool,
   searchHighlightsTool,
   searchThoughtsTool,
   searchReadingTool,

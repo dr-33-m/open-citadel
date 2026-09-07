@@ -2,16 +2,16 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { LogIn, LogOut, UserPlus, UserStar } from '@/components/icons';
+import { LogOut, UserStar } from '@/components/icons';
+import { AccountEntryButtons } from '@/components/account/account-entry-buttons';
 import { ActionButton } from '@/components/action-button';
 import { SamwellText } from '@/components/samwell-text';
 import { ThemedText } from '@/components/themed-text';
 import { Badge } from '@/components/ui/badge';
+import { showToast } from '@/components/toast/toast-provider';
 import { Card } from '@/components/ui/card';
-import { GoldButton } from '@/components/ui/gold-button';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Touchable } from '@/components/ui/touchable';
-import { showToast } from '@/components/toast/toast-provider';
 import { ACCOUNT_ENABLED } from '@/constants/logto';
 import { CloudAccountSheet } from '@/features/settings/components/cloud-account-sheet';
 import { ConfirmSignOutSheet } from '@/features/settings/components/confirm-sign-out-sheet';
@@ -43,7 +43,6 @@ export function AccountCard() {
   const name = useAccountStore((s) => s.name);
   const busy = useAccountStore((s) => s.busy);
   const error = useAccountStore((s) => s.error);
-  const signIn = useAccountStore((s) => s.signIn);
   const signOut = useAccountStore((s) => s.signOut);
 
   const [confirming, setConfirming] = React.useState(false);
@@ -55,16 +54,6 @@ export function AccountCard() {
   if (!ACCOUNT_ENABLED) return null;
 
   const signedIn = status === 'signedIn';
-
-  const enter = async (entry: 'sign_in' | 'register') => {
-    await signIn(entry);
-    // Read after the action rather than from the closure: `signedIn` above is
-    // this render's answer, and the whole point of the await is that it is now
-    // out of date.
-    if (useAccountStore.getState().status === 'signedIn') {
-      showToast({ message: 'Signed in.', tone: 'success', key: 'account' });
-    }
-  };
 
   const leave = async () => {
     await signOut();
@@ -138,8 +127,8 @@ export function AccountCard() {
             first screen, so it stays quiet beside it. Gold is also what every
             other "this is the way forward" button in the app wears, including
             the SIGN IN on the Samwell page these two lead to. */}
-        <View className="flex-row flex-wrap items-center gap-2">
-          {signedIn ? (
+        {signedIn ? (
+          <View className="flex-row flex-wrap items-center gap-2">
             <ActionButton
               icon={LogOut}
               label="SIGN OUT"
@@ -147,32 +136,12 @@ export function AccountCard() {
               disabled={busy}
               onPress={() => setConfirming(true)}
             />
-          ) : (
-            <>
-              {/* `small`, not `compact`: it shares a baseline with an
-                  ActionButton, and `compact`'s 40pt stood 6pt taller than its
-                  neighbour. `loading` covers the wait nobody sees coming —
-                  the browser closes, and reading the session back off the
-                  device takes long enough that the card looked like it had
-                  ignored the whole thing. */}
-              <GoldButton
-                label="SIGN IN"
-                icon={LogIn}
-                size="small"
-                disabled={busy}
-                loading={busy}
-                onPress={() => void enter('sign_in')}
-              />
-              <ActionButton
-                icon={UserPlus}
-                label="CREATE ACCOUNT"
-                tint={asColor(mutedForeground)}
-                disabled={busy}
-                onPress={() => void enter('register')}
-              />
-            </>
-          )}
-        </View>
+          </View>
+        ) : (
+          // The same two buttons onboarding's sign-in sheet draws. See
+          // `components/account/account-entry-buttons`.
+          <AccountEntryButtons />
+        )}
 
         {/* Same treatment the cloud panel gives its own warning line, so the
             two settings surfaces report trouble the same way. */}

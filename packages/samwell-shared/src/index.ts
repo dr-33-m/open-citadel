@@ -1,4 +1,5 @@
 export * from './account';
+export * from './app-guide';
 export * from './character';
 export * from './chat-title';
 export * from './compass';
@@ -6,6 +7,8 @@ export * from './compass-prompts';
 export * from './compass-tools';
 export * from './limits';
 export * from './models';
+export * from './onboarding';
+export * from './onboarding-tools';
 export * from './persona';
 export * from './tags';
 export * from './takeaway';

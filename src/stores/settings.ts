@@ -42,9 +42,27 @@ function migrateThinkingBudget(raw: string | undefined): CloudThinkingBudget {
   return 'medium';
 }
 
+/**
+ * Whether the first-run introduction has been dealt with.
+ *
+ * `pending` on a fresh install and after nothing else. Both doors on the
+ * welcome screen close it: finishing the concierge conversation, and choosing
+ * to tinker around. There is no third value for "part way through" because
+ * the conversation itself is persisted as a chat session and resumes on its
+ * own, so where somebody got to is a question that already has an answer
+ * somewhere better than here.
+ */
+export type OnboardingState = 'pending' | 'done';
+
 type SettingsState = {
   username: string;
   theme: AppTheme;
+  /**
+   * Read before the first paint, like everything else here: `_layout` awaits
+   * `loadSettings()` behind the splash, so `app/index` can branch on this
+   * without a frame of the Library showing first.
+   */
+  onboarding: OnboardingState;
   samwellMode: SamwellMode;
   cloudBaseUrl: string;
   cloudModelId: string;
@@ -68,6 +86,8 @@ type SettingsState = {
   ttsRate: number;  isLoaded: boolean;
   loadSettings: () => Promise<void>;
   setUsername: (name: string) => Promise<void>;
+  /** Closes the first run. Called by both doors on the welcome screen. */
+  finishOnboarding: () => Promise<void>;
   setTheme: (theme: AppTheme) => Promise<void>;
   setSamwellMode: (mode: SamwellMode) => Promise<void>;
   setCloudModelId: (modelId: string) => Promise<void>;
@@ -94,6 +114,9 @@ function defaultCloudBaseUrl(): string {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   username: '',
   theme: 'dark',
+  // Assumed done until the read says otherwise, so a failure to load settings
+  // strands nobody on a welcome screen they have already been through.
+  onboarding: 'done',
   samwellMode: 'offline',
   cloudBaseUrl: defaultCloudBaseUrl(),
   cloudModelId: DEFAULT_CLOUD_MODEL_ID,
@@ -115,6 +138,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({
       username: map['username'] ?? '',
       theme: (map['theme'] as AppTheme | undefined) ?? 'dark',
+      // A row that is not there is a fresh install. Any stored value other
+      // than 'pending' means it is behind them.
+      onboarding: map['onboarding.state'] === undefined
+        ? 'pending'
+        : map['onboarding.state'] === 'pending'
+          ? 'pending'
+          : 'done',
       samwellMode: (map['samwell.mode'] as SamwellMode | undefined) ?? 'offline',
       cloudBaseUrl: defaultCloudBaseUrl(),
       cloudModelId: map['cloud.modelId'] ?? DEFAULT_CLOUD_MODEL_ID,
@@ -130,6 +160,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setUsername: async (name: string) => {
     await saveSetting('username', name);
     set({ username: name });
+  },
+
+  finishOnboarding: async () => {
+    // State first, write after, the same order `setTheme` uses and for the
+    // same reason: this is the direct response to a tap that navigates, and it
+    // must not wait on SQLite. A lost write costs one extra welcome screen.
+    set({ onboarding: 'done' });
+    await saveSetting('onboarding.state', 'done');
   },
 
   setTheme: async (theme: AppTheme) => {

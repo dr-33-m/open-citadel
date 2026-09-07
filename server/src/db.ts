@@ -55,6 +55,24 @@ export async function initDb(): Promise<void> {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       )`,
+      /*
+       * The free onboarding conversation, one per account.
+       *
+       * Its own table rather than a row in `usage_events`, because the whole
+       * point of the onboarding route is that it never touches that table:
+       * "unmetered" has to be checkable, and it is only checkable if there is
+       * nothing of onboarding's in the place spend is recorded.
+       *
+       * `turns` is the backstop, not the limit. The grant is meant to be
+       * closed by `finish_onboarding`; the counter is what stops a
+       * conversation that never finishes from being an open tab on the house.
+       */
+      `CREATE TABLE IF NOT EXISTS onboarding_grants (
+        account_id TEXT PRIMARY KEY,
+        turns INTEGER NOT NULL DEFAULT 0,
+        started_at_ms INTEGER NOT NULL,
+        completed_at_ms INTEGER
+      )`,
     ],
     'write',
   );
@@ -449,5 +467,117 @@ export async function updateUsageEvent(
       update.error ?? null,
       id,
     ],
+  });
+}
+
+// ── The free onboarding conversation ────────────────────────────────────────
+
+/**
+ * How many turns the house will pay for before the grant closes itself.
+ *
+ * Generous, because the ceiling is not the mechanism. `finish_onboarding` is
+ * what normally ends a grant, and a scripted introduction that reaches thirty
+ * turns has gone wrong in some way this number cannot fix. It exists so that a
+ * conversation which never calls that tool cannot stay open forever.
+ */
+const ONBOARDING_TURN_CEILING = 60;
+
+/*
+ * Sixty, not the six or so exchanges the script actually has, because a turn
+ * here is a REQUEST and one exchange is rarely one request. Every client tool
+ * the model calls produces a continuation, so a single "yes, set up my
+ * library" is two: the call, then the answer written from its result. The
+ * scripted path runs to somewhere around fifteen. The headroom is deliberate,
+ * because the ceiling is not what is supposed to end a conversation —
+ * `finish_onboarding` is — and a reader cut off mid-introduction because they
+ * asked more questions than expected is a far worse outcome than a few extra
+ * requests on the house.
+ */
+
+export type OnboardingGrant =
+  | { open: true; turns: number }
+  | { open: false; reason: 'completed' | 'exhausted' };
+
+/**
+ * Claim one turn of the free conversation for this account.
+ *
+ * Opens the grant on first sight, so an account that never onboards leaves no
+ * row. Every later call spends a turn, and a spent-out or completed grant is
+ * refused — the client then falls back to the ordinary metered route, so a
+ * second run costs the reader rather than failing in their face.
+ */
+export async function claimOnboardingTurn(accountId: string): Promise<OnboardingGrant> {
+  const existing = await db.execute({
+    sql: 'SELECT turns, completed_at_ms FROM onboarding_grants WHERE account_id = ?',
+    args: [accountId],
+  });
+
+  const row = existing.rows[0];
+  if (!row) {
+    await db.execute({
+      sql: `INSERT INTO onboarding_grants (account_id, turns, started_at_ms)
+            VALUES (?, 1, ?)`,
+      args: [accountId, Date.now()],
+    });
+    return { open: true, turns: 1 };
+  }
+
+  if (row.completed_at_ms !== null) return { open: false, reason: 'completed' };
+
+  const turns = Number(row.turns) + 1;
+  if (turns > ONBOARDING_TURN_CEILING) return { open: false, reason: 'exhausted' };
+
+  await db.execute({
+    sql: 'UPDATE onboarding_grants SET turns = ? WHERE account_id = ?',
+    args: [turns, accountId],
+  });
+  return { open: true, turns };
+}
+
+/**
+ * Close the grant. Idempotent, and deliberately so: the client reports the
+ * finish after `finish_onboarding` runs on the device, and a retried report
+ * must not look like a second onboarding.
+ */
+export async function completeOnboardingGrant(accountId: string): Promise<void> {
+  await db.execute({
+    sql: `INSERT INTO onboarding_grants (account_id, turns, started_at_ms, completed_at_ms)
+          VALUES (?, 0, ?, ?)
+          ON CONFLICT(account_id) DO UPDATE
+            SET completed_at_ms = COALESCE(onboarding_grants.completed_at_ms, excluded.completed_at_ms)`,
+    args: [accountId, Date.now(), Date.now()],
+  });
+}
+
+/** Whether this account has any of its free conversation left. */
+export async function onboardingGrantOpen(accountId: string): Promise<boolean> {
+  const result = await db.execute({
+    sql: 'SELECT turns, completed_at_ms FROM onboarding_grants WHERE account_id = ?',
+    args: [accountId],
+  });
+  const row = result.rows[0];
+  if (!row) return true;
+  if (row.completed_at_ms !== null) return false;
+  return Number(row.turns) <= ONBOARDING_TURN_CEILING;
+}
+
+/**
+ * The model the house pays for during onboarding.
+ *
+ * Not the reader's choice, because they have not been asked to make one yet
+ * and because the bill is ours. Stored in `server_settings` beside the default
+ * model so it can be swapped without a deploy, with an env override for a
+ * machine that wants to pin it, and the ordinary default as the floor.
+ */
+export async function getOnboardingModelId(): Promise<string> {
+  const stored = await readServerSetting('onboarding_model_id');
+  return stored ?? process.env.ONBOARDING_MODEL_ID ?? (await getDefaultModelId());
+}
+
+export async function setOnboardingModelId(modelId: string): Promise<void> {
+  await db.execute({
+    sql: `INSERT INTO server_settings (key, value) VALUES ('onboarding_model_id', ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    args: [modelId],
   });
 }

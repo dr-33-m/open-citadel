@@ -158,9 +158,15 @@ export const chatSessions = sqliteTable("chat_sessions", {
    * A Compass conversation is a chat — transcript, streaming, markdown, cited
    * highlights, a title, a place in history — so it lives in these tables
    * rather than in a second thread system that would drift from this one.
-   * This column is the only thing keeping the two histories apart.
+   * This column is the only thing keeping the histories apart.
+   *
+   * `onboarding` is the concierge conversation, and being a third value here
+   * is what keeps it out of the reading history sheet without anything having
+   * to filter it: `listSessions` already asks for one kind at a time. No
+   * migration was needed to add it, since this is a text column with a
+   * default and SQLite has no enum to widen.
    */
-  kind: text("kind").$type<"reading" | "compass">().notNull().default("reading"),
+  kind: text("kind").$type<"reading" | "compass" | "onboarding">().notNull().default("reading"),
   title: text("title").notNull(),
   contextText: text("context_text"),
   contextLocator: text("context_locator"),

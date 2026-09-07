@@ -2,6 +2,12 @@ import { ChatClient, clientTools, xhrHttpStream, type UIMessage } from '@tanstac
 import type { StreamChunk } from '@tanstack/ai/client';
 import {
   COMPASS_APPROVAL_REQUIRED_TOOLS,
+  ONBOARDING_APPROVAL_REQUIRED_TOOLS,
+  downloadFreeBooksTool,
+  explainAppTool,
+  findFreeBooksTool,
+  finishOnboardingTool,
+  setUpLibraryTool,
   addBookToCollectionTool,
   addToQueueTool,
   createCollectionTool,
@@ -41,6 +47,7 @@ import {
 import {
   executeToolCall,
   formatToolResultForLLM,
+  runExplainApp,
   toolStatus,
   type BookCandidate,
   type ChapterListing,
@@ -50,6 +57,12 @@ import {
   type ToolCallContext,
 } from '@/services/chat-tools';
 import { cloudHeaders } from '@/services/cloud-identity';
+import {
+  runDownloadFreeBooks,
+  runFindFreeBooks,
+  runFinishOnboarding,
+  runSetUpLibrary,
+} from '@/services/onboarding-tools';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { buildJourneySnapshot } from '@/services/journey';
 import {
@@ -68,6 +81,23 @@ import {
 import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useApprovalStore } from '@/stores/approval';
 import { useSettingsStore } from '@/stores/settings';
+
+/** The three things Samwell can be doing on a cloud turn. */
+export type SamwellTurnMode = 'reading' | 'compass' | 'onboarding';
+
+/**
+ * Where the turn is posted.
+ *
+ * Onboarding is a separate route because it is billed separately: it is the
+ * free introduction, granted once per account, and it never writes to the
+ * usage table. Reading and Compass share the metered route and are told apart
+ * by the `mode` forwarded prop.
+ */
+function endpointFor(mode: SamwellTurnMode, baseUrl: string, metered: boolean): string {
+  return mode === 'onboarding' && !metered
+    ? `${baseUrl}/onboarding/chat`
+    : `${baseUrl}/chat/http`;
+}
 
 type StoredChatMessage = {
   id: string;
@@ -92,11 +122,42 @@ export interface CloudChatTurnOptions {
    *
    * `reading` is the library companion; `compass` is the same person turned
    * toward the user's goal, carrying the Compass tools instead of the library
-   * ones. Everything else about the turn — the transport, the streaming, the
-   * approvals, the reasoning — is deliberately identical, because the two
-   * surfaces were only ever supposed to differ by what he is focused on.
+   * ones; `onboarding` is him meeting somebody for the first time. Everything
+   * else about the turn — the transport, the streaming, the approvals, the
+   * reasoning — is deliberately identical, because the surfaces were only ever
+   * supposed to differ by what he is focused on.
+   *
+   * `onboarding` differs in one more way, and it is not about him: it goes to
+   * a different route on the server, one the house pays for rather than the
+   * reader. See `endpointFor` below.
    */
-  mode?: 'reading' | 'compass';
+  mode?: SamwellTurnMode;
+  /**
+   * Send an onboarding turn down the metered route instead of the free one.
+   *
+   * Set when the account's free grant is already spent, which happens to
+   * somebody who onboarded and then reinstalled or picked up a second device:
+   * their phone thinks it is a first run and their account knows better. The
+   * conversation is identical — same prompt, same tools, same script — and
+   * they are paying for it, which beats refusing to introduce the app to
+   * somebody who has just installed it again.
+   *
+   * Ignored for every other mode, which is metered regardless.
+   */
+  metered?: boolean;
+  /**
+   * How long the turn may go without progress before it is given up on.
+   *
+   * Defaults to two minutes, which covers a reasoning model thinking hard and
+   * a tool continuation on top of it. Onboarding raises it, because two of its
+   * tools hand off to a SYSTEM file picker: the app goes to the background,
+   * nothing streams, and what the clock is actually measuring is a person
+   * browsing their own storage looking for where they keep their books. Two
+   * minutes is not generous for that, and running out means the turn is
+   * abandoned at the exact moment the reader comes back having done what was
+   * asked.
+   */
+  inactivityMs?: number;
   history: StoredChatMessage[];
   content: string;
   onStreamingContent: (content: string) => void;
@@ -140,7 +201,16 @@ export interface CloudChatTurnOptions {
  * Cloud only, and only ever from here: the on-device path sends no journey at
  * all, and carries no tool that could fetch one.
  */
-function journeyMessages(mode: 'reading' | 'compass'): UIMessage[] {
+function journeyMessages(mode: SamwellTurnMode): UIMessage[] {
+  /*
+   * Nothing to carry, and nowhere to carry it to.
+   *
+   * Onboarding is somebody's first two minutes: there is no reading history,
+   * no goal and no journey to summarise. Building one anyway would send an
+   * empty scaffold on the one route the house is paying for.
+   */
+  if (mode === 'onboarding') return [];
+
   let snapshot = '';
   try {
     /*
@@ -314,7 +384,33 @@ function statusForTool(toolName: string): string {
   if (toolName.startsWith('delete_')) return 'Waiting for delete approval…';
   if (toolName.startsWith('tag_')) return 'Waiting for tag approval…';
   if (COMPASS_APPROVAL_REQUIRED_TOOLS.has(toolName)) return 'Waiting for your confirmation…';
+  // Both of these touch the reader's own files, and one of them deletes. The
+  // row says so rather than saying "working", because the thing being waited
+  // on is a person deciding whether to let it happen.
+  if (ONBOARDING_APPROVAL_REQUIRED_TOOLS.has(toolName)) return 'Waiting for your go-ahead…';
   return toolStatus(toolName);
+}
+
+/**
+ * Onboarding's tools: the library, the free books, and the way out.
+ *
+ * Nothing from the reading or Compass catalogues, and that is structural
+ * rather than a matter of taste. This is the only conversation where the model
+ * has never met the person and cannot be steered by anything it knows about
+ * them, so the smaller the surface the fewer ways the first two minutes go
+ * somewhere strange.
+ *
+ * No `ToolCallContext` either, because none of these touch a chat session or
+ * a book. They touch the file system.
+ */
+function createOnboardingClientTools() {
+  return clientTools(
+    setUpLibraryTool.client(async () => runSetUpLibrary()),
+    findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
+    downloadFreeBooksTool.client(async (input) => runDownloadFreeBooks(input)),
+    finishOnboardingTool.client(async () => runFinishOnboarding()),
+    explainAppTool.client(async () => runExplainApp()),
+  );
 }
 
 /**
@@ -387,6 +483,10 @@ function createCompassClientTools(ctx: ToolCallContext) {
 
 function createSamwellClientTools(ctx: ToolCallContext) {
   return clientTools(
+    // The app explaining itself. Bound here because the server offers it on
+    // the reading route, and an offered tool with no executor is a turn that
+    // hangs waiting for a result nobody is going to produce.
+    explainAppTool.client(async () => runExplainApp()),
     searchHighlightsTool.client(async (input) => {
       const { result } = await executeToolCall('search_highlights', input, ctx);
       const results = Array.isArray(result) ? (result as SearchResult[]) : [];
@@ -623,6 +723,8 @@ export async function sendCloudChatTurn({
   sessionId,
   bookId,
   mode = 'reading',
+  metered = false,
+  inactivityMs,
   history,
   content,
   onStreamingContent,
@@ -688,7 +790,7 @@ export async function sendCloudChatTurn({
    * out; a pending approval counts as progress too, since there the turn is
    * waiting on a person, who may take as long as they like.
    */
-  const SETTLE_INACTIVITY_MS = 120_000;
+  const SETTLE_INACTIVITY_MS = inactivityMs ?? 120_000;
   const SETTLE_ABSOLUTE_MS = 600_000;
   let lastProgressAt = Date.now();
 
@@ -705,20 +807,29 @@ export async function sendCloudChatTurn({
     id: `samwell-cloud-${sessionId}`,
     threadId: sessionId,
     initialMessages,
-    connection: xhrHttpStream(`${baseUrl}/chat/http`, {
+    connection: xhrHttpStream(endpointFor(mode, baseUrl, metered), {
       headers,
     }),
-    forwardedProps: {
-      modelId,
-      mode,
-      // One word. The server maps it to a reasoning effort and a coupled
-      // reply budget, so a deep think cannot starve the answer.
-      thinkingBudget: cloudThinkingBudget,
-    },
+    forwardedProps:
+      mode === 'onboarding' && !metered
+        ? // The free route reads none of these. The model is the server's
+          // choice because the house is paying for it, and there is no
+          // thinking budget to honour because nobody has been shown the
+          // setting yet.
+          {}
+        : {
+            modelId,
+            mode,
+            // One word. The server maps it to a reasoning effort and a coupled
+            // reply budget, so a deep think cannot starve the answer.
+            thinkingBudget: cloudThinkingBudget,
+          },
     tools:
-      mode === 'compass'
-        ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
-        : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
+      mode === 'onboarding'
+        ? createOnboardingClientTools()
+        : mode === 'compass'
+          ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
+          : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
     onChunk: (chunk) => {
       lastProgressAt = Date.now();
 
@@ -801,7 +912,7 @@ export async function sendCloudChatTurn({
   }
 
   try {
-    console.log(`[Samwell Cloud] Sending ${mode} request to ${baseUrl}/chat/http`);
+    console.log(`[Samwell Cloud] Sending ${mode} request to ${endpointFor(mode, baseUrl, metered)}`);
     try {
       await client.sendMessage(content);
     } catch (err) {
@@ -813,7 +924,7 @@ export async function sendCloudChatTurn({
       }
       console.error('[Samwell Cloud] sendMessage failed:', err, (err as { cause?: unknown })?.cause);
       const detail = err instanceof Error ? err.message : String(err);
-      throw new Error(`${detail} (POST ${baseUrl}/chat/http)`);
+      throw new Error(`${detail} (POST ${endpointFor(mode, baseUrl, metered)})`);
     }
 
     // The server emits client-tool (`tool-input-available`) and approval

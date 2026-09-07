@@ -70,6 +70,17 @@ const TOOL_ORB: Record<string, ThinkingOrbState> = {
   // that says so.
   delete_highlight: 'listening',
   delete_thought: 'listening',
+
+  // Reading the app's own guide back is still reading something back.
+  explain_app: 'searching',
+
+  // The first run. `set_up_library` and `download_free_books` both wait on an
+  // approval and then on a system picker, so they get the same `listening`
+  // the destructive calls do: what is in flight is a person deciding.
+  set_up_library: 'listening',
+  download_free_books: 'listening',
+  find_free_books: 'searching',
+  finish_onboarding: 'working',
 };
 
 /** The slice of chat state that decides what the indicator shows. */

@@ -21,7 +21,15 @@ import { isToolCallMessage } from '@/services/chat-transcript';
  * session is.
  */
 
-export type SessionKind = 'reading' | 'compass';
+/**
+ * Which surface a conversation belongs to.
+ *
+ * `onboarding` is the concierge introduction. It is a session like the other
+ * two — persisted, resumable across an app kill, read back by
+ * `readMessages` — and being its own kind is the whole of what keeps it out of
+ * the reading history sheet, since `listSessions` only ever asks for one.
+ */
+export type SessionKind = 'reading' | 'compass' | 'onboarding';
 
 export type ChatSession = {
   id: string;

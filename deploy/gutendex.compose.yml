@@ -1,0 +1,267 @@
+# Gutendex, for Coolify.
+#
+# Gutendex is the JSON API over Project Gutenberg's catalogue. Open Citadel's
+# server reads it for the free-books search onboarding uses, and later for the
+# free-books library, which is why it is worth self-hosting rather than leaning
+# on someone else's rate limit.
+#
+# Paste this into Coolify: + New Resource > Docker Compose, on the server that
+# already runs Samwell Cloud. Then, in the resource's settings, tick
+# **Connect To Predefined Network** before the first deploy.
+#
+# ## Why there is no domain
+#
+# This has no `SERVICE_FQDN_*`, so Coolify allocates it no domain and wires no
+# proxy route: nothing outside the host can reach it. The only caller is
+# Samwell Cloud, which sits on the same Docker host, so the request never
+# leaves the machine.
+#
+# That is not only faster than going out through a proxy and back. It retires
+# three separate problems at once: an unauthenticated read-only API that was
+# publicly reachable, a Cloudflare bot rule that could have blocked our own
+# server without anyone noticing, and an `ALLOWED_HOSTS` value that had to be
+# kept in step with a generated hostname.
+#
+# `Connect To Predefined Network` is what makes it reachable from the sibling
+# resource: it puts this stack on Coolify's shared `coolify` network instead of
+# only its own private one. Without it the container starts and answers its own
+# health check while being invisible to Samwell Cloud, which is the failure
+# that looks like success.
+#
+# Afterwards, point Samwell Cloud at it over plain HTTP with the container
+# name Coolify assigns, which is `gutendex-<this resource's uuid>`:
+#
+#     GUTENDEX_URL=http://gutendex-<uuid>:8000
+#
+# ## What to expect on first launch
+#
+# The API answers within a couple of minutes. It answers with an EMPTY
+# catalogue, and stays that way for a long time, because `updatecatalog`
+# downloads about 90MB of compressed RDF, expands it to tens of thousands of
+# files, and walks every one of them into Postgres. That work runs in its own
+# service so it can take as long as it needs without the API waiting on it.
+#
+# Expect one to a few hours. The work is not IO bound on decent storage: it is
+# a single-threaded Python process parsing tens of thousands of RDF files, so
+# it finishes at whatever rate one core can parse XML. Faster disks help the
+# extract and the Postgres writes, not the parse, which is most of it. Watch
+# `docker logs -f` on the catalog container rather than guessing.
+#
+# Budget roughly 10GB across the volumes.
+#
+# Until the catalogue is loaded, Open Citadel's own Gutenberg route falls
+# through to scraping gutenberg.org, so onboarding still works. It just
+# returns thinner results, with no subjects to rank on.
+#
+# ## On the upstream project
+#
+# It ships no Dockerfile, so one is built inline from the pinned commit below.
+# Bump GUTENDEX_REF deliberately rather than tracking `master`: a rebuild that
+# silently pulls new upstream code is how a working deployment changes
+# behaviour on a restart nobody connected to it.
+#
+# The commit is written literally rather than passed as a Docker ARG. Compose
+# interpolates `$VAR` inside `dockerfile_inline` before Docker ever sees the
+# file, so an ARG reference there resolves to an empty string and the fetch
+# fails on a blank ref. The anchor below is what keeps it in one place.
+
+x-gutendex-build: &gutendex-build
+  context: .
+  dockerfile_inline: |
+    FROM python:3.12-slim
+
+    # git fetches the source, since there is no release artifact.
+    # rsync and bzip2 are `updatecatalog`'s, not ours: it shells out to
+    # `tar fjvx` and then `rsync -va --delete-after`, and neither ships in the
+    # slim image. Without them the catalogue load fails at the point where it
+    # has already spent ten minutes downloading.
+    RUN apt-get update \
+     && apt-get install -y --no-install-recommends git rsync bzip2 ca-certificates \
+     && rm -rf /var/lib/apt/lists/*
+
+    WORKDIR /app
+    RUN git init -q . \
+     && git remote add origin https://github.com/garethbjohnson/gutendex.git \
+     && git fetch -q --depth 1 origin c3f75a8bd783ca91d9cd37d133028ff994e7ba4b \
+     && git checkout -q FETCH_HEAD
+
+    # gunicorn is ours to add. The upstream guide deploys under Apache and
+    # mod_wsgi, which is a lot of machinery for a container sitting behind
+    # Coolify's proxy anyway.
+    RUN pip install --no-cache-dir -r requirements.txt gunicorn==23.0.0
+
+    RUN mkdir -p /var/lib/gutendex/media /var/lib/gutendex/static /app/catalog_files
+    EXPOSE 8000
+
+# Both services import the same `settings.py`, which reads every one of these
+# through `env()` with no default. A missing one is an ImportError, not a
+# warning, so the catalogue loader needs the full set exactly as the web
+# service does. One anchor, so they cannot drift apart.
+x-gutendex-env: &gutendex-env
+  # 64 random bytes, generated once by Coolify and kept.
+  SECRET_KEY: $SERVICE_BASE64_64_SECRETKEY
+  DEBUG: 'false'
+  # `*`, and here that is the correct answer rather than a shortcut.
+  #
+  # ALLOWED_HOSTS defends against Host header spoofing from the public
+  # internet, and there is no route from the public internet to this container.
+  # The only Host values it will ever see are the container name Samwell Cloud
+  # dials and `127.0.0.1` from its own health check, and pinning it to those
+  # would mean editing this file every time the resource is recreated with a
+  # new uuid.
+  ALLOWED_HOSTS: '*'
+  DATABASE_HOST: db
+  DATABASE_PORT: '5432'
+  DATABASE_NAME: gutendex
+  DATABASE_USER: gutendex
+  DATABASE_PASSWORD: $SERVICE_PASSWORD_GUTENDEXDB
+  STATIC_ROOT: /var/lib/gutendex/static
+  MEDIA_ROOT: /var/lib/gutendex/media
+  # Required by settings.py with no defaults, so they have to be present even
+  # though nothing here sends mail. Blank satisfies that without pretending
+  # there is a mail server.
+  EMAIL_HOST: ''
+  EMAIL_HOST_ADDRESS: ''
+  EMAIL_HOST_USER: ''
+  EMAIL_HOST_PASSWORD: ''
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gutendex
+      POSTGRES_USER: gutendex
+      # Coolify generates this once and injects the same value everywhere it
+      # appears. Nothing to invent and nothing to paste.
+      POSTGRES_PASSWORD: $SERVICE_PASSWORD_GUTENDEXDB
+    volumes:
+      - gutendex-db:/var/lib/postgresql/data
+    healthcheck:
+      # `gutendex` twice: the -d is what makes this test the database the app
+      # will actually use rather than the superuser's own.
+      test: ['CMD-SHELL', 'pg_isready -U gutendex -d gutendex']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  gutendex:
+    build: *gutendex-build
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # No `SERVICE_FQDN_*` here, deliberately. That variable is what asks Coolify
+    # for a domain and a proxy route, and this service wants neither.
+    environment: *gutendex-env
+    volumes:
+      - gutendex-static:/var/lib/gutendex/static
+      - gutendex-media:/var/lib/gutendex/media
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        # This service owns the schema. The catalogue loader waits on this
+        # container being healthy, so there is exactly one migrator and no
+        # chance of two of them racing the same tables.
+        python manage.py migrate --noinput
+        python manage.py collectstatic --noinput
+        # Two workers, not the usual three-or-more.
+        #
+        # Each one is a whole Django process holding its own copy of the
+        # models, and this is a read-only JSON API answering a handful of
+        # searches a day, on a box also running Postgres and a catalogue
+        # import. What is scarce here is RAM and cores, not disk, and neither
+        # is helped by a third copy of Django. Raise GUTENDEX_WORKERS if this
+        # ever has more than one caller.
+        exec gunicorn gutendex.wsgi:application \
+          --bind 0.0.0.0:8000 --workers ${GUTENDEX_WORKERS:-2} --timeout 120 --access-logfile -
+    healthcheck:
+      # The real endpoint, not a port check. `/books/` answers with an empty
+      # page while the catalogue is still loading, which is the point: the API
+      # being up and the catalogue being full are different questions, and only
+      # the first one should hold the deploy.
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request as u; u.urlopen('http://127.0.0.1:8000/books/', timeout=5)
+      # A minute, not fifteen seconds. Every run forks a Python interpreter and
+      # imports urllib to make one local request, which on a small box is real
+      # CPU spent four times a minute forever, and it buries the app's own
+      # access log under its own health checks.
+      interval: 60s
+      timeout: 10s
+      retries: 10
+      # Three minutes, because the first boot is not the steady state: it runs
+      # migrations and collectstatic before gunicorn binds. A one-minute grace
+      # period leaves no room for a slow first start to be anything other than
+      # a failed deploy, and the cost of the headroom is nothing.
+      start_period: 180s
+
+  catalog:
+    # The same image, doing the slow half of the job.
+    #
+    # Its own service so the API never waits on it. The first run takes the
+    # best part of an hour; after that it wakes daily, which is the refresh
+    # cadence the upstream guide puts in cron.
+    build: *gutendex-build
+    restart: unless-stopped
+    depends_on:
+      gutendex:
+        condition: service_healthy
+    environment: *gutendex-env
+    volumes:
+      # The RDF archive, its extraction and its logs. On a volume so a restart
+      # does not re-download 90MB and re-extract tens of thousands of files.
+      - gutendex-catalog:/app/catalog_files
+    command:
+      - /bin/sh
+      - -c
+      - |
+        # Retry delay after a failure. Doubles each consecutive failure and
+        # resets on success, because the thing being retried is a 126MB
+        # download: hammering it every ten minutes through a genuine outage
+        # is a lot of somebody else's bandwidth for no benefit.
+        delay=600
+
+        while true; do
+          echo "[catalog] Starting update at $$(date -u +%FT%TZ)"
+
+          # `tee` rather than capturing the output, because the parse phase
+          # runs for an hour and prints as it goes. Swallowing that to inspect
+          # it afterwards would leave the operator watching a silent container
+          # with no way to tell work from a hang.
+          python manage.py updatecatalog 2>&1 | tee /tmp/catalog-run.log
+
+          # The exit code is NOT the test, and this is the whole reason this
+          # block is more than one line. `updatecatalog` catches its own
+          # download failures, prints "Error: ..." and exits 0 — so a
+          # truncated download reports success, the loop sleeps for a day, and
+          # the API serves an empty catalogue while the logs say it finished.
+          # That happened on the first deployment of this file. The printed
+          # error is the only honest signal the command gives.
+          if grep -qi '^error:' /tmp/catalog-run.log; then
+            echo "[catalog] Update FAILED at $$(date -u +%FT%TZ), retrying in $${delay}s"
+            sleep $$delay
+            delay=$$(( delay * 2 ))
+            [ $$delay -gt 21600 ] && delay=21600
+            continue
+          fi
+
+          # The authoritative number, straight from the database rather than
+          # from anything the command claimed. An empty catalogue after a
+          # "successful" run is worth seeing in the logs.
+          books=$$(python -c "import django, os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gutendex.settings'); django.setup(); from books.models import Book; print(Book.objects.count())" 2>/dev/null || echo '?')
+          echo "[catalog] Update finished at $$(date -u +%FT%TZ), $$books books in the catalogue"
+
+          delay=600
+          sleep 86400
+        done
+
+volumes:
+  gutendex-db:
+  gutendex-catalog:
+  gutendex-static:
+  gutendex-media:

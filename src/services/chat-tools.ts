@@ -1,6 +1,10 @@
 import { and, desc, eq, like, or } from 'drizzle-orm';
 import type { ToolDefinition } from '@dr33m/react-native-litert-lm';
-import { SAMWELL_SYSTEM_PROMPT, SAMWELL_SYSTEM_PROMPT_COMPACT } from 'samwell-shared';
+import {
+  OPEN_CITADEL_GUIDE,
+  SAMWELL_SYSTEM_PROMPT,
+  SAMWELL_SYSTEM_PROMPT_COMPACT,
+} from 'samwell-shared';
 
 import { db } from '@/db/client';
 import { books, chatSuggestions, collections, highlights, notes, readingProgress, thoughts } from '@/db/schema';
@@ -669,7 +673,27 @@ export const TOOL_STATUS: Record<string, string> = {
   pause_trackable: 'Pausing that…',
   resume_trackable: 'Starting that again…',
   search_journey: 'Remembering…',
+
+  // The app explaining itself, and the first run. Same table again: what he is
+  // doing right now is one question, whichever surface is asking it.
+  explain_app: 'Checking how that works…',
+  set_up_library: 'Setting up your library…',
+  find_free_books: 'Looking through Project Gutenberg…',
+  download_free_books: 'Downloading your books…',
+  finish_onboarding: 'Wrapping up…',
 };
+
+/**
+ * The app guide, for `explain_app`.
+ *
+ * No I/O and no database: it is a constant in the shared package, so the whole
+ * executor is a hand-off. It lives here rather than beside the onboarding
+ * executors because reading chat is where it is actually reached for; the one
+ * thing onboarding does with it is carry the same tool.
+ */
+export function runExplainApp(): { formatted: string } {
+  return { formatted: OPEN_CITADEL_GUIDE };
+}
 
 /** Falls back to a neutral line rather than naming the wrong tool. */
 export function toolStatus(name: string): string {

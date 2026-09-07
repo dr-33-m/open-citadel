@@ -216,15 +216,21 @@ export default function RootLayout() {
   }, [scrim, scrimValue]);
 
   const screenTransitions = useMemo(() => {
+    const fade = fadeTransition();
     if (reduceMotion) {
-      const fade = fadeTransition();
-      return { hub: fade, side: fade, sideEdge: fade, drawer: fade };
+      return { hub: fade, side: fade, sideEdge: fade, drawer: fade, fade };
     }
     return {
       hub: hubTransition({ scrim: scrimValue }),
       side: sideTransition({ side: 1, scrim: scrimValue }),
       sideEdge: sideTransition({ side: 1, scrim: scrimValue, edgeOnly: true }),
       drawer: drawerTransition({ scrim: scrimValue }),
+      // Onboarding's own, and it is a fade in both branches: the first screen
+      // anyone sees has nowhere to slide in from. It belongs in this memo
+      // rather than being built inline at the call site for the reason spelled
+      // out above `scrimValue` — a fresh config object per render makes the
+      // navigator re-register that screen's options on every theme cascade.
+      fade,
     };
   }, [reduceMotion, scrimValue]);
 
@@ -259,6 +265,12 @@ export default function RootLayout() {
               say where each screen belongs. */}
           <TransitionStack screenOptions={screenTransitions.side}>
             <TransitionStack.Screen name="index" options={screenTransitions.hub} />
+            {/* The first run. A cross-fade rather than a slide: this is the
+                first thing anyone sees and there is nowhere for it to come in
+                from. It leaves by `router.replace`, so it is never on the
+                stack behind the hub and the system Back button cannot walk
+                into it. */}
+            <TransitionStack.Screen name="onboarding" options={screenTransitions.fade} />
             <TransitionStack.Screen
             name="settings"
             options={{

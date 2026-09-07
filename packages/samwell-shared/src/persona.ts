@@ -59,12 +59,27 @@ When you cite a search result you MUST include its reference marker exactly as g
 Do not narrate a tool call or explain what you are about to do. Call it silently, then answer from the result.`;
 
 /**
+ * The app-guide paragraph, appended only on the cloud route.
+ *
+ * `explain_app` is cloud-only and deliberately so: the guide it returns is a
+ * long document, and on a 4096-token device window a single call to it would
+ * cost most of the conversation. So `SAMWELL_TOOLS` (the device catalogue in
+ * `services/chat-tools.ts`) does not carry it, and this paragraph — the only
+ * thing that names it — is appended nowhere but the cloud route.
+ *
+ * Same rule as the journey paragraph below, for the same reason:
+ * `systemPromptForContext` hands the full persona to an on-device model
+ * whenever its window is large enough, and describing a tool that model has
+ * never been given is how it burns a turn calling something that is not there.
+ */
+export const SAMWELL_APP_GUIDE_TOOL_PROMPT = `You live inside Open Citadel and people will ask you about it: what Compass is for, where their highlights go, whether any of this is uploaded anywhere, what the account is actually for. Call explain_app and answer from what it gives you. Never answer those from what you assume about reading apps in general, and be especially careful with anything about privacy or about what an account holds, since a confident wrong answer there is the one that costs trust.`;
+
+/**
  * The journey-memory paragraph, appended only on the cloud route.
  *
- * Separate from the persona because journey memory is cloud-only, and the
- * persona above is shared: `systemPromptForContext` hands the full prompt to
- * an on-device model whenever its window is large enough, and describing a
- * tool that model has never been given is how it burns a turn calling
- * something that does not exist.
+ * Separate from the persona for the same reason `SAMWELL_APP_GUIDE_TOOL_PROMPT`
+ * above is: the persona is shared with the on-device engine whenever its
+ * window is large enough, and describing a tool that model was never given is
+ * how it burns a turn calling something that does not exist.
  */
 export const SAMWELL_JOURNEY_TOOL_PROMPT = `Use search_journey to look back at what you have written down about them over time: reflections distilled from past conversations, books they finished, goals they closed. Reach for it when continuity matters, when what they are saying now rhymes with something you noticed months ago, or when they ask what has changed. Those notes are your words about them rather than theirs, so weigh them as memory and not as evidence, and never present one as something they said.`;
