@@ -23,6 +23,16 @@ type ActionButtonProps = {
   tint?: string;
   /** A tinted surface, for the one button that warns rather than acts. */
   style?: ViewStyle;
+  /**
+   * Centre the icon and label instead of letting them sit at the leading edge.
+   *
+   * For a full-width button, where the content otherwise hugs the left and the
+   * button reads as a mislaid row. It has to be a prop rather than a class the
+   * caller passes, because the padding and the row both live on an inner view
+   * that `className` cannot reach: `justify-center` on the Touchable centres
+   * the inner view vertically and leaves the label exactly where it was.
+   */
+  centered?: boolean;
   className?: string;
   accessibilityLabel?: string;
 };
@@ -54,6 +64,7 @@ export function ActionButton({
   tint,
   style,
   className,
+  centered = false,
   accessibilityLabel,
 }: ActionButtonProps) {
   return (
@@ -84,7 +95,10 @@ export function ActionButton({
         surface rather than just the contents.
       */}
       <View
-        className="flex-row items-center gap-2 px-3 py-2"
+        className={cn(
+          'flex-row items-center gap-2 px-3 py-2',
+          centered && 'flex-1 justify-center',
+        )}
         style={disabled ? { opacity: 0.5 } : undefined}
       >
         {leading ?? (Icon ? <Icon size={14} color={tint} /> : null)}
