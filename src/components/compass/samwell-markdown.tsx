@@ -1,11 +1,7 @@
-import React, { Fragment, useMemo } from 'react';
-import { View } from 'react-native';
-import { useMarkdown } from 'react-native-marked';
+import React from 'react';
+import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
 
-import { MarkdownListRenderer } from '@/components/markdown-list-renderer';
-import { useCSSVariable } from 'uniwind';
-
-import { fontFamily, spacing } from '@/constants/theme';
+import { useMarkdownStyle } from '@/hooks/use-markdown-style';
 
 type SamwellMarkdownProps = {
   content: string;
@@ -15,19 +11,15 @@ type SamwellMarkdownProps = {
 };
 
 /**
- * These tokens are always declared in `theme.css`, so the CSS-variable
- * lookup never actually resolves to `undefined` here — the cast only
- * satisfies react-native-marked's `ColorsPropType`, whose fields are typed
- * as required `ColorValue`, not `string | undefined`.
- */
-function asColor(value: string | number | undefined): string {
-  return value as string;
-}
-
-/**
- * Renders one of Grand Maester Samwell's messages as markdown, in his serif
- * voice. Same engine the chat bubbles use (react-native-marked), so lists,
- * emphasis and headings render instead of showing raw asterisks.
+ * One of Grand Maester Samwell's messages, in his serif voice.
+ *
+ * The same engine and the same style mapping the chat bubble uses, differing
+ * only in the face and the size — which is the point of `useMarkdownStyle`.
+ * Compass and chat drifted apart last time precisely because each kept its own
+ * copy of the styles, and Compass spent a while carrying two list bugs the
+ * bubble had already been fixed for.
+ *
+ * Sizes stay props: the draft cards and the goal proposals set their own.
  */
 export function SamwellMarkdown({
   content,
@@ -35,56 +27,9 @@ export function SamwellMarkdown({
   lineHeight = 24,
   color,
 }: SamwellMarkdownProps) {
-  const foregroundVar = useCSSVariable('--color-foreground');
-  const primaryVar = useCSSVariable('--color-primary');
-  const surfaceTertiaryVar = useCSSVariable('--color-surface-tertiary');
-  const textColor = color ?? asColor(foregroundVar);
-
-  /*
-   * The same renderer the chat bubbles use.
-   *
-   * Compass was on the stock one and carried both of its bugs: the trailing
-   * gap under any message containing a list, and — because the library's list
-   * item has no intrinsic width — a card that collapsed to its longest word
-   * and wrapped mid-word. Two places render Samwell's markdown; they render it
-   * the same way.
-   */
-  const renderer = useMemo(() => new MarkdownListRenderer(), []);
-
-  const elements = useMarkdown(content, {
-    renderer,
-    styles: {
-      text: { fontFamily: fontFamily.serif, fontSize, lineHeight },
-      paragraph: { marginTop: 0, marginBottom: spacing[2] },
-      h1: { fontFamily: fontFamily.serifMedium, fontSize: fontSize + 4, marginBottom: spacing[1] },
-      h2: { fontFamily: fontFamily.serifMedium, fontSize: fontSize + 2, marginBottom: spacing[1] },
-      h3: { fontFamily: fontFamily.serifMedium, fontSize: fontSize + 1, marginBottom: spacing[1] },
-      list: { marginVertical: spacing[1] },
-      // Without this the library's own 16/24 applies to list markers and item
-      // text, so a list reads a size larger than the prose around it.
-      li: { fontFamily: fontFamily.serif, fontSize, lineHeight },
-      blockquote: {
-        paddingHorizontal: spacing[3],
-        paddingVertical: spacing[1],
-        marginVertical: spacing[1],
-      },
-      codespan: { fontFamily: 'monospace', fontSize: fontSize - 2 },
-    },
-    theme: {
-      colors: {
-        text: textColor,
-        link: asColor(primaryVar),
-        code: asColor(surfaceTertiaryVar),
-        border: asColor(surfaceTertiaryVar),
-      },
-    },
-  });
+  const markdownStyle = useMarkdownStyle({ voice: 'serif', fontSize, lineHeight, color });
 
   return (
-    <View>
-      {elements.map((el, i) => (
-        <Fragment key={i}>{el}</Fragment>
-      ))}
-    </View>
+    <EnrichedMarkdownText markdown={content} markdownStyle={markdownStyle} flavor="commonmark" />
   );
 }

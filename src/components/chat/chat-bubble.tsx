@@ -1,8 +1,7 @@
-import React, { Fragment, useMemo } from 'react';
-import { Text, View, type TextStyle, type ViewStyle } from 'react-native';
-import { useMarkdown } from 'react-native-marked';
+import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
+import React, { useMemo } from 'react';
+import { View } from 'react-native';
 
-import { MarkdownListRenderer } from '@/components/markdown-list-renderer';
 import Animated, { FadeInUp, useReducedMotion } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
@@ -12,6 +11,7 @@ import { SuggestionCard } from '@/components/chat/suggestion-card';
 import { Message } from '@/components/ui/message';
 import { ThemedText } from '@/components/themed-text';
 import { easing, fontFamily, motion, spacing } from '@/constants/theme';
+import { useMarkdownStyle } from '@/hooks/use-markdown-style';
 import { asColor } from '@/utils/colors';
 
 /** New bubbles rise and fade in rather than popping into the list —
@@ -44,70 +44,34 @@ interface ChatBubbleProps {
 }
 
 function MarkdownSegment({ content, streaming }: { content: string; streaming?: boolean }) {
-  // Literal colours for react-native-marked's theme object — a third-party
-  // API that takes values, not classNames.
-  const [foreground, primary, surfaceTertiary] = useCSSVariable([
-    '--color-foreground',
-    '--color-primary',
-    '--color-surface-tertiary',
-  ]);
-
-  // Per mount rather than module scope: the base class keeps a slug cache
-  // that would otherwise grow for the life of the session.
-  const renderer = useMemo(() => new MarkdownListRenderer(), []);
-
-  const elements = useMarkdown(streaming ? content + ' ▍' : content, {
-    renderer,
-    styles: {
-      // Without this the library's own 16/24 applies to list markers and
-      // item text, so a list read a size larger than the prose around it.
-      li: { fontFamily: fontFamily.sans, fontSize: 15, lineHeight: 22 },
-      text: { fontFamily: fontFamily.sans, fontSize: 15, lineHeight: 22 },
-      /*
-       * `paddingVertical: 0` is doing real work here, not tidying.
-       *
-       * react-native-marked builds each style as
-       * `StyleSheet.flatten([libraryDefault, userStyles[token]])`, and its
-       * default paragraph is `{ paddingVertical: 8 }`. Padding and margin are
-       * different keys, so setting only margins here does not replace it — the
-       * 8 survives underneath. Every paragraph was therefore carrying 8 above
-       * and 8 below on top of this margin: 20 units of gap where 4 was meant,
-       * repeated for every block in the reply. In a message built from a
-       * numbered list with a card after each entry, that is most of the
-       * whitespace on screen.
-       *
-       * Zeroing it puts the rhythm back under this file's control, so the
-       * margin below is the only spacing a paragraph contributes.
-       */
-      paragraph: { paddingVertical: 0, marginTop: 0, marginBottom: spacing[1] },
-      h1: { fontFamily: fontFamily.sansBold, fontSize: 17, marginBottom: spacing[1], marginTop: spacing[1] },
-      h2: { fontFamily: fontFamily.sansSemiBold, fontSize: 16, marginBottom: spacing[1], marginTop: spacing[1] },
-      h3: { fontFamily: fontFamily.sansSemiBold, fontSize: 15, marginBottom: 2, marginTop: spacing[1] },
-      codespan: { fontFamily: 'monospace', fontSize: 13 },
-      code: { padding: spacing[3], marginVertical: spacing[1] },
-      blockquote: { paddingHorizontal: spacing[3], paddingVertical: spacing[1], marginVertical: spacing[1] },
-      list: { marginVertical: spacing[1] },
-      hr: { marginVertical: spacing[2] },
-    },
-    theme: {
-      colors: {
-        // react-native-marked's theme demands a definite ColorValue (no
-        // `undefined`); the tokens are declared in every theme, so they
-        // always resolve and the assertions hold.
-        code: asColor(surfaceTertiary)!,
-        link: asColor(primary)!,
-        text: asColor(foreground)!,
-        border: asColor(surfaceTertiary)!,
-      },
-    },
-  });
+  const markdownStyle = useMarkdownStyle({ voice: 'sans', fontSize: 15, lineHeight: 22 });
 
   return (
-    <View>
-      {elements.map((el, i) => <Fragment key={i}>{el}</Fragment>)}
-    </View>
+    /*
+     * One native text view, not a tree of RN views.
+     *
+     * `streamingAnimation` fades only the tail — the characters beyond what
+     * was already rendered — which is why the old `content + ' ▍'` caret is
+     * gone. That caret existed to show the reply was still coming while the
+     * whole block re-rendered on every token; the library animates the
+     * arrival itself, so the block cursor was standing in for motion that now
+     * happens for real.
+     *
+     * `commonmark` rather than `github`: the GitHub flavour renders fenced
+     * code as a separate scrolling pane with a header bar and copy button,
+     * which is a lot of chrome for a reading companion who never emits code.
+     * CommonMark keeps a code block inside the same text view, where it wraps.
+     */
+    <EnrichedMarkdownText
+      markdown={content}
+      markdownStyle={markdownStyle}
+      flavor="commonmark"
+      streamingAnimation={streaming}
+      selectable
+    />
   );
 }
+
 
 const AssistantContent = React.memo(function AssistantContent({
   content,
