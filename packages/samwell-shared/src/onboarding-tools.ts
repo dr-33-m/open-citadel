@@ -131,7 +131,7 @@ export const downloadFreeBooksTool = toolDefinition({
 export const finishOnboardingTool = toolDefinition({
   name: 'finish_onboarding',
   description:
-    "End onboarding. Call this once, in the SAME turn as your goodbye and immediately after it: say your last words, then call this, without waiting for the user to reply and without waiting to be asked. It gives them the button through to their library and closes this free conversation. Never call it before you have finished speaking, and never end the conversation without calling it.",
+    "End onboarding. Call this once, in the SAME turn as your goodbye and immediately after it: say your last words, then call this, without waiting for the user to reply and without waiting to be asked. It gives them the button through to their library and closes this free conversation. Never call it before you have finished speaking, and never end the conversation without calling it. Calling it ends the conversation: there is no turn after it, so say everything you mean to say first.",
   inputSchema: FinishOnboardingInputSchema,
   outputSchema: FinishOnboardingOutputSchema,
 });

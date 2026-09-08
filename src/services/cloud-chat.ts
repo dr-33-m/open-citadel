@@ -406,12 +406,19 @@ function statusForTool(toolName: string): string {
  * No `ToolCallContext` either, because none of these touch a chat session or
  * a book. They touch the file system.
  */
-function createOnboardingClientTools() {
+function createOnboardingClientTools(onFinished: () => void) {
   return clientTools(
     setUpLibraryTool.client(async () => runSetUpLibrary()),
     findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
     downloadFreeBooksTool.client(async (input) => runDownloadFreeBooks(input)),
-    finishOnboardingTool.client(async () => runFinishOnboarding()),
+    finishOnboardingTool.client(async () => {
+      const result = await runFinishOnboarding();
+      // The turn is over the moment this returns. See `finished` in
+      // `sendCloudChatTurn` for why that has to be enforced here rather than
+      // asked for in the prompt.
+      onFinished();
+      return result;
+    }),
     explainAppTool.client(async () => runExplainApp()),
   );
 }
@@ -784,6 +791,25 @@ export async function sendCloudChatTurn({
    */
   let saidSoFar = '';
   let saidWhenToolCalled = '';
+  /*
+   * `finish_onboarding` has run, so there is nothing left for this turn to do.
+   *
+   * Enforced here rather than asked for in the prompt, because asking did not
+   * work and could not. A client tool returning is not the end of anything to
+   * the runner: it posts the result back and the model gets another turn. The
+   * onboarding script tells him to end with his goodbye and this call, so on
+   * that extra turn he read the same instruction, said goodbye again, and
+   * called it again. Round and round, twelve books announced six ways, until
+   * the reader pressed stop.
+   *
+   * A prompt cannot fix that. "Do not call this twice" is one more sentence in
+   * the same instruction that is generating the loop, and the loop costs the
+   * house a turn each time. The tool that ends the conversation ends the turn.
+   */
+  let finished = false;
+  const endConversation = () => {
+    finished = true;
+  };
   const endToolPhase = () => {
     if (!inToolPhase) return;
     inToolPhase = false;
@@ -844,7 +870,7 @@ export async function sendCloudChatTurn({
           },
     tools:
       mode === 'onboarding'
-        ? createOnboardingClientTools()
+        ? createOnboardingClientTools(endConversation)
         : mode === 'compass'
           ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
           : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
@@ -974,6 +1000,19 @@ export async function sendCloudChatTurn({
     const startedAt = Date.now();
     while (Date.now() - startedAt < SETTLE_ABSOLUTE_MS) {
       if (aborted) break;
+      if (finished) {
+        /*
+         * He has said goodbye and closed the conversation. Whatever he said
+         * before that call is the whole of it; anything after would be a
+         * second goodbye, which is exactly what this is here to prevent.
+         */
+        try {
+          client.stop();
+        } catch {
+          // Already torn down, which is the outcome we wanted anyway.
+        }
+        break;
+      }
       if (approvals.length > 0) lastProgressAt = Date.now();
       if (Date.now() - lastProgressAt > SETTLE_INACTIVITY_MS) {
         console.warn('[Samwell Cloud] Turn went quiet; returning partial content.');
