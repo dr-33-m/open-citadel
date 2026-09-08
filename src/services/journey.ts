@@ -225,7 +225,7 @@ export function formatJourneyNotes(notes: JourneyNote[]): string {
   return (
     'Reflections from their journey, newest first:\n' +
     notes
-      .map((note) => `${note.createdAt.slice(0, 10)} — ${note.text}`)
+      .map((note) => `${note.createdAt.slice(0, 10)}: ${note.text}`)
       .join('\n')
       .slice(0, MAX_NOTES_CHARS)
   );

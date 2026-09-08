@@ -1507,7 +1507,7 @@ export function formatChapterListingForLLM(listing: ChapterListing | { error: st
   }
   const lines = listing.chapters.map(
     (c) =>
-      `${c.index}. ${c.title ?? '(untitled section)'} — ~${c.approxWords} words` +
+      `${c.index}. ${c.title ?? '(untitled section)'} (~${c.approxWords} words)` +
       `${c.current ? ' (currently reading, partially read)' : ''}`,
   );
   return (
@@ -1632,7 +1632,7 @@ export function formatBookCandidatesForLLM(
     `- "${b.title}" by ${b.author}` +
     (b.category ? ` (${b.category})` : '') +
     (b.status === 'reading' && b.percentage != null
-      ? ` — ${Math.round(b.percentage * 100)}% read`
+      ? `, ${Math.round(b.percentage * 100)}% read`
       : '') +
     `\n  Ref: [[book:${b.id}]]`;
 

@@ -211,7 +211,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       .orderBy(desc(thoughts.createdAt));
 
     const username = useSettingsStore.getState().username;
-    const thoughtLabel = username ? `Thought — ${username}` : "Thought";
+    const thoughtLabel = username ? `Thought by ${username}` : "Thought";
 
     const thoughtItems: TimelineItem[] = thoughtRows.map((t) => {
       const hasBeenEdited = !!(t.updatedAt && t.updatedAt.length > 0);

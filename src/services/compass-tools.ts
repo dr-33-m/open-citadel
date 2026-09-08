@@ -204,7 +204,7 @@ function trackableLines(detail: GoalDetail, today: Ymd): string[] {
       parts.push(`${result.bonus} extra beyond what was asked`);
     }
     if (weakest && weakest.trackableId === trackable.id) parts.push('WEAKEST');
-    lines.push(parts.join(' — '));
+    lines.push(parts.join(' | '));
   }
   return lines;
 }
@@ -234,7 +234,7 @@ export function formatCompassStatus(): string {
       : 'no numeric outcome';
     const marks = goal.id === primaryGoalId ? 'PRIMARY' : '';
     lines.push(
-      `- ${goal.title}${marks ? ` [${marks}]` : ''} — ${goal.category} — CONSISTENCY ${execution} — OUTCOME ${outcome}`,
+      `- ${goal.title}${marks ? ` [${marks}]` : ''} | ${goal.category} | CONSISTENCY ${execution} | OUTCOME ${outcome}`,
     );
   }
 
@@ -262,7 +262,7 @@ export function formatCompassStatus(): string {
       const marks = detail.goal.id === primaryGoalId ? 'PRIMARY' : '';
       lines.push(
         '',
-        `${detail.goal.title}${marks ? ` [${marks}]` : ''} — runs ${detail.goal.startDate} to ${detail.goal.endDate}. ${Math.max(0, daysBetween(today, detail.goal.endDate))} days left. Status ${detail.goal.status}.`,
+        `${detail.goal.title}${marks ? ` [${marks}]` : ''}: runs ${detail.goal.startDate} to ${detail.goal.endDate}. ${Math.max(0, daysBetween(today, detail.goal.endDate))} days left. Status ${detail.goal.status}.`,
       );
       if (detail.goal.description) lines.push(detail.goal.description);
       lines.push(...trackableLines(detail, today));
@@ -339,7 +339,7 @@ export function formatToday(): string {
         `measured by ${item.trackable.measurement.type}${unit ? ` in ${unit}` : ''}`,
       ];
       if (item.periodLabel) parts.push(item.periodLabel);
-      lines.push(parts.join(' — '));
+      lines.push(parts.join(' | '));
     }
   }
 
@@ -348,8 +348,8 @@ export function formatToday(): string {
     for (const { trackable, log } of loggedToday) {
       const outcome = log.completed === 0 ? 'did not happen' : 'done';
       const value = log.value != null ? `, ${log.value}` : '';
-      const note = log.note ? ` — they wrote: "${log.note}"` : '';
-      lines.push(`[${trackable.id}] ${trackable.title} — ${outcome}${value}${note}`);
+      const note = log.note ? `, they wrote: "${log.note}"` : '';
+      lines.push(`[${trackable.id}] ${trackable.title}: ${outcome}${value}${note}`);
     }
   }
 
@@ -385,7 +385,7 @@ export function formatTrackableHistory(trackableId: string, days: number | null)
   });
 
   const lines = [
-    `${trackable.title} (goal: ${goal.title}) — ${scheduleSummary(trackable.schedule)} — measured by ${trackable.measurement.type}`,
+    `${trackable.title} (goal: ${goal.title}) | ${scheduleSummary(trackable.schedule)} | measured by ${trackable.measurement.type}`,
     `Last ${span} days (${from} to ${to}): ${result.completed} of ${result.expected} (${percent(result.ratio)}).`,
   ];
 
@@ -416,8 +416,8 @@ export function formatTrackableHistory(trackableId: string, days: number | null)
           ? 'done'
           : 'short of target';
     const value = log.value != null ? `, ${log.value}` : '';
-    const note = log.note ? ` — "${log.note}"` : '';
-    lines.push(`${log.date} — ${outcome}${value}${note}`);
+    const note = log.note ? `, "${log.note}"` : '';
+    lines.push(`${log.date}: ${outcome}${value}${note}`);
   }
 
   return lines.join('\n');

@@ -287,7 +287,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       readPct !== null
         ? `The user has read ${readPct}% of this book${
             progress?.currentPage ? ` (up to page ${progress.currentPage})` : ''
-          }. Hard rule: never reveal, discuss, or hint at plot events, characters, or ideas that appear beyond that point — not from the book text and not from your own knowledge of the book. If asked about later content, say you will discuss it once they have read that far.`
+          }. Hard rule: never reveal, discuss, or hint at plot events, characters, or ideas that appear beyond that point, not from the book text and not from your own knowledge of the book. If asked about later content, say you will discuss it once they have read that far.`
         : null;
 
     db.insert(chatSessions)
@@ -323,7 +323,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const systemContent = passageText
         ? `${bookLine}${backgroundSection}` +
-          `The user specifically highlighted this passage — focus your answers on it${contextText ? ', using the context above only as background' : ''}:\n\n${passageText}\n\n` +
+          `The user specifically highlighted this passage. Focus your answers on it${contextText ? ', using the context above only as background' : ''}:\n\n${passageText}\n\n` +
           'Answer questions about the highlighted passage, provide analysis, and discuss themes. Be concise and insightful.' +
           (boundaryLine ? `\n\n${boundaryLine}` : '')
         : `${bookLine}The user is reading the following passage:\n\n${contextText}\n\n` +

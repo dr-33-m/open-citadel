@@ -76,7 +76,7 @@ export const GetTrackableHistoryInputSchema = z.object({
 export const getTrackableHistoryTool = toolDefinition({
   name: 'get_trackable_history',
   description:
-    "The log history of one trackable: which days were done, which were missed, which were paused, and every note the user wrote on them. Use this when a number needs explaining rather than restating — the notes are where the reason for a bad week usually is, and quoting the user's own words back to them is worth more than the ratio.",
+    "The log history of one trackable: which days were done, which were missed, which were paused, and every note the user wrote on them. Use this when a number needs explaining rather than restating: the notes are where the reason for a bad week usually is, and quoting the user's own words back to them is worth more than the ratio.",
   inputSchema: GetTrackableHistoryInputSchema,
   outputSchema: ReadOutputSchema,
 });
@@ -109,7 +109,7 @@ export const LogTrackableInputSchema = z.object({
 export const logTrackableTool = toolDefinition({
   name: 'log_trackable',
   description:
-    "Record that the user did or did not do a scheduled trackable, with an optional note. Only ever call this after they have told you what happened — you are writing down their answer, not deciding it. An explained miss counts exactly like a silent one, so log a miss as a miss and put the reason in the note. The user confirms every log before it is written.",
+    "Record that the user did or did not do a scheduled trackable, with an optional note. Only ever call this after they have told you what happened. You are writing down their answer, not deciding it. An explained miss counts exactly like a silent one, so log a miss as a miss and put the reason in the note. The user confirms every log before it is written.",
   inputSchema: LogTrackableInputSchema,
   outputSchema: WriteOutputSchema,
   /*
@@ -148,7 +148,7 @@ export const TrackableIdInputSchema = z.object({
 export const finishGoalTool = toolDefinition({
   name: 'finish_goal',
   description:
-    "Close a goal out as finished. Only when its end date has passed or it has reached its number — otherwise the app refuses, and rightly: finishing early on a whim is the procrastination this is built against, pointed the other way. The user confirms before it is written.",
+    "Close a goal out as finished. Only when its end date has passed or it has reached its number. Otherwise the app refuses, and rightly: finishing early on a whim is the procrastination this is built against, pointed the other way. The user confirms before it is written.",
   inputSchema: GoalIdInputSchema,
   outputSchema: WriteOutputSchema,
   needsApproval: true,
@@ -157,7 +157,7 @@ export const finishGoalTool = toolDefinition({
 export const stopGoalTool = toolDefinition({
   name: 'stop_goal',
   description:
-    "Retire a goal before its end. Never suggest this yourself when a week has gone badly — a bad week is what the goal is for. Call it when the user has decided, and put their reason in the note. The user confirms before it is written.",
+    "Retire a goal before its end. Never suggest this yourself when a week has gone badly: a bad week is what the goal is for. Call it when the user has decided, and put their reason in the note. The user confirms before it is written.",
   inputSchema: StopGoalInputSchema,
   outputSchema: WriteOutputSchema,
   needsApproval: true,
@@ -175,7 +175,7 @@ export const setPrimaryGoalTool = toolDefinition({
 export const pauseTrackableTool = toolDefinition({
   name: 'pause_trackable',
   description:
-    "Pause one activity, so the days it is paused stop counting against consistency. This is the honest tool for a real interruption — illness, travel, a broken week — and it is why a paused day is not a missed day. The user confirms before it is written.",
+    "Pause one activity, so the days it is paused stop counting against consistency. This is the honest tool for a real interruption (illness, travel, a broken week), and it is why a paused day is not a missed day. The user confirms before it is written.",
   inputSchema: TrackableIdInputSchema,
   outputSchema: WriteOutputSchema,
   needsApproval: true,
@@ -195,7 +195,7 @@ export const resumeTrackableTool = toolDefinition({
 export const proposeGoalTool = toolDefinition({
   name: 'propose_goal',
   description:
-    "Put a complete goal proposal on screen for the user to approve, revise, or reject. Call this only once the conversation has produced something concrete you would stand behind — while you are still clarifying, just keep talking. Keep the message you write alongside it short, since the card carries the detail. Nothing is created until the user approves it, and they can ask you to change it, so propose rather than hedge.",
+    "Put a complete goal proposal on screen for the user to approve, revise, or reject. Call this only once the conversation has produced something concrete you would stand behind. While you are still clarifying, just keep talking. Keep the message you write alongside it short, since the card carries the detail. Nothing is created until the user approves it, and they can ask you to change it, so propose rather than hedge.",
   inputSchema: GoalProposalModelSchema,
   outputSchema: WriteOutputSchema,
 });

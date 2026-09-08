@@ -300,7 +300,7 @@ export const searchHighlightsTool = toolDefinition({
 export const searchReadingTool = toolDefinition({
   name: 'search_reading',
   description:
-    "Search the FULL TEXT of the books the user is currently reading or has finished, for passages relevant to a topic or question. Only ever returns text the user has ALREADY read — never content ahead of their current reading position. Use this mid-conversation to ground your points in what the user's own authors actually say, citing the book.",
+    "Search the FULL TEXT of the books the user is currently reading or has finished, for passages relevant to a topic or question. Only ever returns text the user has ALREADY read, never content ahead of their current reading position. Use this mid-conversation to ground your points in what the user's own authors actually say, citing the book.",
   inputSchema: SearchReadingInputSchema,
   outputSchema: SearchReadingOutputSchema,
 });
@@ -324,7 +324,7 @@ export const readChapterTool = toolDefinition({
 export const suggestNextBookTool = toolDefinition({
   name: 'suggest_next_book',
   description:
-    "List the user's library — books queued to read, currently reading, and finished — so you can recommend what they should read next given where they are in their journey. Only recommend titles that appear in this list (the user's own library); never invent books they don't own.",
+    "List the user's library (books queued to read, currently reading, and finished), so you can recommend what they should read next given where they are in their journey. Only recommend titles that appear in this list (the user's own library); never invent books they don't own.",
   inputSchema: SuggestNextBookInputSchema,
   outputSchema: SuggestNextBookOutputSchema,
 });
@@ -544,7 +544,7 @@ export const deleteNoteTool = toolDefinition({
 export const updateThoughtTool = toolDefinition({
   name: 'update_thought',
   description:
-    "Rewrite a thought's text, replacing it entirely, so include everything that should remain. ASK FIRST: read the thought back and ask what they want it to say, unless they have already told you. These are the user's own words about their own life — only ever change them on their instruction, and keep their voice rather than improving it into yours. Requires user approval.",
+    "Rewrite a thought's text, replacing it entirely, so include everything that should remain. ASK FIRST: read the thought back and ask what they want it to say, unless they have already told you. These are the user's own words about their own life, so only ever change them on their instruction, and keep their voice rather than improving it into yours. Requires user approval.",
   inputSchema: UpdateThoughtInputSchema,
   outputSchema: DeleteResultSchema,
   needsApproval: true,
@@ -567,7 +567,7 @@ export const listCollectionsTool = toolDefinition({
 export const searchJourneyTool = toolDefinition({
   name: 'search_journey',
   description:
-    "Search the notes you have written down about the user over time: reflections distilled from past conversations, books they finished, goals they closed. Use this when continuity matters — when something they are saying now rhymes with something you noticed months ago, or when they ask what has changed. These are your own words about them, not theirs, so weigh them as memory rather than evidence.",
+    "Search the notes you have written down about the user over time: reflections distilled from past conversations, books they finished, goals they closed. Use this when continuity matters: when something they are saying now rhymes with something you noticed months ago, or when they ask what has changed. These are your own words about them, not theirs, so weigh them as memory rather than evidence.",
   inputSchema: SearchJourneyInputSchema,
   outputSchema: SearchJourneyOutputSchema,
 });

@@ -710,7 +710,7 @@ export async function preflightCloudServer(baseUrl: string): Promise<void> {
     const detail = err instanceof Error ? err.message : String(err);
     throw new Error(
       `Cannot reach Samwell Cloud at ${baseUrl} from the app (${detail}). ` +
-        'If this exact URL loads in the phone browser, the app cannot use plain HTTP — serve the backend over HTTPS (e.g. cloudflared tunnel) or use adb reverse.',
+        'If this exact URL loads in the phone browser, the app cannot use plain HTTP. Serve the backend over HTTPS (e.g. cloudflared tunnel) or use adb reverse.',
     );
   } finally {
     clearTimeout(timer);

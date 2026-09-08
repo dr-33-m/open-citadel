@@ -324,7 +324,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     const required = model.sizeBytes ?? 0;
     if (required > 0 && freeSpace < required * 1.1) {
       set({
-        loadError: `Not enough storage — ${formatBytes(required)} required, ${formatBytes(freeSpace)} free.`,
+        loadError: `Not enough storage. ${formatBytes(required)} required, ${formatBytes(freeSpace)} free.`,
       });
       return;
     }
