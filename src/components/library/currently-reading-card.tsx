@@ -1,19 +1,15 @@
 import { Image } from 'expo-image';
-import React, { useCallback, useState } from 'react';
+import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
-
-import { Touchable } from '@/components/ui/touchable';
-import { useFocusEffect } from "expo-router/react-navigation";
 
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Touchable } from '@/components/ui/touchable';
 import { fontFamily, motion } from '@/constants/theme';
 import type { books } from '@/db/schema';
-import { db } from '@/db/client';
-import { readingProgress } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { useBooksStore } from '@/stores/books';
 
 type Book = typeof books.$inferSelect;
 
@@ -38,18 +34,16 @@ export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyRe
     '--color-muted-foreground',
     '--color-primary',
   ]);
-  const [progress, setProgress] = useState(0);
-
-  useFocusEffect(
-    useCallback(() => {
-      db.select()
-        .from(readingProgress)
-        .where(eq(readingProgress.bookId, book.id))
-        .then(([row]) => {
-          if (row) setProgress(row.percentage);
-        });
-    }, [book.id])
-  );
+  /*
+   * Read, not fetched, and not mirrored into local state.
+   *
+   * This was `useState` filled by a query on every focus, which is two copies
+   * of one fact and a race between them: `closeBook` cannot await its write,
+   * so the read that ran when the Library came back usually beat it and the
+   * bar showed the previous visit's position. The store holds the one copy,
+   * and the code that writes the row is what updates it.
+   */
+  const progress = useBooksStore((s) => s.progressByBook[book.id] ?? 0);
 
   return (
     <Touchable onPress={onPress} onLongPress={onLongPress}>

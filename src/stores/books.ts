@@ -4,7 +4,7 @@ import { useShallow } from "zustand/shallow";
 
 import { showToast } from "@/components/toast/toast-provider";
 import { db } from "@/db/client";
-import { appSettings, books } from "@/db/schema";
+import { appSettings, books, readingProgress } from "@/db/schema";
 import { deleteBookWithFile } from "@/services/book-delete";
 import { saveBookFinishedNote } from "@/services/journey";
 import {
@@ -130,6 +130,23 @@ interface BooksState {
   isLoading: boolean;
   sync: SyncState;
 
+  /**
+   * How far through each book the reader is, keyed by book id.
+   *
+   * Here rather than queried by the card that draws it, because the card was
+   * losing a race it could not see. `closeBook` writes the final position and
+   * cannot await it, the Library regains focus and the card queried for the
+   * same row, and the read usually won: the bar showed the position from the
+   * PREVIOUS visit, and only caught up on the next one. Two async operations
+   * with no ordering between them will do that, and no amount of refetching
+   * fixes it.
+   *
+   * Written here by whoever wrote the row, so the value that lands is always
+   * the one that was just saved.
+   */
+  progressByBook: Record<string, number>;
+  /** Called by `saveProgressToDb` once the write has actually committed. */
+  setBookProgress: (bookId: string, percentage: number) => void;
   loadBooks: () => Promise<void>;
   loadDirectoryUri: () => Promise<void>;
   setDirectoryUri: (uri: string, options?: { scan?: boolean }) => Promise<void>;
@@ -262,9 +279,18 @@ function applySyncProgress(
 
 export const useBooksStore = create<BooksState>((set, get) => ({
   books: [],
+  progressByBook: {},
   booksDirectoryUri: null,
   isLoading: false,
   sync: IDLE_SYNC,
+
+  setBookProgress: (bookId: string, percentage: number) => {
+    set((state) =>
+      state.progressByBook[bookId] === percentage
+        ? state
+        : { progressByBook: { ...state.progressByBook, [bookId]: percentage } },
+    );
+  },
 
   loadBooks: async () => {
     /*
@@ -278,8 +304,30 @@ export const useBooksStore = create<BooksState>((set, get) => ({
      */
     const firstRead = get().books.length === 0;
     if (firstRead) set({ isLoading: true });
-    const allBooks = await db.select().from(books);
-    set(firstRead ? { books: allBooks, isLoading: false } : { books: allBooks });
+    /*
+     * Progress comes back with the books, in one round trip rather than one
+     * query per card on every focus.
+     *
+     * Safe to run alongside a write in flight: `setBookProgress` fires when
+     * that write commits, so whichever of the two lands second is the one
+     * holding the newer number, and they converge either way.
+     */
+    const [allBooks, progressRows] = await Promise.all([
+      db.select().from(books),
+      db
+        .select({
+          bookId: readingProgress.bookId,
+          percentage: readingProgress.percentage,
+        })
+        .from(readingProgress),
+    ]);
+    const progressByBook: Record<string, number> = {};
+    for (const row of progressRows) progressByBook[row.bookId] = row.percentage;
+    set(
+      firstRead
+        ? { books: allBooks, progressByBook, isLoading: false }
+        : { books: allBooks, progressByBook },
+    );
   },
 
   loadDirectoryUri: async () => {

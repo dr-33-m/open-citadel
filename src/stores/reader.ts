@@ -127,6 +127,18 @@ async function saveProgressToDb(bookId: string, locator: Locator) {
     });
   }
 
+  /*
+   * The row is written, so the Library can be told what it says.
+   *
+   * After the await, never before it, and pushed rather than left to be
+   * discovered. The card used to query for this row itself when the Library
+   * regained focus, which raced `closeBook`: that write is fired without being
+   * awaited, because closing a screen cannot wait on a database, and the read
+   * usually won. The bar showed the position from the previous visit and only
+   * caught up on the next one, which is exactly how it was reported.
+   */
+  useBooksStore.getState().setBookProgress(bookId, percentage);
+
   // First-ever write for a book has no previous position to compare against,
   // so it contributes nothing — opening a book isn't reading it.
   await recordReadingDay(bookId, existing?.percentage ?? percentage, percentage);
