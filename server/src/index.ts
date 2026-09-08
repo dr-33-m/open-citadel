@@ -38,6 +38,7 @@ import { takeawayRoutes } from './takeaway.js';
 import {
   deleteCloudModel,
   getDefaultModelId,
+  claimHouseOnboardingTurn,
   getOnboardingModelId,
   getUsageState,
   initDb,
@@ -406,8 +407,25 @@ app.post('/chat/http', async (c) => {
     throw new HTTPException(400, { message: 'messages must be an array.' });
   }
 
-  const countsTowardLimit = isCountableUserTurn(body.messages);
   const mode = readMode(body);
+
+  /*
+   * Onboarding is on the house, on this route as much as on the free one.
+   *
+   * Reaching `/chat/http` in onboarding mode means the grant is spent, which
+   * says something about the account and nothing about who should pay. An
+   * introduction to the app is Open Citadel's cost: a reader who reinstalls,
+   * or picks up a second device, should not have their allowance spent being
+   * told what the app is for. The event is still written, with its own kind,
+   * so the spend is legible to us even though it is invisible to them.
+   *
+   * Bounded by a lifetime ceiling rather than by the grant, because "free" and
+   * "unbounded" cannot both be true and `mode: 'onboarding'` is a claim the
+   * client makes. Past that ceiling the turns count again, which degrades
+   * rather than refuses.
+   */
+  const onTheHouse = mode === 'onboarding' && (await claimHouseOnboardingTurn(accountId));
+  const countsTowardLimit = onTheHouse ? false : isCountableUserTurn(body.messages);
 
   const rawMessages = body.messages as { role?: string; content?: unknown }[];
   const sessionSystemPrompts = rawMessages
@@ -585,7 +603,8 @@ app.post('/chat/http', async (c) => {
   });
 
   console.log(
-    `[Samwell Cloud] ${mode} turn: model=${modelId} thinkingBudget=${thinkingBudget}`,
+    `[Samwell Cloud] ${mode} turn: model=${modelId} thinkingBudget=${thinkingBudget}` +
+      (mode === 'onboarding' ? ` billed=${onTheHouse ? 'house' : 'reader'}` : ''),
   );
 
   return toHttpResponse(meterStream(stream, usageEventId, body.threadId, modelId), {

@@ -535,6 +535,55 @@ export async function claimOnboardingTurn(accountId: string): Promise<Onboarding
 }
 
 /**
+ * How many onboarding turns the house will carry for one account, ever.
+ *
+ * The grant above is the bound on ONE first run. This is the bound on the
+ * account, and it exists because onboarding stopped being billable: without a
+ * ceiling, a client that simply keeps saying `mode: 'onboarding'` would have
+ * an unlimited free conversation with a scripted persona and five tools.
+ *
+ * Three first runs' worth. A real reader uses one and never sees this; a
+ * reinstall or a second device uses another; past that the turns start
+ * counting against the reader again rather than being refused, because a
+ * conversation that degrades is kinder than one that stops.
+ */
+const ONBOARDING_HOUSE_CEILING = ONBOARDING_TURN_CEILING * 3;
+
+/**
+ * Spend one onboarding turn that Open Citadel is paying for.
+ *
+ * Unlike `claimOnboardingTurn` this does not care whether the grant was
+ * completed. Completion means "this reader has been onboarded", which is worth
+ * knowing and is not a reason to start charging them for an introduction. Only
+ * the lifetime ceiling can refuse.
+ */
+export async function claimHouseOnboardingTurn(accountId: string): Promise<boolean> {
+  const existing = await db.execute({
+    sql: 'SELECT turns FROM onboarding_grants WHERE account_id = ?',
+    args: [accountId],
+  });
+
+  const row = existing.rows[0];
+  if (!row) {
+    await db.execute({
+      sql: `INSERT INTO onboarding_grants (account_id, turns, started_at_ms)
+            VALUES (?, 1, ?)`,
+      args: [accountId, Date.now()],
+    });
+    return true;
+  }
+
+  const turns = Number(row.turns) + 1;
+  if (turns > ONBOARDING_HOUSE_CEILING) return false;
+
+  await db.execute({
+    sql: 'UPDATE onboarding_grants SET turns = ? WHERE account_id = ?',
+    args: [turns, accountId],
+  });
+  return true;
+}
+
+/**
  * Close the grant. Idempotent, and deliberately so: the client reports the
  * finish after `finish_onboarding` runs on the device, and a retried report
  * must not look like a second onboarding.
