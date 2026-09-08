@@ -21,6 +21,11 @@ import {
   setUpLibrary,
   type LibrarySetupResult,
 } from '@/services/library-setup';
+// Imported for the store's actions only, never read at module scope. The
+// chat store reaches back here through `cloud-chat`, so this is a cycle, and
+// touching it during evaluation rather than at call time is what would break
+// it.
+import { useOnboardingChatStore } from '@/stores/onboarding-chat';
 import { useSettingsStore } from '@/stores/settings';
 
 type FreeBook = z.infer<typeof FreeBookSchema>;
@@ -69,6 +74,17 @@ export async function runSetUpLibrary(): Promise<{
   try {
     const result = await setUpLibrary();
     const summary = describeSetup(result);
+    /*
+     * Books, not just a folder.
+     *
+     * A pick that found nothing leaves an empty Open Citadel folder and a
+     * conversation that carries on to free books, so marking readiness there
+     * would swap the reader's text field for a GO TO MY LIBRARY button in the
+     * middle of Samwell asking them a question.
+     */
+    if (result.ok && result.imported > 0) {
+      useOnboardingChatStore.getState().markLibraryReady();
+    }
     return {
       ok: result.ok,
       folder: result.folderName
@@ -194,6 +210,7 @@ export async function runDownloadFreeBooks(input: { gutenberg_ids: number[] }): 
           'The user closed the folder picker, so there is nowhere to put the books. That is their decision. Do not try again unless they ask.',
       };
     }
+    if (downloaded.length > 0) useOnboardingChatStore.getState().markLibraryReady();
     return { ok: downloaded.length > 0, downloaded, failed };
   } catch (error) {
     console.warn('[onboarding] download_free_books failed:', error);
@@ -217,8 +234,13 @@ export async function runDownloadFreeBooks(input: { gutenberg_ids: number[] }): 
  * The server report is fire and forget. It closes the grant so the free route
  * is not open forever, and a failed report is not worth taking a goodbye down
  * over: the turn ceiling closes an abandoned grant on its own.
+ *
+ * Split from the tool because the tool is not the only way out. Tapping GO TO
+ * MY LIBRARY has to do exactly this too, and on the run that prompted the
+ * split it was the only thing that did: Samwell said his goodbye and then did
+ * not call anything, three times running.
  */
-export async function runFinishOnboarding(): Promise<{ ok: boolean }> {
+export async function completeOnboarding(): Promise<void> {
   const baseUrl = useSettingsStore.getState().cloudBaseUrl;
   if (baseUrl) {
     void (async () => {
@@ -234,5 +256,9 @@ export async function runFinishOnboarding(): Promise<{ ok: boolean }> {
   }
 
   await useSettingsStore.getState().finishOnboarding();
+}
+
+export async function runFinishOnboarding(): Promise<{ ok: boolean }> {
+  await completeOnboarding();
   return { ok: true };
 }

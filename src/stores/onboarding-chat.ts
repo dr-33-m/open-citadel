@@ -96,6 +96,18 @@ type OnboardingChatState = {
   metered: boolean;
 
   /** Resolve or create the session. Safe to call more than once. */
+  /**
+   * Their library exists, whatever the conversation does next.
+   *
+   * Set by the tools that make it, and read by the composer so the way out of
+   * onboarding never depends on the model remembering to call
+   * `finish_onboarding`. It is NOT a second copy of "onboarding is over": that
+   * still lives in `settings.onboarding` and is still what the router reads.
+   * This is a different fact — the books are on the device — and the composer
+   * derives one decision from the two of them.
+   */
+  libraryReady: boolean;
+  markLibraryReady: () => void;
   start: () => Promise<void>;
   send: (text: string) => Promise<void>;
   stop: () => void;
@@ -142,6 +154,11 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
   toolName: null,
   error: null,
   metered: false,
+  libraryReady: false,
+
+  markLibraryReady: () => {
+    if (!get().libraryReady) set({ libraryReady: true });
+  },
 
   start: async () => {
     if (starting) return starting;
@@ -157,7 +174,23 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
        */
       const existing = listSessions('onboarding')[0];
       if (existing) {
-        set({ sessionId: existing.id, messages: readMessages(existing.id) });
+        /*
+         * A resumed conversation asks the device rather than remembering.
+         *
+         * `libraryReady` is set by a tool that ran in a process which may be
+         * gone: the Android folder picker backgrounds the app, and being
+         * killed there is ordinary. Without this the reader comes back to a
+         * library that exists and a conversation with no way out of it.
+         *
+         * Only on resume. On a fresh start this would be true for anyone
+         * reinstalling, and the composer would offer them the exit before
+         * Samwell had said a word.
+         */
+        set({
+          sessionId: existing.id,
+          messages: readMessages(existing.id),
+          libraryReady: await hasLibrary(),
+        });
       } else {
         const id = uuid();
         const ts = new Date().toISOString();

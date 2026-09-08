@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConciergeSignInSheet } from '@/features/onboarding/components/concierge-sign-in-sheet';
 import { OnboardingConversation } from '@/features/onboarding/components/onboarding-conversation';
 import { WelcomeScreen } from '@/features/onboarding/components/welcome-screen';
+import { completeOnboarding } from '@/services/onboarding-tools';
 import { useAccountStore } from '@/stores/account';
 import { hasOnboardingSession, useOnboardingChatStore } from '@/stores/onboarding-chat';
 import { useSettingsStore } from '@/stores/settings';
@@ -50,6 +51,22 @@ export function OnboardingScreen() {
   }, [router]);
 
   /**
+   * Leaving the concierge, however it ended.
+   *
+   * `finish_onboarding` normally does this from inside the conversation, and
+   * when it has, this repeats work that is already done and costs a settings
+   * write. When it has NOT — Samwell said his goodbye and called nothing,
+   * which is how this button came to be reachable without him — it is the only
+   * thing that marks onboarding over and closes the free grant. Doing it here
+   * unconditionally is what makes the button honest: it always means the same
+   * thing, whatever the model did or did not do.
+   */
+  const finishAndLeave = React.useCallback(async () => {
+    await completeOnboarding();
+    leaveForLibrary();
+  }, [leaveForLibrary]);
+
+  /**
    * Opening the conversation, from either direction.
    *
    * `samwellMode` becomes cloud here and nowhere earlier, because this is the
@@ -92,7 +109,8 @@ export function OnboardingScreen() {
     leaveForLibrary();
   }, [finishOnboarding, leaveForLibrary]);
 
-  if (stage === 'chat') return <OnboardingConversation onDone={leaveForLibrary} />;
+  if (stage === 'chat')
+    return <OnboardingConversation onDone={() => void finishAndLeave()} />;
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>

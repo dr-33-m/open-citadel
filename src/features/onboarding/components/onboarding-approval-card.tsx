@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
-import { Check, ShieldQuestionMark, X } from '@/components/icons';
+import { ShieldQuestionMark } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { easing, elevation, motion, spacing } from '@/constants/theme';
@@ -46,38 +46,29 @@ export function OnboardingApprovalCard({ sessionId }: { sessionId: string | null
   );
   const respond = useApprovalStore((s) => s.respond);
 
-  /*
-   * What was decided, kept after the store forgets.
-   *
-   * `respond` removes the entry, so without this the card would vanish the
-   * instant it was answered and the transcript would carry no record that a
-   * question was ever asked. A reader scrolling back should see what they
-   * agreed to, the same way the suggestion card leaves "Saved" behind.
-   */
-  const [settled, setSettled] = React.useState<{ title: string; approved: boolean } | null>(
-    null,
-  );
-
-  /*
-   * A live question always wins over the echo of the last one, which is why
-   * clearing `settled` when a second approval arrives is not needed: the
-   * branch below reads it only when `copy` is null, and answering overwrites
-   * it anyway.
-   */
   const copy = pending ? approvalCopy(pending) : null;
 
+  /*
+   * Answering ends the card. It does not leave a marker behind.
+   *
+   * A first version kept a "You said yes" line, on the theory that scrolling
+   * back should show what was agreed to. It read as clutter, because this card
+   * is not anchored where the question was asked: it lives at the foot of the
+   * transcript, so the marker sat under the goodbye, permanently, describing
+   * something four messages up. The conversation already says what happened.
+   */
   const answer = (approved: boolean) => {
-    if (!pending || !copy) return;
-    setSettled({ title: copy.title, approved });
+    if (!pending) return;
     respond(pending.sessionId, approved);
   };
 
-  if (!copy && !settled) return null;
+  if (!copy) return null;
 
   return (
     <Animated.View
       entering={FadeIn.duration(motion.base).easing(easing)}
       layout={LinearTransition.duration(motion.base).easing(easing)}
+      exiting={FadeOut.duration(motion.fast).easing(easing)}
       style={[
         elevation.soft,
         {
@@ -91,50 +82,31 @@ export function OnboardingApprovalCard({ sessionId }: { sessionId: string | null
         },
       ]}
     >
-      {copy ? (
-        <>
-          <View className="flex-row items-center gap-2">
-            <ShieldQuestionMark size={14} color={asColor(primary)} />
-            <ThemedText type="labelSm" color={asColor(primary)}>
-              {copy.title}
-            </ThemedText>
-          </View>
+      <View className="flex-row items-center gap-2">
+        <ShieldQuestionMark size={14} color={asColor(primary)} />
+        <ThemedText type="labelSm" color={asColor(primary)}>
+          {copy.title}
+        </ThemedText>
+      </View>
 
-          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            {copy.body}
-          </ThemedText>
+      <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+        {copy.body}
+      </ThemedText>
 
-          <Animated.View
-            exiting={FadeOut.duration(motion.fast).easing(easing)}
-            style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: spacing[5] }}
-          >
-            <Touchable className="py-1" haptic="warn" onPress={() => answer(false)}>
-              <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-                NOT NOW
-              </ThemedText>
-            </Touchable>
-            <Touchable className="py-1" haptic="commit" onPress={() => answer(true)}>
-              <ThemedText type="labelSm" color={asColor(primary)}>
-                {copy.confirmLabel}
-              </ThemedText>
-            </Touchable>
-          </Animated.View>
-        </>
-      ) : settled ? (
-        <View className="flex-row items-center gap-2">
-          {settled.approved ? (
-            <Check size={14} color={asColor(primary)} />
-          ) : (
-            <X size={14} color={asColor(mutedForeground)} />
-          )}
-          <ThemedText
-            type="labelSm"
-            color={asColor(settled.approved ? primary : mutedForeground)}
-          >
-            {settled.approved ? 'You said yes' : 'You said not now'}
+      <View
+        style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: spacing[5] }}
+      >
+        <Touchable className="py-1" haptic="warn" onPress={() => answer(false)}>
+          <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+            NOT NOW
           </ThemedText>
-        </View>
-      ) : null}
+        </Touchable>
+        <Touchable className="py-1" haptic="commit" onPress={() => answer(true)}>
+          <ThemedText type="labelSm" color={asColor(primary)}>
+            {copy.confirmLabel}
+          </ThemedText>
+        </Touchable>
+      </View>
     </Animated.View>
   );
 }

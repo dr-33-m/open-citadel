@@ -62,6 +62,7 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
   const toolStatus = useOnboardingChatStore((s) => s.toolStatus);
   const toolName = useOnboardingChatStore((s) => s.toolName);
   const error = useOnboardingChatStore((s) => s.error);
+  const libraryReady = useOnboardingChatStore((s) => s.libraryReady);
 
   const onboarding = useSettingsStore((s) => s.onboarding);
 
@@ -71,16 +72,24 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
   /*
    * Where the conversation is, derived rather than stored.
    *
-   * `done` reads the same settings flag the router reads, so there is exactly
-   * one answer to "is onboarding over" — `finish_onboarding` writes it, and
-   * both this composer and `app/index` see the same thing. A `phase` field in
-   * the chat store would have been a second copy of that fact, free to
-   * disagree with the first.
+   * Two facts, one decision. `onboarding === 'done'` is the settings flag the
+   * router also reads, written by `finish_onboarding`. `libraryReady` is the
+   * separate, smaller claim that the books are actually on the device, written
+   * by the tools that put them there. Either one is enough to earn the way out.
+   *
+   * The second exists because the first is not reliable: it depends on the
+   * model choosing to call a tool after it has finished speaking, and on the
+   * run that prompted this it said its goodbye and called nothing, three times
+   * over. The reader was left in a finished conversation with a full library
+   * and a text field. A screen must not trap somebody because a model forgot
+   * its last instruction.
    *
    * `!busy` on that branch matters. `finish_onboarding` runs mid-turn, so the
    * flag flips while Samwell's goodbye is still streaming. Without it the
    * composer swaps to GO TO MY LIBRARY over the top of a reply still arriving,
-   * and takes the stop button away with it.
+   * and takes the stop button away with it. `libraryReady` flips mid-turn for
+   * the same reason and is held back by the same guard, which is what keeps
+   * the button from landing before he has said where to find him.
    *
    * `said` and NOT `busy` decides the other branch, which is the opposite
    * mistake and worth naming. Pressing GET STARTED puts the store to work for
@@ -91,8 +100,8 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
    * button show its own spinner is the honest report: the press landed, and
    * nothing else has happened yet.
    */
-  const phase: OnboardingPhase =
-    onboarding === 'done' && !busy ? 'done' : said ? 'talking' : 'start';
+  const finished = onboarding === 'done' || libraryReady;
+  const phase: OnboardingPhase = finished && !busy && said ? 'done' : said ? 'talking' : 'start';
 
   /*
    * Keyed on primitives rather than rebuilt bare. A fresh indicator object per
