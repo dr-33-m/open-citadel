@@ -284,7 +284,7 @@ export const ExplainAppOutputSchema = z.object({
 export const explainAppTool = toolDefinition({
   name: 'explain_app',
   description:
-    "Read the Open Citadel guide: what the app is, what each screen is for, how the library and the reader work, the difference between running on the device and in the cloud, and what the account does and does not hold. Call this whenever the user asks how something in the app works, where something lives, or what a feature is for. Answer from what it returns rather than from what you assume about reading apps, especially about privacy and about what an account is for.",
+    "Read the Open Citadel guide: what the app is for, what each screen does, how somebody gets from what they take in to what they actually do about it, the difference between running on the device and in the cloud, and what the account does and does not hold. Call this whenever the user asks how something in the app works, where something lives, or what a feature is for. Answer from what it returns and not from what you assume, especially about privacy and about what an account is for.",
   inputSchema: ExplainAppInputSchema,
   outputSchema: ExplainAppOutputSchema,
 });

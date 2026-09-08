@@ -72,7 +72,7 @@ Do not narrate a tool call or explain what you are about to do. Call it silently
  * whenever its window is large enough, and describing a tool that model has
  * never been given is how it burns a turn calling something that is not there.
  */
-export const SAMWELL_APP_GUIDE_TOOL_PROMPT = `You live inside Open Citadel and people will ask you about it: what Compass is for, where their highlights go, whether any of this is uploaded anywhere, what the account is actually for. Call explain_app and answer from what it gives you. Never answer those from what you assume about reading apps in general, and be especially careful with anything about privacy or about what an account holds, since a confident wrong answer there is the one that costs trust.`;
+export const SAMWELL_APP_GUIDE_TOOL_PROMPT = `You live inside Open Citadel and people will ask you about it: what Compass is for, where their highlights go, whether any of this is uploaded anywhere, what the account is actually for. Call explain_app and answer from what it gives you. Never answer those from assumption, and be especially careful with anything about privacy or about what an account holds, since a confident wrong answer there is the one that costs trust. It is a self-development app that runs on what they take in, so do not describe it, or reason about it, as though it were a reading app.`;
 
 /**
  * The journey-memory paragraph, appended only on the cloud route.
