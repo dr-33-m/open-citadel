@@ -6,6 +6,7 @@ import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { cloudHeaders } from '@/services/cloud-identity';
 import { db } from '@/db/client';
 import { appSettings } from '@/db/schema';
+import { decideOnboarding } from '@/utils/onboarding-gate';
 
 export type AppTheme = 'dark' | 'light';
 export type SamwellMode = 'offline' | 'cloud';
@@ -135,16 +136,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const rows = await db.select().from(appSettings);
     const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
+    /*
+     * Whether the first run is still ahead of them. See `decideOnboarding`,
+     * which holds the reasoning and is tested against the case that matters:
+     * somebody who has been reading for months updating to this build.
+     */
+    const gate = decideOnboarding({
+      stored: map['onboarding.state'],
+      booksDirectoryUri: map['booksDirectoryUri'],
+    });
+
     set({
       username: map['username'] ?? '',
       theme: (map['theme'] as AppTheme | undefined) ?? 'dark',
-      // A row that is not there is a fresh install. Any stored value other
-      // than 'pending' means it is behind them.
-      onboarding: map['onboarding.state'] === undefined
-        ? 'pending'
-        : map['onboarding.state'] === 'pending'
-          ? 'pending'
-          : 'done',
+      onboarding: gate.state,
       samwellMode: (map['samwell.mode'] as SamwellMode | undefined) ?? 'offline',
       cloudBaseUrl: defaultCloudBaseUrl(),
       cloudModelId: map['cloud.modelId'] ?? DEFAULT_CLOUD_MODEL_ID,
@@ -155,6 +160,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       ttsVoiceLanguage: map['ttsVoiceLanguage'] ?? null,
       ttsRate: parseFloat(map['ttsRate'] ?? '1'),      isLoaded: true,
     });
+
+    /*
+     * Written down once, so it stops being a question.
+     *
+     * After the `set` and not awaited by it: nothing on screen is waiting for
+     * this, and a lost write costs one more pass through the same harmless
+     * derivation on the next launch.
+     */
+    if (gate.record) {
+      void saveSetting('onboarding.state', gate.state);
+    }
   },
 
   setUsername: async (name: string) => {
