@@ -812,6 +812,22 @@ export async function sendCloudChatTurn({
   };
   const endToolPhase = () => {
     if (!inToolPhase) return;
+    /*
+     * Never while the call is still outstanding, whatever else the stream says.
+     *
+     * Three things end this phase: the model reasoning again, the run
+     * finishing with something other than a tool call, and new words arriving.
+     * All three are heuristics for "the model has moved on", and all three were
+     * written when a tool call and its execution were milliseconds apart. They
+     * are wrong for `set_up_library`, which is a system folder picker followed
+     * by copying files: minutes, during which a single stray chunk emptied the
+     * status row and left the reader with a stop button and no explanation.
+     *
+     * Which chunk does it depends on the provider. That is the tell that the
+     * guard belonged here rather than at each call site: the runner should not
+     * be inferring whether a tool is running when it can simply look.
+     */
+    if (hasUnresolvedToolCalls(client.getMessages())) return;
     inToolPhase = false;
     onToolStatus(null, null);
   };
