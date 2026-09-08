@@ -900,6 +900,18 @@ export async function sendCloudChatTurn({
   let aborted = signal?.aborted ?? false;
   const onAbort = () => {
     aborted = true;
+    /*
+     * Resolve any approval this turn is blocked on, or stopping does nothing.
+     *
+     * The settle loop below waits on `requestApproval`, a promise only the
+     * dialog or the onboarding card can settle. `client.stop()` does not touch
+     * it, so a reader who pressed stop while Samwell was waiting on them left
+     * the promise unresolved: the turn never returned, `submitting` stayed
+     * true, and the composer kept showing a stop button that had already been
+     * pressed. Declining on their behalf is the honest reading of stop, and it
+     * is what happens to the tool call either way.
+     */
+    useApprovalStore.getState().clearSession(sessionId);
     try {
       client.stop();
     } catch {

@@ -63,7 +63,7 @@ export const FindFreeBooksInputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      "What the user said they care about or are working toward, in their own words. Whole phrases work better than keywords: 'starting a business while working full time' finds more than 'business'.",
+      "The subject to look for. The catalogue is searched by keyword, so name the topic rather than repeating the sentence: 'entrepreneurship success biography', not 'I want biographies of great entrepreneurs'. Everything here is public domain, which in practice means published before about 1930, so translate a modern interest into the older subject that holds it. You may call this more than once with different words.",
     ),
 });
 

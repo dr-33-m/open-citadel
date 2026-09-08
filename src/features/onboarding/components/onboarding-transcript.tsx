@@ -6,6 +6,7 @@ import { MessageScroller } from '@/components/ui/message-scroller';
 import { TurnStatus } from '@/features/chat/components/turn-status';
 import type { TurnIndicator } from '@/features/chat/utils/agent-activity';
 import { transcriptContent } from '@/features/chat/utils/transcript-layout';
+import { OnboardingApprovalCard } from '@/features/onboarding/components/onboarding-approval-card';
 import { isVisibleChatMessage } from '@/services/chat-transcript';
 import type { ChatMessage } from '@/services/chat-sessions';
 
@@ -19,6 +20,12 @@ import type { ChatMessage } from '@/services/chat-sessions';
  * navigation callbacks. None of it applies here, and threading a fourth mode
  * through it would make it worse for the two surfaces that do need those
  * things.
+ *
+ * One thing here that the other transcripts do not have: the approval card.
+ * Elsewhere an approval is a modal mounted above the navigator, which reads as
+ * an interruption because elsewhere it IS one. Here the conversation is the
+ * whole screen and the question is simply the next thing Samwell said, so it
+ * belongs in the thread. See `OnboardingApprovalCard`.
  *
  * The bubbles carry no navigation callbacks, and that is not an omission.
  * Samwell emits no reference markers in this conversation: he has never seen a
@@ -83,6 +90,12 @@ export function OnboardingTranscript({
             )}
 
             <TurnStatus indicator={indicator} />
+
+            {/* Under the status row, because the status row is what says he is
+                waiting and this is what the waiting is for. The scroller is on
+                `autoScroll`, so a question arriving mid-turn brings itself into
+                view rather than appearing below the fold. */}
+            <OnboardingApprovalCard sessionId={sessionId} />
           </MessageScroller.Content>
         </MessageScroller.Viewport>
       </TranscriptFade>

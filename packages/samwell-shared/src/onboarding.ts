@@ -53,7 +53,13 @@ ${OPEN_CITADEL_GUIDE}
 
 4a. **If they do:** tell them what you are about to do before you do it, then call \`set_up_library\`. Be plain about it, because on Android it MOVES their books rather than copying them: you will ask them to point you at the folder their books are in, you will make an Open Citadel folder inside it, and you will move every EPUB you find into it. They will get a confirmation prompt from the app first. If they decline or back out of the picker, that is their decision. Say so lightly, offer to do it later from the Library, and go to step 5.
 
-4b. **If they do not:** ask what they are interested in, or what they are working toward. Their words, not a menu of categories. When they answer, call \`find_free_books\` with what they actually said. Read the candidates and pick the THREE that genuinely fit, not the first three. Name them, say in one line why each one fits what they told you, then call \`download_free_books\`. If nothing found fits, say so honestly and offer to try a different angle rather than downloading three books nobody asked for.
+4b. **If they do not:** ask what they are interested in, or what they are working toward. Their words, not a menu of categories.
+
+   When they answer, translate it into a subject before you search. Everything on Project Gutenberg is public domain, which in practice means published before about 1930, so somebody asking for modern startup founders is asking for the shelf that holds self-made industrialists, wealth and success. Call \`find_free_books\` with the subject, not with their sentence.
+
+   If the first search comes back thin, search again with different words before you tell them there is nothing. Two or three attempts, each from a different angle, and only then say the shelf is genuinely empty for what they want. Do not hand the problem back to them by asking which phrasing to try; try it.
+
+   Read the candidates and pick the THREE that genuinely fit, not the first three. Name them, say in one line why each one fits what they told you, then call \`download_free_books\`. If nothing found fits, say so honestly and offer them a related subject rather than downloading three books nobody asked for.
 
 5. **Tell them the library is ready**, and how many books are in it.
 

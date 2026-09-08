@@ -75,6 +75,7 @@ export { default as Send } from 'lucide-react-native/icons/send';
 export { default as Settings } from 'lucide-react-native/icons/settings';
 export { default as Shapes } from 'lucide-react-native/icons/shapes';
 export { default as Share } from 'lucide-react-native/icons/share';
+export { default as ShieldQuestionMark } from 'lucide-react-native/icons/shield-question-mark';
 export { default as SkipBack } from 'lucide-react-native/icons/skip-back';
 export { default as SkipForward } from 'lucide-react-native/icons/skip-forward';
 export { default as SlidersHorizontal } from 'lucide-react-native/icons/sliders-horizontal';

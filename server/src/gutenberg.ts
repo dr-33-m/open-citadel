@@ -149,14 +149,75 @@ function fromGutendex(book: GutendexBook): FreeBook | null {
   };
 }
 
-async function searchGutendex(query: string, limit: number): Promise<FreeBook[]> {
+/*
+ * Turning what somebody said into something the catalogue can answer.
+ *
+ * Gutendex has two filters and neither of them is a search engine. `search`
+ * splits on spaces and requires EVERY term to appear in the title or the
+ * author name, so "biographies of great entrepreneurs and entrepreneurship"
+ * asks for one book whose title contains the word "of" AND the word "and" AND
+ * the word "biographies", and gets nothing. `topic` matches subjects and
+ * bookshelves, but as a substring of a single string, so a sentence misses
+ * there too.
+ *
+ * This is not hypothetical. It is what happened on the first real run: the
+ * catalogue was fully loaded, the request reached the container, and 52 bytes
+ * of honest, healthy zero came back.
+ *
+ * So the phrase is broken into keywords and asked as several small questions
+ * rather than one impossible one.
+ */
+const STOPWORDS = new Set([
+  'a', 'about', 'all', 'also', 'am', 'an', 'and', 'any', 'are', 'as', 'at', 'be', 'been',
+  'being', 'best', 'better', 'book', 'books', 'but', 'by', 'can', 'could', 'do', 'does',
+  'for', 'from', 'get', 'great', 'greatest', 'has', 'have', 'how', 'i', 'if', 'im', 'in',
+  'interest', 'interested', 'interesting', 'interests', 'into', 'is', 'it', 'its', 'just',
+  'keen', 'know', 'like', 'looking', 'me', 'more', 'most', 'much', 'my', 'new', 'of', 'on',
+  'or', 'our', 'out', 'read', 'reading', 'really', 'so', 'some', 'something', 'that', 'the',
+  'their', 'them', 'then', 'there', 'these', 'they', 'thing', 'things', 'this', 'to', 'up',
+  'us', 'very', 'want', 'was', 'way', 'we', 'what', 'when', 'which', 'who', 'why', 'will',
+  'with', 'would', 'you', 'your',
+]);
+
+/**
+ * Crude suffix stripping, and crude is the point.
+ *
+ * `topic` is a substring match, so a shorter stem is a wider net rather than a
+ * wrong one: "biography" finds both "Biography" and "Biographies", and
+ * "entrepreneur" finds "Entrepreneurship". Over-matching is the goal here, so
+ * a real stemmer would be a dependency that does the job less well.
+ */
+function stem(word: string): string {
+  if (word.length > 6 && word.endsWith('ship')) return word.slice(0, -4);
+  if (word.length > 6 && word.endsWith('ness')) return word.slice(0, -4);
+  if (word.length > 5 && word.endsWith('ies')) return `${word.slice(0, -3)}y`;
+  if (word.length > 5 && word.endsWith('ing')) return word.slice(0, -3);
+  if (word.length > 4 && word.endsWith('es')) return word.slice(0, -2);
+  if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
+  return word;
+}
+
+export function keywords(query: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of query.toLowerCase().replace(/[^a-z0-9\s'-]+/g, ' ').split(/\s+/)) {
+    const word = raw.replace(/^['-]+|['-]+$/g, '');
+    if (word.length < 3 || STOPWORDS.has(word) || seen.has(word)) continue;
+    seen.add(word);
+    out.push(word);
+  }
+  return out;
+}
+
+/** English, and an EPUB to actually open. Every probe carries both. */
+const CATALOGUE_FILTERS = '&languages=en&mime_type=application%2Fepub%2Bzip';
+
+async function gutendexQuery(params: string, limit: number): Promise<FreeBook[]> {
   // Trailing slash on purpose. DRF's DefaultRouter registers the viewset at
   // `/books/`, and Django's APPEND_SLASH would answer `/books?...` with a 301
   // to exactly this URL. Following a redirect on every search is a round trip
   // spent to save a character.
-  const url =
-    `${GUTENDEX_URL}/books/?search=${encodeURIComponent(query)}` +
-    '&languages=en&mime_type=application%2Fepub%2Bzip';
+  const url = `${GUTENDEX_URL}/books/?${params}${CATALOGUE_FILTERS}`;
 
   const response = await fetchWithTimeout(url, 'application/json');
   if (!response.ok) {
@@ -169,6 +230,90 @@ async function searchGutendex(query: string, limit: number): Promise<FreeBook[]>
     .map((entry) => fromGutendex(entry as GutendexBook))
     .filter((book): book is FreeBook => book !== null)
     .slice(0, limit);
+}
+
+/** How many of the keywords get asked about. Beyond this they are noise. */
+const MAX_KEYWORD_PROBES = 4;
+
+/**
+ * The questions one phrase becomes, and how much each answer is worth.
+ *
+ * Exported so the fan-out can be tested without a catalogue: this function IS
+ * the fix, and everything below it is merging.
+ */
+export function probesFor(query: string): { params: string; weight: number }[] {
+  const terms = keywords(query);
+  const probes: { params: string; weight: number }[] = [];
+
+  /*
+   * The literal reading first, and only when it could possibly match. Every
+   * term has to land in one title, so past three words this is guaranteed to
+   * return nothing and is a request spent proving it.
+   */
+  if (terms.length > 0 && terms.length <= 3) {
+    probes.push({ params: `search=${encodeURIComponent(terms.join(' '))}`, weight: 3 });
+  }
+
+  for (const term of terms.slice(0, MAX_KEYWORD_PROBES)) {
+    probes.push({ params: `topic=${encodeURIComponent(stem(term))}`, weight: 2 });
+    // Titles as well as subjects. A lot of what somebody asks for is a word an
+    // author put on a cover rather than one a librarian assigned afterwards.
+    probes.push({ params: `search=${encodeURIComponent(term)}`, weight: 1 });
+  }
+
+  // Nothing survived the stopword list, which happens on "how do I get
+  // better?". Ask it literally rather than asking nothing at all.
+  if (probes.length === 0) {
+    probes.push({ params: `search=${encodeURIComponent(query)}`, weight: 1 });
+  }
+
+  return probes;
+}
+
+async function searchGutendex(query: string, limit: number): Promise<FreeBook[]> {
+  const probes = probesFor(query);
+
+  const settled = await Promise.allSettled(
+    probes.map((probe) => gutendexQuery(probe.params, limit)),
+  );
+
+  /*
+   * One rejection is not a failure. These all go to the same container, so a
+   * single failed probe means that one request, and answering with what the
+   * others found beats throwing the lot away and scraping the site.
+   */
+  if (!settled.some((result) => result.status === 'fulfilled')) {
+    const first = settled[0];
+    const reason = first?.status === 'rejected' ? first.reason : null;
+    throw reason instanceof Error ? reason : new Error('Gutendex could not be reached.');
+  }
+
+  /*
+   * Merged by score rather than concatenated.
+   *
+   * A book that answers three of the keywords is a better answer than a
+   * popular book that answers one, and the ranking has to say so. Straight
+   * concatenation would hand Samwell the whole of the first keyword's shelf
+   * before the second keyword got a word in.
+   */
+  const scored = new Map<number, { book: FreeBook; score: number }>();
+  settled.forEach((result, index) => {
+    if (result.status !== 'fulfilled') return;
+    const { weight } = probes[index];
+    result.value.forEach((book, rank) => {
+      // Position within its own probe still counts, so the catalogue's own
+      // ordering by popularity is not thrown away entirely.
+      const points = weight * (rank < 5 ? 2 : 1);
+      const existing = scored.get(book.id);
+      if (existing) existing.score += points;
+      else scored.set(book.id, { book, score: points });
+    });
+  });
+
+  return [...scored.values()]
+    .sort((a, b) => b.score - a.score || b.book.downloads - a.book.downloads)
+    .slice(0, limit)
+    .map((entry) => entry.book);
 }
 
 /*
@@ -280,7 +425,16 @@ gutenbergRoutes.get('/gutenberg/search', async (c) => {
   }
 
   try {
-    const results = await searchGutenbergSite(query, limit);
+    /*
+     * The site gets the keywords too, not the sentence.
+     *
+     * Its own search is fuzzier than Gutendex's, which is why it is worth
+     * asking at all, but it is still matching words against a catalogue rather
+     * than reading a request. Handing it the full phrase is how a fallback
+     * ends up confirming the answer it was called in to disagree with.
+     */
+    const terms = keywords(query).slice(0, 4);
+    const results = await searchGutenbergSite(terms.join(' ') || query, limit);
     return c.json({ results, source: 'gutenberg.org' as const });
   } catch (error) {
     console.error(`[Gutenberg] Both sources failed for "${query}":`, error);
