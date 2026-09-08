@@ -177,7 +177,22 @@ export async function resumeRunningSyncIfAny(
 }
 
 /**
+ * Which directories are being resolved into a job right now, in this process.
+ *
+ * The database is the record of what a sync IS, and it cannot be the record of
+ * what is already happening: the select and the insert below are two awaits
+ * apart, and a second caller arriving between them finds nothing running and
+ * creates a job of its own. Two callers is the normal case, not an exotic one.
+ * Onboarding starts a scan as it hands over to the Library, and the Library
+ * starts one when it mounts, which is the next frame.
+ */
+const startingByDirectory = new Map<string, Promise<string>>();
+
+/**
  * Start a new sync (or resume if one is already running for the same directory).
+ *
+ * Callers that arrive while a job is being resolved get that same job rather
+ * than a second one.
  */
 export async function startOrResumeSync(
   directoryUri: string,
@@ -185,6 +200,19 @@ export async function startOrResumeSync(
 ): Promise<string> {
   setSyncProgressCallback(onProgress);
 
+  const starting = startingByDirectory.get(directoryUri);
+  if (starting) return starting;
+
+  const resolving = resolveJobAndRun(directoryUri);
+  startingByDirectory.set(directoryUri, resolving);
+  try {
+    return await resolving;
+  } finally {
+    startingByDirectory.delete(directoryUri);
+  }
+}
+
+async function resolveJobAndRun(directoryUri: string): Promise<string> {
   // Check for existing running job for this directory
   const existing = await db
     .select()
@@ -238,11 +266,27 @@ export async function cancelSync(jobId: string): Promise<void> {
 
 // ── Pipeline ─────────────────────────────────────────────────────────────────
 
+/**
+ * Jobs whose pipeline is running in THIS process.
+ *
+ * Every entry point here can ask for the same job: `startOrResumeSync` resumes
+ * one it found in the database, `resumeRunningSyncIfAny` resumes one left by
+ * the last app kill, and both can be called while the first is still going.
+ * Running the same job twice is not merely wasteful, it is a crash:
+ * `phaseScanning` reads the job's existing `sync_items` ONCE and decides what
+ * to enqueue from that snapshot, so two passes both see nothing and both
+ * insert the same rows, which the unique index on (job_id, source_uri)
+ * refuses. It arrived as "pipeline fatal error ... UNIQUE constraint failed".
+ */
+const runningJobs = new Set<string>();
+
 async function runPipeline(
   jobId: string,
   directoryUri: string,
   startPhase: SyncPhase,
 ): Promise<void> {
+  if (runningJobs.has(jobId)) return;
+  runningJobs.add(jobId);
   try {
     const phases: SyncPhase[] = [
       "scanning",
@@ -284,6 +328,8 @@ async function runPipeline(
     });
     const job = await getJob(jobId);
     if (job) emitProgress(job, true);
+  } finally {
+    runningJobs.delete(jobId);
   }
 }
 
@@ -402,7 +448,14 @@ async function phaseScanning(
       !existing.title;
 
     if (needsMeta && !existingItem) {
-      // Enqueue for metadata enrichment
+      /*
+       * Enqueue for metadata enrichment.
+       *
+       * `onConflictDoNothing` because `existingItem` comes from a map read
+       * before this loop began, and the loop awaits on every iteration. The
+       * in-process guard on `runPipeline` is what stops two passes racing
+       * here; this is the floor under it, and it costs nothing.
+       */
       await db.insert(syncItems).values({
         id: `item-${uid()}`,
         jobId,
@@ -414,7 +467,7 @@ async function phaseScanning(
         attempts: 0,
         createdAt: ts,
         updatedAt: ts,
-      });
+      }).onConflictDoNothing();
     }
 
     scanDone++;
