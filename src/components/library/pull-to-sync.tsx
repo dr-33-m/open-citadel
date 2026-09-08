@@ -49,22 +49,30 @@ const TRIGGER = 52;
  */
 const ACTIVATE = 12;
 
-/** A sideways drag belongs to the pager, and stops being ours immediately. */
-const SIDEWAYS = 12;
+/**
+ * How far a touch has to move before it is read as having a direction at all.
+ *
+ * A finger landing on glass wobbles a point or two in every direction before
+ * it goes anywhere, and this gesture answers with a verdict it cannot take
+ * back: one `manager.fail()` and the touch belongs to the scroll view for
+ * good. Reading a direction out of that first noise is what made the pull
+ * unreliable — a single upward point of jitter killed it before it began.
+ */
+const SLOP = 6;
 
 /**
- * How long the gap takes to give way after a pull that started a scan.
+ * How long the gap waits for a scan it asked for.
  *
- * Deliberately slower than the app's `base`, and the one number here worth
- * explaining. On release the finger's gap unwinds while the scan's own hold
- * winds up, and the two are handed over between the JS thread and the UI
- * thread: the pipeline has to write a row and report itself running before
- * `sync.status` reaches this component. Unwind at `base` and the gap is shut
- * before that lands, so the indicator blinks out and back. The rendered height
- * is the LARGER of the two, so overlapping them is invisible — a pull that
- * starts nothing still closes, it just takes its time about it.
+ * Letting go past `TRIGGER` starts a scan, but the pipeline has a row to write
+ * and a folder to open before `sync.status` says so, and on a big library over
+ * SAF that is not instant. The gap used to unwind on a timer sized to guess
+ * that delay, and when the guess was short — which it often was — the reader
+ * watched it shut and reopen. It now holds itself open from the moment of the
+ * release until the scan reports, and this is only the backstop for a scan
+ * that never does: long enough that no real one is cut off, short enough that
+ * a gap holding nothing does not become furniture.
  */
-const RELEASE_MS = 420;
+const SCAN_GRACE_MS = 5_000;
 
 /**
  * Resistance, so the gap never simply follows the finger.
@@ -115,8 +123,9 @@ export type PullToSyncProps = Pick<
  *
  * Letting go is not the end of the scan, it is the start of it, so the gap
  * stays open and becomes where the scan reports itself. The height drawn is
- * the larger of what the finger is holding and what the scan is holding, which
- * is what makes the handover between the two invisible — see `RELEASE_MS`.
+ * the larger of what the finger is holding and what the scan is holding, and
+ * the release puts the second one up before it takes the first one down, so
+ * there is no frame between them — see `SCAN_GRACE_MS`.
  *
  * That is also why a scan started from anywhere else opens the same gap: the
  * indicator has one home on this screen, whether the scan came from a pull,
@@ -135,8 +144,26 @@ export function PullToSync({
   const scrollY = useSharedValue(0);
   /** What the finger is holding open. */
   const drag = useSharedValue(0);
-  /** What the scan is holding open. */
+  /** What a scan — asked for, running, or both — is holding open. */
   const hold = useSharedValue(0);
+
+  /*
+   * A pull has started a scan and is waiting for it to say so.
+   *
+   * State and not a ref, though a ref is what this wants to be. Two things
+   * read it — the effect that decides whether `running: false` means "no scan"
+   * or "not yet", and the label, which must not print PULL TO SYNC under a
+   * loader that is already going — and one of them renders. A ref would also
+   * have to travel into the gesture's `onEnd`, which is built during render,
+   * and reading one from there is exactly what refs are not for.
+   */
+  const [waiting, setWaiting] = React.useState(false);
+  /*
+   * Cleared the moment the scan it was waiting for arrives, during render
+   * rather than in an effect: the answer is knowable from `running` right
+   * here, and an effect would commit a frame with both flags true.
+   */
+  if (waiting && running) setWaiting(false);
 
   // Composed onto `ScrollFade`'s own handler by `PageFade` — see its `onScroll`
   // note. It has to be an animated handler for that to work.
@@ -147,8 +174,35 @@ export function PullToSync({
   });
 
   React.useEffect(() => {
-    hold.set(withTiming(running ? GAP : 0, { duration: motion.base, easing }));
-  }, [running, hold]);
+    if (running) {
+      /*
+       * The scan has arrived. If a pull put the gap up already this animates
+       * from `GAP` to `GAP` and does nothing, which is the point; if the scan
+       * came from somewhere else — the launch scan, the button in All Books —
+       * this is what opens it.
+       */
+      hold.set(reduced ? GAP : withTiming(GAP, { duration: motion.base, easing }));
+      return;
+    }
+    // Not running, and a pull is still waiting on the scan it asked for.
+    // Closing the gap here is the blink: it is the whole bug.
+    if (waiting) return;
+    hold.set(reduced ? 0 : withTiming(0, { duration: motion.base, easing }));
+  }, [running, waiting, hold, reduced]);
+
+  /*
+   * The backstop for a scan that never reports.
+   *
+   * Mounted with the wait and torn down with it, so a scan that arrives takes
+   * the timer with it rather than racing it. Nothing here touches the gap
+   * directly: dropping `waiting` is enough, because the effect above is
+   * already watching for exactly that.
+   */
+  React.useEffect(() => {
+    if (!waiting) return;
+    const timer = setTimeout(() => setWaiting(false), SCAN_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
 
   /*
    * Whether letting go now would start a scan.
@@ -187,27 +241,74 @@ export function PullToSync({
    */
   const startY = useSharedValue(0);
   const startX = useSharedValue(0);
+  /** Whether this touch has already been claimed. See the guard below. */
+  const claimed = useSharedValue(false);
 
   const pan = Gesture.Pan()
     .manualActivation(true)
     .onBegin((event) => {
       startY.set(event.absoluteY);
       startX.set(event.absoluteX);
+      claimed.set(false);
     })
     .onTouchesMove((event, manager) => {
       const touch = event.allTouches[0];
       if (!touch) return;
+
+      /*
+       * Once it is ours, it stays ours.
+       *
+       * `onTouchesMove` keeps firing after activation, and every test below is
+       * a test for whether to TAKE the touch, not for whether to keep it. Left
+       * running, a pull held open at the top of its travel could still fail
+       * itself on a bit of late sideways drift, cancelling the gesture and
+       * dropping a gap the reader was in the middle of opening. That is the
+       * other half of "unreliable": not only pulls that never started, but
+       * pulls that died on the way.
+       */
+      if (claimed.get()) return;
       const down = touch.absoluteY - startY.get();
       const across = Math.abs(touch.absoluteX - startX.get());
 
-      // Off the top of the shelf, heading up, or heading across to another
-      // hub page: not ours, and saying so hands the touch straight back.
-      // The small allowance on the offset absorbs it wobbling around zero.
-      if (scrollY.get() > 1 || down < 0 || across > SIDEWAYS) {
+      /*
+       * Say nothing until the touch has actually gone somewhere.
+       *
+       * Every branch below is final — `fail()` cannot be taken back, and the
+       * scroll view keeps the touch for the rest of its life. So the first
+       * point or two of travel, which is the finger settling rather than the
+       * reader deciding, gets no verdict at all. Without this a single upward
+       * pixel of jitter at touch-down killed the pull outright, which is most
+       * of why it felt unreliable.
+       */
+      if (Math.abs(down) < SLOP && across < SLOP) return;
+
+      // Off the top of the shelf, or heading up it: not ours, and saying so
+      // hands the touch straight back. The small allowance on the offset
+      // absorbs it wobbling around zero.
+      if (scrollY.get() > 1 || down < 0) {
         manager.fail();
         return;
       }
-      if (down > ACTIVATE) manager.activate();
+
+      /*
+       * Sideways is measured against downward, not against a fixed number.
+       *
+       * A swipe across to Samwell is nearly all sideways and fails here on its
+       * first real movement, which is what this is for. But a thumb pulling
+       * down travels on an arc, and it was being held to twelve points of
+       * drift over any distance: past about sixty points of pull, an ordinary
+       * thumb has drifted further than that and the gesture died mid-pull
+       * having already opened the gap. Dominance is the question worth asking.
+       */
+      if (across > down) {
+        manager.fail();
+        return;
+      }
+
+      if (down > ACTIVATE) {
+        claimed.set(true);
+        manager.activate();
+      }
     })
     .onUpdate((event) => {
       /*
@@ -227,8 +328,23 @@ export function PullToSync({
       drag.set(resist(Math.max(0, event.translationY - ACTIVATE)));
     })
     .onEnd(() => {
-      if (drag.get() >= TRIGGER) scheduleOnRN(onSync);
-      drag.set(reduced ? 0 : withTiming(0, { duration: RELEASE_MS, easing }));
+      /*
+       * The hold goes up before the finger comes down.
+       *
+       * Both happen on this frame and on this thread, so the gap is never
+       * unheld: `hold` goes to the full gap with no animation while `drag`
+       * still has it there, and the unwind below is invisible because the max
+       * of the two does not move. This is why the release no longer needs a
+       * timing sized to outlast the pipeline.
+       */
+      if (drag.get() >= TRIGGER) {
+        // No animation, and on this thread: the finger is still holding
+        // roughly this much, so there is no frame in which the two disagree.
+        hold.set(GAP);
+        scheduleOnRN(setWaiting, true);
+        scheduleOnRN(onSync);
+      }
+      drag.set(reduced ? 0 : withTiming(0, { duration: motion.base, easing }));
     })
     // A cancelled pan — a call arriving, the app going away — still has to put
     // the gap back, or it stays open with nothing holding it.
@@ -263,8 +379,12 @@ export function PullToSync({
         style={[gap, { position: 'absolute', top: -GAP, height: GAP }]}
         className="inset-x-0 items-center justify-center"
       >
+        {/* No label once a scan is on its way, whether or not it has reported
+            itself yet: `SyncIndicator` says what it is doing, and "PULL TO
+            SYNC" printed under a running loader is the gap contradicting
+            itself. */}
         <SyncIndicator
-          label={running ? undefined : armed ? 'RELEASE TO SYNC' : 'PULL TO SYNC'}
+          label={running || waiting ? undefined : armed ? 'RELEASE TO SYNC' : 'PULL TO SYNC'}
         />
       </Animated.View>
 
