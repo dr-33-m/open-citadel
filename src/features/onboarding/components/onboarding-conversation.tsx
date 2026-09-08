@@ -143,6 +143,18 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
     }
   }, []);
 
+  /*
+   * Stable, so the memo on the composer can actually do its job.
+   *
+   * Written inline these were four new closures per render, which is four
+   * changed props per streamed token, which is a memo that never once bails
+   * out. `draft` is the only one that has to move, and it moves when somebody
+   * types rather than when a token lands.
+   */
+  const onStart = React.useCallback(() => void send(OPENING_MESSAGE), [send]);
+  const onSend = React.useCallback(() => void send(draft), [send, draft]);
+  const onStop = React.useCallback(() => useOnboardingChatStore.getState().stop(), []);
+
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-background"
@@ -179,9 +191,9 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
           phase={phase}
           value={draft}
           onChangeText={setDraft}
-          onStart={() => void send(OPENING_MESSAGE)}
-          onSend={() => void send(draft)}
-          onStop={() => useOnboardingChatStore.getState().stop()}
+          onStart={onStart}
+          onSend={onSend}
+          onStop={onStop}
           onFinish={onDone}
           busy={busy}
           bottomInset={insets.bottom}

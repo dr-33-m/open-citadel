@@ -318,13 +318,18 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
              * The narration STAYS. Blanking it here is what made a turn look
              * like it restreamed from scratch.
              *
-             * `activeAssistantText` reports the assistant message's whole
-             * accumulated text, not a delta, and the model keeps writing into
-             * the same message after a tool returns. So wiping the bubble on
-             * the call did not remove that text from the stream — the very
-             * next flush delivered it again, with the continuation appended,
-             * and the reader watched a paragraph they had already read type
-             * itself out a second time.
+             * `assistantTextSinceUser` reports everything he has said since
+             * the reader last spoke, joined, rather than a delta. So wiping
+             * the bubble on the call did not remove that text from the stream:
+             * the very next flush delivered it again, with the continuation
+             * appended, and the reader watched a paragraph they had already
+             * read type itself out a second time.
+             *
+             * It used to read only the LAST assistant message, which held on
+             * providers that keep writing into the message they were already
+             * in, and broke on the ones that open a fresh one for the
+             * continuation. There the bubble really was replaced. Joining the
+             * messages is what makes leaving it alone safe on both.
              *
              * Leaving it alone costs nothing: text is suppressed while a tool
              * call is pending, so the bubble simply holds what he had said and

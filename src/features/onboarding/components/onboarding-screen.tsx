@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConciergeSignInSheet } from '@/features/onboarding/components/concierge-sign-in-sheet';
 import { OnboardingConversation } from '@/features/onboarding/components/onboarding-conversation';
 import { WelcomeScreen } from '@/features/onboarding/components/welcome-screen';
+import { scanLibraryNow } from '@/services/library-setup';
 import { completeOnboarding } from '@/services/onboarding-tools';
 import { useAccountStore } from '@/stores/account';
 import { hasOnboardingSession, useOnboardingChatStore } from '@/stores/onboarding-chat';
@@ -63,6 +64,11 @@ export function OnboardingScreen() {
    */
   const finishAndLeave = React.useCallback(async () => {
     await completeOnboarding();
+    // The other half of `set_up_library`: the books are on the device, and
+    // this is where they get read. Started as they leave so the pipeline has
+    // the Library's own sync gap to report itself in, rather than stalling a
+    // reply mid-sentence. See `scanLibraryNow`.
+    scanLibraryNow();
     leaveForLibrary();
   }, [leaveForLibrary]);
 

@@ -246,10 +246,10 @@ async function setUpAndroidLibrary(): Promise<LibrarySetupResult> {
     else skipped++;
   }
 
-  // Points the library at the new folder and starts the scan. Everything that
-  // happens next — metadata, covers, the Library filling in — is the existing
-  // pipeline's, unchanged.
-  await useBooksStore.getState().setDirectoryUri(folderUri);
+  // Points the library at the new folder, and deliberately does NOT read it
+  // yet. See `scanLibraryNow`: the scan runs when onboarding hands over to the
+  // Library, so it never competes with Samwell for the JS thread.
+  await useBooksStore.getState().setDirectoryUri(folderUri, { scan: false });
 
   return { ok: true, platform: 'android', folderName: LIBRARY_FOLDER_NAME, imported, skipped };
 }
@@ -277,7 +277,7 @@ async function setUpIosLibrary(): Promise<LibrarySetupResult> {
     };
   }
 
-  await store.syncBooks();
+  // Deferred for the same reason as Android. See `scanLibraryNow`.
   return {
     ok: true,
     platform: 'ios',
@@ -318,7 +318,7 @@ async function ensureLibraryFolder(): Promise<string | null> {
     permission.directoryUri,
     LIBRARY_FOLDER_NAME,
   );
-  await store.setDirectoryUri(folderUri);
+  await store.setDirectoryUri(folderUri, { scan: false });
   return folderUri;
 }
 
@@ -399,8 +399,28 @@ export async function downloadBooksIntoLibrary(
     }
   }
 
-  if (downloaded.length > 0) await useBooksStore.getState().syncBooks();
   return { downloaded, failed, cancelled: false };
+}
+
+/**
+ * Read the library folder, now that there is a Library to read it into.
+ *
+ * Onboarding's tools put books on the device and stop there. This is the other
+ * half, and it is called once, as the reader leaves for the Library.
+ *
+ * Splitting it is not tidiness. The scan opens every EPUB, pulls metadata and
+ * a cover from each and writes rows, on the JS thread, for as long as it
+ * takes, and `startOrResumeSync` returns the moment the job row exists rather
+ * than when the work is done. Running inside the tool meant the pipeline was
+ * chewing through a library at exactly the moment the continuation was trying
+ * to stream, and the reader watched his reply stall in the middle of a word
+ * and then jerk forward. Out here it runs against the Library screen, which
+ * has a gap that says what it is doing.
+ *
+ * Fire and forget by design: the caller is on their way to another screen.
+ */
+export function scanLibraryNow(): void {
+  void useBooksStore.getState().syncBooks({ notify: true });
 }
 
 /**

@@ -26,12 +26,19 @@ export type OnboardingPhase = 'start' | 'talking' | 'done';
 /**
  * The one control at the bottom of onboarding, in three states.
  *
+ * Memoized, and that is not a reflex. A streaming reply re-renders the screen
+ * around this on every token, and without the memo a text field, its
+ * placeholder and two buttons were rebuilt sixty times a second to show
+ * exactly what they showed before. Its props are a phase, a draft and four
+ * callbacks, all of which change when a person does something, never when a
+ * token arrives, so the bail-out is close to total.
+ *
  * One component rather than three, because they occupy the same place and
  * replace each other. Two of the three are a single full-width `GoldButton`,
  * which is `full` size on purpose: at both of those moments the button IS the
  * screen's purpose, which is exactly what that size is for.
  */
-export function OnboardingComposer({
+export const OnboardingComposer = React.memo(function OnboardingComposer({
   phase,
   value,
   onChangeText,
@@ -137,4 +144,4 @@ export function OnboardingComposer({
       )}
     </View>
   );
-}
+});

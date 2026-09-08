@@ -13,6 +13,12 @@
  *   clock survives the tool call.
  *
  * Both chat surfaces and Compass render this and nothing else for the footer.
+ *
+ * Memoized because all three of them re-render it on every streamed token,
+ * and its one prop is already built inside a `useMemo` keyed on the handful of
+ * primitives that actually describe the turn. So for a whole paragraph of
+ * streaming text the prop does not move at all, and without the memo the orb,
+ * the shimmer and the reasoning panel were rebuilt for every word of it.
  */
 import React from 'react';
 import { View } from 'react-native';
@@ -28,11 +34,15 @@ import { asColor } from '@/utils/colors';
 /** Matches the orb in `AgentStatus`, so the two rows are the same height. */
 const ORB_SIZE = 20;
 
-export function TurnStatus({ indicator }: { indicator: TurnIndicator | null }) {
+export const TurnStatus = React.memo(function TurnStatus({
+  indicator,
+}: {
+  indicator: TurnIndicator | null;
+}) {
   if (!indicator) return null;
   if (indicator.kind === 'activity') return <AgentStatus activity={indicator.activity} />;
   return <TraceRow indicator={indicator} />;
-}
+});
 
 function TraceRow({
   indicator,

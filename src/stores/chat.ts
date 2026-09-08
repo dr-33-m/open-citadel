@@ -575,11 +575,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               // model thinking again into a false "Processing…" blink —
               // resuming is the reasoning stream's own job.
               //
-              // The narration is NOT cleared. The stream reports the assistant
-              // message's whole accumulated text rather than a delta, so
-              // wiping it here only meant the next flush replayed it from the
-              // top with the continuation appended. See the same note in the
-              // Compass store, where it was loud enough to be reported.
+              // The narration is NOT cleared, and since `assistantTextSinceUser`
+              // now joins every assistant message in the turn rather than
+              // reading only the last one, the text it holds is a prefix of
+              // what arrives next. So the bubble grows through a tool call
+              // instead of being replaced by the continuation.
               ...(status !== null ? { isThinking: false } : {}),
             }));
           },

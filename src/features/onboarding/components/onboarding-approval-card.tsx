@@ -30,8 +30,16 @@ import { asColor } from '@/utils/colors';
  *
  * The wording is `approvalCopy`, the same function the dialog uses, so the two
  * surfaces cannot drift into describing the same file operation differently.
+ *
+ * Memoized: it lives at the foot of the transcript, which re-renders on every
+ * streamed token, and for all but a few seconds of the conversation its answer
+ * is `null`.
  */
-export function OnboardingApprovalCard({ sessionId }: { sessionId: string | null }) {
+export const OnboardingApprovalCard = React.memo(function OnboardingApprovalCard({
+  sessionId,
+}: {
+  sessionId: string | null;
+}) {
   const [surfaceTertiary, primary, mutedForeground] = useCSSVariable([
     '--color-surface-tertiary',
     '--color-primary',
@@ -109,4 +117,4 @@ export function OnboardingApprovalCard({ sessionId }: { sessionId: string | null
       </View>
     </Animated.View>
   );
-}
+});

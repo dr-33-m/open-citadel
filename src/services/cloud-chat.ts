@@ -290,35 +290,38 @@ function hasPendingToolCall(message: UIMessage): boolean {
  * stand") is not the reply and returning it here blanks the tool indicator
  * and flashes a bubble that vanishes when the real answer arrives.
  */
-function activeAssistantText(messages: UIMessage[]): string {
+/**
+ * Everything he has said since the reader last spoke, as one block of text.
+ *
+ * Not the last assistant message: ALL of them since the last user turn, joined.
+ * That distinction is the difference between a turn that reads properly and
+ * one that appears to cancel itself.
+ *
+ * A turn with a tool in it can produce two assistant messages. He narrates
+ * what he is about to do, calls the tool, and then the continuation arrives.
+ * Whether the continuation lands in the same message or a new one is the
+ * provider's business, not ours, and it varies: some write into the message
+ * they were already in, others open a fresh one. Reading only the last message
+ * meant that on the providers that open a fresh one, the bubble showing the
+ * narration was replaced by a short new one that then grew, which is what a
+ * reader describes as "it cancelled its message and restreamed". The narration
+ * was also dropped from the transcript entirely, so the finished conversation
+ * had him doing things he never said he was doing.
+ *
+ * Accumulating makes the text monotonic under both behaviours. It only ever
+ * grows, so the bubble only ever grows.
+ */
+function assistantTextSinceUser(messages: UIMessage[]): string {
+  const said: string[] = [];
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (!message) continue;
-    if (message.role === 'user') return '';
-    if (message.role === 'assistant') {
-      return hasPendingToolCall(message) ? '' : textFromMessage(message);
-    }
-  }
-  return '';
-}
-
-function latestAssistantText(messages: UIMessage[]): string {
-  let lastUserIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.role === 'user') {
-      lastUserIndex = i;
-      break;
-    }
-  }
-
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (i <= lastUserIndex) return '';
-    const message = messages[i];
-    if (message?.role !== 'assistant') continue;
+    if (message.role === 'user') break;
+    if (message.role !== 'assistant') continue;
     const text = textFromMessage(message);
-    if (text.trim()) return text;
+    if (text.trim()) said.unshift(text.trim());
   }
-  return '';
+  return said.join('\n\n');
 }
 
 /**
@@ -766,6 +769,21 @@ export async function sendCloudChatTurn({
    */
   let inToolPhase = false;
   let lastToolName: string | null = null;
+  /*
+   * What he had already said when the tool was called, and what he has said
+   * since. The pair is how "the model is back" is told apart from "the message
+   * list changed for some other reason".
+   *
+   * Without it the row went blank at the worst possible moment. `onMessagesChange`
+   * fires when the tool RESULT is recorded, not only when new words arrive, and
+   * the accumulated text at that instant is still the narration from before the
+   * call. That is not the model resuming, but it looked like it, so the status
+   * was cleared while the continuation request had not even gone out. On the
+   * folder pick that is a stretch of several seconds in which the only sign
+   * anything is happening is the send button still showing a stop square.
+   */
+  let saidSoFar = '';
+  let saidWhenToolCalled = '';
   const endToolPhase = () => {
     if (!inToolPhase) return;
     inToolPhase = false;
@@ -871,6 +889,7 @@ export async function sendCloudChatTurn({
         flushStreaming.cancel();
         inToolPhase = true;
         lastToolName = toolName;
+        saidWhenToolCalled = saidSoFar;
         onToolStatus(statusForTool(toolName), toolName);
       }
       // The tool has returned but the model has not resumed — hold the row on
@@ -880,14 +899,18 @@ export async function sendCloudChatTurn({
       }
     },
     onMessagesChange: (messages) => {
-      const text = activeAssistantText(messages);
-      if (text) {
-        // The answer is being written; the wait it was covering is over.
+      const text = assistantTextSinceUser(messages);
+      if (!text) return;
+      saidSoFar = text;
+      // Only genuinely NEW words mean the wait is over. The same text arriving
+      // again is the tool result landing, and the row must keep saying what is
+      // being waited on. See `saidWhenToolCalled`.
+      if (!inToolPhase || text.length > saidWhenToolCalled.length) {
         reportThinkingDone();
         endToolPhase();
-        flushThinking.flush();
-        flushStreaming(text);
       }
+      flushThinking.flush();
+      flushStreaming(text);
     },
   });
 
@@ -932,7 +955,7 @@ export async function sendCloudChatTurn({
       // that is the outcome they asked for, not a failure to report.
       if (aborted) {
         reportThinkingDone();
-        return latestAssistantText(client.getMessages()).trim();
+        return assistantTextSinceUser(client.getMessages()).trim();
       }
       console.error('[Samwell Cloud] sendMessage failed:', err, (err as { cause?: unknown })?.cause);
       const detail = err instanceof Error ? err.message : String(err);
@@ -964,6 +987,17 @@ export async function sendCloudChatTurn({
           .getState()
           .requestApproval({ sessionId, toolName: approval.toolName, input: approval.input });
         await client.addToolApprovalResponse({ id: approval.id, approved });
+        /*
+         * They have answered, so stop saying they have not.
+         *
+         * `statusForTool` deliberately reports an approval-gated tool as
+         * "waiting for your go-ahead", which is true right up until it is not.
+         * Past this line the work is the app's, and on `set_up_library` the
+         * work is a system folder picker followed by copying every EPUB it
+         * found: the longest stretch in onboarding, and it was labelled as
+         * though it were still waiting on the reader.
+         */
+        if (approved) onToolStatus(toolStatus(approval.toolName), approval.toolName);
         lastProgressAt = Date.now();
       }
 
@@ -976,7 +1010,7 @@ export async function sendCloudChatTurn({
         !client.getIsLoading() &&
         !hasUnresolvedToolCalls(client.getMessages())
       ) {
-        const text = latestAssistantText(client.getMessages()).trim();
+        const text = assistantTextSinceUser(client.getMessages()).trim();
         if (text) {
           reportThinkingDone();
           flushThinking.flush();
@@ -993,7 +1027,7 @@ export async function sendCloudChatTurn({
     // the reader where they were, free to send again or stop it themselves —
     // a canned "he got stuck" bubble dropped into the transcript reads worse
     // than the quiet, and it is the reader's call, not the app's.
-    const partial = latestAssistantText(client.getMessages()).trim();
+    const partial = assistantTextSinceUser(client.getMessages()).trim();
     if (!partial) {
       console.warn(
         `[Samwell Cloud] Turn produced no answer (finishReason=${finishReason ?? 'none'}, aborted=${aborted}).`,

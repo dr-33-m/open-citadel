@@ -132,7 +132,7 @@ interface BooksState {
 
   loadBooks: () => Promise<void>;
   loadDirectoryUri: () => Promise<void>;
-  setDirectoryUri: (uri: string) => Promise<void>;
+  setDirectoryUri: (uri: string, options?: { scan?: boolean }) => Promise<void>;
   /** iOS-only: ensure the owned library folder exists and is the scan root */
   initLibrary: () => Promise<void>;
   /** iOS-only: pick EPUBs, copy into the owned folder, then sync. Returns count. */
@@ -292,7 +292,7 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     }
   },
 
-  setDirectoryUri: async (uri: string) => {
+  setDirectoryUri: async (uri: string, options?: { scan?: boolean }) => {
     await db
       .insert(appSettings)
       .values({ key: "booksDirectoryUri", value: uri })
@@ -301,7 +301,21 @@ export const useBooksStore = create<BooksState>((set, get) => ({
         set: { value: uri },
       });
     set({ booksDirectoryUri: uri });
-    await get().syncBooks();
+    /*
+     * `scan: false` sets the root and leaves the reading of it for later.
+     *
+     * The scan is not cheap and it is not on another thread: it opens every
+     * EPUB it finds, pulls metadata and a cover out of each, and writes rows,
+     * all on the JS thread, in the background, for as long as it takes. That
+     * is fine when the Library is the thing on screen, because the Library has
+     * a gap that says so. It is not fine during onboarding, where the only
+     * thing on screen is Samwell writing a sentence, and the sentence stops
+     * dead every time the pipeline takes the thread.
+     *
+     * Onboarding therefore sets the root here and starts the scan on the way
+     * out, so it runs against the Library that is about to explain it.
+     */
+    if (options?.scan !== false) await get().syncBooks();
   },
 
   initLibrary: async () => {
