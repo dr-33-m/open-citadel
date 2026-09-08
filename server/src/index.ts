@@ -417,7 +417,24 @@ app.post('/chat/http', async (c) => {
 
   const knownModels = await listCloudModels();
   const knownModelIds = knownModels.map((model) => model.id);
-  const modelId = readModelId(body, knownModelIds);
+  /*
+   * Onboarding runs on the onboarding model, whoever is paying for it.
+   *
+   * Reaching this route at all means the account's free grant is spent, so the
+   * turn is billed. That decides who pays; it does not decide what to use. The
+   * conversation is the same fixed script either way, tuned against the model
+   * the house chose for it, and putting it on whatever frontier model the
+   * reader happens to have selected makes their first run both more expensive
+   * and less predictable than the one everybody else gets.
+   *
+   * Unvalidated against `knownModelIds` on purpose, exactly as the free route
+   * does it: the onboarding model is the server's own choice and has no reason
+   * to appear in the list the app offers readers.
+   */
+  const modelId =
+    mode === 'onboarding'
+      ? await getOnboardingModelId()
+      : readModelId(body, knownModelIds);
   const thinkingBudget = readThinkingBudget(body);
   const usageEventId =
     body.runId ?? `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
