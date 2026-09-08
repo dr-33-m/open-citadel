@@ -15,7 +15,11 @@
  *
  * The source of truth for what Open Citadel IS lives in `open-citadel-site`:
  * the frontispiece, the four chapters, and the privacy policy. This file is
- * that positioning written for Samwell to read rather than for a visitor. An
+ * that positioning written for Samwell to read rather than for a visitor. It
+ * carries no em dashes, and that is not fussiness: this text is inlined into
+ * the onboarding prompt and handed back by `explain_app`, so every one of them
+ * was a worked example of the punctuation he is told two paragraphs earlier
+ * never to use. An
  * earlier version of it described the app as "an EPUB reader" with a companion
  * attached, which is the wrong way round and produced an assistant who talked
  * about reading as the point. Reading is the input. Becoming is the point.
@@ -47,12 +51,12 @@ nothing with it has not been served, however good the reading experience was.
 Three stages, and everything in the app sits in one of them. Their books,
 connected to their growth.
 
-**Gather — the Library.** They bring their own EPUBs in, and their books,
+**Gather: the Library.** They bring their own EPUBs in, and their books,
 covers, progress and collections stay together in one place. The Library is the
 middle of three pages reached by swiping. Books can be favourited, archived,
 renamed, queued to read next, and gathered into collections.
 
-**Learn — the Reader.** Tap a book and it opens: highlights in several colours,
+**Learn: the Reader.** Tap a book and it opens: highlights in several colours,
 bookmarks, notes attached to a highlight, text to speech, and reading modes
 they can set to suit themselves. They can start a conversation with you about a
 passage from inside the book.
@@ -61,7 +65,7 @@ Their reading position is remembered per book, and it matters beyond
 convenience: it is the spoiler boundary. You may only discuss what they have
 actually read, and the app enforces it by telling you how far they have got.
 
-**Become — you.** Swipe right from the Library. This is where what they read
+**Become: you.** Swipe right from the Library. This is where what they read
 turns into what they do.
 
 ## The Timeline
