@@ -8,6 +8,7 @@ import {
   type AccountEntry,
 } from '@/services/account';
 import { ACCOUNT_ENABLED } from '@/constants/logto';
+import { useSettingsStore } from '@/stores/settings';
 
 /**
  * Three states, and the first one matters.
@@ -38,6 +39,32 @@ const signedOut = { status: 'signedOut' as const, sub: null, email: null, name: 
 
 function message(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+/**
+ * Take the account's name as theirs, but only if they have not got one.
+ *
+ * Signing in is the one moment the app learns what to call somebody, and it
+ * was being used only by the concierge: the onboarding screen read the name
+ * and wrote it to settings itself, so anyone who took the Tinker Around door
+ * and signed in from Settings afterwards had a blank display name forever.
+ * That was one call site deciding something both call sites need, which is how
+ * it ended up in exactly one of them.
+ *
+ * Never overwrites. A name they typed is theirs, and an account's `name` claim
+ * is often whatever the identity provider was given at sign-up, so a later
+ * sign-in must not quietly rename them.
+ *
+ * Only on an explicit sign-in, never on `restore`. Restore is fired and
+ * forgotten at launch and can land before settings have been read, where an
+ * empty `username` means "not loaded yet" rather than "not set" — and writing
+ * on that reading would rename somebody on every cold start.
+ */
+function adoptAccountName(name: string | null) {
+  const settings = useSettingsStore.getState();
+  const claimed = name?.trim();
+  if (!claimed || settings.username.trim()) return;
+  void settings.setUsername(claimed);
 }
 
 export const useAccountStore = create<AccountState>((set) => ({
@@ -75,6 +102,7 @@ export const useAccountStore = create<AccountState>((set) => ({
     try {
       const profile = await startSignIn(entry);
       set(profile ? { status: 'signedIn', ...profile } : signedOut);
+      if (profile) adoptAccountName(profile.name);
     } catch (error) {
       // Closing the browser is a decision, not a failure, and saying "sign-in
       // failed" over it would be telling someone their own choice went wrong.

@@ -105,6 +105,28 @@ function buildFingerprint(
  *   content:// → Android SAF (returns full content:// URIs) — unchanged behavior
  *   file://    → iOS owned folder (readDirectoryAsync returns names, prefixed)
  */
+/**
+ * The scan root cannot be read at all: deleted, unmounted, or its permission
+ * revoked.
+ *
+ * Its own outcome rather than one more way for the pipeline to fall over,
+ * because it is the one failure here that is not a fault. A reader deleting a
+ * folder has done something reasonable, and answering it with a fatal error on
+ * every launch, forever, is the app being unable to accept an ordinary act.
+ *
+ * Carried in the job's `lastError` so the store can act on it: see
+ * `applySyncProgress`, which puts the reader back in front of a folder picker
+ * rather than a library of books that cannot open.
+ */
+export const SCAN_ROOT_UNAVAILABLE = "scan-root-unavailable";
+
+class ScanRootUnavailable extends Error {
+  constructor(readonly directoryUri: string, readonly cause: unknown) {
+    super(SCAN_ROOT_UNAVAILABLE);
+    this.name = "ScanRootUnavailable";
+  }
+}
+
 async function listEpubUris(directoryUri: string): Promise<string[]> {
   if (directoryUri.startsWith("content://")) {
     const allUris =
@@ -320,11 +342,18 @@ async function runPipeline(
       }
     }
   } catch (e: any) {
-    console.error("[sync] pipeline fatal error", e);
+    const rootGone = e instanceof ScanRootUnavailable;
+    if (rootGone) {
+      // A warning, not an error. The reader deleted a folder; the app's job is
+      // to notice and ask where the books live now.
+      console.warn("[sync] the scan root is no longer readable:", directoryUri);
+    } else {
+      console.error("[sync] pipeline fatal error", e);
+    }
     await updateJob(jobId, {
       status: "failed",
       finishedAt: now(),
-      lastError: String(e?.message ?? e),
+      lastError: rootGone ? SCAN_ROOT_UNAVAILABLE : String(e?.message ?? e),
     });
     const job = await getJob(jobId);
     if (job) emitProgress(job, true);
@@ -344,7 +373,15 @@ async function phaseScanning(
   emitProgress(job, true);
 
   // Read directory (scheme-aware: SAF content:// on Android, local file:// on iOS)
-  const bookUris = await listEpubUris(directoryUri);
+  let bookUris: string[];
+  try {
+    bookUris = await listEpubUris(directoryUri);
+  } catch (error) {
+    // Not "the scan failed": there is nothing here to scan. Everything below
+    // this line reasons about which files left the folder, and that reasoning
+    // is meaningless when the folder itself is what left.
+    throw new ScanRootUnavailable(directoryUri, error);
+  }
 
   await updateJob(jobId, { scanTotal: bookUris.length });
 

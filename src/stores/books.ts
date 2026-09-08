@@ -14,6 +14,7 @@ import {
 } from "@/services/book-import";
 import type { ToastOptions } from "@/components/toast/types";
 import {
+  SCAN_ROOT_UNAVAILABLE,
   getActiveSyncJob,
   resumeRunningSyncIfAny,
   startOrResumeSync,
@@ -105,7 +106,12 @@ const SCAN_TOAST = "library-scan";
  */
 function scanResultToast(job: SyncJobView): ToastOptions {
   if (job.status === "failed") {
-    return { message: "Could not check your folder" };
+    // Two different failures, and telling them apart is the whole point of
+    // saying anything. One is "something went wrong"; the other is a fact
+    // about their own storage that they can act on.
+    return job.lastError === SCAN_ROOT_UNAVAILABLE
+      ? { message: "Your books folder is gone. Choose where they live now." }
+      : { message: "Could not check your folder" };
   }
   // A file that gave up this run is remembered from now on, so to the reader
   // it is the same thing as one that was passed over: it did not get in.
@@ -148,6 +154,8 @@ interface BooksState {
   /** Called by `saveProgressToDb` once the write has actually committed. */
   setBookProgress: (bookId: string, percentage: number) => void;
   loadBooks: () => Promise<void>;
+  /** The scan root is gone: forget it so the picker comes back. */
+  forgetDirectory: () => Promise<void>;
   loadDirectoryUri: () => Promise<void>;
   setDirectoryUri: (uri: string, options?: { scan?: boolean }) => Promise<void>;
   /** iOS-only: ensure the owned library folder exists and is the scan root */
@@ -270,7 +278,16 @@ function applySyncProgress(
 
   if (job.status === "completed" || job.status === "failed") {
     get().loadBooks();
-    if (notify) showToast({ key: SCAN_TOAST, ...scanResultToast(job) });
+    /*
+     * A folder that has gone is worth saying whether or not anyone asked.
+     *
+     * `notify` is about whether a scan was REQUESTED, and it is false for the
+     * one at launch, which is exactly when this is discovered. Staying quiet
+     * there leaves a library of books that will not open and no explanation.
+     */
+    const rootGone = job.status === "failed" && job.lastError === SCAN_ROOT_UNAVAILABLE;
+    if (notify || rootGone) showToast({ key: SCAN_TOAST, ...scanResultToast(job) });
+    if (rootGone) void get().forgetDirectory();
     if (job.status === "completed") {
       setTimeout(() => set({ sync: IDLE_SYNC }), 2000);
     }
@@ -328,6 +345,22 @@ export const useBooksStore = create<BooksState>((set, get) => ({
         ? { books: allBooks, progressByBook, isLoading: false }
         : { books: allBooks, progressByBook },
     );
+  },
+
+  forgetDirectory: async () => {
+    /*
+     * Put them back in front of the picker, and leave the books alone.
+     *
+     * Clearing the root is what makes the Library show SELECT FOLDER again,
+     * which is the only useful thing on offer once the folder is gone. The
+     * book rows stay: they are keyed by `sourceUri`, so pointing the app at
+     * the folder again (or at where the books moved to) relinks them along
+     * with their highlights and their progress. Deleting them here would throw
+     * away a year of somebody's reading over a folder they may be about to
+     * restore.
+     */
+    await db.delete(appSettings).where(eq(appSettings.key, "booksDirectoryUri"));
+    set({ booksDirectoryUri: null });
   },
 
   loadDirectoryUri: async () => {

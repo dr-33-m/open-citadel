@@ -84,19 +84,8 @@ export function OnboardingScreen() {
     const settings = useSettingsStore.getState();
     void settings.setSamwellMode('cloud');
 
-    /*
-     * The account name, read from the store rather than from a render's
-     * closure, and copied into settings so the rest of the app knows what to
-     * call them without asking again.
-     *
-     * The sheet calls this the instant `signIn` resolves, which is before React
-     * has re-rendered with the new profile — so a subscribed `name` up here
-     * would still be whatever it was before the browser opened. The account
-     * card documents being bitten by exactly this.
-     */
-    const name = useAccountStore.getState().name;
-    if (name && !settings.username) void settings.setUsername(name);
-
+    // The account name is adopted by `signIn` itself now, so every door into
+    // the app treats it the same way. See `adoptAccountName`.
     setSigningIn(false);
     setStage('chat');
     void useOnboardingChatStore.getState().start();
