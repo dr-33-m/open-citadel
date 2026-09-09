@@ -15,6 +15,7 @@ import { ACCOUNT_ENABLED } from '@/constants/logto';
 import { useAccountStore } from '@/stores/account';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
+import { useSubscriptionStore } from '@/stores/subscription';
 
 /**
  * Why the cloud cannot answer.
@@ -42,6 +43,25 @@ export type CloudBlocker =
   | 'notConfigured'
   /** Configured, but nobody is signed in. Grand Maester Samwell runs on accounts. */
   | 'needsAccount'
+  /**
+   * Signed in, but nothing paid for.
+   *
+   * Ordered after `needsAccount` and before `offlineMode`, for the reason
+   * that ordering already exists: a plan is bought against an account, so
+   * asking somebody to subscribe before they have signed in is a dead end
+   * reachable only through another dead end.
+   */
+  | 'needsPlan'
+  /**
+   * The server has not said what they hold yet.
+   *
+   * Its own case for exactly the reason `checkingAccount` is one, and the
+   * same two answers: say nothing, because telling somebody to subscribe
+   * before looking is how you flash a paywall at a paying reader on every
+   * cold open; and block anyway, because a composer that is live while the
+   * answer is unknown drops the message typed into it.
+   */
+  | 'checkingPlan'
   /**
    * The stored session has not been read back yet.
    *
@@ -76,6 +96,9 @@ export function useSamwellReadiness(): SamwellReadiness {
   // The status, not the account: an email or a name arriving would otherwise
   // re-render both chat surfaces for something neither of them draws.
   const accountStatus = useAccountStore((s) => s.status);
+  // The status, not the balance: a credit spent mid-conversation must not
+  // re-render every chat surface in the app.
+  const planStatus = useSubscriptionStore((s) => s.status);
 
   const isLoaded = useModelStore((s) => s.isLoaded);
   const isLoading = useModelStore((s) => s.isLoading);
@@ -107,6 +130,13 @@ export function useSamwellReadiness(): SamwellReadiness {
    * `checkingAccount` is the launch window and says nothing out loud, so a
    * reader who IS signed in never sees a sign-in prompt flash past on a cold
    * open. It still blocks, which is the half that matters for enabling.
+   *
+   * `checkingPlan` and `needsPlan` sit between the account and the mode for
+   * the same reason the account sits before the mode: each one is the
+   * prerequisite of the one after it. A build with no RevenueCat key reports
+   * `unavailable` rather than `none`, which is deliberately NOT a blocker -
+   * a build that cannot sell anything should not lock a reader out of a
+   * server that may well still answer them.
    */
   const cloudBlocker: CloudBlocker | null =
     cloudBaseUrl.length === 0 || !ACCOUNT_ENABLED
@@ -115,9 +145,13 @@ export function useSamwellReadiness(): SamwellReadiness {
         ? 'checkingAccount'
         : accountStatus === 'signedOut'
           ? 'needsAccount'
-          : !isCloud
-            ? 'offlineMode'
-            : null;
+          : planStatus === 'unknown'
+            ? 'checkingPlan'
+            : planStatus === 'none'
+              ? 'needsPlan'
+              : !isCloud
+                ? 'offlineMode'
+                : null;
 
   return {
     // Read off the blocker rather than rebuilt from the same parts, so the

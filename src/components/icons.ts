@@ -10,6 +10,8 @@
 // icons/ (kebab-case) and add a line below. Import from here, never from
 // 'lucide-react-native' directly.
 
+
+export type { LucideIcon } from 'lucide-react-native';
 export { default as Archive } from 'lucide-react-native/icons/archive';
 export { default as ArrowBigDownDash } from 'lucide-react-native/icons/arrow-big-down-dash';
 export { default as ArrowBigUpDash } from 'lucide-react-native/icons/arrow-big-up-dash';
@@ -41,7 +43,9 @@ export { default as Cloud } from 'lucide-react-native/icons/cloud';
 export { default as Coins } from 'lucide-react-native/icons/coins';
 export { default as Compass } from 'lucide-react-native/icons/compass';
 export { default as Copy } from 'lucide-react-native/icons/copy';
+export { default as Crown } from 'lucide-react-native/icons/crown';
 export { default as Download } from 'lucide-react-native/icons/download';
+export { default as Feather } from 'lucide-react-native/icons/feather';
 export { default as FolderPlus } from 'lucide-react-native/icons/folder-plus';
 export { default as Goal } from 'lucide-react-native/icons/goal';
 export { default as HeartHandshake } from 'lucide-react-native/icons/heart-handshake';
@@ -51,25 +55,26 @@ export { default as Info } from 'lucide-react-native/icons/info';
 export { default as LibraryBig } from 'lucide-react-native/icons/library-big';
 export { default as Lightbulb } from 'lucide-react-native/icons/lightbulb';
 export { default as List } from 'lucide-react-native/icons/list';
+export { default as ListTodo } from 'lucide-react-native/icons/list-todo';
+export { default as Lock } from 'lucide-react-native/icons/lock';
 export { default as LogIn } from 'lucide-react-native/icons/log-in';
 export { default as LogOut } from 'lucide-react-native/icons/log-out';
-export { default as Lock } from 'lucide-react-native/icons/lock';
-export { default as ListTodo } from 'lucide-react-native/icons/list-todo';
 export { default as MemoryStick } from 'lucide-react-native/icons/memory-stick';
-export { default as Navigation2 } from 'lucide-react-native/icons/navigation-2';
 export { default as MessageCircleHeart } from 'lucide-react-native/icons/message-circle-heart';
 export { default as MessageSquare } from 'lucide-react-native/icons/message-square';
 export { default as MessageSquarePlus } from 'lucide-react-native/icons/message-square-plus';
 export { default as Minus } from 'lucide-react-native/icons/minus';
+export { default as Navigation2 } from 'lucide-react-native/icons/navigation-2';
 export { default as Pause } from 'lucide-react-native/icons/pause';
 export { default as Pencil } from 'lucide-react-native/icons/pencil';
 export { default as PencilSparkles } from 'lucide-react-native/icons/pencil-sparkles';
 export { default as Play } from 'lucide-react-native/icons/play';
-export { default as Pointer } from 'lucide-react-native/icons/pointer';
 export { default as Plus } from 'lucide-react-native/icons/plus';
+export { default as Pointer } from 'lucide-react-native/icons/pointer';
 export { default as Power } from 'lucide-react-native/icons/power';
 export { default as RefreshCw } from 'lucide-react-native/icons/refresh-cw';
 export { default as RotateCcw } from 'lucide-react-native/icons/rotate-ccw';
+export { default as ScrollText } from 'lucide-react-native/icons/scroll-text';
 export { default as Search } from 'lucide-react-native/icons/search';
 export { default as Send } from 'lucide-react-native/icons/send';
 export { default as Settings } from 'lucide-react-native/icons/settings';
@@ -98,5 +103,3 @@ export { default as UserStar } from 'lucide-react-native/icons/user-star';
 export { default as Volume2 } from 'lucide-react-native/icons/volume-2';
 export { default as X } from 'lucide-react-native/icons/x';
 export { default as ZodiacPisces } from 'lucide-react-native/icons/zodiac-pisces';
-
-export type { LucideIcon } from 'lucide-react-native';

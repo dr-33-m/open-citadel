@@ -111,6 +111,19 @@ export function estimateMessageTokens(message: ModelMessage): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN) + MESSAGE_OVERHEAD_TOKENS;
 }
 
+/**
+ * The same estimate for a bare string.
+ *
+ * The server re-sends its own system prompts on every request - the persona,
+ * the book grounding - and they are part of what a turn costs, but they are
+ * not `ModelMessage`s (system is not a message role here; prompts travel in
+ * their own field). This keeps the characters-per-token decision in the one
+ * place instead of a second, drifting copy of it.
+ */
+export function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / CHARS_PER_TOKEN) + MESSAGE_OVERHEAD_TOKENS;
+}
+
 function totalTokens(
   messages: ModelMessage[],
   estimate: (m: ModelMessage) => number,

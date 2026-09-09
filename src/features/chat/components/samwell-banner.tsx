@@ -47,6 +47,16 @@ export function SamwellBanner({ readiness, onOpenSettings }: SamwellBannerProps)
     );
   }
 
+  if (mode === 'cloud' && cloudBlocker === 'needsPlan') {
+    return (
+      <Banner
+        message="Choose a plan to talk with Grand Maester Samwell."
+        color={asColor(mutedForeground)}
+        action={{ label: 'SEE PLANS', icon: Settings, onPress: onOpenSettings }}
+      />
+    );
+  }
+
   // Past the two branches above, cloud has nothing left to report: there is no
   // local model to wake and no local failure to explain.
   if (mode === 'cloud') return null;

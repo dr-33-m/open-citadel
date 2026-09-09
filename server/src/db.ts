@@ -1,45 +1,60 @@
-import { createClient } from '@libsql/client';
+import { createClient, type Client } from '@libsql/client';
 
-import { CLOUD_LIMITS, CLOUD_MODEL_CATALOG, DEFAULT_CLOUD_MODEL_ID, type CloudModelCapability, type CloudModelOption, type CloudUsageState } from 'samwell-shared';
+import {
+  CLOUD_MODEL_CATALOG,
+  DEFAULT_CLOUD_MODEL_ID,
+  FORECAST_WORKLOAD,
+  isPlanId,
+  type CloudModelCapability,
+  type CloudModelOption,
+  type TokenWorkload,
+} from 'samwell-shared';
 
 const dbUrl = process.env.DATABASE_URL ?? 'file:./samwell-cloud.sqlite';
 
 export const db = createClient({ url: dbUrl });
 
-export interface UsageLimitCheck {
-  allowed: boolean;
-  usage: CloudUsageState;
-  reason?: 'fiveHour' | 'weekly';
-}
-
 export interface UsageEventUpdate {
   status: 'completed' | 'errored';
   promptTokens?: number | null;
+  /** Of `promptTokens`, how many the provider served from cache. */
+  cachedPromptTokens?: number | null;
   completionTokens?: number | null;
   totalTokens?: number | null;
   costUsd?: number | null;
   error?: string | null;
 }
 
+/*
+ * The current shape of `usage_events`, as a fresh install is created with.
+ *
+ * Exported because the billing tests need to construct the same table the
+ * server boots with - a second copy of a CREATE TABLE in the tests is a
+ * second place for the schema to drift, and this table is the one the credit
+ * ledger joins against. Existing databases keep getting older shapes healed
+ * up to this one by the PRAGMA checks in `initDb` and `ensureBillingSchema`;
+ * this string is what they converge on, and what a fresh database starts at.
+ */
+export const USAGE_EVENTS_DDL = `CREATE TABLE IF NOT EXISTS usage_events (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'started',
+  counts_toward_limit INTEGER NOT NULL DEFAULT 1,
+  kind TEXT NOT NULL DEFAULT 'chat',
+  created_at_ms INTEGER NOT NULL,
+  completed_at_ms INTEGER,
+  prompt_tokens INTEGER,
+  completion_tokens INTEGER,
+  total_tokens INTEGER,
+  cost_usd REAL,
+  error TEXT
+)`;
+
 export async function initDb(): Promise<void> {
   await db.batch(
     [
-      `CREATE TABLE IF NOT EXISTS usage_events (
-        id TEXT PRIMARY KEY,
-        device_id TEXT NOT NULL,
-        model_id TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'started',
-        counts_toward_limit INTEGER NOT NULL DEFAULT 1,
-        created_at_ms INTEGER NOT NULL,
-        completed_at_ms INTEGER,
-        prompt_tokens INTEGER,
-        completion_tokens INTEGER,
-        total_tokens INTEGER,
-        cost_usd REAL,
-        error TEXT
-      )`,
-      `CREATE INDEX IF NOT EXISTS usage_events_device_time_idx
-        ON usage_events (device_id, created_at_ms)`,
+      USAGE_EVENTS_DDL,
       `CREATE TABLE IF NOT EXISTS cloud_models (
         id TEXT PRIMARY KEY,
         label TEXT NOT NULL,
@@ -49,7 +64,12 @@ export async function initDb(): Promise<void> {
         sort_order INTEGER NOT NULL,
         created_at_ms INTEGER NOT NULL,
         updated_at_ms INTEGER NOT NULL,
-        context_tokens INTEGER
+        context_tokens INTEGER,
+        min_plan TEXT NOT NULL DEFAULT 'archmaester',
+        input_price_per_million REAL,
+        output_price_per_million REAL,
+        cached_input_price_per_million REAL,
+        pricing_fetched_at_ms INTEGER
       )`,
       `CREATE TABLE IF NOT EXISTS server_settings (
         key TEXT PRIMARY KEY,
@@ -77,6 +97,13 @@ export async function initDb(): Promise<void> {
     'write',
   );
 
+  // Everything the credit ledger needs, including the rename the credit work
+  // earns. Runs after the batch because several of its statements touch
+  // `usage_events`, and it has to go before anything reads or writes that
+  // table by its new column name. See `ensureBillingSchema`.
+  await ensureBillingSchema(db);
+  await seedForecastDefaults();
+
   // Nullable with no default: null means "not refreshed from OpenRouter yet",
   // which `resolveContextTokens` reads as the conservative floor rather than
   // as a real window.
@@ -84,6 +111,36 @@ export async function initDb(): Promise<void> {
   const modelColumns = new Set(modelInfo.rows.map((row) => String(row.name)));
   if (!modelColumns.has('context_tokens')) {
     await db.execute('ALTER TABLE cloud_models ADD context_tokens INTEGER');
+  }
+  /*
+   * The plan tier, and what the model costs.
+   *
+   * `min_plan` defaults to the dearest tier rather than the cheapest, because
+   * the two ways of being wrong here are not symmetric: a frontier model that
+   * lands in the Maester tier by accident is sold at a tenth of what it costs,
+   * while a cheap model stranded in Archmaester is only an oversight somebody
+   * notices and fixes. An existing row from before this migration is corrected
+   * with one admin call.
+   *
+   * Prices are nullable with no default, meaning "not refreshed yet". A null
+   * price refuses the turn rather than charging zero: see `priceModel`.
+   */
+  if (!modelColumns.has('min_plan')) {
+    await db.execute(
+      "ALTER TABLE cloud_models ADD min_plan TEXT NOT NULL DEFAULT 'archmaester'",
+    );
+  }
+  if (!modelColumns.has('input_price_per_million')) {
+    await db.execute('ALTER TABLE cloud_models ADD input_price_per_million REAL');
+  }
+  if (!modelColumns.has('output_price_per_million')) {
+    await db.execute('ALTER TABLE cloud_models ADD output_price_per_million REAL');
+  }
+  if (!modelColumns.has('cached_input_price_per_million')) {
+    await db.execute('ALTER TABLE cloud_models ADD cached_input_price_per_million REAL');
+  }
+  if (!modelColumns.has('pricing_fetched_at_ms')) {
+    await db.execute('ALTER TABLE cloud_models ADD pricing_fetched_at_ms INTEGER');
   }
 
   const info = await db.execute('PRAGMA table_info(usage_events)');
@@ -116,9 +173,12 @@ export async function initDb(): Promise<void> {
       [
         ...CLOUD_MODEL_CATALOG.map((model, index) => ({
           sql: `INSERT INTO cloud_models (
-              id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms, context_tokens
+              id, label, provider, description, capabilities, sort_order,
+              created_at_ms, updated_at_ms, context_tokens, min_plan,
+              input_price_per_million, output_price_per_million,
+              cached_input_price_per_million
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [
             model.id,
             model.label,
@@ -129,6 +189,10 @@ export async function initDb(): Promise<void> {
             now,
             now,
             model.contextTokens,
+            model.minPlan,
+            model.inputPricePerMillion,
+            model.outputPricePerMillion,
+            model.cachedInputPricePerMillion,
           ],
         })),
         {
@@ -158,6 +222,133 @@ export async function initDb(): Promise<void> {
 /** Catalog IDs OpenRouter no longer routes; pruned from cloud_models on boot. */
 const RETIRED_CLOUD_MODEL_IDS = ['openai/gpt-5.2-chat'];
 
+/*
+ * The schema the credit ledger stands on.
+ *
+ * Exported rather than private to `initDb` because it has to be constructible
+ * on its own: the billing tests build a throwaway database and need the exact
+ * same statements the live server self-heals with, and a second copy of the
+ * DDL in the tests is a second place for the schema to drift.
+ *
+ * Safe to run against a database of any age - a fresh one, one from before
+ * plans existed, or one already carrying credits. Every statement is guarded
+ * by a PRAGMA check or an IF [NOT] EXISTS, so it converges on the same shape
+ * however many times it runs.
+ */
+export async function ensureBillingSchema(client: Client): Promise<void> {
+  const usageInfo = await client.execute('PRAGMA table_info(usage_events)');
+  const columns = new Set(usageInfo.rows.map((row) => String(row.name)));
+
+  /*
+   * The column was named `device_id` when it held exactly that, and it has
+   * held `account:<sub>` since Samwell Cloud moved onto accounts - an opaque
+   * key either way, which is why nothing needed migrating at the time. The
+   * credit ledger is the change that finally earns the honest name, because
+   * `billing.ts` now joins on it: a column called `device_id` appearing in a
+   * join against `account_credits` reads as a bug even when it is not one.
+   */
+  if (columns.has('device_id')) {
+    await client.execute('ALTER TABLE usage_events RENAME COLUMN device_id TO account_id');
+  }
+
+  /*
+   * What a turn reserved and what it was charged, and the prices it was
+   * charged at (spec §18: a historical row stays accurate after a price
+   * change because the price is written into it).
+   *
+   * All four nullable with no default: null means "this row predates credits"
+   * or "never got that far", which is a different fact from zero and must not
+   * be rewritten into it.
+   */
+  if (!columns.has('credits_reserved')) {
+    await client.execute('ALTER TABLE usage_events ADD credits_reserved INTEGER');
+  }
+  if (!columns.has('credits_charged')) {
+    await client.execute('ALTER TABLE usage_events ADD credits_charged INTEGER');
+  }
+  if (!columns.has('input_price_snapshot')) {
+    await client.execute('ALTER TABLE usage_events ADD input_price_snapshot REAL');
+  }
+  if (!columns.has('output_price_snapshot')) {
+    await client.execute('ALTER TABLE usage_events ADD output_price_snapshot REAL');
+  }
+  /*
+   * How many of the prompt tokens the provider served from cache.
+   *
+   * Recorded because it is most of what a turn costs: 95% of the median call
+   * on real traffic, and a cached token is a tenth the price of a fresh one.
+   * Also the number the weekly forecast recalibration needs - without it,
+   * `cachedInputTokens` in the forecast can only ever be a guess.
+   *
+   * Null means the provider reported no split, which is a different fact from
+   * "nothing was cached" and must not be rewritten into zero.
+   */
+  if (!columns.has('cached_prompt_tokens')) {
+    await client.execute('ALTER TABLE usage_events ADD cached_prompt_tokens INTEGER');
+  }
+
+  /*
+   * `account_credits` is the hot-path cache of what an account can spend; the
+   * ledger is the truth it is a cache OF. Every mutation goes through the
+   * ledger, and `reconcileBalance` rebuilds the cache from it, so a crash
+   * between the two writes heals on the next reconcile rather than losing
+   * money silently.
+   */
+  await client.batch(
+    [
+      `CREATE TABLE IF NOT EXISTS account_credits (
+        account_id      TEXT PRIMARY KEY,
+        plan            TEXT,
+        source          TEXT,
+        balance         INTEGER NOT NULL DEFAULT 0,
+        reserved        INTEGER NOT NULL DEFAULT 0,
+        period_start_ms INTEGER,
+        period_end_ms   INTEGER,
+        updated_at_ms   INTEGER NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS credit_ledger (
+        id             TEXT PRIMARY KEY,
+        account_id     TEXT NOT NULL,
+        type           TEXT NOT NULL,
+        credits        INTEGER NOT NULL,
+        balance_after  INTEGER NOT NULL,
+        model_id       TEXT,
+        request_id     TEXT,
+        description    TEXT,
+        created_at_ms  INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS credit_ledger_account_time_idx
+        ON credit_ledger (account_id, created_at_ms)`,
+      /* Founder-issued codes that grant a plan without a store purchase.
+         Unused until the insider routes land; created here so the schema
+         arrives complete rather than in a second migration. */
+      `CREATE TABLE IF NOT EXISTS insider_invites (
+        code            TEXT PRIMARY KEY,
+        plan            TEXT NOT NULL,
+        duration_days   INTEGER NOT NULL,
+        note            TEXT,
+        created_at_ms   INTEGER NOT NULL,
+        redeemed_by     TEXT,
+        redeemed_at_ms  INTEGER,
+        expires_at_ms   INTEGER
+      )`,
+      /*
+       * The usage index follows the rename. The old name survives on
+       * databases created before it, so it is dropped and rebuilt under the
+       * new one rather than left as a duplicate with a lying name.
+       */
+      'DROP INDEX IF EXISTS usage_events_device_time_idx',
+      `CREATE INDEX IF NOT EXISTS usage_events_account_time_idx
+        ON usage_events (account_id, created_at_ms)`,
+    ],
+    'write',
+  );
+}
+
+function num(value: unknown): number | null {
+  return value == null ? null : Number(value);
+}
+
 function rowToCloudModel(row: Record<string, unknown>): CloudModelOption {
   return {
     id: String(row.id),
@@ -165,23 +356,55 @@ function rowToCloudModel(row: Record<string, unknown>): CloudModelOption {
     provider: String(row.provider),
     description: String(row.description),
     capabilities: JSON.parse(String(row.capabilities)) as CloudModelCapability[],
-    contextTokens: row.context_tokens == null ? null : Number(row.context_tokens),
+    contextTokens: num(row.context_tokens),
+    // Anything unrecognised reads as the dearest tier, for the same reason the
+    // column defaults to it: an unreadable value must not hand a frontier
+    // model to the cheapest plan.
+    minPlan: isPlanId(row.min_plan) ? row.min_plan : 'archmaester',
+    inputPricePerMillion: num(row.input_price_per_million),
+    outputPricePerMillion: num(row.output_price_per_million),
+    cachedInputPricePerMillion: num(row.cached_input_price_per_million),
   };
 }
 
 /**
- * Record what OpenRouter says a model's context window is.
+ * Record what OpenRouter says about a model: its window and its prices.
  *
- * Called by the refresh below rather than by request handling, so a slow or
- * failing provider never sits in front of a chat turn.
+ * Called by the background refresh rather than by request handling, so a slow
+ * or failing provider never sits in front of a chat turn.
+ *
+ * `pricing_fetched_at_ms` is stamped even when the prices came back null, so
+ * "we asked and OpenRouter publishes nothing" is distinguishable from "we have
+ * never asked". Only the first of those is worth alerting on.
  */
-export async function setCloudModelContextTokens(
+export async function setCloudModelFacts(
   modelId: string,
-  contextTokens: number | null,
+  facts: {
+    contextTokens: number | null;
+    inputPricePerMillion: number | null;
+    outputPricePerMillion: number | null;
+    cachedInputPricePerMillion: number | null;
+  },
 ): Promise<void> {
+  const now = Date.now();
   await db.execute({
-    sql: 'UPDATE cloud_models SET context_tokens = ?, updated_at_ms = ? WHERE id = ?',
-    args: [contextTokens, Date.now(), modelId],
+    sql: `UPDATE cloud_models SET
+        context_tokens = ?,
+        input_price_per_million = ?,
+        output_price_per_million = ?,
+        cached_input_price_per_million = ?,
+        pricing_fetched_at_ms = ?,
+        updated_at_ms = ?
+      WHERE id = ?`,
+    args: [
+      facts.contextTokens,
+      facts.inputPricePerMillion,
+      facts.outputPricePerMillion,
+      facts.cachedInputPricePerMillion,
+      now,
+      now,
+      modelId,
+    ],
   });
 }
 
@@ -209,6 +432,56 @@ export async function setDefaultModelId(modelId: string): Promise<void> {
           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     args: [modelId],
   });
+}
+
+// ── The forecast workload ───────────────────────────────────────────────────
+
+/*
+ * What one typical turn is priced against, as three settings rows.
+ *
+ * Seeded on boot from the measured p75 in samwell-shared and corrected from
+ * real traffic by the recalibration job, so the number a reader is shown
+ * tracks what readers actually do rather than what somebody once estimated.
+ * Rows rather than code, because correcting a forecast is a data write, the
+ * same way swapping a model is.
+ */
+const FORECAST_SETTING_KEYS = {
+  inputTokens: 'forecast_input_tokens',
+  cachedInputTokens: 'forecast_cached_tokens',
+  outputTokens: 'forecast_output_tokens',
+} as const;
+
+export async function seedForecastDefaults(): Promise<void> {
+  await db.batch(
+    Object.entries(FORECAST_SETTING_KEYS).map(([field, key]) => ({
+      sql: `INSERT INTO server_settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO NOTHING`,
+      args: [key, String(FORECAST_WORKLOAD[field as keyof TokenWorkload])],
+    })),
+    'write',
+  );
+}
+
+export async function setForecastWorkload(workload: TokenWorkload): Promise<void> {
+  await db.batch(
+    Object.entries(FORECAST_SETTING_KEYS).map(([field, key]) => ({
+      sql: `INSERT INTO server_settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      args: [key, String(workload[field as keyof TokenWorkload])],
+    })),
+    'write',
+  );
+}
+
+export async function getForecastWorkload(): Promise<TokenWorkload> {
+  const [input, cached, output] = await Promise.all(
+    Object.values(FORECAST_SETTING_KEYS).map((key) => readServerSetting(key)),
+  );
+  return {
+    inputTokens: input == null ? FORECAST_WORKLOAD.inputTokens : Number(input),
+    cachedInputTokens: cached == null ? FORECAST_WORKLOAD.cachedInputTokens : Number(cached),
+    outputTokens: output == null ? FORECAST_WORKLOAD.outputTokens : Number(output),
+  };
 }
 
 /**
@@ -258,9 +531,12 @@ export async function insertCloudModel(model: CloudModelOption): Promise<void> {
 
   await db.execute({
     sql: `INSERT INTO cloud_models (
-        id, label, provider, description, capabilities, sort_order, created_at_ms, updated_at_ms, context_tokens
+        id, label, provider, description, capabilities, sort_order,
+        created_at_ms, updated_at_ms, context_tokens, min_plan,
+        input_price_per_million, output_price_per_million,
+        cached_input_price_per_million, pricing_fetched_at_ms
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       model.id,
       model.label,
@@ -271,6 +547,11 @@ export async function insertCloudModel(model: CloudModelOption): Promise<void> {
       now,
       now,
       model.contextTokens,
+      model.minPlan,
+      model.inputPricePerMillion,
+      model.outputPricePerMillion,
+      model.cachedInputPricePerMillion,
+      now,
     ],
   });
 }
@@ -284,6 +565,11 @@ export async function updateCloudModel(model: CloudModelOption): Promise<void> {
         description = ?,
         capabilities = ?,
         context_tokens = ?,
+        min_plan = ?,
+        input_price_per_million = ?,
+        output_price_per_million = ?,
+        cached_input_price_per_million = ?,
+        pricing_fetched_at_ms = ?,
         updated_at_ms = ?
       WHERE id = ?`,
     args: [
@@ -292,6 +578,11 @@ export async function updateCloudModel(model: CloudModelOption): Promise<void> {
       model.description,
       JSON.stringify(model.capabilities),
       model.contextTokens,
+      model.minPlan,
+      model.inputPricePerMillion,
+      model.outputPricePerMillion,
+      model.cachedInputPricePerMillion,
+      Date.now(),
       Date.now(),
       model.id,
     ],
@@ -323,124 +614,41 @@ export async function deleteCloudModel(modelId: string): Promise<void> {
   }
 }
 
-function resetTime(events: { created_at_ms: number }[], windowMs: number): string | null {
-  if (events.length === 0) return null;
-  const oldest = Math.min(...events.map((event) => event.created_at_ms));
-  return new Date(oldest + windowMs).toISOString();
-}
-
 /**
- * What an account has spent inside the two windows.
+ * Open a usage event for a turn about to happen.
  *
- * The column is still called `device_id`. It used to hold exactly that, and
- * it now holds an `account:<sub>` string instead — an opaque key either way,
- * so nothing needed migrating when Samwell Cloud moved onto accounts. The
- * credit redesign that follows this is where the name gets put right.
+ * It was called `reserveUsageEvent` and did two jobs at once: it recorded the
+ * event, and it enforced the message-count caps of `CLOUD_LIMITS` with the
+ * atomic count-and-insert trick documented below. Credits meter turns now,
+ * and the second job is gone: the only thing that can refuse a turn is a
+ * balance, checked atomically in `billing.ts`'s `reserveCredits`. What is
+ * left is the recording - and the name says what it does.
+ *
+ * The old trick is worth remembering, because the same reasoning is why
+ * `reserveCredits` is a single UPDATE: two concurrent requests must never
+ * both observe the same headroom and both act on it.
  */
-export async function getUsageState(accountId: string, nowMs = Date.now()): Promise<CloudUsageState> {
-  const sinceWeekly = nowMs - CLOUD_LIMITS.weeklyWindowMs;
-  const result = await db.execute({
-    sql: `SELECT created_at_ms FROM usage_events
-      WHERE device_id = ? AND created_at_ms >= ? AND counts_toward_limit = 1
-      ORDER BY created_at_ms ASC`,
-    args: [accountId, sinceWeekly],
-  });
-
-  const weeklyEvents = result.rows.map((row) => ({
-    created_at_ms: Number(row.created_at_ms),
-  }));
-  const sinceFiveHour = nowMs - CLOUD_LIMITS.fiveHourWindowMs;
-  const fiveHourEvents = weeklyEvents.filter(
-    (event) => event.created_at_ms >= sinceFiveHour,
-  );
-
-  return {
-    fiveHour: {
-      used: fiveHourEvents.length,
-      cap: CLOUD_LIMITS.fiveHourMessageCap,
-      remaining: Math.max(0, CLOUD_LIMITS.fiveHourMessageCap - fiveHourEvents.length),
-      resetsAt: resetTime(fiveHourEvents, CLOUD_LIMITS.fiveHourWindowMs),
-    },
-    weekly: {
-      used: weeklyEvents.length,
-      cap: CLOUD_LIMITS.weeklyMessageCap,
-      remaining: Math.max(0, CLOUD_LIMITS.weeklyMessageCap - weeklyEvents.length),
-      resetsAt: resetTime(weeklyEvents, CLOUD_LIMITS.weeklyWindowMs),
-    },
-  };
-}
-
-/**
- * Checks the usage cap and records the event in one atomic statement. The
- * previous approach (a separate SELECT-based check, then a separate INSERT)
- * left a race window between the two round-trips: two concurrent requests
- * from the same device could both observe "room remaining" before either had
- * inserted, letting them both through and overshooting the cap. Folding the
- * cap check into the INSERT's own WHERE clause means the count-and-decide
- * happens as part of a single statement, which SQLite (and libsql/Turso,
- * which is SQLite-compatible) executes atomically with respect to other
- * connections — a concurrent writer can't observe or interleave with a
- * partially-applied statement.
- */
-export async function reserveUsageEvent(args: {
+export async function recordUsageEvent(args: {
   id: string;
   accountId: string;
   modelId: string;
   countsTowardLimit: boolean;
   kind?: string;
-}): Promise<UsageLimitCheck> {
-  const now = Date.now();
-
-  if (!args.countsTowardLimit) {
-    // Not subject to the cap — always allowed, still recorded for the log.
-    await db.execute({
-      sql: `INSERT INTO usage_events (
-          id, device_id, model_id, status, counts_toward_limit, kind, created_at_ms
-        )
-        VALUES (?, ?, ?, 'started', 0, ?, ?)`,
-      args: [args.id, args.accountId, args.modelId, args.kind ?? 'chat', now],
-    });
-    return { allowed: true, usage: await getUsageState(args.accountId, now) };
-  }
-
-  const sinceFiveHour = now - CLOUD_LIMITS.fiveHourWindowMs;
-  const sinceWeekly = now - CLOUD_LIMITS.weeklyWindowMs;
-
-  const result = await db.execute({
+}): Promise<void> {
+  await db.execute({
     sql: `INSERT INTO usage_events (
-        id, device_id, model_id, status, counts_toward_limit, kind, created_at_ms
+        id, account_id, model_id, status, counts_toward_limit, kind, created_at_ms
       )
-      SELECT ?, ?, ?, 'started', 1, ?, ?
-      WHERE (
-        SELECT COUNT(*) FROM usage_events
-        WHERE device_id = ? AND created_at_ms >= ? AND counts_toward_limit = 1
-      ) < ?
-      AND (
-        SELECT COUNT(*) FROM usage_events
-        WHERE device_id = ? AND created_at_ms >= ? AND counts_toward_limit = 1
-      ) < ?`,
+      VALUES (?, ?, ?, 'started', ?, ?, ?)`,
     args: [
       args.id,
       args.accountId,
       args.modelId,
+      args.countsTowardLimit ? 1 : 0,
       args.kind ?? 'chat',
-      now,
-      args.accountId,
-      sinceFiveHour,
-      CLOUD_LIMITS.fiveHourMessageCap,
-      args.accountId,
-      sinceWeekly,
-      CLOUD_LIMITS.weeklyMessageCap,
+      Date.now(),
     ],
   });
-
-  const usage = await getUsageState(args.accountId, now);
-  if (result.rowsAffected === 0) {
-    const reason: 'fiveHour' | 'weekly' = usage.fiveHour.remaining <= 0 ? 'fiveHour' : 'weekly';
-    return { allowed: false, usage, reason };
-  }
-
-  return { allowed: true, usage };
 }
 
 export async function updateUsageEvent(
@@ -452,6 +660,7 @@ export async function updateUsageEvent(
       SET status = ?,
         completed_at_ms = ?,
         prompt_tokens = ?,
+        cached_prompt_tokens = ?,
         completion_tokens = ?,
         total_tokens = ?,
         cost_usd = ?,
@@ -461,6 +670,7 @@ export async function updateUsageEvent(
       update.status,
       Date.now(),
       update.promptTokens ?? null,
+      update.cachedPromptTokens ?? null,
       update.completionTokens ?? null,
       update.totalTokens ?? null,
       update.costUsd ?? null,

@@ -1,5 +1,6 @@
 export * from './account';
 export * from './app-guide';
+export * from './billing';
 export * from './character';
 export * from './chat-title';
 export * from './compass';

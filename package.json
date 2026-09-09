@@ -73,6 +73,7 @@
     "react-native-keyboard-controller": "1.21.9",
     "react-native-nitro-modules": "^0.35.9",
     "react-native-pager-view": "8.0.2",
+    "react-native-purchases": "^10.9.0",
     "react-native-reanimated": "4.6.0",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screen-transitions": "^4.0.0",

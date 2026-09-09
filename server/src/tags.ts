@@ -9,7 +9,7 @@ import {
 } from 'samwell-shared';
 
 import { runStructuredAnalysis } from './structured-analysis.js';
-import { listCloudModels, reserveUsageEvent, resolveModelId } from './db.js';
+import { listCloudModels, recordUsageEvent, resolveModelId } from './db.js';
 import { requireOpenRouterKey } from './http-helpers.js';
 import { readIdentity } from './identity.js';
 
@@ -31,23 +31,13 @@ tagsRoutes.post('/suggest', async (c) => {
   );
   const usageEventId = `tags-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  const reservation = await reserveUsageEvent({
+  await recordUsageEvent({
     id: usageEventId,
     accountId,
     modelId,
     countsTowardLimit: true,
     kind: 'tag_suggest',
   });
-  if (!reservation.allowed) {
-    return c.json(
-      {
-        error: 'usage_limit_reached',
-        reason: reservation.reason,
-        usage: reservation.usage,
-      },
-      429,
-    );
-  }
 
   const { modelId: _requestedModel, ...payload } = parsed.data;
   // No tight token cap here: reasoning-capable models spend completion tokens on

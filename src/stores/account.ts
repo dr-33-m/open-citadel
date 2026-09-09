@@ -8,6 +8,7 @@ import {
   type AccountEntry,
 } from '@/services/account';
 import { ACCOUNT_ENABLED } from '@/constants/logto';
+import { configurePurchases, forget, identify } from '@/services/purchases';
 import { useSettingsStore } from '@/stores/settings';
 
 /**
@@ -67,6 +68,26 @@ function adoptAccountName(name: string | null) {
   void settings.setUsername(claimed);
 }
 
+/**
+ * Tell RevenueCat which account this is.
+ *
+ * The one place the two identities are joined, and the join is an equality
+ * rather than a mapping: RevenueCat's `app_user_id` IS the Logto subject, so
+ * a webhook's `app_user_id` prefixed with `account:` is exactly the key the
+ * server's credit ledger uses. There is no table in between to fall out of
+ * step, which is the whole reason it is done this way.
+ *
+ * Fired and forgotten, and failures are swallowed to a warning on purpose.
+ * Signing in must not fail because a purchases SDK could not reach the
+ * network - the reader's session is real either way, the server is the thing
+ * that decides what they may spend, and the next launch calls this again.
+ */
+function bindPurchases(sub: string) {
+  void identify(sub).catch((error) => {
+    if (__DEV__) console.warn('[Account] Could not identify with RevenueCat:', error);
+  });
+}
+
 export const useAccountStore = create<AccountState>((set) => ({
   status: 'unknown',
   busy: false,
@@ -91,6 +112,11 @@ export const useAccountStore = create<AccountState>((set) => ({
     try {
       const profile = await readProfile();
       set(profile ? { status: 'signedIn', ...profile, error: null } : signedOut);
+      // Configured with the account in hand rather than anonymously, so
+      // RevenueCat never mints a throwaway customer that a purchase could
+      // land on before the alias catches up. See `services/purchases`.
+      configurePurchases(profile?.sub ?? null);
+      if (profile) bindPurchases(profile.sub);
     } catch (error) {
       if (__DEV__) console.warn('[Account] Could not restore the session:', error);
       set(signedOut);
@@ -102,7 +128,10 @@ export const useAccountStore = create<AccountState>((set) => ({
     try {
       const profile = await startSignIn(entry);
       set(profile ? { status: 'signedIn', ...profile } : signedOut);
-      if (profile) adoptAccountName(profile.name);
+      if (profile) {
+        adoptAccountName(profile.name);
+        bindPurchases(profile.sub);
+      }
     } catch (error) {
       // Closing the browser is a decision, not a failure, and saying "sign-in
       // failed" over it would be telling someone their own choice went wrong.
@@ -118,6 +147,16 @@ export const useAccountStore = create<AccountState>((set) => ({
     try {
       await endSession();
       set(signedOut);
+      /*
+       * RevenueCat moves to a fresh anonymous customer, so the next person to
+       * sign in on this device does not inherit the last one's plan. Not
+       * awaited with the sign-out itself: the session is already gone, and a
+       * purchases SDK that cannot be reached must not leave somebody looking
+       * signed in.
+       */
+      void forget().catch((error) => {
+        if (__DEV__) console.warn('[Account] Could not sign out of RevenueCat:', error);
+      });
     } catch (error) {
       set({ error: message(error, 'Could not sign you out. Try again.') });
     } finally {

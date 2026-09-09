@@ -157,10 +157,24 @@ function useCarousel(component: string): CarouselContextValue {
  */
 const ItemIndexContext = createContext(0);
 
-/** Position and controls, for a control of your own outside the built-in ones. */
+/**
+ * Position and controls, for a control of your own outside the built-in ones.
+ *
+ * LOCAL EDIT (Open Citadel): `progress` and `engaged` added.
+ *
+ * Without them a feature cannot give its own slides depth - the `default`
+ * variant is a plain translate, so every slide reads with equal weight, which
+ * is right for photographs and wrong for a choice being made between three
+ * cards. The alternative was adding a variant to this vendored file or
+ * forking it; returning the two shared values the component already owns is
+ * the smaller change and is purely additive.
+ *
+ * Re-apply after any `panelui-cli update carousel`.
+ */
 export function useCarouselState() {
-  const { index, count, scrollTo, next, previous } = useCarousel('useCarouselState');
-  return { index, count, scrollTo, next, previous };
+  const { index, count, scrollTo, next, previous, progress, engaged } =
+    useCarousel('useCarouselState');
+  return { index, count, scrollTo, next, previous, progress, engaged };
 }
 
 /**
@@ -321,9 +335,26 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
    */
   const animatedTarget = useRef<number | null>(null);
 
+  /*
+   * LOCAL EDIT (Open Citadel): `velocity`.
+   *
+   * `onEnd` reads the release velocity and used it only to DECIDE whether to
+   * step, then started the spring from a standstill. That is the visible seam
+   * between dragging and animating - a hard flick and a slow nudge landed at
+   * exactly the same speed, so the run stopped feeling like a thing you threw
+   * and started feeling like a thing you asked politely to move.
+   *
+   * The spring now inherits the finger's speed. Converted from points per
+   * second into progress units (`/ itemSize`) and negated, because progress
+   * runs opposite to the drag: `onUpdate` computes `dragFrom - moved /
+   * itemSize`.
+   *
+   * Re-apply after any `panelui-cli update carousel`.
+   */
   const animateTo = useCallback(
-    (target: number) => {
+    (target: number, velocity = 0) => {
       animatedTarget.current = target;
+      const spring = velocity === 0 ? SPRING : { ...SPRING, velocity };
       if (reducedMotion) {
         progress.value = target;
       } else if (loop) {
@@ -331,11 +362,11 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
         // target itself, so a wrap from the last slide to the first travels one
         // step forward instead of winding all the way back through the run.
         const shortest = progress.value + distance(target, progress.value, count, true);
-        progress.value = withSpring(shortest, SPRING, (finished) => {
+        progress.value = withSpring(shortest, spring, (finished) => {
           if (finished) progress.value = wrap(progress.value, count);
         });
       } else {
-        progress.value = withSpring(target, SPRING);
+        progress.value = withSpring(target, spring);
       }
     },
     [count, loop, progress, reducedMotion]
@@ -359,14 +390,14 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
   });
 
   const scrollTo = useCallback(
-    (target: number) => {
+    (target: number, velocity = 0) => {
       if (count <= 0) return;
       const settled = normalizeCarouselIndex(target, count, loop);
 
       // A controlled request belongs to its owner. The finger may move the run,
       // but after release it returns to the current prop until the owner accepts
       // the request by changing that prop.
-      animateTo(isControlled ? index : settled);
+      animateTo(isControlled ? index : settled, velocity);
       setIndex(settled);
     },
     [animateTo, count, index, isControlled, loop, setIndex]
@@ -392,9 +423,9 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
   });
 
   const settle = useCallback(
-    (target: number) => {
+    (target: number, velocity = 0) => {
       setTouched(true);
-      scrollTo(target);
+      scrollTo(target, velocity);
     },
     [scrollTo]
   );
@@ -445,7 +476,8 @@ const CarouselRoot = forwardRef<CarouselHandle, CarouselProps>(function Carousel
           const flicked = Math.abs(velocity) > SNAP_VELOCITY;
           const step = past || flicked ? (moved < 0 ? 1 : -1) : 0;
 
-          runOnJS(settle)(from + step);
+          // Negated and scaled into progress units: see `animateTo`.
+          runOnJS(settle)(from + step, -velocity / itemSize);
         })
         .onFinalize(() => {
           engaged.value = withTiming(0, { duration: 220 });

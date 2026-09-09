@@ -37,6 +37,17 @@ module.exports = () => {
   const logtoEndpoint = process.env.LOGTO_ENDPOINT || baseConfig.extra?.logtoEndpoint || '';
   const logtoAppId = process.env.LOGTO_APP_ID || baseConfig.extra?.logtoAppId || '';
 
+  // RevenueCat, for the subscription. Public SDK keys, not secrets - they ship
+  // inside the binary either way, exactly like the Logto app id above. The
+  // test key is for the Test Store, which serves real purchase flows without
+  // App Store Connect or Play Console being set up; set it in a development
+  // or preview build and it wins over the platform key.
+  const revenueCatIosKey = process.env.REVENUECAT_IOS_KEY || baseConfig.extra?.revenueCatIosKey || '';
+  const revenueCatAndroidKey =
+    process.env.REVENUECAT_ANDROID_KEY || baseConfig.extra?.revenueCatAndroidKey || '';
+  const revenueCatTestKey =
+    process.env.REVENUECAT_TEST_KEY || baseConfig.extra?.revenueCatTestKey || '';
+
   return {
     ...baseConfig,
     name: `${baseConfig.name}${variant.nameSuffix}`,
@@ -46,6 +57,9 @@ module.exports = () => {
       samwellCloudUrl,
       logtoEndpoint,
       logtoAppId,
+      revenueCatIosKey,
+      revenueCatAndroidKey,
+      revenueCatTestKey,
     },
     ios: {
       ...baseConfig.ios,

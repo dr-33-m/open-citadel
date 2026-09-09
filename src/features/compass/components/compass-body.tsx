@@ -33,7 +33,10 @@ type Conversation = ReturnType<typeof useCompassConversation>;
  * JSX.
  */
 const COMPASS_BLOCKED: Record<
-  Exclude<CloudBlocker, 'checkingAccount'>,
+  // The two "we have not looked yet" states say nothing out loud: naming a
+  // problem before knowing there is one is how a paying reader gets a paywall
+  // flashed at them on every cold open.
+  Exclude<CloudBlocker, 'checkingAccount' | 'checkingPlan'>,
   { message: string; action: string; icon: LucideIcon }
 > = {
   offlineMode: {
@@ -51,6 +54,11 @@ const COMPASS_BLOCKED: Record<
     message: 'Sign in and let Samwell track and analyse your goals.',
     action: 'SIGN IN',
     icon: LogIn,
+  },
+  needsPlan: {
+    message: 'Choose a plan and let Samwell track and analyse your goals.',
+    action: 'OPEN SETTINGS',
+    icon: Settings,
   },
 };
 
@@ -163,10 +171,12 @@ export function CompassBody({
   // its own. It had a full-width `GoldButton` where chat has a small bordered
   // one, so the two halves of one screen disagreed about how big "the way out
   // of this" is — and there is no reason for the answer to differ by tab.
-  // The stored session is still being read. Saying "sign in" here and taking
-  // it back a frame later is worse than a beat of nothing, and this beat is
-  // one local storage read long.
-  if (cloudBlocker === 'checkingAccount') return null;
+  // Still looking: the stored session is being read, or the server has not
+  // said what this account holds. Naming a problem here and taking it back a
+  // frame later is worse than a beat of nothing - and for `checkingPlan` the
+  // problem it would name is a paywall, shown to somebody who may well
+  // already be paying.
+  if (cloudBlocker === 'checkingAccount' || cloudBlocker === 'checkingPlan') return null;
 
   if (cloudBlocker) {
     return (
@@ -177,7 +187,9 @@ export function CompassBody({
           title:
             cloudBlocker === 'needsAccount'
               ? 'Compass works with your Cloud Account.'
-              : 'Compass needs Samwell Cloud.',
+              : cloudBlocker === 'needsPlan'
+                ? 'Compass works with a Samwell Cloud plan.'
+                : 'Compass needs Samwell Cloud.',
           message: COMPASS_BLOCKED[cloudBlocker].message,
           // Nothing to offer when the build itself has no server: the way out
           // of that is a different build, not a screen in this one.

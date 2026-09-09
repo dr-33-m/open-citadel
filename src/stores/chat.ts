@@ -21,7 +21,7 @@ import {
   type ChatSession,
 } from '@/services/chat-sessions';
 import { suggestChatTitle } from '@/services/chat-title';
-import { sendCloudChatTurn } from '@/services/cloud-chat';
+import { asCloudRefusal, sendCloudChatTurn } from '@/services/cloud-chat';
 import { showToast } from '@/components/toast/toast-provider';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
 import { planReplay, type ReplayMessage } from '@/services/context-budget';
@@ -31,6 +31,7 @@ import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
 import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
+import { useSubscriptionStore } from '@/stores/subscription';
 
 /**
  * Re-exported rather than redefined: a session is a session whichever surface
@@ -501,12 +502,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // AI title is worth generating.
     const isFirstRealMessage = !activeSession.bookId && realMessageCount(get().messages) === 0;
 
-    const {
-      samwellMode,
-      cloudBaseUrl,
-      cloudModelId,
-      loadCloudUsage,
-    } = useSettingsStore.getState();
+    const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
     const { enableToolCalling, enableThinking } = useModelStore.getState().inference;
     if (samwellMode === 'offline' && !Inference.isModelLoaded()) return;
     if (samwellMode === 'cloud' && !cloudBaseUrl) return;
@@ -583,17 +579,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               ...(status !== null ? { isThinking: false } : {}),
             }));
           },
+          /*
+           * The balance rides in on the stream, so there is no second HTTP
+           * call to make. This used to fire a whole authenticated round trip
+           * after every message to fetch a number the metered route had
+           * already sent in a chunk before it finished.
+           */
+          onCredits: (available) => {
+            useSubscriptionStore.getState().applyCreditsFromTurn(available);
+          },
         });
-        // Not awaited: usage is a settings-panel concern, and sitting on it
-        // here held the finished reply out of the transcript for the length
-        // of a second HTTP call. Compass has always fired this and moved on.
-        void loadCloudUsage();
       } catch (err) {
         console.error('[Samwell Cloud] Generation error:', err);
+        // Refusals are the server working, not failing, so they get their own
+        // sentence. `asCloudRefusal` owns reading the status back out of the
+        // transport's message - this used to match on '429' by hand, which is
+        // the copy of a decision that drifts.
+        const refusal = asCloudRefusal(err);
         const message = err instanceof Error ? err.message : 'Cloud request failed';
-        finalContent = message.includes('429')
-          ? 'Cloud Samwell has reached the current usage limit. Try again after the reset window.'
-          : `Cloud Samwell could not respond: ${message}`;
+        finalContent = refusal ? refusal.message : `Cloud Samwell could not respond: ${message}`;
       } finally {
         cloudAbort = null;
       }

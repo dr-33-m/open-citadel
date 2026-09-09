@@ -42,6 +42,7 @@ import {
   proposeAdjustmentsTool,
   proposeGoalTool,
   toggleFavoriteTool,
+  TOOL_LOOP_CEILING,
 } from 'samwell-shared';
 
 import {
@@ -83,6 +84,61 @@ import { useApprovalStore } from '@/stores/approval';
 import { useSettingsStore } from '@/stores/settings';
 
 /** The three things Samwell can be doing on a cloud turn. */
+/**
+ * Samwell Cloud refused the turn, and why.
+ *
+ * The transport throws a plain `Error` whose message carries the status and
+ * nothing else (`XHR error! status: 402 ...`), so the status is read back out
+ * of it here - once, in the one place that knows the shape - rather than
+ * every caller matching on a substring. `stores/chat` already did that for
+ * `429` and it is exactly the copy that drifts.
+ *
+ * The numbers are deliberately not carried: the response body is gone by the
+ * time this throws, and the subscription store already holds a balance that
+ * is at least as fresh.
+ */
+export class CloudRefused extends Error {
+  constructor(
+    readonly reason: 'noCredits' | 'noPlan' | 'busyTurn',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'CloudRefused';
+  }
+}
+
+/** The HTTP status the transport buried in its message, if there was one. */
+function readStatus(error: unknown): number | null {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const match = message.match(/status:\s*(\d{3})/);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * A refusal, or null if this was an ordinary failure.
+ *
+ * 402 is the credit gate and 429 is one of the two turn ceilings. Both are
+ * the server working correctly, so both get a sentence a reader can act on
+ * rather than a stack trace with a number in it.
+ */
+export function asCloudRefusal(error: unknown): CloudRefused | null {
+  if (error instanceof CloudRefused) return error;
+  const status = readStatus(error);
+  if (status === 402) {
+    return new CloudRefused(
+      'noCredits',
+      'You are out of AI Credits for this month. They renew on your next billing date.',
+    );
+  }
+  if (status === 429) {
+    return new CloudRefused(
+      'busyTurn',
+      'That message went round in circles and Samwell stopped it. Try asking it a different way.',
+    );
+  }
+  return null;
+}
+
 export type SamwellTurnMode = 'reading' | 'compass' | 'onboarding';
 
 /**
@@ -178,6 +234,15 @@ export interface CloudChatTurnOptions {
   /** `name` is the tool the status describes, so the caller can pick a
    *  matching indicator; both are null when the run ends. */
   onToolStatus: (status: string | null, name: string | null) => void;
+  /**
+   * The balance, as the metered route reports it on the way out.
+   *
+   * The server yields a `samwell-credits` chunk before it finishes, so the
+   * new number arrives WITH the reply. Reading it saves a whole authenticated
+   * round trip per message, which the app was making every turn to learn
+   * something it had already been told.
+   */
+  onCredits?: (available: number) => void;
   /**
    * Aborts the turn. `stop()` on the two chat surfaces routes here; the turn
    * returns whatever text had streamed so far and no error is raised.
@@ -741,6 +806,7 @@ export async function sendCloudChatTurn({
   onThinkingContent,
   onThinkingDone,
   onToolStatus,
+  onCredits,
   signal,
 }: CloudChatTurnOptions): Promise<string> {
   /*
@@ -775,6 +841,17 @@ export async function sendCloudChatTurn({
    * reasoning delta or an answer token proves the model is back.
    */
   let inToolPhase = false;
+  /*
+   * Round trips made since the reader spoke.
+   *
+   * Every one re-sends the whole conversation plus every tool result so far,
+   * so the cost of a turn grows with the square of this number rather than
+   * with it. The server enforces the same ceiling and is the one that counts
+   * (a stale build of this file must not be able to opt out), but it can only
+   * refuse - stopping here lets the turn end on whatever Samwell has already
+   * said, which is a far better thing to leave a reader holding than an error.
+   */
+  let continuationsThisTurn = 0;
   let lastToolName: string | null = null;
   /*
    * What he had already said when the tool was called, and what he has said
@@ -918,6 +995,17 @@ export async function sendCloudChatTurn({
         // stopped talking for this turn — release the held tool row even if
         // the continuation produced no text of its own.
         if (finishReason !== 'tool_calls' && finishReason !== null) endToolPhase();
+        /*
+         * One round trip, counted where the round trip actually ends.
+         *
+         * Not on the tool-call chunk: `readToolName` answers for three
+         * different chunks of the SAME call (the start, the input, and an
+         * approval request), so counting there counted one call as two or
+         * three and would have cut an ordinary turn off at four. A
+         * `RUN_FINISHED` carrying `tool_calls` is exactly one continuation,
+         * which is also the unit the server counts.
+         */
+        if (finishReason === 'tool_calls') continuationsThisTurn += 1;
       }
 
       const toolName = readToolName(chunk);
@@ -938,6 +1026,11 @@ export async function sendCloudChatTurn({
       // it through the continuation request rather than blanking it.
       if (chunk.type === 'TOOL_CALL_RESULT' && inToolPhase) {
         onToolStatus('Working through that…', lastToolName);
+      }
+
+      if (chunk.type === 'CUSTOM' && chunk.name === 'samwell-credits') {
+        const value = chunk.value as { available?: unknown } | undefined;
+        if (typeof value?.available === 'number') onCredits?.(value.available);
       }
     },
     onMessagesChange: (messages) => {
@@ -1029,6 +1122,18 @@ export async function sendCloudChatTurn({
         }
         break;
       }
+      if (continuationsThisTurn >= TOOL_LOOP_CEILING) {
+        // Past this the model has stopped making progress and started
+        // circling. Measured on real traffic, the worst turn went round 112
+        // times; nobody wanted the hundredth answer. Stopping a beat before
+        // the server's own refusal means the reader gets the answer so far
+        // rather than an error.
+        console.warn(
+          `[Samwell Cloud] Turn reached ${TOOL_LOOP_CEILING} continuations; stopping it here.`,
+        );
+        break;
+      }
+
       if (approvals.length > 0) lastProgressAt = Date.now();
       if (Date.now() - lastProgressAt > SETTLE_INACTIVITY_MS) {
         console.warn('[Samwell Cloud] Turn went quiet; returning partial content.');

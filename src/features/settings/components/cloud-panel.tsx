@@ -1,25 +1,34 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
+import type { PurchasesPackage } from 'react-native-purchases';
 
-import { Card } from '@/components/ui/card';
-import { Sheet } from '@/components/ui/sheet';
-import { ThemedText } from '@/components/themed-text';
+import { ActionButton } from '@/components/action-button';
 import { List, LogIn, SlidersHorizontal } from '@/components/icons';
+import { ThemedText } from '@/components/themed-text';
+import { showToast } from '@/components/toast/toast-provider';
+import { Card } from '@/components/ui/card';
 import { GoldButton } from '@/components/ui/gold-button';
 import { Spinner } from '@/components/ui/spinner';
-import { ActionButton } from '@/components/action-button';
-import { Touchable } from '@/components/ui/touchable';
-import { Progress } from '@/components/ui/progress';
-import { CloudTuneSheet } from '@/features/settings/components/cloud-tune-sheet';
 import { ACCOUNT_ENABLED } from '@/constants/logto';
+import { PURCHASES_ENABLED } from '@/constants/revenuecat';
+import { CloudTuneSheet } from '@/features/settings/components/cloud-tune-sheet';
+import { CloudModelSheet } from '@/features/settings/components/cloud-model-sheet';
+import { CreditMeter } from '@/features/billing/components/credit-meter';
+import { PlanCarousel } from '@/features/billing/components/plan-carousel';
 import { useSignedIn } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
+import { useSubscriptionStore } from '@/stores/subscription';
+import { CREDIT_PLANS, planForPackage, type PlanId } from 'samwell-shared';
 import { asColor } from '@/utils/colors';
 
 /**
- * The cloud engine's panel: setup state, the chosen model, and usage. Owns
- * the cloud model picker.
+ * The cloud engine's panel.
+ *
+ * Composition and a branch, and nothing else. It owns which of four states
+ * the reader is in - this build cannot reach the cloud, nobody is signed in,
+ * signed in without a plan, or set up - and hands each one to the piece that
+ * draws it. Everything with logic in it lives in `features/billing`.
  */
 export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void }) {
   const [mutedForeground, primary] = useCSSVariable([
@@ -28,56 +37,95 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
   ]);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
   const cloudModelId = useSettingsStore((s) => s.cloudModelId);
-  const cloudModels = useSettingsStore((s) => s.cloudModels);
-  const cloudUsage = useSettingsStore((s) => s.cloudUsage);
-  const cloudUsageError = useSettingsStore((s) => s.cloudUsageError);
-  const cloudUsageLoading = useSettingsStore((s) => s.cloudUsageLoading);
-  const cloudModelsLoading = useSettingsStore((s) => s.cloudModelsLoading);
   const setCloudModelId = useSettingsStore((s) => s.setCloudModelId);
-  const loadCloudUsage = useSettingsStore((s) => s.loadCloudUsage);
-  const loadCloudModels = useSettingsStore((s) => s.loadCloudModels);
-  // Just the boolean. The panel does not draw the email, and subscribing to
-  // the account itself would redraw it whenever a name or an error moved.
+
+  // Per-field, never the whole store: a credit spent mid-conversation must
+  // not redraw this panel's every child.
+  const status = useSubscriptionStore((s) => s.status);
+  const models = useSubscriptionStore((s) => s.models);
+  const balance = useSubscriptionStore((s) => s.balance);
+  const offering = useSubscriptionStore((s) => s.offering);
+  const busy = useSubscriptionStore((s) => s.busy);
+  const loading = useSubscriptionStore((s) => s.loading);
+  const error = useSubscriptionStore((s) => s.error);
+  const refresh = useSubscriptionStore((s) => s.refresh);
+  const loadOffering = useSubscriptionStore((s) => s.loadOffering);
+  const buy = useSubscriptionStore((s) => s.purchase);
+  const restore = useSubscriptionStore((s) => s.restore);
+  // Counted by the server, not here. Three per tier is true today and stops
+  // being true the first time `/admin/models` adds one.
+  const modelCounts = useSubscriptionStore((s) => s.modelsByPlan);
+
   const signedIn = useSignedIn();
   const [pickerVisible, setPickerVisible] = React.useState(false);
   const [tuneVisible, setTuneVisible] = React.useState(false);
-  const activeModel = cloudModels.find((m) => m.id === cloudModelId);
+  const activeModel = models.find((m) => m.id === cloudModelId);
 
   /*
-   * Ask the server what it offers now.
+   * Ask the server what this account holds, and the store what is on sale.
    *
-   * `cloudModels` starts as `CLOUD_MODEL_CATALOG`, a constant compiled into
-   * the app, so without this the picker shows whatever was true on the day the
-   * build was made. Models can be added, retired and re-defaulted on the
-   * server without a deploy, and none of that reached a device: the loader was
-   * written and never called.
-   *
-   * Fire and forget, and the list is only replaced on success, so a server
-   * that cannot be reached leaves the picker on the built-in catalogue rather
-   * than on nothing.
+   * Only once signed in: both answers are about an account, and asking
+   * without one produces a 401 and an anonymous customer for nothing.
    */
   React.useEffect(() => {
-    void loadCloudModels();
-  }, [loadCloudModels]);
+    if (!signedIn) return;
+    void refresh();
+    void loadOffering();
+  }, [signedIn, refresh, loadOffering]);
+
+  /** The store package behind each plan, keyed exactly. See `planForPackage`. */
+  const packages = React.useMemo(() => {
+    const out: Partial<Record<PlanId, PurchasesPackage>> = {};
+    for (const pkg of offering?.availablePackages ?? []) {
+      const plan = planForPackage(pkg.identifier);
+      if (plan) out[plan] = pkg;
+    }
+    return out;
+  }, [offering]);
+
+
+  const onChoose = React.useCallback(
+    async (plan: PlanId, packageToBuy: PurchasesPackage) => {
+      const bought = await buy(packageToBuy, plan);
+      if (bought) {
+        showToast({
+          message: `${CREDIT_PLANS[plan].label} is yours.`,
+          tone: 'success',
+          key: 'billing',
+        });
+      }
+    },
+    [buy],
+  );
+
+  const onRestore = React.useCallback(async () => {
+    const restored = await restore();
+    if (restored) {
+      showToast({ message: 'Subscription restored.', tone: 'success', key: 'billing' });
+    }
+  }, [restore]);
+
+  // This build cannot reach him, and no amount of signing in changes that.
+  if (!cloudBaseUrl || !ACCOUNT_ENABLED) {
+    return (
+      <Card className="gap-3 p-4">
+        <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
+          Grand Maester Samwell is not set up in this build yet.
+        </ThemedText>
+      </Card>
+    );
+  }
 
   /*
    * Configured, but nobody is signed in.
    *
-   * The model picker and the usage bars both need an account to mean
-   * anything — one spends it, the other counts it — so the panel becomes the
-   * single thing worth doing instead of two disabled halves of itself. The
-   * button does not open the browser from here: sign-in lives in one place,
-   * and this scrolls to it so the reader ends up looking at the card that
-   * owns it rather than at a flow that started from somewhere else.
+   * Unchanged: a plan is bought against an account, so the account comes
+   * first and this stays the single thing worth doing. The button does not
+   * open the browser from here - sign-in lives in one place and this scrolls
+   * to it.
    */
-  if (cloudBaseUrl && ACCOUNT_ENABLED && !signedIn) {
+  if (!signedIn) {
     return (
-      // No leading icon, and no second explanation of what an account is.
-      // The Cloud mode card immediately above is selected, gold, and already
-      // carries the cloud mark; repeating it here put two cloud badges four
-      // lines apart and made the panel look like a second, competing choice
-      // rather than the consequence of the one just made. What is left is the
-      // fact and the way out.
       <Card className="gap-4 p-4">
         <View className="gap-1">
           <ThemedText type="bodyMd">Requires a cloud account</ThemedText>
@@ -92,36 +140,59 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
     );
   }
 
+  /*
+   * Signed in, no plan yet.
+   *
+   * `unknown` is deliberately not this branch. It is the moment before the
+   * server has answered, and showing a plan carousel to somebody who is
+   * already paying - on every cold open - is exactly the flash the account
+   * store's own three states exist to prevent.
+   */
+  if (status === 'none' || (status === 'unavailable' && PURCHASES_ENABLED)) {
+    return (
+      <Card className="gap-4 p-4">
+        <View className="gap-1">
+          <ThemedText type="bodyMd">Choose a plan</ThemedText>
+          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+            Each one opens up the models he can think with.
+          </ThemedText>
+        </View>
+        <PlanCarousel
+          packages={packages}
+          modelCounts={modelCounts}
+          busy={busy}
+          loading={loading}
+          error={error}
+          onChoose={onChoose}
+          onRestore={onRestore}
+        />
+      </Card>
+    );
+  }
+
+  if (status === 'unavailable') {
+    return (
+      <Card className="gap-3 p-4">
+        <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
+          Subscriptions are not set up in this build yet.
+        </ThemedText>
+      </Card>
+    );
+  }
+
   return (
     <>
       <Card className="gap-3 p-4">
-        {/* The build itself cannot reach him, and no amount of signing in
-            changes that. `ACCOUNT_ENABLED` sits with the missing base URL
-            rather than with the missing sign-in, because a build without
-            Logto draws no account card — telling the reader to sign in under
-            Profile would point at nothing. Same ordering as `cloudBlocker` in
-            `use-samwell-readiness`; this panel is the settings-side view of
-            the same states. */}
-        {!cloudBaseUrl || !ACCOUNT_ENABLED ? (
-          <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
-            Grand Maester Samwell is not set up in this build yet.
-          </ThemedText>
-        ) : null}
-
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1 gap-1">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>MODEL</ThemedText>
-            {/* Three states, not two. "Choose a model" is only honest once the
-                catalogue is in and the stored ID genuinely matches nothing in
-                it; said while the list is still arriving it asks for a choice
-                that may be about to make itself. The spinner is only for the
-                case where there is nothing to show yet — a known model stays
-                on screen through a refresh rather than blinking out of it. */}
+            {/* Three states, not two. "Choose a model" is only honest once
+                the list is in and the stored id genuinely matches nothing. */}
             {activeModel ? (
               <ThemedText type="bodyMd" numberOfLines={2}>
                 {activeModel.label}
               </ThemedText>
-            ) : cloudModelsLoading ? (
+            ) : status === 'unknown' ? (
               <View className="py-1">
                 <Spinner size="sm" label="Checking which model is active" />
               </View>
@@ -132,10 +203,6 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
             )}
           </View>
           <View className="flex-row gap-2">
-            {/* Prefix icons, matching the offline card. These two were the
-                only model buttons in the app without them, which made the two
-                panels read as different features rather than two halves of
-                one choice. */}
             <ActionButton
               icon={SlidersHorizontal}
               label="TUNE"
@@ -152,37 +219,12 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
           </View>
         </View>
 
-        <View className="gap-3">
-          <View className="flex-row items-center justify-between">
-            <ThemedText type="labelSm" color={asColor(mutedForeground)}>USAGE</ThemedText>
-            {/* The ring stands where the word was rather than beside it, so
-                the row does not change width mid-request and shove the label
-                across. Tapping again while it turns would only queue a second
-                read of the same number. */}
-            {cloudUsageLoading ? (
-              <Spinner size="sm" label="Checking your usage" />
-            ) : (
-              <Touchable onPress={loadCloudUsage}>
-                <ThemedText type="labelSm" color={asColor(primary)}>REFRESH</ThemedText>
-              </Touchable>
-            )}
-          </View>
-          {cloudUsage ? (
-            <>
-              <UsageBar label="5 HOURS" used={cloudUsage.fiveHour.used} cap={cloudUsage.fiveHour.cap} />
-              <UsageBar label="WEEKLY" used={cloudUsage.weekly.used} cap={cloudUsage.weekly.cap} />
-              {cloudUsage.fiveHour.resetsAt && cloudUsage.fiveHour.remaining === 0 && (
-                <ThemedText type="bodySm" color="#f97316" style={{ fontSize: 11 }}>
-                  5h window resets {new Date(cloudUsage.fiveHour.resetsAt).toLocaleTimeString()}
-                </ThemedText>
-              )}
-            </>
-          ) : (
-            <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-              {cloudUsageError ?? 'Usage appears after the first successful server check.'}
-            </ThemedText>
-          )}
-        </View>
+        <CreditMeter
+          balance={balance}
+          loading={loading}
+          error={error}
+          onRefresh={() => void refresh()}
+        />
       </Card>
 
       <CloudModelSheet
@@ -193,126 +235,12 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
           setPickerVisible(false);
         }}
         activeId={cloudModelId}
-        models={cloudModels}
+        models={models}
         mutedForeground={asColor(mutedForeground)}
         primary={asColor(primary)}
       />
 
       <CloudTuneSheet visible={tuneVisible} onClose={() => setTuneVisible(false)} />
     </>
-  );
-}
-
-function UsageBar({ label, used, cap }: { label: string; used: number; cap: number }) {
-  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
-  const pct = cap > 0 ? Math.round((used / cap) * 100) : 0;
-  return (
-    <View className="gap-1">
-      <ThemedText type="labelSm" color={asColor(mutedForeground)}>{label}</ThemedText>
-      <Progress value={cap > 0 ? used / cap : 0} minValue={0} maxValue={1} size="sm" />
-      <ThemedText
-        type="bodySm"
-        color={asColor(mutedForeground)}
-        style={{ fontSize: 11, fontVariant: ['tabular-nums'] }}
-      >
-        {pct}% used
-      </ThemedText>
-    </View>
-  );
-}
-
-type CloudModel = { id: string; label: string; provider: string; capabilities: string[] };
-
-/**
- * One model row, memoized on primitives: a selection change re-renders the
- * two affected rows, not every model in the list.
- */
-const ModelRow = React.memo(function ModelRow({
-  model,
-  isActive,
-  mutedForeground,
-  primary,
-  onSelect,
-}: {
-  model: CloudModel;
-  isActive: boolean;
-  mutedForeground?: string;
-  primary?: string;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <Touchable
-      className="flex-row items-center gap-3 border-b border-border px-4 py-3"
-      onPress={() => onSelect(model.id)}
-    >
-      <View className="flex-1">
-        <ThemedText type="bodyMd">{model.label}</ThemedText>
-        <ThemedText type="labelSm" color={mutedForeground}>
-          {model.provider} · {model.capabilities.join(', ')}
-        </ThemedText>
-      </View>
-      {isActive && <ThemedText type="bodyMd" color={primary}>✓</ThemedText>}
-    </Touchable>
-  );
-});
-
-function CloudModelSheet({
-  visible,
-  onClose,
-  onSelect,
-  activeId,
-  models,
-  mutedForeground,
-  primary,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSelect: (id: string) => void;
-  activeId: string | null;
-  models: CloudModel[];
-  mutedForeground?: string;
-  primary?: string;
-}) {
-  /*
-   * `onSelect` arrives as an inline arrow from the call site, so it cannot
-   * key the memoized rows directly. It rides in through a ref instead —
-   * taps land after commit, so the effect-synced ref never misses.
-   */
-  const onSelectRef = React.useRef(onSelect);
-  React.useEffect(() => {
-    onSelectRef.current = onSelect;
-  }, [onSelect]);
-  const handleSelect = React.useCallback((id: string) => {
-    onSelectRef.current(id);
-  }, []);
-
-  const renderItem = React.useCallback(
-    ({ item: m }: { item: CloudModel }) => (
-      <ModelRow
-        model={m}
-        isActive={m.id === activeId}
-        mutedForeground={mutedForeground}
-        primary={primary}
-        onSelect={handleSelect}
-      />
-    ),
-    [activeId, mutedForeground, primary, handleSelect],
-  );
-
-  return (
-    // `maxHeightRatio` is the cap and the only cap — the sheet measures the
-    // list and stops there, so it needs no `maxHeight` of its own.
-    <Sheet visible={visible} onClose={onClose} maxHeightRatio={0.8} scrollable>
-      <Sheet.FlatList
-        data={models}
-        keyExtractor={(m) => m.id}
-        ListHeaderComponent={
-          <View className="flex-row items-center justify-between px-6 pb-6">
-            <ThemedText type="headlineSm">Choose Model</ThemedText>
-          </View>
-        }
-        renderItem={renderItem}
-      />
-    </Sheet>
   );
 }
