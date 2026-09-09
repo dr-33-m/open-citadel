@@ -76,6 +76,7 @@ export { default as Pointer } from 'lucide-react-native/icons/pointer';
 export { default as Power } from 'lucide-react-native/icons/power';
 export { default as RefreshCw } from 'lucide-react-native/icons/refresh-cw';
 export { default as RotateCcw } from 'lucide-react-native/icons/rotate-ccw';
+export { default as RotateCw } from 'lucide-react-native/icons/rotate-cw';
 export { default as ScrollText } from 'lucide-react-native/icons/scroll-text';
 export { default as Search } from 'lucide-react-native/icons/search';
 export { default as Send } from 'lucide-react-native/icons/send';

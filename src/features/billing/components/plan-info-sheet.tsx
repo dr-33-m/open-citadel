@@ -2,47 +2,45 @@ import React from 'react';
 import { View, type TextStyle } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { RotateCw, type LucideIcon } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { PageFade } from '@/components/scroll-fades';
+import { Select } from '@/components/ui/select';
 import { Sheet } from '@/components/ui/sheet';
-import type { CreditPlan } from 'samwell-shared';
+import { CREDIT_PLANS, PLAN_ORDER, type CreditPlan } from 'samwell-shared';
 import { asColor } from '@/utils/colors';
 import { planFacts, type PlanFactModel } from '@/features/billing/utils/plan-facts';
 
 const TABULAR: TextStyle = { fontVariant: ['tabular-nums'] };
 
-const COUNT_AS_WORDS: Record<number, string> = {
-  1: 'One',
-  2: 'Two',
-  3: 'Three',
-  4: 'Four',
-  5: 'Five',
-  6: 'Six',
-  7: 'Seven',
-  8: 'Eight',
-  9: 'Nine',
-};
+const TAGLINE = 'Cloud intelligence for your Citadel.';
 
 /**
- * What the three lines on a plan card mean, in plain English.
+ * What a plan buys, dressed the way the numbers deserve.
  *
- * The card is terse on purpose - three ticks are the decision, not the
- * explanation - so the sheet answers each tick in the card's own order
- * (credits, models, rollover), under the card's own words for headers. A
- * reader who tapped the mark on the credits line finds AI CREDITS first, and
- * nothing in here asks a question the card failed to answer: the
- * conversations figure is a floor named on its dearest model, the model list
- * is the actual inventory, and the rollover is a worked sum whose numbers
- * stay under the carry-over cap so the addition is true without a footnote
- * in the middle of it.
+ * The sheet is a page of figures, not a paragraph of prose: the grant in
+ * display type, the conversations a reader can expect in one bordered
+ * callout, the models as an inventory, the rollover as a ceiling. Sections
+ * follow the card's three ticks in the card's own order, and everything the
+ * sheet says is a number the server derived or a sum the plan's own
+ * constants make true.
+ *
+ * ## Browsing the estimate
+ *
+ * The conversations callout is a decision screen, not a footnote: its model
+ * line is a Select over every model the plan reaches, grouped by tier, and
+ * picking one recomputes the figure. It opens on the dearest model in the
+ * plan, so the number the reader sees first is the floor - browsing can only
+ * make it bigger, never smaller.
  *
  * ## Against an older server
  *
- * The model list and the conversations figure both need the catalogue, which
- * `/billing/me` has shipped only recently. Without it the sheet keeps every
- * promise it can still keep - the counts from `modelCount`, the rollover sum
- * from the plan's own constants - and stays silent about what it cannot see,
- * rather than naming the wrong models or a wrong number.
+ * The model list, the browse control and the conversations figure all need
+ * the catalogue, which `/billing/me` has shipped only recently. Without it
+ * the sheet keeps every promise it can still keep - the counts from
+ * `modelCount`, the rollover from the plan's own constants - and stays
+ * silent about what it cannot see, rather than naming the wrong models or a
+ * wrong number.
  */
 export function PlanInfoSheet({
   visible,
@@ -58,125 +56,191 @@ export function PlanInfoSheet({
   /** The server's own count, for when the catalogue itself is not available. */
   modelCount: number;
 }) {
-  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
+  const [primary, mutedForeground] = useCSSVariable([
+    '--color-primary',
+    '--color-muted-foreground',
+  ]);
   const muted = asColor(mutedForeground);
+  const gold = asColor(primary);
   const facts = React.useMemo(() => planFacts(plan, models), [plan, models]);
   const hasCatalogue = models.length > 0;
 
-  const section = React.useCallback(
-    (header: string, body: React.ReactNode) => (
-      <View className="gap-2">
-        <ThemedText type="labelSm" color={muted}>
-          {header}
-        </ThemedText>
-        {body}
-      </View>
-    ),
-    [muted],
-  );
+  const [browsedId, setBrowsedId] = React.useState<string | null>(null);
+  // Whose estimate the callout shows. The fallback is the plan's floor, and
+  // a browsed id from a previous plan is never in the new plan's estimates,
+  // so it falls back on its own - no reset, no effect.
+  const selectedModelId =
+    browsedId && facts.estimates[browsedId] !== undefined ? browsedId : facts.defaultModelId;
+  const selectedModel = facts.models.find((model) => model.id === selectedModelId) ?? null;
+  const conversations = selectedModelId ? facts.estimates[selectedModelId] : null;
 
   /*
-   * The count the MODELS section opens with. Named from the catalogue when
-   * the server ships one, and from the server's own `modelsByPlan` count
-   * when it does not - never from the empty list, which would read "Zero
-   * models" against a plan the server itself counts in the sixes and nines.
+   * The inventory compresses the way the tiers stack: a plan's sheet names
+   * the models that are NEW at its own tier, and folds everything beneath it
+   * into one line - "Plus the Maester and Grand Maester models" - because
+   * access is cumulative and re-listing the lower tiers on every sheet is
+   * the sheet arguing with the plan table.
    */
-  const count = hasCatalogue ? facts.modelLabels.length : modelCount;
-  const countWord = COUNT_AS_WORDS[count] ?? String(count);
-  const capIsHalf = plan.rolloverCap === plan.monthlyCredits / 2;
+  const tierIndex = PLAN_ORDER.indexOf(plan.id);
+  const ownBand = facts.models.filter((model) => model.minPlan === plan.id);
+  const plusCount = facts.models.length - ownBand.length;
+  const plusTiers = PLAN_ORDER.slice(0, tierIndex).map(
+    (tier) => CREDIT_PLANS[tier].label.replace(/ Samwell$/, ''),
+  );
+
+  const stripProvider = (model: PlanFactModel) =>
+    model.label.startsWith(`${model.provider}: `)
+      ? model.label.slice(model.provider.length + 2).trim()
+      : model.label;
+
   return (
     // `maxHeightRatio` is the cap and the only cap - the sheet measures the
     // content and stops there. Same contract as the model sheet beside it.
     <Sheet visible={visible} onClose={onClose} maxHeightRatio={0.85} scrollable>
       <PageFade edges="both" surface="popover">
         <Sheet.ScrollView contentContainerClassName="pb-2">
-          <View className="px-6 pb-6">
-            <ThemedText type="headlineSm">{plan.label}</ThemedText>
+          <View className="gap-1 px-6 pb-5">
+            <ThemedText type="displayMd">{plan.label}</ThemedText>
+            <ThemedText type="bodySm" color={muted}>
+              {TAGLINE}
+            </ThemedText>
           </View>
 
-          <View className="gap-7 px-6 pb-8">
-            {section(
-              'AI CREDITS',
-              <View className="gap-2">
-                <ThemedText type="bodySm">
-                  Every message spends a few credits, and the stronger the model, the more it
-                  spends.
-                </ThemedText>
-                {facts.conversationsFloor != null && facts.dearestLabel ? (
-                  <ThemedText type="bodySm">
-                    {plan.monthlyCredits.toLocaleString()} credits is roughly{' '}
-                    {facts.conversationsFloor.toLocaleString()} conversations, even on{' '}
-                    {facts.dearestLabel}, the deepest model this plan reaches. Faster models go
-                    much further.
+          <View className="h-px bg-surface-tertiary" />
+
+          <View className="gap-7 px-6 py-6">
+            {/* The grant, in the plan's own figures. */}
+            <View className="gap-0.5">
+              <ThemedText type="labelSm" color={muted}>AI CREDITS</ThemedText>
+              <ThemedText type="displayLg" style={TABULAR}>
+                {plan.monthlyCredits.toLocaleString()}
+              </ThemedText>
+              <ThemedText type="bodySm" color={muted}>credits / month</ThemedText>
+              <ThemedText type="bodySm" color={muted}>
+                Stronger models use more credits.
+              </ThemedText>
+            </View>
+
+            {/*
+             * The decision screen. The figure moves with the model chosen
+             * below it; the gold bar marks it as the thing this sheet exists
+             * to say.
+             */}
+            {hasCatalogue && conversations != null && selectedModel ? (
+              <View className="gap-1 border border-primary/25 border-l-2 border-l-primary py-3 pl-3 pr-2">
+                <View className="flex-row items-baseline gap-2">
+                  <ThemedText type="displayMd" style={TABULAR}>
+                    ≈ {conversations.toLocaleString()}
                   </ThemedText>
-                ) : null}
-              </View>,
-            )}
-
-            {section(
-              'MODELS',
-              <View className="gap-2">
-                <ThemedText type="bodySm">
-                  {countWord} models are open to this plan
-                  {hasCatalogue ? ':' : '.'}
-                </ThemedText>
-                {hasCatalogue ? (
-                  <View className="gap-1.5">
-                    {facts.modelLabels.map((label) => (
-                      <ThemedText key={label} type="bodySm">
-                        {label}
-                      </ThemedText>
-                    ))}
-                  </View>
-                ) : null}
-              </View>,
-            )}
-
-            {section(
-              'ROLLOVER',
-              <View className="gap-2">
-                <ThemedText type="bodySm">
-                  Whatever you do not spend carries into next month. Spend{' '}
-                  {(plan.monthlyCredits - facts.rolloverLeft).toLocaleString()} of{' '}
-                  {plan.monthlyCredits.toLocaleString()} and next month starts at:
-                </ThemedText>
-                {/*
-                 * The sum, on its own line, in the plan's real numbers. The
-                 * figures are tabular so the columns read as arithmetic
-                 * rather than as prose, and the operators sit back a shade -
-                 * the numbers are the sentence.
-                 */}
-                <View className="self-start bg-muted px-3 py-2">
-                  <View className="flex-row items-baseline gap-1.5">
-                    <ThemedText type="bodyMd" style={TABULAR}>
-                      {facts.rolloverLeft.toLocaleString()}
-                    </ThemedText>
-                    <ThemedText type="bodySm" color={muted}>
-                      +
-                    </ThemedText>
-                    <ThemedText type="bodyMd" style={TABULAR}>
-                      {plan.monthlyCredits.toLocaleString()}
-                    </ThemedText>
-                    <ThemedText type="bodySm" color={muted}>
-                      =
-                    </ThemedText>
-                    <ThemedText type="bodyMd" style={TABULAR}>
-                      {facts.rolloverSum.toLocaleString()}
-                    </ThemedText>
-                    <ThemedText type="bodySm" color={muted}>
-                      credits
-                    </ThemedText>
-                  </View>
+                  <ThemedText type="bodyMd">conversations</ThemedText>
                 </View>
-                <ThemedText type="bodySm" color={muted}>
-                  Carry-over tops out at {plan.rolloverCap.toLocaleString()} credits
-                  {capIsHalf ? ', half a month’s grant' : ''}.
+                {/*
+                 * The browse control, dressed down to the mockup's quiet
+                 * line: no field chrome, just "with" and the model's name,
+                 * because the box it sits in is already the affordance.
+                 */}
+                <Select
+                  value={selectedModel.id}
+                  valueLabel={`with ${stripProvider(selectedModel)}`}
+                  onValueChange={setBrowsedId}
+                  title="Conversations by model"
+                  presentation="overlay"
+                  placeholder="Pick a model"
+                  triggerClassName="border-0 bg-transparent px-0"
+                  valueClassName="text-muted-foreground"
+                  className="-ml-1 self-start"
+                >
+                  {ownBand.map((model) => (
+                    <Select.Item key={model.id} value={model.id} label={stripProvider(model)} />
+                  ))}
+                  {plusTiers.map((tierName, i) => {
+                    const tier = PLAN_ORDER[i];
+                    const band = facts.models.filter((model) => model.minPlan === tier);
+                    if (band.length === 0) return null;
+                    return (
+                      <Select.Group key={tier} label={tierName}>
+                        {band.map((model) => (
+                          <Select.Item key={model.id} value={model.id} label={stripProvider(model)} />
+                        ))}
+                      </Select.Group>
+                    );
+                  })}
+                </Select>
+              </View>
+            ) : null}
+
+            {/*
+             * The inventory, compressed the way the tiers stack: the models
+             * that are new at this tier, named, and everything beneath it in
+             * one line - access is cumulative, and re-listing the lower
+             * tiers here would be the sheet arguing with the plan table.
+             */}
+            <View className="gap-1">
+              <ThemedText type="labelSm" color={muted}>MODELS</ThemedText>
+              {hasCatalogue ? (
+                <>
+                  {ownBand.map((model) => (
+                    <View
+                      key={model.id}
+                      className="flex-row items-baseline gap-2 border-b border-surface-tertiary py-2.5"
+                    >
+                      <ThemedText type="bodySm" color={muted} numberOfLines={1}>
+                        {model.provider}
+                      </ThemedText>
+                      <ThemedText type="bodySm" color={muted}>—</ThemedText>
+                      <ThemedText type="bodyMd" className="flex-1" numberOfLines={1}>
+                        {stripProvider(model)}
+                      </ThemedText>
+                    </View>
+                  ))}
+                  {plusCount > 0 ? (
+                    <ThemedText type="bodySm" color={muted} className="pt-1">
+                      Plus the {plusCount}{' '}
+                      {plusTiers.join(' and ')} models
+                    </ThemedText>
+                  ) : null}
+                </>
+              ) : (
+                <ThemedText type="bodySm">
+                  {modelCount.toLocaleString()} models are open to this plan.
                 </ThemedText>
-              </View>,
-            )}
+              )}
+            </View>
+
+            {/*
+             * The ceiling, as a figure: what a light month can carry
+             * forward. "Half a monthly grant" only states when it is true.
+             */}
+            <View className="flex-row items-start gap-3">
+              <RolloverGlyph icon={RotateCw} color={gold} />
+              <View className="gap-0.5">
+                <ThemedText type="bodySm">Unused credits roll over</ThemedText>
+                <ThemedText type="headlineLg" style={TABULAR}>
+                  Up to +{plan.rolloverCap.toLocaleString()}
+                </ThemedText>
+                <ThemedText type="bodySm" color={muted}>
+                  {plan.rolloverCap === plan.monthlyCredits / 2
+                    ? 'half a monthly grant'
+                    : `${plan.rolloverCap.toLocaleString()} credits`}
+                </ThemedText>
+              </View>
+            </View>
           </View>
         </Sheet.ScrollView>
       </PageFade>
     </Sheet>
+  );
+}
+
+/**
+ * The rollover glyph, optically centred on the two-line block it leads -
+ * the same trick the tick rows use, at icon size.
+ */
+function RolloverGlyph({ icon: Icon, color }: { icon: LucideIcon; color?: string }) {
+  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
+  return (
+    <View className="mt-3 items-center justify-center">
+      <Icon size={22} color={color ?? (typeof mutedForeground === 'string' ? mutedForeground : undefined)} strokeWidth={1.75} />
+    </View>
   );
 }

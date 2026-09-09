@@ -2,89 +2,70 @@ import { describe, expect, it } from 'vitest';
 
 import { CREDIT_PLANS, type PlanId } from 'samwell-shared';
 
-import { planFacts } from '../plan-facts';
+import { planFacts, roundDownToHundreds } from '../plan-facts';
 
 const MODELS = [
-  { label: 'Qwen Flash', minPlan: 'maester' as PlanId, forecastCredits: 1 },
-  { label: 'GLM Flash', minPlan: 'maester' as PlanId, forecastCredits: 2 },
-  { label: 'DeepSeek Flash', minPlan: 'maester' as PlanId, forecastCredits: 2 },
-  { label: 'Gemini Pro', minPlan: 'grand_maester' as PlanId, forecastCredits: 11 },
-  { label: 'Claude Sonnet 5', minPlan: 'grand_maester' as PlanId, forecastCredits: 14 },
-  { label: 'Grok 4.6', minPlan: 'grand_maester' as PlanId, forecastCredits: 16 },
-  { label: 'GPT 5.6 Sol', minPlan: 'archmaester' as PlanId, forecastCredits: 14 },
-  { label: 'Gemini 3.1 Pro', minPlan: 'archmaester' as PlanId, forecastCredits: 15 },
-  { label: 'Claude Opus 5', minPlan: 'archmaester' as PlanId, forecastCredits: 35 },
+  { id: 'z-ai/glm', label: 'Z.ai: GLM 5.3 Flash', provider: 'Z.ai', minPlan: 'maester' as PlanId, forecastCredits: 2 },
+  { id: 'openai/luna', label: 'OpenAI: GPT-5.6 Luna', provider: 'OpenAI', minPlan: 'maester' as PlanId, forecastCredits: 2 },
+  { id: 'deepseek/flash', label: 'DeepSeek: DeepSeek V4 Flash 0731', provider: 'DeepSeek', minPlan: 'maester' as PlanId, forecastCredits: 2 },
+  { id: 'google/gemini-25', label: 'Google: Gemini 2.5 Pro', provider: 'Google', minPlan: 'grand_maester' as PlanId, forecastCredits: 11 },
+  { id: 'anthropic/sonnet-5', label: 'Anthropic: Claude Sonnet 5', provider: 'Anthropic', minPlan: 'grand_maester' as PlanId, forecastCredits: 14 },
+  { id: 'x-ai/grok-46', label: 'X.ai: Grok 4.6', provider: 'X.ai', minPlan: 'grand_maester' as PlanId, forecastCredits: 16 },
+  { id: 'openai/sol-pro', label: 'OpenAI: GPT-5.6 Sol Pro', provider: 'OpenAI', minPlan: 'archmaester' as PlanId, forecastCredits: 14 },
+  { id: 'google/gemini-31', label: 'Google: Gemini 3.1 Pro', provider: 'Google', minPlan: 'archmaester' as PlanId, forecastCredits: 15 },
+  { id: 'anthropic/opus-5', label: 'Anthropic: Claude Opus 5', provider: 'Anthropic', minPlan: 'archmaester' as PlanId, forecastCredits: 35 },
 ];
 
 describe('planFacts', () => {
   it('lists the models the plan reaches, and nothing above it', () => {
-    const facts = planFacts(CREDIT_PLANS.maester, MODELS);
-    expect(facts.modelLabels).toEqual(['Qwen Flash', 'GLM Flash', 'DeepSeek Flash']);
-
-    const grand = planFacts(CREDIT_PLANS.grand_maester, MODELS);
-    expect(grand.modelLabels).toHaveLength(6);
-
-    const arch = planFacts(CREDIT_PLANS.archmaester, MODELS);
-    expect(arch.modelLabels).toHaveLength(9);
+    expect(planFacts(CREDIT_PLANS.maester, MODELS).models).toHaveLength(3);
+    expect(planFacts(CREDIT_PLANS.grand_maester, MODELS).models).toHaveLength(6);
+    expect(planFacts(CREDIT_PLANS.archmaester, MODELS).models).toHaveLength(9);
   });
 
-  it('anchors the conversation floor on the dearest model the plan reaches', () => {
-    // The only promise that cannot be broken: whatever the reader picks, they
-    // get at least this many. Maester's dearest is 2 credits a message, so
-    // 2,500 credits is 1,250 conversations, said as 1,200.
-    const facts = planFacts(CREDIT_PLANS.maester, MODELS);
-    expect(facts.dearestLabel).toBe('GLM Flash');
-    expect(facts.conversationsFloor).toBe(1_200);
-
-    // Grand Maester's dearest is Grok 4.6 at 16: 10,000 / 16 = 625, said as
-    // 600. Not Sonnet's 714, however friendlier that number would read.
+  it('estimates conversations per model, floored to whole hundreds', () => {
     const grand = planFacts(CREDIT_PLANS.grand_maester, MODELS);
-    expect(grand.dearestLabel).toBe('Grok 4.6');
-    expect(grand.conversationsFloor).toBe(600);
+    expect(grand.estimates['x-ai/grok-46']).toBe(600); // 10,000 / 16 = 625
+    expect(grand.estimates['anthropic/sonnet-5']).toBe(700); // 714
+    expect(grand.estimates['z-ai/glm']).toBe(5_000); // 10,000 / 2
+  });
+
+  it('opens on the dearest model, whose estimate is the floor', () => {
+    // The only promise that cannot be broken: whatever the reader browses to,
+    // the number they opened on was the smallest on offer.
+    const grand = planFacts(CREDIT_PLANS.grand_maester, MODELS);
+    expect(grand.defaultModelId).toBe('x-ai/grok-46');
+    expect(grand.estimates[grand.defaultModelId!]).toBe(600);
 
     const arch = planFacts(CREDIT_PLANS.archmaester, MODELS);
-    expect(arch.dearestLabel).toBe('Claude Opus 5');
-    expect(arch.conversationsFloor).toBe(800);
+    expect(arch.defaultModelId).toBe('anthropic/opus-5');
+    expect(arch.estimates[arch.defaultModelId!]).toBe(800); // 857
   });
 
   it('rounds down, never up, so roughly under-promises', () => {
-    const models = [
-      { label: 'One', minPlan: 'maester' as PlanId, forecastCredits: 3 },
-    ];
-    // 2,500 / 3 = 833.3 -> 800, not 833 and not 900.
-    expect(planFacts(CREDIT_PLANS.maester, models).conversationsFloor).toBe(800);
+    expect(roundDownToHundreds(625)).toBe(600);
+    expect(roundDownToHundreds(857)).toBe(800);
+    expect(roundDownToHundreds(1250)).toBe(1200);
+    expect(roundDownToHundreds(99)).toBe(99);
+    expect(roundDownToHundreds(0)).toBe(0);
   });
 
-  it('ignores unpriced models as an anchor but keeps their names', () => {
-    const models = [
-      { label: 'Priced', minPlan: 'maester' as PlanId, forecastCredits: 2 },
-      { label: 'Mystery', minPlan: 'maester' as PlanId, forecastCredits: null },
-    ];
-    const facts = planFacts(CREDIT_PLANS.maester, models);
-    expect(facts.modelLabels).toEqual(['Priced', 'Mystery']);
-    expect(facts.dearestLabel).toBe('Priced');
-    expect(facts.conversationsFloor).toBe(1_200);
-  });
-
-  it('answers nulls for a plan with nothing priced behind it', () => {
-    const facts = planFacts(CREDIT_PLANS.archmaester, [
-      { label: 'Mystery', minPlan: 'archmaester' as PlanId, forecastCredits: null },
+  it('skips unpriced models in the estimates but keeps them in the list', () => {
+    const facts = planFacts(CREDIT_PLANS.maester, [
+      { id: 'priced', label: 'Priced', provider: 'P', minPlan: 'maester' as PlanId, forecastCredits: 2 },
+      { id: 'mystery', label: 'Mystery', provider: 'M', minPlan: 'maester' as PlanId, forecastCredits: null },
     ]);
-    expect(facts.conversationsFloor).toBeNull();
-    expect(facts.dearestLabel).toBeNull();
-    expect(facts.modelLabels).toEqual(['Mystery']);
+    expect(facts.models.map((m) => m.label)).toEqual(['Priced', 'Mystery']);
+    expect(facts.estimates['mystery']).toBeUndefined();
+    expect(facts.defaultModelId).toBe('priced');
   });
 
-  it('builds a rollover example that lands under the cap', () => {
-    // The addition must be true without a caveat in the middle of it: the
-    // leftover is 40% of the grant, and every cap is 50%, so the example
-    // never trips the write-off.
-    for (const plan of Object.values(CREDIT_PLANS)) {
-      const facts = planFacts(plan, MODELS);
-      expect(facts.rolloverLeft + plan.monthlyCredits).toBe(facts.rolloverSum);
-      expect(facts.rolloverLeft).toBeLessThanOrEqual(plan.rolloverCap);
-    }
-    expect(planFacts(CREDIT_PLANS.grand_maester, MODELS).rolloverLeft).toBe(4_000);
-    expect(planFacts(CREDIT_PLANS.grand_maester, MODELS).rolloverSum).toBe(14_000);
+  it('answers empty for a plan with nothing priced behind it', () => {
+    const facts = planFacts(CREDIT_PLANS.archmaester, [
+      { id: 'mystery', label: 'Mystery', provider: 'M', minPlan: 'archmaester' as PlanId, forecastCredits: null },
+    ]);
+    expect(facts.models).toHaveLength(1);
+    expect(facts.estimates).toEqual({});
+    expect(facts.defaultModelId).toBeNull();
   });
 });

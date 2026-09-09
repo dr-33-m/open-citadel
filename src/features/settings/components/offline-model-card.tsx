@@ -19,8 +19,15 @@ import { asColor } from '@/utils/colors';
 import { formatBytes } from '@/utils/format';
 
 /**
- * The offline engine's active-model card: identity, download progress,
- * memory posture, and the four actions. Owns every sheet it opens.
+ * The offline engine's model card: identity, download progress, memory
+ * posture, and the actions. Owns every sheet it opens.
+ *
+ * The card renders with or without a selected model. An early return on
+ * "no active model" once unmounted the whole thing - picker included - the
+ * moment its model was deleted, stranding offline mode with no way back to
+ * a model list. Deleting the last model is a legal state (the catalogue
+ * re-seeds on the next launch), so the card's job here is the way back:
+ * name the empty state and hand the reader to the picker.
  */
 export function OfflineModelCard() {
   const [primary, mutedForeground, foreground, destructive] = useCSSVariable([
@@ -62,7 +69,6 @@ export function OfflineModelCard() {
   const memoryStatus = memoryEstimate?.status ?? 'fits';
   const downloading = activeModel ? downloadProgress[activeModel.id] !== undefined : false;
   const busy = modelLoading || isDeleting;
-  if (!activeModel) return null;
 
   return (
     <>
@@ -70,12 +76,25 @@ export function OfflineModelCard() {
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1 gap-1">
             <ThemedText type="labelSm" color={asColor(mutedForeground)}>MODEL</ThemedText>
-            <ThemedText type="bodyMd" numberOfLines={2}>{activeModel.name}</ThemedText>
-            <ThemedText type="labelSm" color={asColor(mutedForeground)} style={{ fontVariant: ['tabular-nums'] }}>
-              {activeModel.isDownloaded
-                ? `${formatBytes(activeModel.sizeBytes)} · Downloaded`
-                : `${formatBytes(activeModel.sizeBytes)} · Not downloaded`}
-            </ThemedText>
+            {activeModel ? (
+              <>
+                <ThemedText type="bodyMd" numberOfLines={2}>{activeModel.name}</ThemedText>
+                <ThemedText type="labelSm" color={asColor(mutedForeground)} style={{ fontVariant: ['tabular-nums'] }}>
+                  {activeModel.isDownloaded
+                    ? `${formatBytes(activeModel.sizeBytes)} · Downloaded`
+                    : `${formatBytes(activeModel.sizeBytes)} · Not downloaded`}
+                </ThemedText>
+              </>
+            ) : (
+              /* The empty state is a wayfinding moment, not an error: one
+                 line saying what to do, and the picker one tap away. */
+              <ThemedText type="bodyMd" numberOfLines={2}>No model selected</ThemedText>
+            )}
+            {!activeModel && (
+              <ThemedText type="bodySm" color={asColor(mutedForeground)} numberOfLines={2}>
+                Pick a model to run Samwell on this device.
+              </ThemedText>
+            )}
             {loadError && (
               <ThemedText type="labelSm" color={asColor(destructive)} numberOfLines={2}>
                 {loadError}
@@ -84,14 +103,14 @@ export function OfflineModelCard() {
           </View>
           <ActionButton
             icon={List}
-            label="CHANGE"
+            label={activeModel ? 'CHANGE' : 'CHOOSE'}
             tint={asColor(mutedForeground)}
             onPress={modelSheet.open}
-            accessibilityLabel="Change the model"
+            accessibilityLabel={activeModel ? 'Change the model' : 'Choose a model'}
           />
         </View>
 
-        {downloadProgress[activeModel.id] !== undefined && (
+        {activeModel && downloadProgress[activeModel.id] !== undefined && (
           <View className="gap-1">
             {/* Square, like every other meter in the app. */}
             <View className="h-1 overflow-hidden bg-surface-tertiary">
@@ -111,7 +130,7 @@ export function OfflineModelCard() {
           </View>
         )}
 
-        {activeModel.isDownloaded && memoryStatus !== 'fits' && (
+        {activeModel?.isDownloaded && memoryStatus !== 'fits' && (
           <ActionButton
             className="self-start"
             icon={MemoryStick}
@@ -124,7 +143,7 @@ export function OfflineModelCard() {
           />
         )}
 
-        {!downloading && (
+        {!downloading && activeModel && (
           <View className="flex-row flex-wrap gap-2">
             {!activeModel.isDownloaded && (
               <ActionButton
@@ -185,7 +204,9 @@ export function OfflineModelCard() {
         primary={asColor(primary)}
         onDeleteRequest={setConfirmDeleteId}
       />
-      <TuneSheet visible={tuneVisible} onClose={() => setTuneVisible(false)} activeModel={activeModel} />
+      {activeModel && (
+        <TuneSheet visible={tuneVisible} onClose={() => setTuneVisible(false)} activeModel={activeModel} />
+      )}
       <ConfirmDeleteSheet modelId={confirmDeleteId} onClose={() => setConfirmDeleteId(null)} />
       <MemoryInfoSheet
         visible={memoryVisible}
