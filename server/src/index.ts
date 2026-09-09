@@ -519,6 +519,20 @@ app.get('/health', async (c) => {
     // that is indistinguishable from the server being broken. One curl now
     // says which it is.
     accountsReady: Boolean(process.env.LOGTO_ENDPOINT),
+    /*
+     * The two halves of billing, reported for the same reason as the flags
+     * above: neither can be read back from outside, and each one's absence
+     * has no symptom until somebody tries to pay.
+     *
+     * `webhookReady` false means a purchase can never grant credits - the
+     * webhook route answers 500 and RevenueCat retries into it. `reconcileReady`
+     * false is quieter and worse to debug: the webhook still works, but the
+     * REST safety net that covers a late or missed one is silently skipped,
+     * so a subscriber whose webhook went astray simply stays on "no plan"
+     * with nothing in a log to say why.
+     */
+    webhookReady: Boolean(process.env.REVENUECAT_WEBHOOK_SECRET),
+    reconcileReady: Boolean(process.env.REVENUECAT_SECRET_API_KEY),
     models: models.map((model) => model.id),
     // Which model the house is paying for on the onboarding route.
     //
