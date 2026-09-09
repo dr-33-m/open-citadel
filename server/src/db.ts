@@ -6,6 +6,7 @@ import {
   FORECAST_WORKLOAD,
   isPlanId,
   type CloudModelCapability,
+  type PlanId,
   type CloudModelOption,
   type TokenWorkload,
 } from 'samwell-shared';
@@ -424,6 +425,36 @@ async function readServerSetting(key: string): Promise<string | null> {
 export async function getDefaultModelId(): Promise<string> {
   const stored = await readServerSetting('default_model_id');
   return stored ?? DEFAULT_CLOUD_MODEL_ID;
+}
+
+/**
+ * The model a reader on this plan starts on.
+ *
+ * The top of their OWN band, not the cheapest thing they can reach. Access is
+ * cumulative, so a single global default meant everybody - including an
+ * Archmaester paying for Opus - opened the app talking to the cheapest flash
+ * model in the catalogue and had to go and find their own tier. That is the
+ * one impression you cannot take back, and it teaches exactly the lesson you
+ * least want taught: that the cheap model was fine all along.
+ *
+ * Derived rather than configured, so adding a tier or reordering one needs no
+ * second place kept in step: the first row of the plan's own band, in the sort
+ * order the admin already controls. A `default_model_id:<plan>` setting
+ * overrides it for the case where the first row is not the one to lead with,
+ * and the global default is the last resort for a band with nothing in it.
+ */
+export async function getDefaultModelIdForPlan(plan: PlanId): Promise<string> {
+  const override = await readServerSetting(`default_model_id:${plan}`);
+  if (override) return override;
+
+  const result = await db.execute({
+    sql: `SELECT id FROM cloud_models WHERE min_plan = ? ORDER BY sort_order ASC LIMIT 1`,
+    args: [plan],
+  });
+  const own = result.rows[0];
+  if (own) return String(own.id);
+
+  return getDefaultModelId();
 }
 
 export async function setDefaultModelId(modelId: string): Promise<void> {

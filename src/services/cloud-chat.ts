@@ -170,7 +170,14 @@ type ApprovalRequest = {
 
 export interface CloudChatTurnOptions {
   baseUrl: string;
-  modelId: string;
+  /**
+   * The reader's chosen model, or null if they have never chosen one.
+   *
+   * Null is sent as "unspecified" and the server answers with the plan's own
+   * default, so a first turn lands on the right model without waiting for the
+   * app to be told what that is.
+   */
+  modelId: string | null;
   sessionId: string;
   bookId: string | null;
   /**

@@ -124,27 +124,34 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 }
 
 /**
- * Keep the chosen model inside what the plan can actually reach.
+ * Settle which model this reader is on.
  *
- * This decision used to live in `settings.loadCloudModels`, which read
- * `/models` - the whole catalogue, with no idea of plans. That is now the
- * wrong list to heal against: it would happily settle on a model the reader
- * has not paid for, and the picker (which lists only their plan's) would then
- * show "Choose a model" about a choice nobody was asked to make. Same rule as
- * before, moved to where the plan-scoped list is.
+ * Two jobs, and they share an answer. The first is healing: a stored id that
+ * is not in the plan has to go somewhere, or the panel says "Choose a model"
+ * about a choice nobody was asked to make. This used to live in
+ * `settings.loadCloudModels`, which read `/models` - the whole catalogue, with
+ * no idea of plans - so it could settle on a model the reader had not paid
+ * for. It reads the plan-scoped list now.
  *
- * Only heals when the stored id is genuinely absent. An empty list means the
- * answer is not known yet, not that the choice was wrong.
+ * The second is the first impression. `cloudModelId` starts null, and null
+ * adopts the plan's own default: the top of their band, not the cheapest
+ * thing they can reach. Access is cumulative, so without this an Archmaester
+ * opened the app talking to a flash model and had to go and find the tier
+ * they were paying for.
+ *
+ * An empty list means the answer is not known yet, not that the choice was
+ * wrong, so nothing is touched.
  */
 function healSelectedModel(models: PlanModel[], defaultModelId: string | undefined): void {
   if (models.length === 0) return;
   const settings = useSettingsStore.getState();
-  if (models.some((model) => model.id === settings.cloudModelId)) return;
+  const current = settings.cloudModelId;
+  if (current !== null && models.some((model) => model.id === current)) return;
 
   const healed = models.some((model) => model.id === defaultModelId)
     ? defaultModelId
     : models[0]?.id;
-  if (healed && healed !== settings.cloudModelId) void settings.setCloudModelId(healed);
+  if (healed && healed !== current) void settings.setCloudModelId(healed);
 }
 
 export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({

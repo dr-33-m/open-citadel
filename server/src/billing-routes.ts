@@ -22,7 +22,7 @@ import {
 } from 'samwell-shared';
 
 import { billing } from './billing.js';
-import { getDefaultModelId, getForecastWorkload, listCloudModels } from './db.js';
+import { getDefaultModelIdForPlan, getForecastWorkload, listCloudModels } from './db.js';
 import { requireAdminKey } from './http-helpers.js';
 import { readIdentity } from './identity.js';
 
@@ -47,7 +47,9 @@ billingRoutes.get('/me', async (c) => {
 
   return c.json({
     balance,
-    defaultModelId: await getDefaultModelId(),
+    // The top of their own band. A reader without a plan is previewing the
+    // entry tier, so that is the one they are shown.
+    defaultModelId: await getDefaultModelIdForPlan(balance.plan ?? 'maester'),
     /*
      * How many models each plan reaches, for the plan cards.
      *

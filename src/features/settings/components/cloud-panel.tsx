@@ -42,6 +42,7 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
   // Per-field, never the whole store: a credit spent mid-conversation must
   // not redraw this panel's every child.
   const status = useSubscriptionStore((s) => s.status);
+  const plan = useSubscriptionStore((s) => s.plan);
   const models = useSubscriptionStore((s) => s.models);
   const balance = useSubscriptionStore((s) => s.balance);
   const offering = useSubscriptionStore((s) => s.offering);
@@ -236,6 +237,7 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
         }}
         activeId={cloudModelId}
         models={models}
+        plan={plan}
         mutedForeground={asColor(mutedForeground)}
         primary={asColor(primary)}
       />

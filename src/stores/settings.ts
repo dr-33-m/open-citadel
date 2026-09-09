@@ -1,6 +1,5 @@
 import { eq } from 'drizzle-orm';
 import { create } from 'zustand';
-import { DEFAULT_CLOUD_MODEL_ID } from 'samwell-shared';
 
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { db } from '@/db/client';
@@ -65,7 +64,20 @@ type SettingsState = {
   onboarding: OnboardingState;
   samwellMode: SamwellMode;
   cloudBaseUrl: string;
-  cloudModelId: string;
+  /**
+   * The model the reader picked, or null if they never have.
+   *
+   * Nullable so "not chosen yet" is a state rather than being impersonated by
+   * the catalogue's first entry. It used to default to that entry, which is
+   * the cheapest model in the cheapest tier - so an Archmaester's very first
+   * conversation ran on a flash model unless they went looking, and nothing
+   * could tell that apart from a deliberate choice to economise. Null lets
+   * `healSelectedModel` adopt the plan's own default exactly once.
+   *
+   * Every request treats null as "unspecified" and the server answers with
+   * the plan's default, so nothing has to wait for the heal.
+   */
+  cloudModelId: string | null;
   cloudThinkingBudget: CloudThinkingBudget;
   ttsVoice: string | null;
   ttsVoiceLanguage: string | null;
@@ -103,7 +115,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   onboarding: 'done',
   samwellMode: 'offline',
   cloudBaseUrl: defaultCloudBaseUrl(),
-  cloudModelId: DEFAULT_CLOUD_MODEL_ID,
+  cloudModelId: null,
   cloudThinkingBudget: 'medium',
   ttsVoice: null,
   ttsVoiceLanguage: null,
@@ -129,7 +141,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       onboarding: gate.state,
       samwellMode: (map['samwell.mode'] as SamwellMode | undefined) ?? 'offline',
       cloudBaseUrl: defaultCloudBaseUrl(),
-      cloudModelId: map['cloud.modelId'] ?? DEFAULT_CLOUD_MODEL_ID,
+      cloudModelId: map['cloud.modelId'] ?? null,
       cloudThinkingBudget: migrateThinkingBudget(
         map['cloud.thinkingBudget'] ?? map['cloud.reasoningEffort'],
       ),

@@ -52,6 +52,7 @@ import { takeawayRoutes } from './takeaway.js';
 import {
   deleteCloudModel,
   getDefaultModelId,
+  getDefaultModelIdForPlan,
   claimHouseOnboardingTurn,
   getOnboardingModelId,
   initDb,
@@ -96,9 +97,25 @@ type RunAgentInput = {
   data?: Record<string, unknown>;
 };
 
-function readModelId(body: RunAgentInput, knownModelIds: string[]): string {
+/**
+ * Which model serves this turn.
+ *
+ * `fallback` is the plan's OWN default rather than the first row of the list.
+ * The list is cumulative, so its first row is always the cheapest tier's
+ * cheapest model - handing an Archmaester that because their client sent
+ * nothing, or sent a model they cannot reach, would quietly serve the dearest
+ * plan the cheapest thing in the catalogue.
+ */
+function readModelId(
+  body: RunAgentInput,
+  knownModelIds: string[],
+  fallback: string,
+): string {
   const raw = body.forwardedProps?.modelId ?? body.data?.modelId;
-  return resolveModelId(typeof raw === 'string' ? raw : undefined, knownModelIds);
+  if (typeof raw === 'string' && knownModelIds.includes(raw)) return raw;
+  return knownModelIds.includes(fallback)
+    ? fallback
+    : resolveModelId(undefined, knownModelIds);
 }
 
 /**
@@ -837,7 +854,7 @@ app.post('/chat/http', async (c) => {
   const modelId =
     mode === 'onboarding'
       ? await getOnboardingModelId()
-      : readModelId(body, planModelIds);
+      : readModelId(body, planModelIds, await getDefaultModelIdForPlan(plan));
   const thinkingBudget = readThinkingBudget(body);
   const usageEventId =
     body.runId ?? `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
