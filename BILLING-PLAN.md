@@ -14,9 +14,37 @@ the working tree.
 
 ### Start here
 
-**State:** `pnpm exec tsc --noEmit` clean, `pnpm exec vitest run` 365 passing
-(22 files), `pnpm exec eslint` clean on every changed path. Nothing is
-committed; `git status` shows the whole change set.
+**State:** `pnpm exec tsc --noEmit` clean, `pnpm exec vitest run` 386 passing
+(24 files), `pnpm exec eslint` clean on every changed path. The server-side
+work through the credit metering was committed earlier on this branch
+(`fd1e424`, `b60ef4b`, `3d16f25`); this file and the plan-section polish
+round travel with the commit that follows it.
+
+**Polish pass, 2026-09-09 (after the first device build):** the choose-plan
+section, against the apple-design skill. The container card around the plan
+run is gone - it sits on the section surface like text to speech does, the
+slides being the only cards left because they are the things being compared.
+Store prices are cleaned through `formatStorePrice`
+(`src/features/billing/utils/price.ts`, 8 tests): the "US" qualifier and
+exactly-zero cents come off ("US$20.00" → "$20"), real fractions and other
+currencies survive. The benefit lines carry ticks, matching the onboarding
+cards' treatment, with the tick taking the selected card's gold. The plan
+name dropped its utility-label dress (`labelSm`, caps, tracked - which is
+what pushed "GRAND MAESTER SAMWELL" past the card edge) for sentence-case
+`bodySm`, constrained by a wrapper `View` with `flex-1` - the flex on the
+text node itself proved not to constrain on device (seen in a screenshot,
+one line over the border), and the wrapper is the structure with nothing
+clever in it. The badges are now chess ranks: pawn, rook, crown. The fixed
+slide height is the tallest card's content summed from the theme tokens
+(242, written out in the file) - two rows wrap ("6 models to choose from",
+the Grand Maester name) and the first measurement had been drawing past the
+bottom border all along. RESTORE
+PURCHASES is now the
+quiet centred text row Apple's own subscription screens use instead of a
+bordered chip competing with the commit; the gold button's disabled dim
+settles over 120ms (Reanimated CSS transition, the house tool) rather than
+snapping. The carousel and its depth slide are untouched on purpose - they
+were already right.
 
 **Done:** Stage 0 (bar the webhook), Stage 1, **all of Stage 2** (pricing,
 ledger, webhook, routes, insiders), and **all of Stage 3** (guards 1-4 and the

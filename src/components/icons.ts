@@ -28,6 +28,8 @@ export { default as CalendarClock } from 'lucide-react-native/icons/calendar-clo
 export { default as CalendarDays } from 'lucide-react-native/icons/calendar-days';
 export { default as CalendarX2 } from 'lucide-react-native/icons/calendar-x-2';
 export { default as ChartNoAxesGantt } from 'lucide-react-native/icons/chart-no-axes-gantt';
+export { default as ChessPawn } from 'lucide-react-native/icons/chess-pawn';
+export { default as ChessRook } from 'lucide-react-native/icons/chess-rook';
 export { default as Check } from 'lucide-react-native/icons/check';
 export { default as ChevronDown } from 'lucide-react-native/icons/chevron-down';
 export { default as ChevronLeft } from 'lucide-react-native/icons/chevron-left';

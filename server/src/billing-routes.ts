@@ -18,6 +18,7 @@ import {
   forecastMultipliersByBand,
   modelsForPlan,
   PLAN_ORDER,
+  type CloudModelOption,
   type PlanId,
 } from 'samwell-shared';
 
@@ -42,8 +43,24 @@ billingRoutes.get('/me', async (c) => {
    * this is a preview at worst.
    */
   const visible = modelsForPlan(models, balance.plan ?? 'maester');
-  const multipliers = forecastMultipliersByBand(visible, forecast);
+  const multipliers = forecastMultipliersByBand(models, forecast);
   const creditValue = creditValueUsd(CREDIT_PLANS[balance.plan ?? 'maester']);
+
+  const toPlanModel = (model: CloudModelOption) => {
+    const priced =
+      model.inputPricePerMillion != null && model.outputPricePerMillion != null
+        ? {
+            inputPricePerMillion: model.inputPricePerMillion,
+            outputPricePerMillion: model.outputPricePerMillion,
+            cachedInputPricePerMillion: model.cachedInputPricePerMillion,
+          }
+        : null;
+    return {
+      ...model,
+      forecastCredits: priced ? forecastCredits(priced, creditValue, forecast) : null,
+      multiplier: multipliers[model.id] ?? 1,
+    };
+  };
 
   return c.json({
     balance,
@@ -62,21 +79,19 @@ billingRoutes.get('/me', async (c) => {
     modelsByPlan: Object.fromEntries(
       PLAN_ORDER.map((plan) => [plan, modelsForPlan(models, plan).length]),
     ),
-    models: visible.map((model) => {
-      const priced =
-        model.inputPricePerMillion != null && model.outputPricePerMillion != null
-          ? {
-              inputPricePerMillion: model.inputPricePerMillion,
-              outputPricePerMillion: model.outputPricePerMillion,
-              cachedInputPricePerMillion: model.cachedInputPricePerMillion,
-            }
-          : null;
-      return {
-        ...model,
-        forecastCredits: priced ? forecastCredits(priced, creditValue, forecast) : null,
-        multiplier: multipliers[model.id] ?? 1,
-      };
-    }),
+    models: visible.map(toPlanModel),
+    /*
+     * The whole catalogue, each model with the tier it belongs to, for the
+     * plan carousel's info sheets. A sheet selling a tier the reader does not
+     * hold yet still has to name what that tier opens up - `models` above is
+     * band-filtered and cannot answer for a plan above the reader's own.
+     *
+     * This is not a new exposure: `/models` already publishes the catalogue
+     * whole, and what is added here is each model's credit estimate against
+     * the forecast - a credits number, never a price. The picker's own rule
+     * stands: models above the reader's plan are not listed THERE.
+     */
+    catalogue: models.map(toPlanModel),
   });
 });
 

@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
 import { Spinner } from '@/components/ui/spinner';
@@ -98,6 +99,27 @@ export function GoldButton({
           alignItems: 'center',
           justifyContent: 'center',
         },
+        /*
+         * The disabled dim is a two-state change, so it is a CSS transition
+         * - the house tool (see the chevron in the model sheet) - and not a
+         * snap. It rides on an Animated.View wrapped around the gradient
+         * because opacity is the one property that costs nothing to move,
+         * and a button coming alive as the offering lands reads as waking
+         * rather than as teleporting. Opacity-only, so reduced motion
+         * already has what it needs.
+         *
+         * The node matters: it must NOT be the Touchable above this, because
+         * `AnimatedPressable` animates opacity on the UI thread for press
+         * feedback and would overwrite a static value set there every frame.
+         * A separate child node keeps the two fades from fighting.
+         */
+        dim: {
+          transitionProperty: ['opacity'],
+          transitionDuration: '120ms',
+          transitionTimingFunction: 'ease-out',
+        },
+        lit: { opacity: 1 },
+        dimmed: { opacity: 0.35 },
       }),
     [],
   );
@@ -111,41 +133,40 @@ export function GoldButton({
       accessibilityState={{ disabled: disabled || loading, busy: loading }}
       accessibilityLabel={label}
     >
-      <LinearGradient
-        colors={[asColor(primary)!, asColor(primaryDeep)!]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        // The fade goes on the gradient, not on the Touchable above it:
-        // `AnimatedPressable` animates opacity on the UI thread and Reanimated
-        // overwrites any static value set there.
-        style={[styles[size], disabled ? { opacity: 0.35 } : null]}
-      >
-        {loading ? (
-          /* The ring is drawn in the button's own ink. `Spinner`'s default is
-             gold on muted, which on a gold gradient is one invisible ring on
-             another. Through `className` rather than a style prop, because
-             `Spinner` is vendored PanelUI and takes no style — see the
-             warning in CLAUDE.md. */
-          <Spinner
-            size="sm"
-            className="border-transparent border-t-primary-foreground"
-            label={label}
-          />
-        ) : (
-          // The row exists only when there is an icon; without one the label
-          // stays a bare child of the gradient, which is what every existing
-          // GoldButton renders and what its centring is written around.
-          <View className="flex-row items-center gap-2">
-            {Icon ? <Icon size={14} color={asColor(primaryForeground)} /> : null}
-            <ThemedText
-              type={size === 'full' ? 'labelLg' : size === 'compact' ? 'labelMd' : 'labelSm'}
-              color={asColor(primaryForeground)}
-            >
-              {label}
-            </ThemedText>
-          </View>
-        )}
-      </LinearGradient>
+      <Animated.View style={[styles.dim, disabled ? styles.dimmed : styles.lit]}>
+        <LinearGradient
+          colors={[asColor(primary)!, asColor(primaryDeep)!]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles[size]}
+        >
+          {loading ? (
+            /* The ring is drawn in the button's own ink. `Spinner`'s default is
+               gold on muted, which on a gold gradient is one invisible ring on
+               another. Through `className` rather than a style prop, because
+               `Spinner` is vendored PanelUI and takes no style — see the
+               warning in CLAUDE.md. */
+            <Spinner
+              size="sm"
+              className="border-transparent border-t-primary-foreground"
+              label={label}
+            />
+          ) : (
+            // The row exists only when there is an icon; without one the label
+            // stays a bare child of the gradient, which is what every existing
+            // GoldButton renders and what its centring is written around.
+            <View className="flex-row items-center gap-2">
+              {Icon ? <Icon size={14} color={asColor(primaryForeground)} /> : null}
+              <ThemedText
+                type={size === 'full' ? 'labelLg' : size === 'compact' ? 'labelMd' : 'labelSm'}
+                color={asColor(primaryForeground)}
+              >
+                {label}
+              </ThemedText>
+            </View>
+          )}
+        </LinearGradient>
+      </Animated.View>
     </Touchable>
   );
 }

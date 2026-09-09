@@ -44,6 +44,7 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
   const status = useSubscriptionStore((s) => s.status);
   const plan = useSubscriptionStore((s) => s.plan);
   const models = useSubscriptionStore((s) => s.models);
+  const catalogue = useSubscriptionStore((s) => s.catalogue);
   const balance = useSubscriptionStore((s) => s.balance);
   const offering = useSubscriptionStore((s) => s.offering);
   const busy = useSubscriptionStore((s) => s.busy);
@@ -148,10 +149,15 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
    * server has answered, and showing a plan carousel to somebody who is
    * already paying - on every cold open - is exactly the flash the account
    * store's own three states exist to prevent.
+   *
+   * On the surface, not in a card of its own - the same judgement the text
+   * to speech section makes. The slides are cards because they are the
+   * things being compared; the section around them is the page, and a card
+   * inside the section inside the screen was one box too many.
    */
   if (status === 'none' || (status === 'unavailable' && PURCHASES_ENABLED)) {
     return (
-      <Card className="gap-4 p-4">
+      <View className="gap-4">
         <View className="gap-1">
           <ThemedText type="bodyMd">Choose a plan</ThemedText>
           <ThemedText type="bodySm" color={asColor(mutedForeground)}>
@@ -160,6 +166,7 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
         </View>
         <PlanCarousel
           packages={packages}
+          catalogue={catalogue}
           modelCounts={modelCounts}
           busy={busy}
           loading={loading}
@@ -167,7 +174,7 @@ export function CloudPanel({ onRequestAccount }: { onRequestAccount: () => void 
           onChoose={onChoose}
           onRestore={onRestore}
         />
-      </Card>
+      </View>
     );
   }
 

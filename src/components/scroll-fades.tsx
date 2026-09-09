@@ -53,8 +53,12 @@ function useFadeColor(surface: FadeSurface) {
 /**
  * Shelves get less depth than pages: a book cover is only ~130px wide, so a
  * deep fade would wash out most of a card rather than the sliver past the edge.
+ *
+ * Exported because a shelf-like surface outside a `RowFade` (the plan
+ * carousel's gesture-driven track, which hands over its own distances) wants
+ * the same depth rather than a second number.
  */
-const ROW_FADE = 20;
+export const ROW_FADE = 20;
 const PAGE_FADE = 24;
 
 /**

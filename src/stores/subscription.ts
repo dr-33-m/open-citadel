@@ -45,6 +45,10 @@ type SubscriptionState = {
   plan: PlanId | null;
   balance: CreditBalance;
   models: PlanModel[];
+  /** The whole catalogue with each model's tier and credit estimate - what
+   * the plan info sheets describe. Empty against an older server, whose
+   * `/billing/me` predates it; the sheets then degrade to the counts. */
+  catalogue: PlanModel[];
   /** How many models each plan reaches. From the server, because the
    * catalogue lives there and a tier can gain one without a deploy. */
   modelsByPlan: Record<PlanId, number>;
@@ -159,6 +163,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
   plan: null,
   balance: NO_PLAN_BALANCE,
   models: [],
+  catalogue: [],
   modelsByPlan: { maester: 0, grand_maester: 0, archmaester: 0 },
   offering: null,
   busy: null,
@@ -188,6 +193,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
         models: PlanModel[];
         modelsByPlan?: Record<PlanId, number>;
         defaultModelId?: string;
+        catalogue?: PlanModel[];
       };
       set({
         status: body.balance.plan ? 'active' : 'none',
@@ -195,6 +201,9 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
         balance: body.balance,
         models: body.models ?? [],
         ...(body.modelsByPlan ? { modelsByPlan: body.modelsByPlan } : {}),
+        // Absent from an older server: the info sheets then degrade to the
+        // counts rather than naming models they cannot see.
+        catalogue: body.catalogue ?? [],
         error: null,
       });
       healSelectedModel(body.models ?? [], body.defaultModelId);
