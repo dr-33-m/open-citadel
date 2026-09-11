@@ -7,7 +7,7 @@
  * dollars appear anywhere in here: every estimate divides credits by
  * credits, both of them the server's own numbers.
  */
-import { planIncludes, type CreditPlan } from 'samwell-shared';
+import { mostExpensiveModelId, planIncludes, type CreditPlan } from 'samwell-shared';
 
 /** The shape the sheet needs. A structural slice of the store's `PlanModel`. */
 export interface PlanFactModel {
@@ -43,16 +43,14 @@ export function planFacts(plan: CreditPlan, models: readonly PlanFactModel[]): P
   const reached = models.filter((model) => planIncludes(plan.id, model.minPlan));
 
   const estimates: Record<string, number> = {};
-  let defaultModelId: string | null = null;
-  let dearestCost = 0;
   for (const model of reached) {
     if (model.forecastCredits == null || model.forecastCredits <= 0) continue;
     estimates[model.id] = roundDownToHundreds(plan.monthlyCredits / model.forecastCredits);
-    if (model.forecastCredits > dearestCost) {
-      dearestCost = model.forecastCredits;
-      defaultModelId = model.id;
-    }
   }
+  const defaultModelId = mostExpensiveModelId(
+    reached,
+    (model) => model.forecastCredits,
+  );
 
   return { models: reached, estimates, defaultModelId };
 }

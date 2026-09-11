@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CREDIT_PLANS } from 'samwell-shared';
 
+import { createBillingWebhookRoutes, routeRevenueCatEvent } from '../billing-webhook.js';
 import { createBillingService, type BillingService } from '../billing.js';
-import { routeRevenueCatEvent, createBillingWebhookRoutes } from '../billing-webhook.js';
 import { USAGE_EVENTS_DDL, ensureBillingSchema } from '../db.js';
 
 const NOW = 1_757_400_000_000;
@@ -126,18 +126,121 @@ describe('routeRevenueCatEvent', () => {
     }
   });
 
-  it('clears the plan on expiration and on a billing issue, keeping the balance', async () => {
+  it('preserves access on cancellation and billing issue when RevenueCat is unavailable', async () => {
     await routeRevenueCatEvent(
       event({ type: 'INITIAL_PURCHASE', entitlement_id: 'maester', expiration_at_ms: NOW + 1 }),
       billing,
     );
-    for (const type of ['EXPIRATION', 'BILLING_ISSUE']) {
+    for (const type of ['CANCELLATION', 'BILLING_ISSUE']) {
       const outcome = await routeRevenueCatEvent(event({ type }), billing);
-      expect(outcome.action).toBe('cleared');
+      expect(outcome.action).toBe('ignored');
       const row = await accountRow();
-      expect(row?.plan).toBeNull();
+      expect(String(row?.plan)).toBe('maester');
       expect(Number(row?.balance)).toBe(CREDIT_PLANS.maester.monthlyCredits);
     }
+  });
+
+  it('clears an account on billing issue only when RevenueCat confirms it is inactive', async () => {
+    await billing.grantMonthly({
+      accountId: ACCOUNT,
+      plan: 'maester',
+      periodEndMs: NOW + 30 * 86_400_000,
+    });
+    const reconciled = createBillingService({
+      client,
+      now: () => nowMs,
+      revenueCatApiKey: 'sk_test',
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ subscriber: { entitlements: {} } }),
+      })) as unknown as typeof fetch,
+    });
+
+    const outcome = await routeRevenueCatEvent(event({ type: 'BILLING_ISSUE' }), reconciled);
+
+    expect(outcome.action).toBe('cleared');
+    expect((await accountRow())?.plan).toBeNull();
+  });
+
+  it('preserves access when cancellation reconciliation returns no active entitlement', async () => {
+    await billing.grantMonthly({
+      accountId: ACCOUNT,
+      plan: 'maester',
+      periodEndMs: NOW + 30 * 86_400_000,
+    });
+    const reconciled = createBillingService({
+      client,
+      now: () => nowMs,
+      revenueCatApiKey: 'sk_test',
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ subscriber: { entitlements: {} } }),
+      })) as unknown as typeof fetch,
+    });
+
+    const outcome = await routeRevenueCatEvent(event({ type: 'CANCELLATION' }), reconciled);
+
+    expect(outcome.action).toBe('ignored');
+    expect(String((await accountRow())?.plan)).toBe('maester');
+  });
+
+  it('does not clear a replacement plan when an older entitlement expires', async () => {
+    await billing.grantMonthly({
+      accountId: ACCOUNT,
+      plan: 'grand_maester',
+      periodEndMs: NOW + 30 * 86_400_000,
+    });
+    const expiresDate = new Date(NOW + 30 * 86_400_000).toISOString();
+    const reconciled = createBillingService({
+      client,
+      now: () => nowMs,
+      revenueCatApiKey: 'sk_test',
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          subscriber: {
+            entitlements: {
+              maester: { expires_date: new Date(NOW - 1).toISOString() },
+              archmaester: { expires_date: expiresDate },
+            },
+          },
+        }),
+      })) as unknown as typeof fetch,
+    });
+
+    const outcome = await routeRevenueCatEvent(
+      event({ type: 'EXPIRATION', entitlement_id: 'maester' }),
+      reconciled,
+    );
+
+    expect(outcome).toMatchObject({ action: 'reconciled' });
+    expect(String((await accountRow())?.plan)).toBe('archmaester');
+  });
+
+  it('clears only when expiration reconciliation confirms no active entitlement', async () => {
+    await billing.grantMonthly({
+      accountId: ACCOUNT,
+      plan: 'maester',
+      periodEndMs: NOW + 1,
+    });
+    const reconciled = createBillingService({
+      client,
+      now: () => nowMs,
+      revenueCatApiKey: 'sk_test',
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ subscriber: { entitlements: {} } }),
+      })) as unknown as typeof fetch,
+    });
+
+    const outcome = await routeRevenueCatEvent(event({ type: 'EXPIRATION' }), reconciled);
+
+    expect(outcome.action).toBe('cleared');
+    expect((await accountRow())?.plan).toBeNull();
   });
 
   it('moves a transfer to the receiving account', async () => {

@@ -1,11 +1,10 @@
-import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
+import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { ThemedText } from '@/components/themed-text';
-import { Sheet } from '@/components/ui/sheet';
+import { ThemedText } from "@/components/themed-text";
+import { Sheet } from "@/components/ui/sheet";
 
-export type EngineMode = 'offline' | 'cloud';
+export type EngineMode = "offline" | "cloud";
 
 type EngineInfo = {
   label: string;
@@ -15,34 +14,41 @@ type EngineInfo = {
 
 const CONTENT: Record<EngineMode, EngineInfo> = {
   offline: {
-    label: 'OFFLINE',
-    persona: 'Samwell on your device.',
+    label: "OFFLINE",
+    persona: "Samwell on your device.",
     points: [
-      'He runs entirely on your device. Nothing you say leaves your phone.',
-      'Works anywhere, with no internet.',
-      'No usage limits, and free.',
-      'He is bound by your phone, so he uses a smaller model than the cloud.',
-      'Compass is not available offline.',
+      "He runs entirely on your device. Nothing you say leaves your phone.",
+      "Works anywhere, with no internet.",
+      "No usage limits, and free.",
+      "He is bound by your phone, so he uses a smaller brain than the cloud.",
+      "Compass is not available offline.",
     ],
   },
   cloud: {
-    label: 'CLOUD',
-    persona: 'Grand Maester Samwell in the cloud.',
+    label: "CLOUD",
+    persona: "Samwell in the cloud.",
     points: [
-      'In the cloud, Samwell becomes Grand Maester Samwell, running the largest models.',
-      'Deeper thinking and sharper insight than any phone can manage.',
-      'Compass is only available here, with Grand Maester Samwell.',
-      'Needs an internet connection. Only what each request needs is sent, nothing more.',
+      "In the Cloud, Samwell has the expert levels to choose from: Maester, Grand Maester and Archmaester.",
+      "Deeper thinking and sharper insight than any phone can manage.",
+      "Compass only available here, with Samwell cloud.",
+      "Needs an internet connection. Only what each request needs is sent, nothing more.",
     ],
   },
 };
 
-export function EngineInfoSheet({ mode, onClose }: { mode: EngineMode | null; onClose: () => void }) {
+export function EngineInfoSheet({
+  mode,
+  onClose,
+}: {
+  mode: EngineMode | null;
+  onClose: () => void;
+}) {
   // ThemedText's `color` prop takes a literal, never a className.
-  const primary = useCSSVariable('--color-primary');
-  const mutedForeground = useCSSVariable('--color-muted-foreground');
-  const labelColor = typeof primary === 'string' ? primary : undefined;
-  const pointColor = typeof mutedForeground === 'string' ? mutedForeground : undefined;
+  const primary = useCSSVariable("--color-primary");
+  const mutedForeground = useCSSVariable("--color-muted-foreground");
+  const labelColor = typeof primary === "string" ? primary : undefined;
+  const pointColor =
+    typeof mutedForeground === "string" ? mutedForeground : undefined;
 
   const info = mode ? CONTENT[mode] : null;
 

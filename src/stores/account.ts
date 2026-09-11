@@ -1,15 +1,16 @@
 import { create } from 'zustand';
 
-import {
-  AccountCancelled,
-  readProfile,
-  signIn as startSignIn,
-  signOut as endSession,
-  type AccountEntry,
-} from '@/services/account';
 import { ACCOUNT_ENABLED } from '@/constants/logto';
+import {
+    AccountCancelled,
+    signOut as endSession,
+    readProfile,
+    signIn as startSignIn,
+    type AccountEntry,
+} from '@/services/account';
 import { configurePurchases, forget, identify } from '@/services/purchases';
 import { useSettingsStore } from '@/stores/settings';
+import { useSubscriptionStore } from '@/stores/subscription';
 
 /**
  * Three states, and the first one matters.
@@ -147,6 +148,7 @@ export const useAccountStore = create<AccountState>((set) => ({
     try {
       await endSession();
       set(signedOut);
+      useSubscriptionStore.getState().reset();
       /*
        * RevenueCat moves to a fresh anonymous customer, so the next person to
        * sign in on this device does not inherit the last one's plan. Not

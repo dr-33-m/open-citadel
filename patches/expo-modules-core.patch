@@ -15,3 +15,15 @@ index a2d707ce76ceb35456eb075d06473ac98ad8b5eb..1f72461c80f4fe8df8307a55b7531b9c
        func(rt);
        return jsi::Value::undefined();
      });
+diff --git a/ios/WorkletsAdapter/ExpoWorkletsBridgeProvider.mm b/ios/WorkletsAdapter/ExpoWorkletsBridgeProvider.mm
+--- a/ios/WorkletsAdapter/ExpoWorkletsBridgeProvider.mm
++++ b/ios/WorkletsAdapter/ExpoWorkletsBridgeProvider.mm
+@@ -233,7 +233,7 @@
+     return;
+   }
+ 
+-  workletRuntime->executeSync([worklet, arguments](jsi::Runtime &rt) -> jsi::Value {
++  workletRuntime->runSync([worklet, arguments](jsi::Runtime &rt) -> jsi::Value {
+     return callWorklet(rt, worklet, arguments);
+   });
+ }

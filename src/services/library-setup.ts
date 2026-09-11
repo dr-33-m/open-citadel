@@ -24,17 +24,17 @@
  * without the reader having seen a prompt first.
  */
 import {
-  StorageAccessFramework,
-  copyAsync,
-  deleteAsync,
-  downloadAsync,
-  getInfoAsync,
-  readAsStringAsync,
-  writeAsStringAsync,
-  EncodingType,
+    EncodingType,
+    StorageAccessFramework,
+    copyAsync,
+    deleteAsync,
+    downloadAsync,
+    getInfoAsync,
+    readAsStringAsync,
+    writeAsStringAsync,
 } from 'expo-file-system/legacy';
 
-import { OWNED_DIR, ensureOwnedDir, pickAndImportEpubs } from '@/services/book-import';
+import { OWNED_DIR, ensureOwnedDir, pickAndImportEpubsWithResult } from '@/services/book-import';
 import { useBooksStore } from '@/stores/books';
 
 /** What the folder is called, and what Samwell calls it when he speaks of it. */
@@ -265,8 +265,8 @@ async function setUpIosLibrary(): Promise<LibrarySetupResult> {
   const store = useBooksStore.getState();
   await store.initLibrary();
 
-  const copied = await pickAndImportEpubs();
-  if (copied === 0) {
+  const result = await pickAndImportEpubsWithResult();
+  if (result.cancelled) {
     return {
       ok: false,
       platform: 'ios',
@@ -277,13 +277,25 @@ async function setUpIosLibrary(): Promise<LibrarySetupResult> {
     };
   }
 
+  const skipped = result.selected - result.copied;
+  if (result.copied === 0) {
+    return {
+      ok: false,
+      platform: 'ios',
+      folderName: LIBRARY_FOLDER_NAME,
+      imported: 0,
+      skipped,
+      error: 'None of the selected EPUBs could be copied.',
+    };
+  }
+
   // Deferred for the same reason as Android. See `scanLibraryNow`.
   return {
     ok: true,
     platform: 'ios',
     folderName: LIBRARY_FOLDER_NAME,
-    imported: copied,
-    skipped: 0,
+    imported: result.copied,
+    skipped,
   };
 }
 

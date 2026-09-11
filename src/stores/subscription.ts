@@ -1,22 +1,33 @@
-import { create } from 'zustand';
+import type {
+    CustomerInfo,
+    PurchasesOffering,
+    PurchasesPackage,
+} from 'react-native-purchases';
 import {
-  NO_PLAN_BALANCE,
-  type CloudModelOption,
-  type CreditBalance,
-  type PlanId,
+    CREDIT_PLANS,
+    NO_PLAN_BALANCE,
+    planRank,
+    type CloudModelOption,
+    type CreditBalance,
+    type PlanId,
 } from 'samwell-shared';
-import type { PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
+import { create } from 'zustand';
 
 import { PURCHASES_ENABLED } from '@/constants/revenuecat';
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { cloudHeaders, cloudJsonHeaders } from '@/services/cloud-identity';
-import { useSettingsStore } from '@/stores/settings';
 import {
-  PurchaseCancelled,
-  getOffering,
-  purchase as buyPackage,
-  restore as restorePurchases,
+    subscriptionLifecycle,
+    type SubscriptionLifecycle,
+} from '@/services/purchase-lifecycle';
+import {
+    PurchaseCancelled,
+    purchase as buyPackage,
+    getOffering,
+    manageSubscription,
+    restore as restorePurchases,
 } from '@/services/purchases';
+import { useSettingsStore } from '@/stores/settings';
 
 /**
  * A model the reader can reach, with the two numbers the picker draws.
@@ -39,6 +50,7 @@ export type PlanModel = CloudModelOption & {
  * already paying, on every cold open.
  */
 export type SubscriptionStatus = 'unknown' | 'unavailable' | 'none' | 'active';
+export type PurchaseOutcome = 'active' | 'scheduled' | 'pending' | false;
 
 type SubscriptionState = {
   status: SubscriptionStatus;
@@ -52,13 +64,22 @@ type SubscriptionState = {
   /** How many models each plan reaches. From the server, because the
    * catalogue lives there and a tier can gain one without a deploy. */
   modelsByPlan: Record<PlanId, number>;
+  /** The top model of the reader's own band, from the server. Kept so a
+   * freshly confirmed purchase can force the selection to it - see
+   * `healSelectedModel`. */
+  defaultModelId: string | null;
   /** The plans on sale, in the order the server's offering lists them. */
   offering: PurchasesOffering | null;
+  /** Store renewal state. Access itself remains authoritative on the server. */
+  lifecycle: SubscriptionLifecycle | null;
   /** A purchase or a restore is in flight; which plan, so one card spins. */
-  busy: PlanId | 'restore' | null;
+  /** A purchase, restore, or store-management handoff is in flight. */
+  busy: PlanId | 'restore' | 'manage' | null;
   /** A balance read is in flight. The meter shows it instead of REFRESH. */
   loading: boolean;
   error: string | null;
+  reset: () => void;
+  applyCustomerInfo: (customerInfo: CustomerInfo | null) => void;
   refresh: () => Promise<void>;
   /**
    * Take the balance the chat stream already carried.
@@ -73,8 +94,9 @@ type SubscriptionState = {
    */
   applyCreditsFromTurn: (available: number) => void;
   loadOffering: () => Promise<void>;
-  purchase: (packageToBuy: PurchasesPackage, plan: PlanId) => Promise<boolean>;
+  purchase: (packageToBuy: PurchasesPackage, plan: PlanId) => Promise<PurchaseOutcome>;
   restore: () => Promise<boolean>;
+  manage: () => Promise<'opened' | 'test-store' | false>;
   redeemInsider: (code: string) => Promise<boolean>;
 };
 
@@ -84,6 +106,21 @@ function message(error: unknown, fallback: string): string {
 
 function baseUrl(): string {
   return SAMWELL_CLOUD_BASE_URL.trim().replace(/\/+$/, '');
+}
+
+function sameLifecycle(
+  current: SubscriptionLifecycle | null,
+  next: SubscriptionLifecycle | null,
+): boolean {
+  if (current === next) return true;
+  if (!current || !next) return false;
+  return (
+    current.plan === next.plan &&
+    current.willRenew === next.willRenew &&
+    current.expiresAt === next.expiresAt &&
+    current.unsubscribeDetectedAt === next.unsubscribeDetectedAt &&
+    current.billingIssueDetectedAt === next.billingIssueDetectedAt
+  );
 }
 
 /**
@@ -101,6 +138,9 @@ const CONFIRM_ATTEMPTS = 6;
 const CONFIRM_DELAY_MS = 1_200;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+let accountGeneration = 0;
+let refreshInFlight: Promise<void> | null = null;
 
 /**
  * How long to wait on Samwell Cloud before giving up.
@@ -146,11 +186,15 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
  * An empty list means the answer is not known yet, not that the choice was
  * wrong, so nothing is touched.
  */
-function healSelectedModel(models: PlanModel[], defaultModelId: string | undefined): void {
+function healSelectedModel(
+  models: PlanModel[],
+  defaultModelId: string | undefined,
+  options: { force?: boolean } = {},
+): void {
   if (models.length === 0) return;
   const settings = useSettingsStore.getState();
   const current = settings.cloudModelId;
-  if (current !== null && models.some((model) => model.id === current)) return;
+  if (!options.force && current !== null && models.some((model) => model.id === current)) return;
 
   const healed = models.some((model) => model.id === defaultModelId)
     ? defaultModelId
@@ -165,10 +209,34 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
   models: [],
   catalogue: [],
   modelsByPlan: { maester: 0, grand_maester: 0, archmaester: 0 },
+  defaultModelId: null,
   offering: null,
+  lifecycle: null,
   busy: null,
   loading: false,
   error: null,
+
+  reset: () => {
+    accountGeneration += 1;
+    refreshInFlight = null;
+    set({
+      status: 'unknown',
+      plan: null,
+      balance: NO_PLAN_BALANCE,
+      models: [],
+      defaultModelId: null,
+      lifecycle: null,
+      busy: null,
+      loading: false,
+      error: null,
+    });
+  },
+
+  applyCustomerInfo: (customerInfo) => {
+    const lifecycle = customerInfo ? subscriptionLifecycle(customerInfo) : null;
+    if (sameLifecycle(get().lifecycle, lifecycle)) return;
+    set({ lifecycle });
+  },
 
   /**
    * Ask the server what this account may spend.
@@ -177,44 +245,67 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
    * refuses a turn, so it is the thing whose answer the app draws. The
    * store's own opinion is used to start a purchase and for nothing else.
    */
-  refresh: async () => {
+  refresh: () => {
     if (!baseUrl()) {
       set({ status: 'unavailable', error: null });
-      return;
+      return Promise.resolve();
     }
+    if (refreshInFlight) return refreshInFlight;
+
+    const generation = accountGeneration;
+    const previousPlan = get().plan;
     set({ loading: true });
-    try {
-      const response = await fetchWithTimeout(`${baseUrl()}/billing/me`, {
-        headers: await cloudHeaders(),
-      });
-      if (!response.ok) throw new Error(`Samwell Cloud answered ${response.status}.`);
-      const body = (await response.json()) as {
-        balance: CreditBalance;
-        models: PlanModel[];
-        modelsByPlan?: Record<PlanId, number>;
-        defaultModelId?: string;
-        catalogue?: PlanModel[];
-      };
-      set({
-        status: body.balance.plan ? 'active' : 'none',
-        plan: body.balance.plan,
-        balance: body.balance,
-        models: body.models ?? [],
-        ...(body.modelsByPlan ? { modelsByPlan: body.modelsByPlan } : {}),
-        // Absent from an older server: the info sheets then degrade to the
-        // counts rather than naming models they cannot see.
-        catalogue: body.catalogue ?? [],
-        error: null,
-      });
-      healSelectedModel(body.models ?? [], body.defaultModelId);
-    } catch (error) {
-      // The status is left alone on a failed read. A network blip is not
-      // evidence that somebody's subscription has gone away, and drawing the
-      // carousel over a paid account would be the worst way to be wrong.
-      set({ error: message(error, 'Could not check your credits.') });
-    } finally {
-      set({ loading: false });
-    }
+    let operation: Promise<void>;
+    operation = (async () => {
+      try {
+        const response = await fetchWithTimeout(`${baseUrl()}/billing/me`, {
+          headers: await cloudHeaders(),
+        });
+        if (!response.ok) throw new Error(`Samwell Cloud answered ${response.status}.`);
+        const body = (await response.json()) as {
+          balance: CreditBalance;
+          models: PlanModel[];
+          modelsByPlan?: Record<PlanId, number>;
+          defaultModelId?: string;
+          catalogue?: PlanModel[];
+        };
+        if (generation !== accountGeneration) return;
+        set({
+          status: body.balance.plan ? 'active' : 'none',
+          plan: body.balance.plan,
+          balance: body.balance,
+          models: body.models ?? [],
+          ...(body.modelsByPlan ? { modelsByPlan: body.modelsByPlan } : {}),
+          // Absent from an older server: the info sheets then degrade to the
+          // counts rather than naming models they cannot see.
+          catalogue: body.catalogue ?? [],
+          defaultModelId: body.defaultModelId ?? null,
+          error: null,
+        });
+        const nextPlan = body.balance.plan;
+        healSelectedModel(body.models ?? [], body.defaultModelId, {
+          // This also catches a deferred downgrade when it becomes active at
+          // renewal, outside the purchase call that originally scheduled it.
+          force:
+            previousPlan !== null &&
+            nextPlan !== null &&
+            previousPlan !== nextPlan,
+        });
+      } catch (error) {
+        // The status is left alone on a failed read. A network blip is not
+        // evidence that somebody's subscription has gone away, and drawing the
+        // carousel over a paid account would be the worst way to be wrong.
+        if (generation === accountGeneration) {
+          set({ error: message(error, 'Could not check your credits.') });
+        }
+      } finally {
+        if (generation === accountGeneration) set({ loading: false });
+      }
+    })().finally(() => {
+      if (refreshInFlight === operation) refreshInFlight = null;
+    });
+    refreshInFlight = operation;
+    return operation;
   },
 
   applyCreditsFromTurn: (available) => {
@@ -245,12 +336,43 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
    * one thing this must not do.
    */
   purchase: async (packageToBuy, plan) => {
+    const generation = accountGeneration;
     set({ busy: plan, error: null });
     try {
-      await buyPackage(packageToBuy);
+      const currentPlan = get().plan;
+      const changingPlan = currentPlan !== null && plan !== currentPlan;
+      const downgrading =
+        currentPlan !== null && planRank(plan) < planRank(currentPlan);
+      const customerInfo = await buyPackage(packageToBuy, {
+        currentEntitlement:
+          changingPlan
+            ? CREDIT_PLANS[currentPlan].entitlement
+            : undefined,
+        deferred: downgrading,
+      });
+      if (generation !== accountGeneration) return false;
+      get().applyCustomerInfo(customerInfo);
+
+      if (downgrading) {
+        await get().refresh();
+        if (generation !== accountGeneration) return false;
+        if (get().plan === plan) {
+          healSelectedModel(get().models, get().defaultModelId ?? undefined, { force: true });
+          return 'active';
+        }
+        return 'scheduled';
+      }
+
       for (let attempt = 0; attempt < CONFIRM_ATTEMPTS; attempt += 1) {
         await get().refresh();
-        if (get().plan) return true;
+        if (generation !== accountGeneration) return false;
+        const confirmedPlan = get().plan;
+        if (confirmedPlan && planRank(confirmedPlan) >= planRank(plan)) {
+          // Forced: a freshly bought plan overrides whatever was selected
+          // before, even a cheaper model still valid under the new, wider band.
+          healSelectedModel(get().models, get().defaultModelId ?? undefined, { force: true });
+          return 'active';
+        }
         await sleep(CONFIRM_DELAY_MS);
       }
       /*
@@ -259,29 +381,51 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
        * what is true and what to do, rather than implying the purchase
        * failed and inviting them to buy it twice.
        */
-      set({
-        error: 'Payment went through. Your credits will appear shortly; pull to refresh.',
-      });
-      return false;
+      if (generation === accountGeneration) {
+        set({
+          error: 'Payment went through. Your credits will appear shortly; pull to refresh.',
+        });
+      }
+      return 'pending';
     } catch (error) {
       if (error instanceof PurchaseCancelled) return false;
-      set({ error: message(error, 'Could not complete the purchase.') });
+      if (generation === accountGeneration) {
+        set({ error: message(error, 'Could not complete the purchase.') });
+      }
       return false;
     } finally {
-      set({ busy: null });
+      if (generation === accountGeneration) set({ busy: null });
     }
   },
 
   restore: async () => {
+    const generation = accountGeneration;
     set({ busy: 'restore', error: null });
     try {
-      await restorePurchases();
+      const customerInfo = await restorePurchases();
+      if (generation !== accountGeneration) return false;
+      get().applyCustomerInfo(customerInfo);
       await get().refresh();
+      if (generation !== accountGeneration) return false;
       const restored = Boolean(get().plan);
       if (!restored) set({ error: 'No previous subscription found for this account.' });
       return restored;
     } catch (error) {
-      set({ error: message(error, 'Could not restore your purchases.') });
+      if (generation === accountGeneration) {
+        set({ error: message(error, 'Could not restore your purchases.') });
+      }
+      return false;
+    } finally {
+      if (generation === accountGeneration) set({ busy: null });
+    }
+  },
+
+  manage: async () => {
+    set({ busy: 'manage', error: null });
+    try {
+      return await manageSubscription();
+    } catch (error) {
+      set({ error: message(error, 'Could not open subscription management.') });
       return false;
     } finally {
       set({ busy: null });

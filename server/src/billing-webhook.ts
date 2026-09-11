@@ -15,8 +15,8 @@
  * nothing about headers or responses, only about what each event type means
  * for an account.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { planForEntitlement, planRank, type PlanId } from 'samwell-shared';
 
@@ -57,7 +57,10 @@ function bestPlanOf(event: RevenueCatEvent): PlanId | null {
   return best;
 }
 
-export type WebhookOutcome = { action: 'granted' | 'cleared' | 'ignored'; note?: string };
+export type WebhookOutcome = {
+  action: 'granted' | 'cleared' | 'reconciled' | 'ignored';
+  note?: string;
+};
 
 /**
  * What one event means. Returns which action was taken so the caller can log
@@ -126,14 +129,39 @@ export async function routeRevenueCatEvent(
   }
   const accountId = toAccountId(appUserId);
 
+  if (type === 'CANCELLATION') {
+    /*
+    * Cancellation keeps access through expiration. Sync so a concurrent
+    * plan change is learned, but never let this event revoke access.
+     */
+    const synced = await billing.syncEntitlement(accountId, { clearIfInactive: false });
+    if (synced.status === 'active') {
+      return { action: 'reconciled', note: `${type}: ${synced.plan} remains active` };
+    }
+    return { action: 'ignored', note: `${type}: access preserved until expiration` };
+  }
+
   if (type === 'EXPIRATION' || type === 'BILLING_ISSUE') {
     /*
-     * The balance stays for the record. A BILLING_ISSUE mid-grace is usually
-     * followed by a TEMPORARY_ENTITLEMENT_GRANT keeping the reader whole
-     * while the card is retried, and by a RENEWAL when it goes through.
+    * Either event describes one product. Only the complete customer state
+    * can prove access ended. During billing grace RevenueCat still reports
+    * an active entitlement; in account hold it does not.
      */
-    await billing.clearPlan(accountId);
-    return { action: 'cleared', note: type };
+    const synced = await billing.syncEntitlement(accountId);
+    if (synced.status === 'active') {
+      return { action: 'reconciled', note: `${type}: ${synced.plan} remains active` };
+    }
+    if (synced.status === 'inactive') return { action: 'cleared', note: type };
+    return { action: 'ignored', note: `${type}: RevenueCat state unavailable` };
+  }
+
+  if (type === 'PRODUCT_CHANGE' || type === 'UNCANCELLATION') {
+    const synced = await billing.syncEntitlement(accountId, { clearIfInactive: false });
+    if (synced.status === 'active') {
+      return { action: 'reconciled', note: `${type}: ${synced.plan} is active` };
+    }
+    // These are positive events. If the REST view lags, their own entitlement
+    // payload remains safe to grant through the normal idempotent path below.
   }
 
   if (

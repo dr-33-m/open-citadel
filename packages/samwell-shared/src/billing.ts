@@ -293,6 +293,31 @@ export function forecastCredits(
 }
 
 /**
+ * The dearest priced model in a set.
+ *
+ * The caller supplies the cost because some surfaces already hold forecast
+ * credits while the server holds raw prices. Keeping the choice here means
+ * both still agree that a plan defaults to its most expensive brain. Ties
+ * preserve catalogue order, and unpriced models cannot become the default.
+ */
+export function mostExpensiveModelId<T extends { id: string }>(
+  models: readonly T[],
+  costOf: (model: T) => number | null | undefined,
+): string | null {
+  let selectedId: string | null = null;
+  let selectedCost = 0;
+
+  for (const model of models) {
+    const cost = costOf(model);
+    if (cost == null || !Number.isFinite(cost) || cost <= selectedCost) continue;
+    selectedId = model.id;
+    selectedCost = cost;
+  }
+
+  return selectedId;
+}
+
+/**
  * `1x`-style multipliers for a set of models, each against its own band.
  *
  * The multiplier is a ratio of forecast costs, so the credit value cancels

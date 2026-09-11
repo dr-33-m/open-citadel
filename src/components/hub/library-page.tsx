@@ -1,51 +1,51 @@
-import { useFocusEffect } from "expo-router/react-navigation";
-import { useRouter } from "expo-router";
 import { ChartNoAxesGantt, Plus, ZodiacPisces } from "@/components/icons";
+import { useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router/react-navigation";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AppState,
-  ScrollView,
-  useWindowDimensions,
-  View,
-  type ViewStyle,
+    AppState,
+    ScrollView,
+    useWindowDimensions,
+    View,
+    type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
-import { RowFade } from "@/components/scroll-fades";
 import { ArchivedCards } from "@/components/library/archived-card";
 import { BookActionSheet } from "@/components/library/book-action-sheet";
 import { BookQueue } from "@/components/library/book-queue";
-import { DeleteBookSheet } from "@/components/library/delete-book-sheet";
-import { EditTitleSheet } from "@/components/library/edit-title-sheet";
 import { CollectionGrid } from "@/components/library/collection-grid";
 import { CollectionPickerSheet } from "@/components/library/collection-picker-sheet";
 import { CurrentlyReadingCard } from "@/components/library/currently-reading-card";
+import { DeleteBookSheet } from "@/components/library/delete-book-sheet";
 import { DirectoryPrompt } from "@/components/library/directory-prompt";
+import { EditTitleSheet } from "@/components/library/edit-title-sheet";
 import { Favorites } from "@/components/library/favorites";
 import { NewCollectionPrompt } from "@/components/library/new-collection-prompt";
+import { PullToSync } from "@/components/library/pull-to-sync";
+import { RowFade } from "@/components/scroll-fades";
+import { LibrarySkeleton } from "@/components/skeletons/library-skeleton";
 import { ThemedView } from "@/components/themed-view";
 import { Fab, fabClearance } from "@/components/ui/fab";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SectionHeader } from "@/components/ui/section-header";
-import { LibrarySkeleton } from "@/components/skeletons/library-skeleton";
-import { PullToSync } from "@/components/library/pull-to-sync";
-import { MaxContentWidth, iconSize, layout } from "@/constants/theme";
+import { iconSize, layout, MaxContentWidth } from "@/constants/theme";
 import type { books as booksTable } from "@/db/schema";
 import { cn } from "@/lib/cn";
-import { asColor } from "@/utils/colors";
-import { HUB, useHubStore } from "@/stores/hub";
 import { pickBooksDirectory } from "@/services/book-sync";
 import {
-  useAllBooks,
-  useArchivedBooks,
-  useBooksStore,
-  useCurrentlyReading,
-  useFavoriteBooks,
-  useQueuedBooks,
-  useSyncRunning,
+    useAllBooks,
+    useArchivedBooks,
+    useBooksStore,
+    useCurrentlyReading,
+    useFavoriteBooks,
+    useQueuedBooks,
+    useSyncRunning,
 } from "@/stores/books";
 import { useCollectionsStore } from "@/stores/collections";
+import { HUB, useHubStore } from "@/stores/hub";
+import { asColor } from "@/utils/colors";
 import { useShallow } from "zustand/shallow";
 
 type Book = typeof booksTable.$inferSelect;
@@ -90,7 +90,9 @@ function LibraryHeader({
       }
       leftLabel="Timeline"
       onLeftPress={onOpenTimeline}
-      rightIcon={<ZodiacPisces size={iconSize.default} color={asColor(primary)} />}
+      rightIcon={
+        <ZodiacPisces size={iconSize.default} color={asColor(primary)} />
+      }
       rightLabel="Samwell"
       onRightPress={onOpenSamwell}
     />
@@ -182,7 +184,10 @@ export function LibraryPage() {
   const allBooks = useAllBooks();
   /* A fresh array every render is a new prop for the memo'd shelf below, which
      is the whole point of memoizing it. */
-  const allBooksPreview = React.useMemo(() => allBooks.slice(0, 20), [allBooks]);
+  const allBooksPreview = React.useMemo(
+    () => allBooks.slice(0, 20),
+    [allBooks],
+  );
 
   /*
    * The page actually being shown, clamped where it is READ.
@@ -336,13 +341,18 @@ export function LibraryPage() {
 
   const isIOS = process.env.EXPO_OS === "ios";
   // iOS always has an owned folder set, so gate on whether any books exist.
+  // A launch scan is background work, not a reason to replace Get Started
+  // with an empty Library for a moment. `booted` already proves the initial
+  // read finished, so later `isLoading` flips from empty refreshes are not a
+  // navigation state. If a scan finds a book, `allBooks` changes and this
+  // branch naturally hands over to the populated Library.
   // Android gates on whether a folder has been picked (unchanged behavior).
   // Both require boot to have finished — the store's initial empty state is
   // "not loaded yet", not "not configured".
   const showEmptyState = !booted
     ? false
     : isIOS
-      ? allBooks.length === 0 && !syncRunning && !isLoading
+      ? allBooks.length === 0
       : !booksDirectoryUri && !isLoading;
 
   // Boot-in-progress: the shape of the Library rather than either branch, so
@@ -351,289 +361,298 @@ export function LibraryPage() {
   // as the page filling in rather than as a jump from nothing.
   if (!booted) {
     return (
-        <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-          <LibraryHeader onOpenTimeline={openTimeline} onOpenSamwell={openSamwell} />
-          <LibrarySkeleton />
-        </ThemedView>
+      <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
+        <LibraryHeader
+          onOpenTimeline={openTimeline}
+          onOpenSamwell={openSamwell}
+        />
+        <LibrarySkeleton />
+      </ThemedView>
     );
   }
 
   if (showEmptyState) {
     return (
-        <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-          <LibraryHeader onOpenTimeline={openTimeline} onOpenSamwell={openSamwell} />
-          <DirectoryPrompt
-            onPress={isIOS ? handleGetStarted : handleSelectDirectory}
-          />
-        </ThemedView>
+      <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
+        <LibraryHeader
+          onOpenTimeline={openTimeline}
+          onOpenSamwell={openSamwell}
+        />
+        <DirectoryPrompt
+          onPress={isIOS ? handleGetStarted : handleSelectDirectory}
+        />
+      </ThemedView>
     );
   }
 
   return (
-      <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-        <LibraryHeader onOpenTimeline={openTimeline} onOpenSamwell={openSamwell} />
+    <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
+      <LibraryHeader
+        onOpenTimeline={openTimeline}
+        onOpenSamwell={openSamwell}
+      />
 
-        {/* Pull down at the top to start a scan, and the gap it opens is
+      {/* Pull down at the top to start a scan, and the gap it opens is
             where every scan reports itself — the one at launch and the button
             in All Books included. It carries the page's scroll fade, which
             replaces the header's bottom rule: content passes under the bar and
             fades rather than being cut off by a hard line. */}
-        <PullToSync
-          running={syncRunning}
-          onSync={handlePullSync}
-          contentContainerClassName="pt-6"
-          contentContainerStyle={{
-            paddingBottom:
-              layout.scrollBottom +
-              (isIOS ? fabClearance(insets.bottom) : insets.bottom),
-          }}
-        >
-            {/* Currently Reading */}
-            {currentlyReading.length > 0 && (
-              <View className="gap-4 mb-8">
-                <SectionHeader
-                  title="Currently Reading"
-                  rightAction={{
-                    text: "VIEW ALL",
-                    onPress: () => router.push("/section/reading" as any),
-                  }}
-                />
-                <RowFade>
-                  <ScrollView
-                    ref={readingScrollRef}
-                    horizontal
-                    pagingEnabled
-                    showsHorizontalScrollIndicator={false}
-                    /* On momentum end, not on scroll. The index only feeds the
+      <PullToSync
+        running={syncRunning}
+        onSync={handlePullSync}
+        contentContainerClassName="pt-6"
+        contentContainerStyle={{
+          paddingBottom:
+            layout.scrollBottom +
+            (isIOS ? fabClearance(insets.bottom) : insets.bottom),
+        }}
+      >
+        {/* Currently Reading */}
+        {currentlyReading.length > 0 && (
+          <View className="gap-4 mb-8">
+            <SectionHeader
+              title="Currently Reading"
+              rightAction={{
+                text: "VIEW ALL",
+                onPress: () => router.push("/section/reading" as any),
+              }}
+            />
+            <RowFade>
+              <ScrollView
+                ref={readingScrollRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                /* On momentum end, not on scroll. The index only feeds the
                        dot indicator below, which has nothing to say until a page
                        has actually settled — but `onScroll` ran a full React
                        render of this screen on every frame of every swipe, on the
                        one screen that is also hosting the hub's own gesture. One
                        render per page turn instead of sixty per second. */
-                    onMomentumScrollEnd={(e) => {
-                      const index = Math.round(
-                        e.nativeEvent.contentOffset.x / windowWidth,
-                      );
-                      setCurrentReadingIndex(index);
-                    }}
+                onMomentumScrollEnd={(e) => {
+                  const index = Math.round(
+                    e.nativeEvent.contentOffset.x / windowWidth,
+                  );
+                  setCurrentReadingIndex(index);
+                }}
+              >
+                {currentlyReading.map((book) => (
+                  <View
+                    key={book.id}
+                    className="px-6"
+                    style={{ width: windowWidth }}
                   >
-                    {currentlyReading.map((book) => (
-                      <View
-                        key={book.id}
-                        className="px-6"
-                        style={{ width: windowWidth }}
-                      >
-                        {/* The pager's page math owns the full-window width; the
+                    {/* The pager's page math owns the full-window width; the
                             card inside is what gets capped to the content column. */}
-                        <View style={contentColumn}>
-                          <CurrentlyReadingCard
-                            book={book}
-                            onPress={() => openReader(book.id)}
-                            onLongPress={() => setActionBook(book)}
-                          />
-                        </View>
-                      </View>
-                    ))}
-                  </ScrollView>
-                </RowFade>
-
-                {currentlyReading.length > 1 && (
-                  <View className="flex-row justify-center gap-2 pt-2">
-                    {currentlyReading.map((_, i) => (
-                      <View
-                        key={i}
-                        className={cn(
-                          "h-1.5 w-1.5 rounded-full bg-surface-tertiary",
-                          i === readingIndex && "w-4 bg-primary",
-                        )}
+                    <View style={contentColumn}>
+                      <CurrentlyReadingCard
+                        book={book}
+                        onPress={() => openReader(book.id)}
+                        onLongPress={() => setActionBook(book)}
                       />
-                    ))}
+                    </View>
                   </View>
-                )}
+                ))}
+              </ScrollView>
+            </RowFade>
+
+            {currentlyReading.length > 1 && (
+              <View className="flex-row justify-center gap-2 pt-2">
+                {currentlyReading.map((_, i) => (
+                  <View
+                    key={i}
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full bg-surface-tertiary",
+                      i === readingIndex && "w-4 bg-primary",
+                    )}
+                  />
+                ))}
               </View>
             )}
+          </View>
+        )}
 
-            {/* Queue, Favorites, Have Read, Collections, All Books — no paging
+        {/* Queue, Favorites, Have Read, Collections, All Books — no paging
                 math here, so they all sit inside the content column. */}
-            <View style={contentColumn}>
-              {/* Queue */}
-              {queuedBooks.length > 0 && (
-                <View className="gap-4 mb-8">
-                  <SectionHeader
-                    title="Queue"
-                    rightAction={{
-                      text: "VIEW ALL",
-                      onPress: () => router.push("/section/queue" as any),
-                    }}
-                  />
-                  <BookQueue
-                    books={queuedBooks}
-                    onBookPress={openReader}
-                    onBookLongPress={setActionBook}
-                  />
-                </View>
-              )}
-
-              {/* Favorites */}
-              {favoriteBooks.length > 0 && (
-                <View className="gap-4 mb-8">
-                  <SectionHeader
-                    title="Favorites"
-                    rightAction={{
-                      text: "VIEW ALL",
-                      onPress: () => router.push("/section/favorites" as any),
-                    }}
-                  />
-                  <Favorites
-                    books={favoriteBooks}
-                    onBookPress={openReader}
-                    onBookLongPress={setActionBook}
-                  />
-                </View>
-              )}
-
-              {/* Have Read */}
-              {archivedBooks.length > 0 && (
-                <View className="gap-4 mb-8">
-                  <SectionHeader
-                    title="Have Read"
-                    rightAction={{
-                      text: "VIEW ALL",
-                      onPress: () => router.push("/section/archived" as any),
-                    }}
-                  />
-                  <ArchivedCards
-                    books={archivedBooks}
-                    onBookPress={openReader}
-                    onBookLongPress={setActionBook}
-                  />
-                </View>
-              )}
-
-              {/* Collections */}
-              <View className="gap-4 mb-8">
-                <SectionHeader
-                  title="Collections"
-                  rightAction={{
-                    text: "VIEW ALL",
-                    onPress: () => router.push("/section/collections" as any),
-                  }}
-                />
-                <CollectionGrid
-                  collections={collections}
-                  onPress={(colId) => router.push(`/collection/${colId}` as any)}
-                  onCreateCollection={() => setShowNewCollection(true)}
-                />
-              </View>
-
-              {/* All Books */}
-              {allBooks.length > 0 && (
-                <View className="gap-4 mb-8">
-                  <SectionHeader
-                    title="All Books"
-                    rightAction={{
-                      text: "VIEW ALL",
-                      onPress: () => router.push("/section/all" as any),
-                    }}
-                  />
-                  <BookQueue
-                    books={allBooksPreview}
-                    onBookPress={openReader}
-                    onBookLongPress={setActionBook}
-                  />
-                </View>
-              )}
+        <View style={contentColumn}>
+          {/* Queue */}
+          {queuedBooks.length > 0 && (
+            <View className="gap-4 mb-8">
+              <SectionHeader
+                title="Queue"
+                rightAction={{
+                  text: "VIEW ALL",
+                  onPress: () => router.push("/section/queue" as any),
+                }}
+              />
+              <BookQueue
+                books={queuedBooks}
+                onBookPress={openReader}
+                onBookLongPress={setActionBook}
+              />
             </View>
-        </PullToSync>
+          )}
 
-        {/* Adding books moved off the header when both of its sides became
+          {/* Favorites */}
+          {favoriteBooks.length > 0 && (
+            <View className="gap-4 mb-8">
+              <SectionHeader
+                title="Favorites"
+                rightAction={{
+                  text: "VIEW ALL",
+                  onPress: () => router.push("/section/favorites" as any),
+                }}
+              />
+              <Favorites
+                books={favoriteBooks}
+                onBookPress={openReader}
+                onBookLongPress={setActionBook}
+              />
+            </View>
+          )}
+
+          {/* Have Read */}
+          {archivedBooks.length > 0 && (
+            <View className="gap-4 mb-8">
+              <SectionHeader
+                title="Have Read"
+                rightAction={{
+                  text: "VIEW ALL",
+                  onPress: () => router.push("/section/archived" as any),
+                }}
+              />
+              <ArchivedCards
+                books={archivedBooks}
+                onBookPress={openReader}
+                onBookLongPress={setActionBook}
+              />
+            </View>
+          )}
+
+          {/* Collections */}
+          <View className="gap-4 mb-8">
+            <SectionHeader
+              title="Collections"
+              rightAction={{
+                text: "VIEW ALL",
+                onPress: () => router.push("/section/collections" as any),
+              }}
+            />
+            <CollectionGrid
+              collections={collections}
+              onPress={(colId) => router.push(`/collection/${colId}` as any)}
+              onCreateCollection={() => setShowNewCollection(true)}
+            />
+          </View>
+
+          {/* All Books */}
+          {allBooks.length > 0 && (
+            <View className="gap-4 mb-8">
+              <SectionHeader
+                title="All Books"
+                rightAction={{
+                  text: "VIEW ALL",
+                  onPress: () => router.push("/section/all" as any),
+                }}
+              />
+              <BookQueue
+                books={allBooksPreview}
+                onBookPress={openReader}
+                onBookLongPress={setActionBook}
+              />
+            </View>
+          )}
+        </View>
+      </PullToSync>
+
+      {/* Adding books moved off the header when both of its sides became
             navigation. It is this screen's one creative action, so it gets the
             same floating button the Timeline gives its own. iOS only, matching
             the header button it replaces — on Android books arrive through the
             picked folder, not a document picker. */}
-        {isIOS && (
-          <Fab
-            icon={Plus}
-            accessibilityLabel="Add books"
-            bottomOffset={insets.bottom}
-            onPress={handleGetStarted}
-          />
-        )}
+      {isIOS && (
+        <Fab
+          icon={Plus}
+          accessibilityLabel="Add books"
+          bottomOffset={insets.bottom}
+          onPress={handleGetStarted}
+        />
+      )}
 
-        <BookActionSheet
-          visible={actionBook !== null}
-          book={actionBook}
-          onClose={() => setActionBook(null)}
-          onOpen={openReader}
-          onToggleFavorite={toggleFavorite}
-          onSetStatus={updateBookStatus}
-          onAddToCollection={async (bookId) => {
-            const ids = await useCollectionsStore
+      <BookActionSheet
+        visible={actionBook !== null}
+        book={actionBook}
+        onClose={() => setActionBook(null)}
+        onOpen={openReader}
+        onToggleFavorite={toggleFavorite}
+        onSetStatus={updateBookStatus}
+        onAddToCollection={async (bookId) => {
+          const ids = await useCollectionsStore
+            .getState()
+            .getBookCollectionIds(bookId);
+          setBookCollectionIds(ids);
+          setCollectionPickerBook(bookId);
+        }}
+        onDelete={(bookId) => {
+          const book = allBooks.find((b) => b.id === bookId) ?? null;
+          setDeleteConfirmBook(book);
+        }}
+        onEditTitle={(bookId) => {
+          const book = allBooks.find((b) => b.id === bookId) ?? null;
+          setEditTitleBook(book);
+        }}
+      />
+
+      <NewCollectionPrompt
+        visible={showNewCollection}
+        onClose={() => setShowNewCollection(false)}
+        onCreate={async (name) => {
+          await createCollection(name);
+          setShowNewCollection(false);
+        }}
+      />
+
+      <CollectionPickerSheet
+        visible={collectionPickerBook !== null}
+        collections={collections}
+        bookCollectionIds={bookCollectionIds}
+        onToggle={async (collectionId, isAdded) => {
+          if (isAdded) {
+            await useCollectionsStore
               .getState()
-              .getBookCollectionIds(bookId);
-            setBookCollectionIds(ids);
-            setCollectionPickerBook(bookId);
-          }}
-          onDelete={(bookId) => {
-            const book = allBooks.find((b) => b.id === bookId) ?? null;
-            setDeleteConfirmBook(book);
-          }}
-          onEditTitle={(bookId) => {
-            const book = allBooks.find((b) => b.id === bookId) ?? null;
-            setEditTitleBook(book);
-          }}
-        />
-
-        <NewCollectionPrompt
-          visible={showNewCollection}
-          onClose={() => setShowNewCollection(false)}
-          onCreate={async (name) => {
-            await createCollection(name);
-            setShowNewCollection(false);
-          }}
-        />
-
-        <CollectionPickerSheet
-          visible={collectionPickerBook !== null}
-          collections={collections}
-          bookCollectionIds={bookCollectionIds}
-          onToggle={async (collectionId, isAdded) => {
-            if (isAdded) {
-              await useCollectionsStore
-                .getState()
-                .removeBookFromCollection(collectionPickerBook!, collectionId);
-            } else {
-              await useCollectionsStore
-                .getState()
-                .addBookToCollection(collectionPickerBook!, collectionId);
-            }
-            const ids = await useCollectionsStore
+              .removeBookFromCollection(collectionPickerBook!, collectionId);
+          } else {
+            await useCollectionsStore
               .getState()
-              .getBookCollectionIds(collectionPickerBook!);
-            setBookCollectionIds(ids);
-          }}
-          onClose={() => setCollectionPickerBook(null)}
-        />
+              .addBookToCollection(collectionPickerBook!, collectionId);
+          }
+          const ids = await useCollectionsStore
+            .getState()
+            .getBookCollectionIds(collectionPickerBook!);
+          setBookCollectionIds(ids);
+        }}
+        onClose={() => setCollectionPickerBook(null)}
+      />
 
-        <DeleteBookSheet
-          visible={deleteConfirmBook !== null}
-          book={deleteConfirmBook}
-          onClose={() => setDeleteConfirmBook(null)}
-          onConfirm={async (bookId) => {
-            await deleteBook(bookId);
-            setDeleteConfirmBook(null);
-          }}
-        />
+      <DeleteBookSheet
+        visible={deleteConfirmBook !== null}
+        book={deleteConfirmBook}
+        onClose={() => setDeleteConfirmBook(null)}
+        onConfirm={async (bookId) => {
+          await deleteBook(bookId);
+          setDeleteConfirmBook(null);
+        }}
+      />
 
-        <EditTitleSheet
-          visible={editTitleBook !== null}
-          book={editTitleBook}
-          onClose={() => setEditTitleBook(null)}
-          onSave={async (bookId, title) => {
-            await updateBookTitle(bookId, title);
-            setEditTitleBook(null);
-          }}
-        />
-      </ThemedView>
+      <EditTitleSheet
+        visible={editTitleBook !== null}
+        book={editTitleBook}
+        onClose={() => setEditTitleBook(null)}
+        onSave={async (bookId, title) => {
+          await updateBookTitle(bookId, title);
+          setEditTitleBook(null);
+        }}
+      />
+    </ThemedView>
   );
 }

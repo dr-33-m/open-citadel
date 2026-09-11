@@ -1,17 +1,17 @@
-import { create } from 'zustand';
 import { onboardingSetupNotes } from 'samwell-shared';
+import { create } from 'zustand';
 
 import { db } from '@/db/client';
 import { chatSessions } from '@/db/schema';
 import {
-  appendMessage,
-  listSessions,
-  readMessages,
-  touchSession,
-  type ChatMessage,
+    appendMessage,
+    listSessions,
+    readMessages,
+    touchSession,
+    type ChatMessage,
 } from '@/services/chat-sessions';
-import { cloudHeaders } from '@/services/cloud-identity';
 import { sendCloudChatTurn } from '@/services/cloud-chat';
+import { cloudHeaders } from '@/services/cloud-identity';
 import { hasLibrary } from '@/services/library-setup';
 import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
@@ -121,6 +121,9 @@ const IDLE = {
   lastStreamedMessageId: null,
 } as const;
 
+/** The grant check is only a routing hint; it must never hold up onboarding. */
+const GRANT_STATUS_TIMEOUT_MS = 5_000;
+
 /**
  * Has this account already had its free conversation?
  *
@@ -130,15 +133,20 @@ const IDLE = {
  * here would quietly bill somebody because of a network blip.
  */
 async function grantIsSpent(baseUrl: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GRANT_STATUS_TIMEOUT_MS);
   try {
     const response = await fetch(`${baseUrl}/onboarding/status`, {
       headers: await cloudHeaders(),
+      signal: controller.signal,
     });
     if (!response.ok) return false;
     const body = (await response.json()) as { open?: boolean };
     return body.open === false;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

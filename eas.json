@@ -28,6 +28,17 @@
         "buildType": "apk"
       }
     },
+    "ios-sandbox": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "production"
+      },
+      "ios": {
+        "simulator": false
+      }
+    },
     "play-internal": {
       "autoIncrement": true,
       "environment": "production",

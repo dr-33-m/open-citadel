@@ -11,50 +11,60 @@
  * It used to be all three things at once, which is why a change to Compass's
  * date pickers meant scrolling past the chat transcript to find them.
  */
-import { useFocusEffect, useRouter } from 'expo-router';
-import React from 'react';
-import { Keyboard, View, type TextInput, type ViewStyle } from 'react-native';
-import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useCSSVariable } from 'uniwind';
+import { useFocusEffect, useRouter } from "expo-router";
+import React from "react";
+import { Keyboard, View, type TextInput, type ViewStyle } from "react-native";
+import Animated, {
+    useAnimatedKeyboard,
+    useAnimatedStyle,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCSSVariable } from "uniwind";
 
-import { Archive, BookOpen, CalendarDays, History, ListTodo, TrendingUp } from '@/components/icons';
-import { DeferredBody } from '@/components/navigation/deferred-body';
-import { Reveal } from '@/components/navigation/reveal';
-import { SamwellControlCenter } from '@/components/samwell/samwell-control-center';
 import {
-  SamwellToolbox,
-  TOOLBOX_SETTLE,
-  type ToolboxItem,
-} from '@/components/samwell/samwell-toolbox';
-import { ThemedText } from '@/components/themed-text';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { MaxContentWidth, spacing } from '@/constants/theme';
-import { BookPickerSheet } from '@/features/chat/components/book-picker-sheet';
-import { ChatHeader } from '@/features/chat/components/chat-header';
-import { ChatHistorySheet } from '@/features/chat/components/chat-history-sheet';
-import { ChatTranscript } from '@/features/chat/components/chat-transcript';
-import { useChatSessions } from '@/features/chat/hooks/use-chat-sessions';
-import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
-import { useSamwellStatus } from '@/features/chat/hooks/use-samwell-status';
-import { turnIndicator } from '@/features/chat/utils/agent-activity';
-import { CompassBody } from '@/features/compass/components/compass-body';
-import { InsightsSheet } from '@/features/compass/components/insights-sheet';
-import { LogDeckSheet } from '@/features/compass/components/log-deck-sheet';
-import { OverviewSheet } from '@/features/compass/components/overview-sheet';
-import { PastGoalsSheet } from '@/features/compass/components/past-goals-sheet';
-import { PlannerSheet } from '@/features/compass/components/planner-sheet';
-import { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
-import { useGoalEnding } from '@/features/compass/hooks/use-goal-ending';
-import { useCompassChatStore } from '@/stores/compass-chat';
-import { useCompassPastGoals, useCompassStore } from '@/stores/compass';
-import { useAfterFirstPaint } from '@/navigation/use-after-first-paint';
-import { isVisibleChatMessage } from '@/services/chat-transcript';
-import { useAllBooks, useBooksStore } from '@/stores/books';
-import { useChatStore, type ChatSession } from '@/stores/chat';
-import { HUB, useHubStore } from '@/stores/hub';
-import { useSamwellSessionStore } from '@/stores/samwell-session';
-import { asColor } from '@/utils/colors';
+    Archive,
+    BookOpen,
+    CalendarDays,
+    History,
+    ListTodo,
+    TrendingUp,
+} from "@/components/icons";
+import { DeferredBody } from "@/components/navigation/deferred-body";
+import { Reveal } from "@/components/navigation/reveal";
+import { SamwellControlCenter } from "@/components/samwell/samwell-control-center";
+import {
+    SamwellToolbox,
+    TOOLBOX_SETTLE,
+    type ToolboxItem,
+} from "@/components/samwell/samwell-toolbox";
+import { ThemedText } from "@/components/themed-text";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { MaxContentWidth, spacing } from "@/constants/theme";
+import { BookPickerSheet } from "@/features/chat/components/book-picker-sheet";
+import { ChatHeader } from "@/features/chat/components/chat-header";
+import { ChatHistorySheet } from "@/features/chat/components/chat-history-sheet";
+import { ChatTranscript } from "@/features/chat/components/chat-transcript";
+import { useChatSessions } from "@/features/chat/hooks/use-chat-sessions";
+import { useSamwellReadiness } from "@/features/chat/hooks/use-samwell-readiness";
+import { useSamwellStatus } from "@/features/chat/hooks/use-samwell-status";
+import { turnIndicator } from "@/features/chat/utils/agent-activity";
+import { CompassBody } from "@/features/compass/components/compass-body";
+import { InsightsSheet } from "@/features/compass/components/insights-sheet";
+import { LogDeckSheet } from "@/features/compass/components/log-deck-sheet";
+import { OverviewSheet } from "@/features/compass/components/overview-sheet";
+import { PastGoalsSheet } from "@/features/compass/components/past-goals-sheet";
+import { PlannerSheet } from "@/features/compass/components/planner-sheet";
+import { useCompassConversation } from "@/features/compass/hooks/use-compass-conversation";
+import { useGoalEnding } from "@/features/compass/hooks/use-goal-ending";
+import { useAfterFirstPaint } from "@/navigation/use-after-first-paint";
+import { isVisibleChatMessage } from "@/services/chat-transcript";
+import { useAllBooks, useBooksStore } from "@/stores/books";
+import { useChatStore, type ChatSession } from "@/stores/chat";
+import { useCompassPastGoals, useCompassStore } from "@/stores/compass";
+import { useCompassChatStore } from "@/stores/compass-chat";
+import { HUB, useHubStore } from "@/stores/hub";
+import { useSamwellSessionStore } from "@/stores/samwell-session";
+import { asColor } from "@/utils/colors";
 
 // The content column: centred and capped on wide screens, pixel-identical on
 // phones (the cap never bites below 800). Applied to the transcripts and the
@@ -62,8 +72,8 @@ import { asColor } from '@/utils/colors';
 // bubbles' own `max-w-[82%]` then resolves against it.
 const contentColumn: ViewStyle = {
   maxWidth: MaxContentWidth,
-  width: '100%',
-  alignSelf: 'center',
+  width: "100%",
+  alignSelf: "center",
 };
 
 /**
@@ -80,8 +90,14 @@ const contentColumn: ViewStyle = {
  * call outlives the switch, and a slow model never holds up a swipe.
  */
 function refineLeavingTitles() {
-  void useChatStore.getState().refineSessionTitleOnExit().catch(() => {});
-  void useCompassChatStore.getState().refineTitleOnExit().catch(() => {});
+  void useChatStore
+    .getState()
+    .refineSessionTitleOnExit()
+    .catch(() => {});
+  void useCompassChatStore
+    .getState()
+    .refineTitleOnExit()
+    .catch(() => {});
 }
 
 export function SamwellPage() {
@@ -90,7 +106,7 @@ export function SamwellPage() {
   const goTo = useHubStore((s) => s.goTo);
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [destructive] = useCSSVariable(['--color-destructive']);
+  const [destructive] = useCSSVariable(["--color-destructive"]);
 
   /** Paid once by the floating bottom stack, and covered by the keyboard when
    * one is up — so the reserve below only ever adds what sits above it. */
@@ -98,7 +114,10 @@ export function SamwellPage() {
   /** Breathing room between the input card and the top of the keyboard. */
   const KEYBOARD_GAP = spacing[3];
 
-  const openSettings = React.useCallback(() => router.push('/settings'), [router]);
+  const openSettings = React.useCallback(
+    () => router.push("/settings"),
+    [router],
+  );
   /**
    * Settings, landing on the Samwell section.
    *
@@ -107,7 +126,8 @@ export function SamwellPage() {
    * press event in as the section.
    */
   const openSamwellSettings = React.useCallback(
-    () => router.push({ pathname: '/settings', params: { section: 'samwell' } }),
+    () =>
+      router.push({ pathname: "/settings", params: { section: "samwell" } }),
     [router],
   );
   /**
@@ -119,7 +139,8 @@ export function SamwellPage() {
    * to sign in somewhere further up the page it had just scrolled them past.
    */
   const openAccountSettings = React.useCallback(
-    () => router.push({ pathname: '/settings', params: { section: 'account' } }),
+    () =>
+      router.push({ pathname: "/settings", params: { section: "account" } }),
     [router],
   );
 
@@ -161,7 +182,8 @@ export function SamwellPage() {
   // Read from the session list rather than held separately, so a re-title
   // lands on the bar the moment the list refreshes.
   const compassTitle =
-    compass.sessions.find((session) => session.id === compass.activeSessionId)?.title ?? null;
+    compass.sessions.find((session) => session.id === compass.activeSessionId)
+      ?.title ?? null;
 
   const loadCompass = useCompassStore((s) => s.loadCompass);
   const compassActiveGoals = useCompassStore((s) => s.activeGoals);
@@ -170,7 +192,8 @@ export function SamwellPage() {
   const compassPastGoals = useCompassPastGoals();
   /* Ending a goal is two things — the archive write, and Samwell's reading of
      it — and this owns the seam between them. See `useGoalEnding`. */
-  const { finishGoal, abandonGoal, writingTakeaway, retryTakeaway } = useGoalEnding();
+  const { finishGoal, abandonGoal, writingTakeaway, retryTakeaway } =
+    useGoalEnding();
   /*
    * The goal the single-goal Insights sheet shows: the primary, or the only
    * one there is. Nothing "points at" a goal any more — the deck, the planner
@@ -178,7 +201,9 @@ export function SamwellPage() {
    * goal that sheet is about, and it only opens at all when there is one.
    */
   const activeGoal =
-    compassActiveGoals.find((g) => g.id === compassPrimaryGoalId) ?? compassActiveGoals[0] ?? null;
+    compassActiveGoals.find((g) => g.id === compassPrimaryGoalId) ??
+    compassActiveGoals[0] ??
+    null;
   const compassTrackables = useCompassStore((s) => s.trackables);
   const compassLogs = useCompassStore((s) => s.logsByTrackable);
   const compassDue = useCompassStore((s) => s.due);
@@ -212,19 +237,26 @@ export function SamwellPage() {
   // rather than from the `mode` above, so a double tap on the mode already
   // showing is not treated as leaving anything.
   const setMode = React.useCallback(
-    (next: 'chat' | 'compass') => {
-      if (next !== useSamwellSessionStore.getState().mode) refineLeavingTitles();
+    (next: "chat" | "compass") => {
+      if (next !== useSamwellSessionStore.getState().mode)
+        refineLeavingTitles();
       setSession({ mode: next });
     },
     [setSession],
   );
-  const setText = React.useCallback((next: string) => setSession({ draft: next }), [setSession]);
+  const setText = React.useCallback(
+    (next: string) => setSession({ draft: next }),
+    [setSession],
+  );
 
-  const [confirmDelete, setConfirmDelete] = React.useState<ChatSession | null>(null);
+  const [confirmDelete, setConfirmDelete] = React.useState<ChatSession | null>(
+    null,
+  );
   const [showBookPicker, setShowBookPicker] = React.useState(false);
   const [showHistory, setShowHistory] = React.useState(false);
   const [showCompassHistory, setShowCompassHistory] = React.useState(false);
-  const [confirmDeleteCompass, setConfirmDeleteCompass] = React.useState<ChatSession | null>(null);
+  const [confirmDeleteCompass, setConfirmDeleteCompass] =
+    React.useState<ChatSession | null>(null);
   const [showDeck, setShowDeck] = React.useState(false);
   const [showPlanner, setShowPlanner] = React.useState(false);
   const [showInsights, setShowInsights] = React.useState(false);
@@ -287,7 +319,8 @@ export function SamwellPage() {
    */
   const keyboardLiftStyle = useAnimatedStyle(() => {
     const height = keyboard.height.get();
-    const lift = height > 0 ? Math.max(0, height + KEYBOARD_GAP - bottomInset) : 0;
+    const lift =
+      height > 0 ? Math.max(0, height + KEYBOARD_GAP - bottomInset) : 0;
     return { transform: [{ translateY: -lift }] };
   });
 
@@ -318,7 +351,8 @@ export function SamwellPage() {
     [messages],
   );
 
-  const displayedBookTitle = activeSession?.bookTitle ?? pendingBook?.title ?? null;
+  const displayedBookTitle =
+    activeSession?.bookTitle ?? pendingBook?.title ?? null;
   const displayedBookCover = activeSession?.bookId
     ? (allBooks.find((b) => b.id === activeSession.bookId)?.coverUrl ?? null)
     : pendingBook
@@ -339,8 +373,9 @@ export function SamwellPage() {
   // fresh bookless chat runs on it). Once the last message is Samwell's own
   // there is nothing left to wait for, and showing "thinking" past that point
   // reads as stuck rather than busy.
-  const lastVisibleRole = visibleChatMessages[visibleChatMessages.length - 1]?.role;
-  const stillWaitingForReply = isGenerating && lastVisibleRole !== 'assistant';
+  const lastVisibleRole =
+    visibleChatMessages[visibleChatMessages.length - 1]?.role;
+  const stillWaitingForReply = isGenerating && lastVisibleRole !== "assistant";
   const isStreamingText = streamingContent.length > 0;
 
   // Keyed on primitives: the indicator object rides into the transcript and
@@ -374,16 +409,22 @@ export function SamwellPage() {
   // a thought has no passage to open, so it goes to the timeline that holds it.
   const handleNavigateToHighlight = React.useCallback(
     (bookId: string, locator: string) => {
-      router.push({ pathname: '/reader/[id]', params: { id: bookId, locator } });
+      router.push({
+        pathname: "/reader/[id]",
+        params: { id: bookId, locator },
+      });
     },
     [router],
   );
-  const handleNavigateToTimeline = React.useCallback(() => goTo(HUB.timeline), [goTo]);
+  const handleNavigateToTimeline = React.useCallback(
+    () => goTo(HUB.timeline),
+    [goTo],
+  );
   // A recommended book opens where the reader would go next: the reader
   // itself, which resumes at their saved position for a book already started.
   const handleNavigateToBook = React.useCallback(
     (bookId: string) => {
-      router.push({ pathname: '/reader/[id]', params: { id: bookId } });
+      router.push({ pathname: "/reader/[id]", params: { id: bookId } });
     },
     [router],
   );
@@ -397,8 +438,8 @@ export function SamwellPage() {
   async function handleSend() {
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
-    setText('');
-    if (mode === 'chat') await chat.send(trimmed);
+    setText("");
+    if (mode === "chat") await chat.send(trimmed);
     else await compass.send(trimmed);
   }
 
@@ -413,7 +454,7 @@ export function SamwellPage() {
     open(true);
   }, []);
 
-  const busy = mode === 'chat' ? chatInputBusy : compass.isBusy;
+  const busy = mode === "chat" ? chatInputBusy : compass.isBusy;
   const locked = isGenerating || chat.switching !== null || compass.isBusy;
 
   /*
@@ -432,11 +473,11 @@ export function SamwellPage() {
    * "the deps change sometimes" is an argument for listing them, not for
    * rebuilding unconditionally on the app's hottest render path.
    *
-   * A tool that opens a sheet shuts the drawer on the way, so coming back from
-   * the sheet lands on the plain card rather than on the state you left.
+   * A tool that opens a sheet leaves the drawer in place underneath it. The
+   * sheet reads as the next layer, and dismissing it returns to the toolbox
+   * exactly as it was rather than replaying a close-then-open transition.
    */
   const [toolboxOpen, setToolboxOpen] = React.useState(false);
-  const closeToolbox = React.useCallback(() => setToolboxOpen(false), []);
 
   /*
    * The handle ignores a second press while the drawer is still settling.
@@ -457,13 +498,10 @@ export function SamwellPage() {
     setToolboxOpen((v) => !v);
   }, []);
 
-  /** Open a sheet from a tool: put the drawer away, then raise the sheet. */
+  /** Open a sheet above the toolbox, preserving the drawer underneath. */
   const fromToolbox = React.useCallback(
-    (open: (v: boolean) => void) => () => {
-      closeToolbox();
-      openSheet(open);
-    },
-    [closeToolbox, openSheet],
+    (open: (v: boolean) => void) => () => openSheet(open),
+    [openSheet],
   );
 
   const chatSessionCount = sessions.length;
@@ -473,134 +511,153 @@ export function SamwellPage() {
   const activeGoalCount = compassActiveGoals.length;
   const pastGoalCount = compassPastGoals.length;
 
-  const toolboxItems: ToolboxItem[] = React.useMemo(() =>
-    mode === 'chat'
-      ? [
-          // The book this chat is pinned to. Its cover stands in for the icon
-          // once one is picked, which is the whole answer to "which book is
-          // Samwell reading with me" without a line of text for it.
-          ...(showBookButton
-            ? [
-                {
-                  id: 'book',
-                  icon: BookOpen,
-                  label: 'Book',
-                  lead: true,
-                  detail: displayedBookTitle ?? 'None yet',
-                  image: displayedBookCover,
-                  active: displayedBookTitle != null,
-                  onPress:
-                    activeSession || isGenerating || chat.switching
-                      ? undefined
-                      : fromToolbox(setShowBookPicker),
-                  // Long-press to drop it, only before a session exists: once
-                  // a chat has started, its book is fixed context.
-                  onLongPress:
-                    activeSession || !pendingBook || isGenerating || chat.switching
-                      ? undefined
-                      : () => setSession({ pendingBook: null }),
-                } satisfies ToolboxItem,
-              ]
-            : []),
-          {
-            id: 'history',
-            icon: History,
-            label: 'History',
-            detail: chatSessionCount > 0 ? `${chatSessionCount} saved` : 'Nothing yet',
-            // Picking a conversation mid-turn is what used to race the engine.
-            onPress:
-              isGenerating || chat.switching ? undefined : fromToolbox(setShowHistory),
-          },
-        ]
-      : cloudReady
+  const toolboxItems: ToolboxItem[] = React.useMemo(
+    () =>
+      mode === "chat"
         ? [
-            {
-              id: 'deck',
-              // What Compass is FOR, so it leads the drawer at full width.
-              // The count belongs here now rather than as a badge on a bare
-              // icon: this row has somewhere to say it in words, and "3 to
-              // log" answers the question a badge only hints at.
-              icon: ListTodo,
-              label: 'Log today',
-              lead: true,
-              detail: dueCount > 0 ? `${dueCount} to log` : 'All done',
-              active: activeGoal != null && dueCount > 0,
-              onPress:
-                activeGoal != null && dueCount > 0 ? fromToolbox(setShowDeck) : undefined,
-            },
-            {
-              id: 'planner',
-              icon: CalendarDays,
-              label: 'Planner',
-              detail: `${trackableCount} ${trackableCount === 1 ? 'activity' : 'activities'}`,
-              onPress: activeGoal != null ? fromToolbox(setShowPlanner) : undefined,
-            },
-            {
-              id: 'insights',
-              icon: TrendingUp,
-              label: 'Insights',
-              detail: `${activeGoalCount} ${activeGoalCount === 1 ? 'goal' : 'goals'}`,
-              // One goal is that goal's Insights; two or more make the same
-              // tool open the overview of the set.
-              onPress:
-                activeGoal != null
-                  ? fromToolbox(activeGoalCount >= 2 ? setShowOverview : setShowInsights)
-                  : undefined,
-            },
-            {
-              id: 'history',
-              icon: History,
-              label: 'History',
-              detail:
-                compassSessionCount > 0 ? `${compassSessionCount} saved` : 'Nothing yet',
-              onPress:
-                compass.submitting || compass.switching
-                  ? undefined
-                  : fromToolbox(setShowCompassHistory),
-            },
-            // Only once something has actually ended. An archive with nothing
-            // in it teaches nobody anything, and the first goal a reader
-            // closes out is exactly when this becomes worth finding.
-            ...(pastGoalCount > 0
+            // The book this chat is pinned to. Its cover stands in for the icon
+            // once one is picked, which is the whole answer to "which book is
+            // Samwell reading with me" without a line of text for it.
+            ...(showBookButton
               ? [
                   {
-                    id: 'past-goals',
-                    icon: Archive,
-                    label: 'Past goals',
-                    detail: `${pastGoalCount} closed`,
-                    onPress: fromToolbox(setShowPastGoals),
+                    id: "book",
+                    icon: BookOpen,
+                    label: "Book",
+                    lead: true,
+                    detail: displayedBookTitle ?? "None yet",
+                    image: displayedBookCover,
+                    active: displayedBookTitle != null,
+                    onPress:
+                      activeSession || isGenerating || chat.switching
+                        ? undefined
+                        : fromToolbox(setShowBookPicker),
+                    // Long-press to drop it, only before a session exists: once
+                    // a chat has started, its book is fixed context.
+                    onLongPress:
+                      activeSession ||
+                      !pendingBook ||
+                      isGenerating ||
+                      chat.switching
+                        ? undefined
+                        : () => setSession({ pendingBook: null }),
                   } satisfies ToolboxItem,
                 ]
               : []),
+            {
+              id: "history",
+              icon: History,
+              label: "History",
+              detail:
+                chatSessionCount > 0
+                  ? `${chatSessionCount} saved`
+                  : "Nothing yet",
+              // Picking a conversation mid-turn is what used to race the engine.
+              onPress:
+                isGenerating || chat.switching
+                  ? undefined
+                  : fromToolbox(setShowHistory),
+            },
           ]
-        : // Offline, Compass has no server to reach: every tool here would
-          // open a sheet onto an empty store. The empty state above already
-          // says what to do about it.
-          [],
-  [
-    mode,
-    fromToolbox,
-    // Chat
-    showBookButton,
-    displayedBookCover,
-    displayedBookTitle,
-    activeSession,
-    isGenerating,
-    chat.switching,
-    pendingBook,
-    setSession,
-    chatSessionCount,
-    // Compass
-    cloudReady,
-    activeGoal,
-    dueCount,
-    trackableCount,
-    activeGoalCount,
-    pastGoalCount,
-    compassSessionCount,
-    compass.submitting,
-    compass.switching,
-  ]);
+        : cloudReady
+          ? [
+              {
+                id: "deck",
+                // What Compass is FOR, so it leads the drawer at full width.
+                // The count belongs here now rather than as a badge on a bare
+                // icon: this row has somewhere to say it in words, and "3 to
+                // log" answers the question a badge only hints at.
+                icon: ListTodo,
+                label: "Log today",
+                lead: true,
+                detail: dueCount > 0 ? `${dueCount} to log` : "All done",
+                active: activeGoal != null && dueCount > 0,
+                onPress:
+                  activeGoal != null && dueCount > 0
+                    ? fromToolbox(setShowDeck)
+                    : undefined,
+              },
+              {
+                id: "planner",
+                icon: CalendarDays,
+                label: "Planner",
+                detail: `${trackableCount} ${trackableCount === 1 ? "activity" : "activities"}`,
+                onPress:
+                  activeGoal != null ? fromToolbox(setShowPlanner) : undefined,
+              },
+              {
+                id: "insights",
+                icon: TrendingUp,
+                label: "Insights",
+                detail: `${activeGoalCount} ${activeGoalCount === 1 ? "goal" : "goals"}`,
+                // One goal is that goal's Insights; two or more make the same
+                // tool open the overview of the set.
+                onPress:
+                  activeGoal != null
+                    ? fromToolbox(
+                        activeGoalCount >= 2
+                          ? setShowOverview
+                          : setShowInsights,
+                      )
+                    : undefined,
+              },
+              {
+                id: "history",
+                icon: History,
+                label: "History",
+                detail:
+                  compassSessionCount > 0
+                    ? `${compassSessionCount} saved`
+                    : "Nothing yet",
+                onPress:
+                  compass.submitting || compass.switching
+                    ? undefined
+                    : fromToolbox(setShowCompassHistory),
+              },
+              // Only once something has actually ended. An archive with nothing
+              // in it teaches nobody anything, and the first goal a reader
+              // closes out is exactly when this becomes worth finding.
+              ...(pastGoalCount > 0
+                ? [
+                    {
+                      id: "past-goals",
+                      icon: Archive,
+                      label: "Past goals",
+                      detail: `${pastGoalCount} closed`,
+                      onPress: fromToolbox(setShowPastGoals),
+                    } satisfies ToolboxItem,
+                  ]
+                : []),
+            ]
+          : // Offline, Compass has no server to reach: every tool here would
+            // open a sheet onto an empty store. The empty state above already
+            // says what to do about it.
+            [],
+    [
+      mode,
+      fromToolbox,
+      // Chat
+      showBookButton,
+      displayedBookCover,
+      displayedBookTitle,
+      activeSession,
+      isGenerating,
+      chat.switching,
+      pendingBook,
+      setSession,
+      chatSessionCount,
+      // Compass
+      cloudReady,
+      activeGoal,
+      dueCount,
+      trackableCount,
+      activeGoalCount,
+      pastGoalCount,
+      compassSessionCount,
+      compass.submitting,
+      compass.switching,
+    ],
+  );
 
   return (
     <View className="flex-1 bg-background">
@@ -609,7 +666,7 @@ export function SamwellPage() {
             and switching between chats is the history sheet's job, not the
             back button's. Compass keeps the centred bar: its name is fixed, so
             there is nothing to truncate and nothing to align to. */}
-        {mode === 'compass' ? (
+        {mode === "compass" ? (
           <ChatHeader
             // Named once Samwell has titled it, exactly as a reading chat is.
             // A Compass conversation is one you can leave and come back to, so
@@ -634,7 +691,7 @@ export function SamwellPage() {
               activeSession?.bookId && activeSession.contextLocator
                 ? () =>
                     router.push({
-                      pathname: '/reader/[id]',
+                      pathname: "/reader/[id]",
                       params: {
                         id: activeSession.bookId as string,
                         locator: activeSession.contextLocator as string,
@@ -659,7 +716,7 @@ export function SamwellPage() {
               screen's two beats: the content it came for, then the thing to
               type into. */}
           <Reveal index={0} className="flex-1">
-            {mode === 'chat' ? (
+            {mode === "chat" ? (
               <ChatTranscript
                 sessionId={activeSession?.id ?? null}
                 messages={visibleChatMessages}
@@ -682,7 +739,7 @@ export function SamwellPage() {
                 /* Same split as the status hook's: only the missing account
                    sends you to the account. */
                 onOpenSettings={
-                  readiness.cloudBlocker === 'needsAccount'
+                  readiness.cloudBlocker === "needsAccount"
                     ? openAccountSettings
                     : openSamwellSettings
                 }
@@ -696,11 +753,16 @@ export function SamwellPage() {
           {/* Floats over the transcript rather than sitting below it, so
               messages run the full height and scroll behind the card.
               Scrollable children pay for the overlap with `floatingClearance`. */}
-          <Animated.View className="absolute bottom-0 left-0 right-0" style={keyboardLiftStyle}>
+          <Animated.View
+            className="absolute bottom-0 left-0 right-0"
+            style={keyboardLiftStyle}
+          >
             <Reveal
               index={1}
               style={{ paddingBottom: bottomInset }}
-              onLayout={(e) => setFloatingBottomHeight(e.nativeEvent.layout.height)}
+              onLayout={(e) =>
+                setFloatingBottomHeight(e.nativeEvent.layout.height)
+              }
             >
               {/* Inside the floating stack rather than above it — left in
                   normal flow it would end up hidden behind the card. */}
@@ -711,7 +773,11 @@ export function SamwellPage() {
                   className="px-4 pb-2"
                   // Inline rather than `contentColumn`: ThemedText takes a
                   // TextStyle, and the shared const is typed as a ViewStyle.
-                  style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+                  style={{
+                    maxWidth: MaxContentWidth,
+                    width: "100%",
+                    alignSelf: "center",
+                  }}
                 >
                   {compassError}
                 </ThemedText>
@@ -733,19 +799,19 @@ export function SamwellPage() {
                   // Both modes get a Stop while a turn is in flight — Compass
                   // is a cloud turn like any other and can be called off the
                   // same way, rather than the send button just greying out.
-                  showStop={mode === 'chat' ? isGenerating : compass.submitting}
-                  onStop={mode === 'chat' ? stopGeneration : compass.stop}
+                  showStop={mode === "chat" ? isGenerating : compass.submitting}
+                  onStop={mode === "chat" ? stopGeneration : compass.stop}
                   placeholder={
-                    mode === 'chat'
-                      ? 'Message Samwell…'
-                      : compass.kind === 'plan'
-                        ? 'What do you want to work on?'
-                        : 'Talk to Samwell about it…'
+                    mode === "chat"
+                      ? "Message Samwell…"
+                      : compass.kind === "plan"
+                        ? "What do you want to work on?"
+                        : "Talk to Samwell about it…"
                   }
                   /* Offline, Compass has no server to reach, so the field
                       would take a message nothing can answer. Its tools go
                       away with it — see `toolboxItems`. */
-                  unavailable={mode === 'compass' && !cloudReady}
+                  unavailable={mode === "compass" && !cloudReady}
                 />
 
                 {/* Under the card, sharing its bottom edge. The stack is
@@ -826,9 +892,9 @@ export function SamwellPage() {
             message={confirmDeleteCompass?.title}
             onClose={() => setConfirmDeleteCompass(null)}
             actions={[
-              { label: 'CANCEL', onPress: () => setConfirmDeleteCompass(null) },
+              { label: "CANCEL", onPress: () => setConfirmDeleteCompass(null) },
               {
-                label: 'DELETE',
+                label: "DELETE",
                 destructive: true,
                 onPress: () => {
                   const target = confirmDeleteCompass;
@@ -845,9 +911,9 @@ export function SamwellPage() {
             message={confirmDelete?.title}
             onClose={() => setConfirmDelete(null)}
             actions={[
-              { label: 'CANCEL', onPress: () => setConfirmDelete(null) },
+              { label: "CANCEL", onPress: () => setConfirmDelete(null) },
               {
-                label: 'DELETE',
+                label: "DELETE",
                 destructive: true,
                 onPress: () => {
                   if (confirmDelete) void deleteSession(confirmDelete.id);
@@ -870,7 +936,11 @@ export function SamwellPage() {
             visible={showInsights}
             onClose={() => setShowInsights(false)}
             goal={activeGoal}
-            consistency={activeGoal ? (compassConsistencyByGoal.get(activeGoal.id) ?? null) : null}
+            consistency={
+              activeGoal
+                ? (compassConsistencyByGoal.get(activeGoal.id) ?? null)
+                : null
+            }
             onFinishGoal={finishGoal}
             onAbandonGoal={abandonGoal}
           />

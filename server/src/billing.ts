@@ -52,14 +52,14 @@ import { randomBytes } from 'node:crypto';
 import type { Client } from '@libsql/client';
 
 import {
-  CREDIT_PLANS,
-  NO_PLAN_BALANCE,
-  applyMonthlyGrant,
-  planForEntitlement,
-  planRank,
-  type CreditBalance,
-  type CreditSource,
-  type PlanId,
+    CREDIT_PLANS,
+    NO_PLAN_BALANCE,
+    applyMonthlyGrant,
+    planForEntitlement,
+    planRank,
+    type CreditBalance,
+    type CreditSource,
+    type PlanId,
 } from 'samwell-shared';
 
 import { db } from './db.js';
@@ -133,8 +133,18 @@ export interface ReconcileResult {
   adjusted: number;
 }
 
+export type EntitlementSyncResult =
+  | { status: 'active'; plan: PlanId }
+  | { status: 'inactive' }
+  | { status: 'unavailable' };
+
 export interface BillingService {
   readEntitlement(accountId: string): Promise<CreditBalance>;
+  /** Bypasses the cache and replaces the effective plan from RevenueCat's complete customer state. */
+  syncEntitlement(
+    accountId: string,
+    options?: { clearIfInactive?: boolean },
+  ): Promise<EntitlementSyncResult>;
   grantMonthly(args: {
     accountId: string;
     plan: PlanId;
@@ -332,10 +342,11 @@ export function createBillingService(options: BillingOptions): BillingService {
      * stale. When the key is not configured, or the call fails, the row is
      * trusted as it stands - a paying reader is never logged out on a
      * transient blip, and a genuinely lapsed subscription is corrected by its
-     * own EXPIRATION webhook. This function grants; it never destroys.
+    * own EXPIRATION webhook. A successful full-customer response with no
+    * active entitlement clears the plan; unavailable responses preserve it.
      */
     if (!row || isStale(row, atMs)) {
-      await reconcileFromRevenueCat(accountId, atMs);
+      await syncEntitlement(accountId);
       row = await readAccountRow(accountId);
     }
 
@@ -358,14 +369,18 @@ export function createBillingService(options: BillingOptions): BillingService {
   /**
    * Ask RevenueCat what the account actually holds, and write it back.
    *
-   * Returns whether anything was learned. The subscriber id is the bare
-   * Logto subject - the app calls `Purchases.logIn(sub)` - while the column
-   * stores the prefixed account id, so the prefix comes off here and nowhere
-   * else.
+  * Returns the authoritative state, or unavailable when no safe decision can
+  * be made. The subscriber id is the bare Logto subject - the app calls
+  * `Purchases.logIn(sub)` - while the column stores the prefixed account id,
+  * so the prefix comes off here and nowhere else.
    */
-  async function reconcileFromRevenueCat(accountId: string, atMs: number): Promise<boolean> {
+  async function syncEntitlement(
+    accountId: string,
+    syncOptions: { clearIfInactive?: boolean } = {},
+  ): Promise<EntitlementSyncResult> {
+    const atMs = now();
     const apiKey = options.revenueCatApiKey ?? process.env.REVENUECAT_SECRET_API_KEY;
-    if (!apiKey) return false;
+    if (!apiKey) return { status: 'unavailable' };
 
     const sub = accountId.startsWith(ACCOUNT_PREFIX) ? accountId.slice(ACCOUNT_PREFIX.length) : accountId;
     try {
@@ -377,7 +392,7 @@ export function createBillingService(options: BillingOptions): BillingService {
         console.error(
           `[Billing] RevenueCat reconcile for ${accountId} answered ${response.status}.`,
         );
-        return false;
+        return { status: 'unavailable' };
       }
       const payload = (await response.json()) as {
         subscriber?: {
@@ -402,19 +417,50 @@ export function createBillingService(options: BillingOptions): BillingService {
           best = { plan, expiresAtMs, key };
         }
       }
-      if (!best) return false;
+      const current = await readAccountRow(accountId);
+      if (!best) {
+        // Insider terms have their own local expiry and regrant lifecycle.
+        // An empty store customer must not revoke one of those grants.
+        if (syncOptions.clearIfInactive !== false && current?.source !== 'insider') {
+          await clearPlan(accountId);
+        }
+        return { status: 'inactive' };
+      }
+
+      /*
+       * Product changes can keep the same billing-period end. That is a plan
+       * transition, not another monthly grant. It also heals a row that an
+       * older EXPIRATION handler cleared while another entitlement remained.
+       */
+      if (current && current.periodEndMs === best.expiresAtMs) {
+        await client.execute({
+          sql: `UPDATE account_credits
+                SET plan = ?, source = ?, period_end_ms = ?, updated_at_ms = ?
+                WHERE account_id = ?`,
+          args: [
+            best.plan,
+            current.source === 'insider' ? 'insider' : 'subscription',
+            best.expiresAtMs,
+            atMs,
+            accountId,
+          ],
+        });
+        invalidate(accountId);
+        return { status: 'active', plan: best.plan };
+      }
 
       await grantMonthly({
         accountId,
         plan: best.plan,
         periodEndMs: best.expiresAtMs,
-        idempotencyKey: `rc:${best.key}:${best.expiresAtMs ?? 'lifetime'}`,
+        idempotencyKey: `period:${best.expiresAtMs ?? 'lifetime'}`,
+        source: current?.source === 'insider' ? 'insider' : 'subscription',
         description: 'Reconciled from RevenueCat',
       });
-      return true;
+      return { status: 'active', plan: best.plan };
     } catch (error) {
       console.error(`[Billing] RevenueCat reconcile failed for ${accountId}:`, error);
-      return false;
+      return { status: 'unavailable' };
     }
   }
 
@@ -1043,6 +1089,7 @@ export function createBillingService(options: BillingOptions): BillingService {
 
   return {
     readEntitlement,
+    syncEntitlement,
     grantMonthly,
     clearPlan,
     peekCredits,

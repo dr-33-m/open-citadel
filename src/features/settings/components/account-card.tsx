@@ -1,22 +1,25 @@
-import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
+import React from "react";
+import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { LogOut, UserStar } from '@/components/icons';
-import { AccountEntryButtons } from '@/components/account/account-entry-buttons';
-import { ActionButton } from '@/components/action-button';
-import { SamwellText } from '@/components/samwell-text';
-import { ThemedText } from '@/components/themed-text';
-import { Badge } from '@/components/ui/badge';
-import { showToast } from '@/components/toast/toast-provider';
-import { Card } from '@/components/ui/card';
-import { PrefixIcon } from '@/components/ui/prefix-icon';
-import { Touchable } from '@/components/ui/touchable';
-import { ACCOUNT_ENABLED } from '@/constants/logto';
-import { CloudAccountSheet } from '@/features/settings/components/cloud-account-sheet';
-import { ConfirmSignOutSheet } from '@/features/settings/components/confirm-sign-out-sheet';
-import { useAccountStore } from '@/stores/account';
-import { asColor } from '@/utils/colors';
+import { AccountEntryButtons } from "@/components/account/account-entry-buttons";
+import { ActionButton } from "@/components/action-button";
+import { LogOut, UserStar } from "@/components/icons";
+import { SamwellText } from "@/components/samwell-text";
+import { ThemedText } from "@/components/themed-text";
+import { showToast } from "@/components/toast/toast-provider";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { PrefixIcon } from "@/components/ui/prefix-icon";
+import { Spinner } from "@/components/ui/spinner";
+import { Touchable } from "@/components/ui/touchable";
+import { ACCOUNT_ENABLED } from "@/constants/logto";
+import { CloudAccountSheet } from "@/features/settings/components/cloud-account-sheet";
+import { ConfirmSignOutSheet } from "@/features/settings/components/confirm-sign-out-sheet";
+import { useAccountStore } from "@/stores/account";
+import { useSubscriptionStore } from "@/stores/subscription";
+import { asColor } from "@/utils/colors";
+import { CREDIT_PLANS } from "samwell-shared";
 
 /**
  * The account, and the only place in the app that offers one.
@@ -32,8 +35,8 @@ import { asColor } from '@/utils/colors';
  */
 export function AccountCard() {
   const [mutedForeground, destructive] = useCSSVariable([
-    '--color-muted-foreground',
-    '--color-destructive',
+    "--color-muted-foreground",
+    "--color-destructive",
   ]);
 
   // Field by field, as everywhere else. `busy` changes twice per sign-in and
@@ -44,6 +47,12 @@ export function AccountCard() {
   const busy = useAccountStore((s) => s.busy);
   const error = useAccountStore((s) => s.error);
   const signOut = useAccountStore((s) => s.signOut);
+  // Signing in and subscribing are two separate steps; this card must not
+  // say Samwell is "yours" for the one that has not happened yet.
+  const planStatus = useSubscriptionStore((s) => s.status);
+  const planActive = planStatus === "active";
+  const plan = useSubscriptionStore((s) => s.plan);
+  const planName = plan ? CREDIT_PLANS[plan].label : null;
 
   const [confirming, setConfirming] = React.useState(false);
   const [explaining, setExplaining] = React.useState(false);
@@ -53,12 +62,12 @@ export function AccountCard() {
   // itself, because there is nothing here the reader could act on.
   if (!ACCOUNT_ENABLED) return null;
 
-  const signedIn = status === 'signedIn';
+  const signedIn = status === "signedIn";
 
   const leave = async () => {
     await signOut();
-    if (useAccountStore.getState().status === 'signedOut') {
-      showToast({ message: 'Signed out.', key: 'account' });
+    if (useAccountStore.getState().status === "signedOut") {
+      showToast({ message: "Signed out.", key: "account" });
     }
   };
 
@@ -81,7 +90,9 @@ export function AccountCard() {
                 `shrink` lets the address give way rather than push it off. */}
             <View className="flex-row items-center justify-between gap-2">
               <ThemedText type="bodyMd" numberOfLines={1} className="shrink">
-                {signedIn ? (email ?? name ?? 'Cloud Account') : 'Cloud Account'}
+                {signedIn
+                  ? (email ?? name ?? "Cloud Account")
+                  : "Cloud Account"}
               </ThemedText>
               {/* Only while signed out. Once there is an account, saying it
                   was optional is answering a question nobody is still asking.
@@ -109,11 +120,26 @@ export function AccountCard() {
             </View>
             {/* `SamwellText`, so his name carries the gold here as it does in
                 every other sentence about him. */}
-            <SamwellText type="bodySm" color={asColor(mutedForeground)} numberOfLines={2}>
-              {signedIn
-                ? 'Grand Maester Samwell is all yours.'
-                : 'Sign in or create account to use Grand Maester Samwell.'}
-            </SamwellText>
+            {signedIn && planStatus === "unknown" ? (
+              <View className="flex-row items-center gap-2 py-1">
+                <Spinner size="sm" />
+                <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+                  Checking subscription
+                </ThemedText>
+              </View>
+            ) : (
+              <SamwellText
+                type="bodySm"
+                color={asColor(mutedForeground)}
+                numberOfLines={2}
+              >
+                {signedIn
+                  ? planActive && planName
+                    ? `${planName} is all yours.`
+                    : "Samwell cloud is now available, subscribe to activate."
+                  : "Sign in or create account to use Samwell Cloud."}
+              </SamwellText>
+            )}
           </View>
         </View>
 
@@ -146,13 +172,20 @@ export function AccountCard() {
         {/* Same treatment the cloud panel gives its own warning line, so the
             two settings surfaces report trouble the same way. */}
         {error && (
-          <ThemedText type="bodySm" color={asColor(destructive)} style={{ fontSize: 11 }}>
+          <ThemedText
+            type="bodySm"
+            color={asColor(destructive)}
+            style={{ fontSize: 11 }}
+          >
             {error}
           </ThemedText>
         )}
       </Card>
 
-      <CloudAccountSheet visible={explaining} onClose={() => setExplaining(false)} />
+      <CloudAccountSheet
+        visible={explaining}
+        onClose={() => setExplaining(false)}
+      />
 
       <ConfirmSignOutSheet
         visible={confirming}

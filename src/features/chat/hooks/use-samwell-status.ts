@@ -24,16 +24,16 @@
  */
 import React from 'react';
 
-import type { SamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
 import {
-  Cloud,
-  LogIn,
-  MessageSquarePlus,
-  Power,
-  RefreshCw,
-  Settings,
-  type LucideIcon,
+    Cloud,
+    LogIn,
+    MessageSquarePlus,
+    Power,
+    RefreshCw,
+    Settings,
+    type LucideIcon,
 } from '@/components/icons';
+import type { SamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
 import { useChatStore } from '@/stores/chat';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -165,7 +165,7 @@ export function useSamwellStatus({
 
   if (mode === 'cloud' && cloudBlocker === 'needsAccount') {
     return {
-      title: 'Grand Maester Samwell works with your Cloud Account.',
+      title: 'Samwell Cloud works with your Cloud Account.',
       message: 'Sign in and he can pick up where you left off.',
       actions: [{ label: 'SIGN IN', icon: LogIn, onPress: onOpenAccount }],
     };
@@ -175,7 +175,7 @@ export function useSamwellStatus({
 
   if (!downloaded) {
     return {
-      title: 'Samwell needs a model to run.',
+      title: 'Samwell needs a brain to run.',
       message: 'Tap button below to set up Samwell.',
       actions: [{ label: 'SET UP SAMWELL', icon: Settings, onPress: onOpenSettings }],
     };

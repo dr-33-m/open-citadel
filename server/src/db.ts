@@ -1,14 +1,17 @@
 import { createClient, type Client } from '@libsql/client';
 
 import {
-  CLOUD_MODEL_CATALOG,
-  DEFAULT_CLOUD_MODEL_ID,
-  FORECAST_WORKLOAD,
-  isPlanId,
-  type CloudModelCapability,
-  type PlanId,
-  type CloudModelOption,
-  type TokenWorkload,
+    CLOUD_MODEL_CATALOG,
+    DEFAULT_CLOUD_MODEL_ID,
+    FORECAST_WORKLOAD,
+    forecastCostUsd,
+    isPlanId,
+    modelsForPlan,
+    mostExpensiveModelId,
+    type CloudModelCapability,
+    type CloudModelOption,
+    type PlanId,
+    type TokenWorkload,
 } from 'samwell-shared';
 
 const dbUrl = process.env.DATABASE_URL ?? 'file:./samwell-cloud.sqlite';
@@ -430,29 +433,41 @@ export async function getDefaultModelId(): Promise<string> {
 /**
  * The model a reader on this plan starts on.
  *
- * The top of their OWN band, not the cheapest thing they can reach. Access is
- * cumulative, so a single global default meant everybody - including an
- * Archmaester paying for Opus - opened the app talking to the cheapest flash
- * model in the catalogue and had to go and find their own tier. That is the
- * one impression you cannot take back, and it teaches exactly the lesson you
- * least want taught: that the cheap model was fine all along.
+ * The most expensive brain the plan can reach. A new plan should demonstrate
+ * its full reach instead of leaving somebody on a cheaper brain that happened
+ * to remain valid across the change.
  *
- * Derived rather than configured, so adding a tier or reordering one needs no
- * second place kept in step: the first row of the plan's own band, in the sort
- * order the admin already controls. A `default_model_id:<plan>` setting
- * overrides it for the case where the first row is not the one to lead with,
- * and the global default is the last resort for a band with nothing in it.
+ * Expense uses the same forecast workload shown in the plan sheets and the
+ * live prices already stored for metering. A `default_model_id:<plan>` setting
+ * remains an explicit override, and catalogue order is the fallback when no
+ * reachable model has pricing yet.
  */
 export async function getDefaultModelIdForPlan(plan: PlanId): Promise<string> {
   const override = await readServerSetting(`default_model_id:${plan}`);
   if (override) return override;
 
-  const result = await db.execute({
-    sql: `SELECT id FROM cloud_models WHERE min_plan = ? ORDER BY sort_order ASC LIMIT 1`,
-    args: [plan],
+  const [models, workload] = await Promise.all([
+    listCloudModels(),
+    getForecastWorkload(),
+  ]);
+  const reachable = modelsForPlan(models, plan);
+  const dearest = mostExpensiveModelId(reachable, (model) => {
+    if (model.inputPricePerMillion == null || model.outputPricePerMillion == null) {
+      return null;
+    }
+    return forecastCostUsd(
+      {
+        inputPricePerMillion: model.inputPricePerMillion,
+        outputPricePerMillion: model.outputPricePerMillion,
+        cachedInputPricePerMillion: model.cachedInputPricePerMillion,
+      },
+      workload,
+    );
   });
-  const own = result.rows[0];
-  if (own) return String(own.id);
+  if (dearest) return dearest;
+
+  const firstInOwnBand = models.find((model) => model.minPlan === plan);
+  if (firstInOwnBand) return firstInOwnBand.id;
 
   return getDefaultModelId();
 }

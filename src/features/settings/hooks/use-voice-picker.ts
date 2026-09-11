@@ -10,6 +10,21 @@ export type VoiceItem = {
 
 const PREVIEW_PHRASE = 'Hello, this is a preview of this voice.';
 
+async function availableVoices(): Promise<VoiceItem[]> {
+  const voices = await Speech.getAvailableVoicesAsync();
+  return voices.map((voice) => ({
+    identifier: voice.identifier,
+    name: voice.name,
+    language: voice.language,
+    quality: voice.quality === Speech.VoiceQuality.Enhanced ? 'ENHANCED' : 'DEFAULT',
+  }));
+}
+
+/** iOS identifiers end in the display name, for example `.en-ZA.Tessa`. */
+function voiceNameFallback(identifier: string): string {
+  return identifier.split('.').at(-1)?.trim() || 'Selected voice';
+}
+
 /** One row of the picker: a language heading, or a voice under it. */
 export type VoiceListRow =
   | { kind: 'header'; key: string; title: string }
@@ -28,30 +43,52 @@ export function useVoicePicker(currentVoice: string | null) {
   const [voices, setVoices] = React.useState<VoiceItem[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [previewing, setPreviewing] = React.useState<string | null>(null);
+  const previewRequest = React.useRef(0);
+
+  // Resolve the persisted identifier as soon as Settings mounts. Previously
+  // the catalogue was loaded only by `open`, so the closed row displayed the
+  // full native identifier until somebody opened the picker once.
+  React.useEffect(() => {
+    let active = true;
+    void availableVoices()
+      .then((available) => {
+        if (active) setVoices(available);
+      })
+      .catch(() => {
+        // The identifier fallback below still gives the row a readable name.
+      });
+    return () => {
+      active = false;
+      previewRequest.current += 1;
+      void Speech.stop().catch(() => {});
+    };
+  }, []);
 
   const open = React.useCallback(async () => {
     setVisible(true);
     setLoading(true);
     try {
-      const available = await Speech.getAvailableVoicesAsync();
-      setVoices(
-        available.map((v) => ({
-          identifier: v.identifier,
-          name: v.name,
-          language: v.language,
-          quality: v.quality === Speech.VoiceQuality.Enhanced ? 'ENHANCED' : 'DEFAULT',
-        })),
-      );
+      setVoices(await availableVoices());
+    } catch {
+      // Keep the readable identifier fallback and let the picker still open.
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const close = React.useCallback(() => setVisible(false), []);
+  const close = React.useCallback(() => {
+    previewRequest.current += 1;
+    void Speech.stop().catch(() => {});
+    setPreviewing(null);
+    setVisible(false);
+  }, []);
 
   const select = React.useCallback(
     (identifier: string | null, language: string | null) => {
       // The store write stays with the caller; the modal just closes here.
+      previewRequest.current += 1;
+      void Speech.stop().catch(() => {});
+      setPreviewing(null);
       setVisible(false);
       return { identifier, language };
     },
@@ -59,20 +96,26 @@ export function useVoicePicker(currentVoice: string | null) {
   );
 
   const preview = React.useCallback(
-    (item: VoiceItem) => {
+    async (item: VoiceItem) => {
+      const request = ++previewRequest.current;
+      await Speech.stop().catch(() => {});
+      if (request !== previewRequest.current) return;
+
       if (previewing === item.identifier) {
-        Speech.stop();
         setPreviewing(null);
         return;
       }
-      Speech.stop();
+
       setPreviewing(item.identifier);
+      const finish = () => {
+        if (request === previewRequest.current) setPreviewing(null);
+      };
       Speech.speak(PREVIEW_PHRASE, {
         voice: item.identifier || undefined,
         language: item.language || undefined,
-        onDone: () => setPreviewing(null),
-        onStopped: () => setPreviewing(null),
-        onError: () => setPreviewing(null),
+        onDone: finish,
+        onStopped: finish,
+        onError: finish,
       });
     },
     [previewing],
@@ -116,7 +159,10 @@ export function useVoicePicker(currentVoice: string | null) {
 
   const currentName = React.useMemo(() => {
     if (!currentVoice) return 'System default';
-    return voices.find((v) => v.identifier === currentVoice)?.name ?? currentVoice;
+    return (
+      voices.find((voice) => voice.identifier === currentVoice)?.name ??
+      voiceNameFallback(currentVoice)
+    );
   }, [currentVoice, voices]);
 
   return { visible, loading, rows, previewing, currentName, open, close, select, preview };

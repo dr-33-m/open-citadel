@@ -1,26 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  CREDIT_PLANS,
-  FORECAST_WORKLOAD,
-  PLANS,
-  PLAN_ORDER,
-  applyMonthlyGrant,
-  bestPlan,
-  costToCredits,
-  creditValueUsd,
-  forecastCostUsd,
-  forecastCredits,
-  forecastMultiplier,
-  forecastMultipliersByBand,
-  formatMultiplier,
-  modelCostUsd,
-  resolveCachedTokens,
-  planForEntitlement,
-  planForPackage,
-  planIncludes,
-  type ModelPricing,
-  type PlanId,
+    CREDIT_PLANS,
+    FORECAST_WORKLOAD,
+    PLANS,
+    PLAN_ORDER,
+    applyMonthlyGrant,
+    bestPlan,
+    costToCredits,
+    creditValueUsd,
+    forecastCostUsd,
+    forecastCredits,
+    forecastMultiplier,
+    forecastMultipliersByBand,
+    formatMultiplier,
+    modelCostUsd,
+    mostExpensiveModelId,
+    planForEntitlement,
+    planForPackage,
+    planIncludes,
+    resolveCachedTokens,
+    type ModelPricing,
+    type PlanId,
 } from '../billing';
 import { CLOUD_MODEL_CATALOG, modelsForPlan } from '../models';
 
@@ -255,6 +256,33 @@ describe('the model catalogue', () => {
     expect(modelsForPlan(CLOUD_MODEL_CATALOG, 'archmaester')).toHaveLength(9);
   });
 
+  it('defaults every plan to its most expensive reachable model', () => {
+    const defaults = Object.fromEntries(
+      PLAN_ORDER.map((plan) => [
+        plan,
+        mostExpensiveModelId(modelsForPlan(CLOUD_MODEL_CATALOG, plan), (model) => {
+          if (model.inputPricePerMillion == null || model.outputPricePerMillion == null) {
+            return null;
+          }
+          return modelCostUsd(
+            {
+              inputPricePerMillion: model.inputPricePerMillion,
+              outputPricePerMillion: model.outputPricePerMillion,
+              cachedInputPricePerMillion: model.cachedInputPricePerMillion,
+            },
+            FORECAST_WORKLOAD,
+          );
+        }),
+      ]),
+    );
+
+    expect(defaults).toEqual({
+      maester: 'openai/gpt-5.6-luna',
+      grand_maester: 'openai/gpt-5.6-terra',
+      archmaester: 'anthropic/claude-opus-5',
+    });
+  });
+
   it('can call tools on every seeded model', () => {
     // Every Samwell surface hands the model tool definitions, so a model that
     // cannot call them is not a choice, it is a broken conversation.
@@ -290,6 +318,17 @@ describe('the model catalogue', () => {
 
 describe('forecasting', () => {
   const creditValue = 0.0008;
+
+  it('chooses the most expensive priced model and preserves order on ties', () => {
+    const models = [
+      { id: 'unpriced', cost: null },
+      { id: 'entry', cost: 4 },
+      { id: 'dearest-first', cost: 9 },
+      { id: 'dearest-second', cost: 9 },
+    ];
+
+    expect(mostExpensiveModelId(models, (model) => model.cost)).toBe('dearest-first');
+  });
 
   it('prices the estimate exactly as a settled turn would be', () => {
     // The estimate and the charge come from the same arithmetic; the only

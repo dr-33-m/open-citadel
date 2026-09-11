@@ -59,3 +59,4 @@ build-*.apk
 .claude
 # Agent skills — reference material for tooling, not app source (177 files, 1.5MB)
 .agents/
+.vscode/

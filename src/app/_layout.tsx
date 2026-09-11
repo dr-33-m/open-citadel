@@ -1,57 +1,67 @@
-import '@/global.css';
+import "@/global.css";
 // Side-effect import: collapses a library-sourced Reanimated warning that
 // would otherwise bury the dev console. See the module for why.
-import '@/lib/quiet-reanimated-deps-warning';
+import "@/lib/quiet-reanimated-deps-warning";
 
-import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
-import { useFonts } from 'expo-font';
 import {
-  Newsreader_400Regular,
-  Newsreader_400Regular_Italic,
-  Newsreader_500Medium,
-  Newsreader_700Bold,
-  Newsreader_700Bold_Italic,
-} from '@expo-google-fonts/newsreader';
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+} from "@expo-google-fonts/manrope";
 import {
-  Manrope_400Regular,
-  Manrope_500Medium,
-  Manrope_600SemiBold,
-  Manrope_700Bold,
-} from '@expo-google-fonts/manrope';
-import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
-import * as Linking from 'expo-linking';
-import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { useReducedMotion, useSharedValue } from 'react-native-reanimated';
-import type { ErrorBoundaryProps } from 'expo-router';
-
-import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
-
-import { ApprovalDialog } from '@/components/approval-dialog';
-import { MemoryHud } from '@/components/dev/memory-hud';
-import { ToastProvider } from '@/components/toast/toast-provider';
-import { PanelUIProvider } from '@/components/ui/panel-ui-provider';
-import { ThemeTokensProvider } from '@/hooks/use-theme-tokens';
-import { TransitionStack } from '@/navigation/stack';
+    Newsreader_400Regular,
+    Newsreader_400Regular_Italic,
+    Newsreader_500Medium,
+    Newsreader_700Bold,
+    Newsreader_700Bold_Italic,
+} from "@expo-google-fonts/newsreader";
+import { useFonts } from "expo-font";
+import * as Linking from "expo-linking";
+import type { ErrorBoundaryProps } from "expo-router";
 import {
-  drawerTransition,
-  fadeTransition,
-  hubTransition,
-  sideTransition,
-} from '@/navigation/transitions';
-import { runMigrations } from '@/db/migrations';
-import { useModelStore } from '@/stores/model';
-import { useSettingsStore } from '@/stores/settings';
-import { useAccountStore } from '@/stores/account';
-import { useBooksStore } from '@/stores/books';
-import { importIncomingFile } from '@/services/book-import';
-import { reanchorLocalPaths } from '@/services/path-reanchor';
-import { startModelLifecycle, stopModelLifecycle } from '@/services/model-lifecycle';
-import { registerTTSBackgroundHandler, setupTTSMediaSession } from '@/services/tts-media-session';
-import { Uniwind, useCSSVariable } from 'uniwind';
+    DarkTheme,
+    DefaultTheme,
+    ThemeProvider,
+} from "expo-router/react-navigation";
+import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { Pressable, Text, View } from "react-native";
+import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 
-import { asColor } from '@/utils/colors';
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+
+import { ApprovalDialog } from "@/components/approval-dialog";
+import { MemoryHud } from "@/components/dev/memory-hud";
+import { ToastProvider } from "@/components/toast/toast-provider";
+import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
+import { runMigrations } from "@/db/migrations";
+import { ThemeTokensProvider } from "@/hooks/use-theme-tokens";
+import { TransitionStack } from "@/navigation/stack";
+import {
+    drawerTransition,
+    fadeTransition,
+    hubTransition,
+    sideTransition,
+} from "@/navigation/transitions";
+import { importIncomingFile } from "@/services/book-import";
+import {
+    startModelLifecycle,
+    stopModelLifecycle,
+} from "@/services/model-lifecycle";
+import { reanchorLocalPaths } from "@/services/path-reanchor";
+import {
+    registerTTSBackgroundHandler,
+    setupTTSMediaSession,
+} from "@/services/tts-media-session";
+import { useAccountStore } from "@/stores/account";
+import { useBooksStore } from "@/stores/books";
+import { useModelStore } from "@/stores/model";
+import { useSettingsStore } from "@/stores/settings";
+import { Uniwind, useCSSVariable } from "uniwind";
+
+import { asColor } from "@/utils/colors";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -88,11 +98,11 @@ export default function RootLayout() {
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const theme = useSettingsStore((s) => s.theme);
   const [background, card, foreground, primary, scrim] = useCSSVariable([
-    '--color-background',
-    '--color-card',
-    '--color-foreground',
-    '--color-primary',
-    '--color-scrim',
+    "--color-background",
+    "--color-card",
+    "--color-foreground",
+    "--color-primary",
+    "--color-scrim",
   ]);
   // Spatial screen motion is exactly what Reduce Motion asks us to drop, so
   // every screen cross-fades in place instead. Read here rather than per
@@ -144,9 +154,12 @@ export default function RootLayout() {
         // Settings screen loaded it, so the chat tab's first open saw an
         // empty store and claimed Samwell wasn't set up. Fire-and-forget:
         // the store's modelsHydrated flag carries the completion signal.
-        useModelStore.getState().loadModels().catch((err) => {
-          console.error('Model hydration failed:', err);
-        });
+        useModelStore
+          .getState()
+          .loadModels()
+          .catch((err) => {
+            console.error("Model hydration failed:", err);
+          });
         // Read the account left on this device, on the same terms: fire and
         // forget, never in front of the splash. It is a local storage read,
         // and nothing that sends a request reads its result anyway (see
@@ -154,7 +167,7 @@ export default function RootLayout() {
         void useAccountStore.getState().restore();
       })
       .catch((err) => {
-        console.error('Startup failed:', err);
+        console.error("Startup failed:", err);
         setDbReady(true);
       });
     // `loadSettings` is a stable zustand action; listed to satisfy the lint
@@ -163,17 +176,17 @@ export default function RootLayout() {
 
   const navTheme = useMemo(
     () => ({
-      ...(theme === 'light' ? DefaultTheme : DarkTheme),
+      ...(theme === "light" ? DefaultTheme : DarkTheme),
       colors: {
-        ...(theme === 'light' ? DefaultTheme.colors : DarkTheme.colors),
+        ...(theme === "light" ? DefaultTheme.colors : DarkTheme.colors),
         background: asColor(background)!,
         card: asColor(card)!,
         text: asColor(foreground)!,
-        border: 'transparent',
+        border: "transparent",
         primary: asColor(primary)!,
       },
     }),
-    [theme, background, card, foreground, primary]
+    [theme, background, card, foreground, primary],
   );
 
   useEffect(() => {
@@ -187,10 +200,10 @@ export default function RootLayout() {
   // AirDrop). iOS hands us a file:// URL; copy it into the owned folder and sync.
   // Gated on dbReady so syncBooks() has a migrated database.
   useEffect(() => {
-    if (process.env.EXPO_OS !== 'ios' || !dbReady) return;
+    if (process.env.EXPO_OS !== "ios" || !dbReady) return;
 
     const handleUrl = async (url: string | null) => {
-      if (!url || !url.startsWith('file://')) return;
+      if (!url || !url.startsWith("file://")) return;
       const dest = await importIncomingFile(url);
       if (!dest) return;
       const store = useBooksStore.getState();
@@ -199,7 +212,7 @@ export default function RootLayout() {
     };
 
     Linking.getInitialURL().then(handleUrl);
-    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    const sub = Linking.addEventListener("url", ({ url }) => handleUrl(url));
     return () => sub.remove();
   }, [dbReady]);
 
@@ -210,9 +223,9 @@ export default function RootLayout() {
   // navigator re-registered every screen's options in the same commit as the
   // token cascade. The worklet reads `.value` on the frame it runs instead, so
   // the configs below are built once for the life of the app.
-  const scrimValue = useSharedValue('transparent');
+  const scrimValue = useSharedValue("transparent");
   useEffect(() => {
-    scrimValue.value = asColor(scrim) ?? 'transparent';
+    scrimValue.value = asColor(scrim) ?? "transparent";
   }, [scrim, scrimValue]);
 
   const screenTransitions = useMemo(() => {
@@ -241,84 +254,99 @@ export default function RootLayout() {
     // portal host that sheets present into resolves its tokens from the same
     // single subscription as the rest of the tree.
     <ThemeTokensProvider>
-    {/* PanelUIProvider owns the gesture handler root every gesture recognizer
+      {/* PanelUIProvider owns the gesture handler root every gesture recognizer
         in the app needs, plus PanelUI's own portal/toast host and the keyboard
         controller provider. */}
-    <PanelUIProvider>
-      {/* Toasts portal into PanelUIProvider's host so they draw above every
+      <PanelUIProvider>
+        {/* Toasts portal into PanelUIProvider's host so they draw above every
           sheet, so this has to sit inside it. */}
-      <ToastProvider>
-      {/* Every sheet in the app is a @gorhom/bottom-sheet modal (see
+        <ToastProvider>
+          {/* Every sheet in the app is a @gorhom/bottom-sheet modal (see
           components/ui/sheet), and they present into this provider's own
           portal host. It sits above the navigator rather than inside it, so a
           sheet is drawn over whatever screen opened it and is never clipped by
           that screen's transition. */}
-      <BottomSheetModalProvider>
-        <ThemeProvider value={navTheme}>
-          <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
-          {/* Hub and spokes. The hub is one route — Timeline, Library and
+          <BottomSheetModalProvider>
+            <ThemeProvider value={navTheme}>
+              <StatusBar style={theme === "light" ? "dark" : "light"} />
+              {/* Hub and spokes. The hub is one route — Timeline, Library and
               Samwell are pages of a pager inside it (`components/hub/hub-pager`),
               because they are peers and a swipe between peers should track the
               finger rather than push a route. Everything else here is a spoke
               that rises or slides over whichever page is showing.
               `navigation/transitions` holds the choreography; these options only
               say where each screen belongs. */}
-          <TransitionStack screenOptions={screenTransitions.side}>
-            <TransitionStack.Screen name="index" options={screenTransitions.hub} />
-            {/* The first run. A cross-fade rather than a slide: this is the
+              <TransitionStack screenOptions={screenTransitions.side}>
+                <TransitionStack.Screen
+                  name="index"
+                  options={screenTransitions.hub}
+                />
+                {/* The first run. A cross-fade rather than a slide: this is the
                 first thing anyone sees and there is nowhere for it to come in
                 from. It leaves by `router.replace`, so it is never on the
                 stack behind the hub and the system Back button cannot walk
                 into it. */}
-            <TransitionStack.Screen name="onboarding" options={screenTransitions.fade} />
-            <TransitionStack.Screen
-            name="settings"
-            options={{
-              ...screenTransitions.drawer,
-              // `hide` (the default) detaches a hidden screen's view, and the
-              // re-attach layout of this screen's large tree lands in the same
-              // burst as the first frames of the rise — the open measured three
-              // times the close's jank. `keep` leaves the view attached while
-              // hidden, so both directions are a plain translate of a laid-out
-              // layer. Its per-open work is settle-gated, so nothing hidden
-              // actually runs.
-              inactiveBehavior: 'keep',
-            }}
-          />
-            {/* Edge-only: the reader turns pages with the same horizontal
+                <TransitionStack.Screen
+                  name="onboarding"
+                  options={screenTransitions.fade}
+                />
+                <TransitionStack.Screen
+                  name="settings"
+                  options={{
+                    ...screenTransitions.drawer,
+                    // `hide` (the default) detaches a hidden screen's view, and the
+                    // re-attach layout of this screen's large tree lands in the same
+                    // burst as the first frames of the rise — the open measured three
+                    // times the close's jank. `keep` leaves the view attached while
+                    // hidden, so both directions are a plain translate of a laid-out
+                    // layer. Its per-open work is settle-gated, so nothing hidden
+                    // actually runs.
+                    inactiveBehavior: "keep",
+                  }}
+                />
+                {/* Edge-only: the reader turns pages with the same horizontal
                 swipe, so a screen-wide back gesture would eat every page turn. */}
-            <TransitionStack.Screen
-              name="reader/[id]"
-              options={{
-                ...screenTransitions.sideEdge,
-                // Same reason `settings` above uses it, plus a worse failure of
-                // its own. `hide` detaches a hidden screen's view; on re-attach
-                // the reader's screen container stopped receiving its animated
-                // style, so it stayed at whatever the hidden state last wrote —
-                // the visibility-block offset, two viewports down. The screen
-                // was then invisible while still laid out full-size and still
-                // hit-testing, so it covered the Library and swallowed every
-                // touch: the app looked frozen with every thread idle.
-                //
-                // Measured, not inferred: an un-animated probe painted from the
-                // screen's outer wrapper while an identical probe one level in
-                // (inside the animated container) did not, with the JS side
-                // reporting the block clear the whole time.
-                //
-                // `keep` never detaches, so there is no re-attach to lose.
-                inactiveBehavior: 'keep',
-              }}
-            />
-            <TransitionStack.Screen name="chat/[id]" options={screenTransitions.side} />
-            <TransitionStack.Screen name="section/[type]" options={screenTransitions.drawer} />
-            <TransitionStack.Screen name="collection/[id]" options={screenTransitions.drawer} />
-          </TransitionStack>
-          <ApprovalDialog />
-          {__DEV__ && <MemoryHud />}
-        </ThemeProvider>
-      </BottomSheetModalProvider>
-      </ToastProvider>
-    </PanelUIProvider>
+                <TransitionStack.Screen
+                  name="reader/[id]"
+                  options={{
+                    ...screenTransitions.sideEdge,
+                    // Same reason `settings` above uses it, plus a worse failure of
+                    // its own. `hide` detaches a hidden screen's view; on re-attach
+                    // the reader's screen container stopped receiving its animated
+                    // style, so it stayed at whatever the hidden state last wrote —
+                    // the visibility-block offset, two viewports down. The screen
+                    // was then invisible while still laid out full-size and still
+                    // hit-testing, so it covered the Library and swallowed every
+                    // touch: the app looked frozen with every thread idle.
+                    //
+                    // Measured, not inferred: an un-animated probe painted from the
+                    // screen's outer wrapper while an identical probe one level in
+                    // (inside the animated container) did not, with the JS side
+                    // reporting the block clear the whole time.
+                    //
+                    // `keep` never detaches, so there is no re-attach to lose.
+                    inactiveBehavior: "keep",
+                  }}
+                />
+                <TransitionStack.Screen
+                  name="chat/[id]"
+                  options={screenTransitions.side}
+                />
+                <TransitionStack.Screen
+                  name="section/[type]"
+                  options={screenTransitions.drawer}
+                />
+                <TransitionStack.Screen
+                  name="collection/[id]"
+                  options={screenTransitions.drawer}
+                />
+              </TransitionStack>
+              <ApprovalDialog />
+              {__DEV__ && <MemoryHud />}
+            </ThemeProvider>
+          </BottomSheetModalProvider>
+        </ToastProvider>
+      </PanelUIProvider>
     </ThemeTokensProvider>
   );
 }

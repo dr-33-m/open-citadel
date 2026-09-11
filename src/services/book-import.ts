@@ -13,14 +13,14 @@
  * URIs and never calls into this module.
  */
 
-import {
-  copyAsync,
-  documentDirectory,
-  getInfoAsync,
-  makeDirectoryAsync,
-  readDirectoryAsync,
-} from "expo-file-system/legacy";
 import * as DocumentPicker from "expo-document-picker";
+import {
+    copyAsync,
+    documentDirectory,
+    getInfoAsync,
+    makeDirectoryAsync,
+    readDirectoryAsync,
+} from "expo-file-system/legacy";
 
 /**
  * App-owned library folder for iOS. Deliberately space-free so
@@ -92,9 +92,14 @@ async function copyIntoLibrary(
 
 /**
  * iOS "Get Started" / "Add Books": present the document picker (multi-select),
- * copy each chosen EPUB into the owned folder. Returns the count copied.
+ * copy each chosen EPUB into the owned folder, and preserve whether zero means
+ * cancellation or failed copies for the concierge's response.
  */
-export async function pickAndImportEpubs(): Promise<number> {
+export async function pickAndImportEpubsWithResult(): Promise<{
+  copied: number;
+  selected: number;
+  cancelled: boolean;
+}> {
   await ensureOwnedDir();
 
   const result = await DocumentPicker.getDocumentAsync({
@@ -103,7 +108,9 @@ export async function pickAndImportEpubs(): Promise<number> {
     copyToCacheDirectory: true,
   });
 
-  if (result.canceled || !result.assets?.length) return 0;
+  if (result.canceled || !result.assets?.length) {
+    return { copied: 0, selected: 0, cancelled: true };
+  }
 
   let copied = 0;
   for (const asset of result.assets) {
@@ -111,7 +118,11 @@ export async function pickAndImportEpubs(): Promise<number> {
     const dest = await copyIntoLibrary(asset.uri, name);
     if (dest) copied++;
   }
-  return copied;
+  return { copied, selected: result.assets.length, cancelled: false };
+}
+
+export async function pickAndImportEpubs(): Promise<number> {
+  return (await pickAndImportEpubsWithResult()).copied;
 }
 
 /**

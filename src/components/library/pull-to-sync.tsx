@@ -1,23 +1,29 @@
-import React from 'react';
-import { ScrollView, View, type ScrollViewProps } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import React from "react";
+import {
+    Platform,
+    RefreshControl,
+    ScrollView,
+    View,
+    type ScrollViewProps,
+} from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
-  useAnimatedReaction,
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useDerivedValue,
-  useReducedMotion,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+    useAnimatedReaction,
+    useAnimatedScrollHandler,
+    useAnimatedStyle,
+    useDerivedValue,
+    useReducedMotion,
+    useSharedValue,
+    withTiming,
+} from "react-native-reanimated";
 // The real export, not a `runOnJS` wrapper: a plain JS helper is a Remote
 // Function to the UI runtime, so calling one from a gesture callback throws.
-import { scheduleOnRN } from 'react-native-worklets';
+import { scheduleOnRN } from "react-native-worklets";
 
-import { PageFade } from '@/components/scroll-fades';
-import { SyncIndicator } from '@/components/library/sync-indicator';
-import { easing, motion } from '@/constants/theme';
-import { haptics } from '@/utils/haptics';
+import { SyncIndicator } from "@/components/library/sync-indicator";
+import { PageFade } from "@/components/scroll-fades";
+import { easing, motion } from "@/constants/theme";
+import { haptics } from "@/utils/haptics";
 
 /**
  * How tall the gap is once it is holding, in points.
@@ -83,14 +89,14 @@ const SCAN_GRACE_MS = 5_000;
  * use for the direction that does not dismiss.
  */
 function resist(distance: number) {
-  'worklet';
+  "worklet";
   // Callers pass a distance of zero or more; see the clamp in `onUpdate`.
   return (GAP * 1.6 * distance) / (distance + GAP * 1.6);
 }
 
 export type PullToSyncProps = Pick<
   ScrollViewProps,
-  'contentContainerStyle' | 'contentContainerClassName'
+  "contentContainerStyle" | "contentContainerClassName"
 > & {
   /**
    * Whether a scan is going on, which is all this needs to hold the gap open.
@@ -108,16 +114,16 @@ export type PullToSyncProps = Pick<
  *
  * ## Why the gesture is hand-built
  *
- * `RefreshControl` is the obvious answer and draws the wrong thing: a round
- * OS spinner, in an app with no rounded corners and its own loader. Reading
- * `contentOffset` for a negative value is the other obvious answer and does
- * not work here at all — that is iOS bounce, and Android has none, so on the
- * device this app is built for the offset never goes below zero.
+ * iOS uses `RefreshControl` only as the native recognizer, with its spinner
+ * transparent. `UIScrollView` otherwise claims the drag while a manual child
+ * pan is still waiting to activate, so the custom gesture never reaches its
+ * threshold there. Its negative content offset drives this indicator instead.
  *
- * So it is a pan that runs alongside the scroll view's own gesture and only
- * has an opinion while the shelf is already at the top. Everything it moves is
- * a transform. An earlier sketch grew a spacer above the scroller instead,
- * which is a Yoga pass per frame on the app's longest page.
+ * Android has no negative bounce offset, so it uses a pan that runs alongside
+ * the scroll view's own gesture and only has an opinion while the shelf is
+ * already at the top. That path moves the shelf with a transform. An earlier
+ * sketch grew a spacer above the scroller instead, which is a Yoga pass per
+ * frame on the app's longest page.
  *
  * ## Why the gap outlives the finger
  *
@@ -139,6 +145,7 @@ export function PullToSync({
   children,
 }: PullToSyncProps) {
   const reduced = useReducedMotion();
+  const usesNativeRefresh = Platform.OS === "ios";
 
   /** How far down the shelf is. The pull only has standing at the very top. */
   const scrollY = useSharedValue(0);
@@ -170,6 +177,9 @@ export function PullToSync({
   const onScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
       scrollY.set(event.contentOffset.y);
+      if (usesNativeRefresh) {
+        drag.set(resist(Math.max(0, -event.contentOffset.y)));
+      }
     },
   });
 
@@ -181,7 +191,9 @@ export function PullToSync({
        * came from somewhere else — the launch scan, the button in All Books —
        * this is what opens it.
        */
-      hold.set(reduced ? GAP : withTiming(GAP, { duration: motion.base, easing }));
+      hold.set(
+        reduced ? GAP : withTiming(GAP, { duration: motion.base, easing }),
+      );
       return;
     }
     // Not running, and a pull is still waiting on the scan it asked for.
@@ -204,6 +216,12 @@ export function PullToSync({
     return () => clearTimeout(timer);
   }, [waiting]);
 
+  const handleNativeRefresh = () => {
+    hold.set(GAP);
+    setWaiting(true);
+    onSync();
+  };
+
   /*
    * Whether letting go now would start a scan.
    *
@@ -225,7 +243,8 @@ export function PullToSync({
   );
 
   /*
-   * Claimed by hand, rather than by declaring a truce with the scroll view.
+   * Android is claimed by hand, rather than by declaring a truce with the
+   * scroll view. iOS bypasses this gesture entirely; see the component note.
    *
    * The obvious version is `simultaneousWithExternalGesture(scrollRef)`, and
    * it does not work here: `PageFade` clones its child onto an animated
@@ -368,15 +387,48 @@ export function PullToSync({
   }));
 
   const content = useAnimatedStyle(() => ({
-    transform: [{ translateY: open.get() }],
+    // UIRefreshControl owns the iOS inset through the whole scan. Translating
+    // this viewport as well would reveal an empty strip along its bottom.
+    transform: [{ translateY: usesNativeRefresh ? 0 : open.get() }],
   }));
+
+  const scrollable = (
+    <Animated.View style={content} className="flex-1">
+      <PageFade>
+        <ScrollView
+          className="flex-1"
+          onScroll={onScroll}
+          contentContainerClassName={contentContainerClassName}
+          contentContainerStyle={contentContainerStyle}
+          refreshControl={
+            usesNativeRefresh ? (
+              <RefreshControl
+                refreshing={running || waiting}
+                onRefresh={handleNativeRefresh}
+                tintColor="transparent"
+              />
+            ) : undefined
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          {children}
+        </ScrollView>
+      </PageFade>
+    </Animated.View>
+  );
+
+  const gestureContent = usesNativeRefresh ? (
+    scrollable
+  ) : (
+    <GestureDetector gesture={pan}>{scrollable}</GestureDetector>
+  );
 
   return (
     // Clips the strip parked above it, so nothing shows until it is pulled.
     <View className="flex-1 overflow-hidden">
       <Animated.View
         pointerEvents="none"
-        style={[gap, { position: 'absolute', top: -GAP, height: GAP }]}
+        style={[gap, { position: "absolute", top: -GAP, height: GAP }]}
         className="inset-x-0 items-center justify-center"
       >
         {/* No label once a scan is on its way, whether or not it has reported
@@ -384,25 +436,17 @@ export function PullToSync({
             SYNC" printed under a running loader is the gap contradicting
             itself. */}
         <SyncIndicator
-          label={running || waiting ? undefined : armed ? 'RELEASE TO SYNC' : 'PULL TO SYNC'}
+          label={
+            running || waiting
+              ? undefined
+              : armed
+                ? "RELEASE TO SYNC"
+                : "PULL TO SYNC"
+          }
         />
       </Animated.View>
 
-      <GestureDetector gesture={pan}>
-        <Animated.View style={content} className="flex-1">
-          <PageFade>
-            <ScrollView
-              className="flex-1"
-              onScroll={onScroll}
-              contentContainerClassName={contentContainerClassName}
-              contentContainerStyle={contentContainerStyle}
-              showsVerticalScrollIndicator={false}
-            >
-              {children}
-            </ScrollView>
-          </PageFade>
-        </Animated.View>
-      </GestureDetector>
+      {gestureContent}
     </View>
   );
 }

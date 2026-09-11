@@ -1,17 +1,16 @@
-import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
-import { Info } from '@/components/icons';
+import { Info } from "@/components/icons";
+import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { Card } from '@/components/ui/card';
-import { Sheet } from '@/components/ui/sheet';
-import { ThemedText } from '@/components/themed-text';
-import { Switch } from '@/components/ui/switch';
-import { Touchable } from '@/components/ui/touchable';
-import { spacing } from '@/constants/theme';
-import { useModelStore } from '@/stores/model';
-import { asColor } from '@/utils/colors';
-import { cn } from '@/lib/cn';
+import { ThemedText } from "@/components/themed-text";
+import { Card } from "@/components/ui/card";
+import { Sheet } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
+import { Touchable } from "@/components/ui/touchable";
+import { spacing } from "@/constants/theme";
+import { cn } from "@/lib/cn";
+import { useModelStore } from "@/stores/model";
+import { asColor } from "@/utils/colors";
 
 type ModelCapabilities = {
   supportsSpeculativeDecoding?: boolean;
@@ -33,9 +32,9 @@ export function TuneSheet({
   activeModel: ModelCapabilities;
 }) {
   const [mutedForeground, primary, primaryForeground] = useCSSVariable([
-    '--color-muted-foreground',
-    '--color-primary',
-    '--color-primary-foreground',
+    "--color-muted-foreground",
+    "--color-primary",
+    "--color-primary-foreground",
   ]);
   const inference = useModelStore((s) => s.inference);
   const setInference = useModelStore((s) => s.setInference);
@@ -49,31 +48,50 @@ export function TuneSheet({
     // its own.
     <Sheet visible={visible} onClose={onClose} maxHeightRatio={0.85} scrollable>
       <Sheet.ScrollView
-        contentContainerStyle={{ paddingHorizontal: spacing[6], gap: spacing[6] }}
+        contentContainerStyle={{
+          paddingHorizontal: spacing[6],
+          gap: spacing[6],
+        }}
       >
-        <ThemedText type="bodySm" color={asColor(mutedForeground)}>PERFORMANCE</ThemedText>
+        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+          PERFORMANCE
+        </ThemedText>
 
         <View className="gap-1">
           <View className="flex-row items-center gap-2">
             <ThemedText type="bodySm">Backend</ThemedText>
             {activeBackend && (
-              <ThemedText type="bodySm" color="#4caf50" style={{ fontSize: 11 }}>
+              <ThemedText
+                type="bodySm"
+                color="#4caf50"
+                style={{ fontSize: 11 }}
+              >
                 Running on {activeBackend.toUpperCase()}
               </ThemedText>
             )}
           </View>
           <View className="flex-row flex-wrap gap-2">
-            {(['cpu', 'gpu', 'npu'] as const).map((backend) => {
+            {(["cpu", "gpu", "npu"] as const).map((backend) => {
               const active = inference.backend === backend;
               const disabled = unavailableBackends.has(backend);
               return (
                 <Touchable
                   key={backend}
                   style={disabled ? { opacity: 0.35 } : undefined}
-                  onPress={() => { if (!disabled) setInference({ backend }); }}
+                  onPress={() => {
+                    if (!disabled) setInference({ backend });
+                  }}
                 >
-                  <Card className={cn('px-4 py-2', active && 'border-primary bg-primary')}>
-                    <ThemedText type="labelSm" color={active ? asColor(primaryForeground) : undefined}>
+                  <Card
+                    className={cn(
+                      "px-4 py-2",
+                      active && "border-primary bg-primary",
+                    )}
+                  >
+                    <ThemedText
+                      type="labelSm"
+                      color={active ? asColor(primaryForeground) : undefined}
+                    >
                       {backend.toUpperCase()}
                     </ThemedText>
                   </Card>
@@ -81,10 +99,14 @@ export function TuneSheet({
               );
             })}
           </View>
-          <ThemedText type="bodySm" color={asColor(mutedForeground)} style={{ fontSize: 11 }}>
+          <ThemedText
+            type="bodySm"
+            color={asColor(mutedForeground)}
+            style={{ fontSize: 11 }}
+          >
             {unavailableBackends.size > 0
-              ? `${[...unavailableBackends].map((b) => b.toUpperCase()).join(' & ')} not supported on this device.`
-              : 'GPU is fastest. NPU requires supported hardware. Falls back to CPU if unavailable.'}
+              ? `${[...unavailableBackends].map((b) => b.toUpperCase()).join(" & ")} not supported on this device.`
+              : "GPU is fastest. NPU requires supported hardware. Falls back to CPU if unavailable."}
           </ThemedText>
         </View>
 
@@ -94,8 +116,16 @@ export function TuneSheet({
             {[2048, 4096].map((size) => {
               const active = inference.contextSize === size;
               return (
-                <Touchable key={size} onPress={() => setInference({ contextSize: size })}>
-                  <Card className={cn('px-4 py-2', active && 'border-primary bg-primary')}>
+                <Touchable
+                  key={size}
+                  onPress={() => setInference({ contextSize: size })}
+                >
+                  <Card
+                    className={cn(
+                      "px-4 py-2",
+                      active && "border-primary bg-primary",
+                    )}
+                  >
                     <ThemedText
                       type="labelSm"
                       color={active ? asColor(primaryForeground) : undefined}
@@ -107,7 +137,11 @@ export function TuneSheet({
               );
             })}
           </View>
-          <ThemedText type="bodySm" color={asColor(mutedForeground)} style={{ fontSize: 11 }}>
+          <ThemedText
+            type="bodySm"
+            color={asColor(mutedForeground)}
+            style={{ fontSize: 11 }}
+          >
             Lower = faster & less RAM. Raise for longer conversations.
           </ThemedText>
         </View>
@@ -115,14 +149,19 @@ export function TuneSheet({
         {activeModel?.supportsSpeculativeDecoding && (
           <ToggleRow
             title="Multi-Token Prediction"
-            note="Faster generation on supported models."
+            note="Faster generation on supported brains."
             value={inference.enableSpeculativeDecoding}
-            onValueChange={(val) => setInference({ enableSpeculativeDecoding: val })}
+            onValueChange={(val) =>
+              setInference({ enableSpeculativeDecoding: val })
+            }
           />
         )}
 
-        {(activeModel?.supportsToolCalling || activeModel?.supportsThinking) && (
-          <ThemedText type="bodySm" color={asColor(mutedForeground)}>CAPABILITIES</ThemedText>
+        {(activeModel?.supportsToolCalling ||
+          activeModel?.supportsThinking) && (
+          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+            CAPABILITIES
+          </ThemedText>
         )}
 
         {activeModel?.supportsToolCalling && (
@@ -133,7 +172,11 @@ export function TuneSheet({
             // Tools and thinking are mutually exclusive: turning one on
             // turns the other off.
             onValueChange={(val) =>
-              setInference(val ? { enableToolCalling: true, enableThinking: false } : { enableToolCalling: false })
+              setInference(
+                val
+                  ? { enableToolCalling: true, enableThinking: false }
+                  : { enableToolCalling: false },
+              )
             }
           />
         )}
@@ -144,7 +187,11 @@ export function TuneSheet({
             note="Show reasoning before answering. Disables tools."
             value={inference.enableThinking}
             onValueChange={(val) =>
-              setInference(val ? { enableThinking: true, enableToolCalling: false } : { enableThinking: false })
+              setInference(
+                val
+                  ? { enableThinking: true, enableToolCalling: false }
+                  : { enableThinking: false },
+              )
             }
           />
         )}
@@ -152,7 +199,11 @@ export function TuneSheet({
         {isLoaded && (
           <View className="flex-row items-center gap-1">
             <Info size={12} color={asColor(primary)} />
-            <ThemedText type="bodySm" color={asColor(primary)} style={{ fontSize: 11 }}>
+            <ThemedText
+              type="bodySm"
+              color={asColor(primary)}
+              style={{ fontSize: 11 }}
+            >
               Power down and wake up Samwell to apply changes.
             </ThemedText>
           </View>
@@ -173,7 +224,7 @@ function ToggleRow({
   value: boolean;
   onValueChange: (value: boolean) => void;
 }) {
-  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
+  const [mutedForeground] = useCSSVariable(["--color-muted-foreground"]);
   return (
     <Touchable
       className="flex-row items-center justify-between"
@@ -181,7 +232,11 @@ function ToggleRow({
     >
       <View className="flex-1 gap-1">
         <ThemedText type="bodySm">{title}</ThemedText>
-        <ThemedText type="bodySm" color={asColor(mutedForeground)} style={{ fontSize: 11 }}>
+        <ThemedText
+          type="bodySm"
+          color={asColor(mutedForeground)}
+          style={{ fontSize: 11 }}
+        >
           {note}
         </ThemedText>
       </View>

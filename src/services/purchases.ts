@@ -15,14 +15,23 @@
  * telling the caller "the store says this worked", and the caller asks the
  * server what that means.
  */
+import { Linking, Platform } from 'react-native';
 import Purchases, {
-  LOG_LEVEL,
-  type CustomerInfo,
-  type PurchasesOffering,
-  type PurchasesPackage,
+    LOG_LEVEL,
+    STORE_REPLACEMENT_MODE,
+    type CustomerInfo,
+    type PurchasesOffering,
+    type PurchasesPackage,
+    type StoreProductChangeInfo,
 } from 'react-native-purchases';
 
-import { REVENUECAT_API_KEY, REVENUECAT_OFFERING, PURCHASES_ENABLED } from '@/constants/revenuecat';
+import {
+    PURCHASES_ENABLED,
+    REVENUECAT_API_KEY,
+    REVENUECAT_OFFERING,
+    REVENUECAT_TEST_STORE,
+} from '@/constants/revenuecat';
+import { googleProductToReplace } from '@/services/purchase-lifecycle';
 
 /**
  * Closing the store sheet is a decision, not a failure.
@@ -49,6 +58,35 @@ export class PurchasesUnavailable extends Error {
 let configured = false;
 
 /**
+ * Replaces the SDK's default log handler, which sends its own ERROR-level
+ * lines straight to `console.error` - including "expected" ones, like the
+ * Test Store's simulated purchase failure, or a card the store itself
+ * declined. Those are not app bugs, they are `purchase()` below rejecting
+ * its promise exactly as designed, and the store already turns that into a
+ * readable message in the UI. Left alone, the SDK's own log line ALSO trips
+ * LogBox's full-screen red error on top of that, which is what actually
+ * looked broken. Routed to `console.warn` instead: still visible for
+ * debugging, no longer read by the reader as a crash.
+ */
+function forwardRevenueCatLog(logLevel: LOG_LEVEL, message: string): void {
+  const line = `[RevenueCat] ${message}`;
+  switch (logLevel) {
+    case LOG_LEVEL.DEBUG:
+      console.debug(line);
+      break;
+    case LOG_LEVEL.INFO:
+      console.info(line);
+      break;
+    case LOG_LEVEL.WARN:
+    case LOG_LEVEL.ERROR:
+      console.warn(line);
+      break;
+    default:
+      console.log(line);
+  }
+}
+
+/**
  * Start the SDK, once.
  *
  * Called from the account store rather than at module load, because
@@ -62,6 +100,9 @@ let configured = false;
  */
 export function configurePurchases(appUserID: string | null): void {
   if (!PURCHASES_ENABLED || configured) return;
+  // Must run before `configure`: the SDK only installs its own default
+  // handler if nobody has called `setLogHandler` yet.
+  Purchases.setLogHandler(forwardRevenueCatLog);
   if (__DEV__) void Purchases.setLogLevel(LOG_LEVEL.WARN);
   Purchases.configure({ apiKey: REVENUECAT_API_KEY, appUserID });
   configured = true;
@@ -106,16 +147,55 @@ export async function getOffering(): Promise<PurchasesOffering | null> {
   return offerings.all[REVENUECAT_OFFERING] ?? offerings.current ?? null;
 }
 
+/** Read CustomerInfo, optionally bypassing RevenueCat's local cache. */
+export async function readCustomerInfo(fresh = false): Promise<CustomerInfo> {
+  if (!PURCHASES_ENABLED || !configured) throw new PurchasesUnavailable();
+  if (fresh) await Purchases.invalidateCustomerInfoCache();
+  return Purchases.getCustomerInfo();
+}
+
+/** Subscribe once at app scope; returns the matching SDK cleanup operation. */
+export function subscribeToCustomerInfo(
+  listener: (customerInfo: CustomerInfo) => void,
+): () => void {
+  if (!PURCHASES_ENABLED || !configured) return () => undefined;
+  Purchases.addCustomerInfoUpdateListener(listener);
+  return () => {
+    Purchases.removeCustomerInfoUpdateListener(listener);
+  };
+}
+
 /**
  * Buy one package.
  *
  * Throws `PurchaseCancelled` when the reader closed the sheet, so the caller
  * can say nothing at all. Every other failure carries its own message.
  */
-export async function purchase(pkg: PurchasesPackage): Promise<CustomerInfo> {
+export async function purchase(
+  pkg: PurchasesPackage,
+  options: { currentEntitlement?: string; deferred?: boolean } = {},
+): Promise<CustomerInfo> {
   if (!PURCHASES_ENABLED) throw new PurchasesUnavailable();
   try {
-    const result = await Purchases.purchasePackage(pkg);
+    let productChangeInfo: StoreProductChangeInfo | null = null;
+    if (
+      options.currentEntitlement &&
+      Platform.OS === 'android' &&
+      !REVENUECAT_TEST_STORE
+    ) {
+      const customerInfo = await readCustomerInfo(true);
+      productChangeInfo = {
+        oldProductIdentifier: googleProductToReplace(
+          customerInfo,
+          options.currentEntitlement,
+        ),
+        replacementMode: options.deferred
+          ? STORE_REPLACEMENT_MODE.DEFERRED
+          : STORE_REPLACEMENT_MODE.CHARGE_PRORATED_PRICE,
+      };
+    }
+
+    const result = await Purchases.purchasePackage(pkg, null, productChangeInfo);
     return result.customerInfo;
   } catch (error) {
     if (isCancellation(error)) throw new PurchaseCancelled();
@@ -127,6 +207,30 @@ export async function purchase(pkg: PurchasesPackage): Promise<CustomerInfo> {
 export async function restore(): Promise<CustomerInfo> {
   if (!PURCHASES_ENABLED) throw new PurchasesUnavailable();
   return Purchases.restorePurchases();
+}
+
+/**
+ * Open the store surface where a subscription can be changed or cancelled.
+ *
+ * The Test Store has no App Store or Play account behind it, so there is no
+ * management page to open. The caller explains that state instead of sending
+ * the reader to a dead URL.
+ */
+export async function manageSubscription(): Promise<'opened' | 'test-store'> {
+  if (!PURCHASES_ENABLED) throw new PurchasesUnavailable();
+  if (REVENUECAT_TEST_STORE) return 'test-store';
+
+  if (Platform.OS === 'ios') {
+    await Purchases.showManageSubscriptions();
+    return 'opened';
+  }
+
+  const customerInfo = await Purchases.getCustomerInfo();
+  if (!customerInfo.managementURL) {
+    throw new Error('The store could not find a subscription to manage.');
+  }
+  await Linking.openURL(customerInfo.managementURL);
+  return 'opened';
 }
 
 /**

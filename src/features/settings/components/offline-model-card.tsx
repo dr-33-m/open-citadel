@@ -1,22 +1,29 @@
-import React from 'react';
-import { View } from 'react-native';
-import Animated from 'react-native-reanimated';
-import { useCSSVariable } from 'uniwind';
-import { Download, List, MemoryStick, Power, SlidersHorizontal, Trash2 } from '@/components/icons';
+import {
+    Download,
+    List,
+    MemoryStick,
+    Power,
+    SlidersHorizontal,
+    Trash2,
+} from "@/components/icons";
+import React from "react";
+import { View } from "react-native";
+import Animated from "react-native-reanimated";
+import { useCSSVariable } from "uniwind";
 
-import { useModelSheet } from '@/features/settings/hooks/use-model-sheet';
-import { ModelPickerSheet } from '@/features/settings/components/model-picker-sheet';
-import { TuneSheet } from '@/features/settings/components/tune-sheet';
-import { ConfirmDeleteSheet } from '@/features/settings/components/confirm-delete-sheet';
-import { MemoryInfoSheet } from '@/features/settings/components/memory-info-sheet';
-import { ThemedText } from '@/components/themed-text';
-import { usePulse } from '@/hooks/use-pulse';
-import { Card } from '@/components/ui/card';
-import { ActionButton } from '@/components/action-button';
-import { Touchable } from '@/components/ui/touchable';
-import { useModelStore } from '@/stores/model';
-import { asColor } from '@/utils/colors';
-import { formatBytes } from '@/utils/format';
+import { ActionButton } from "@/components/action-button";
+import { ThemedText } from "@/components/themed-text";
+import { Card } from "@/components/ui/card";
+import { Touchable } from "@/components/ui/touchable";
+import { ConfirmDeleteSheet } from "@/features/settings/components/confirm-delete-sheet";
+import { MemoryInfoSheet } from "@/features/settings/components/memory-info-sheet";
+import { ModelPickerSheet } from "@/features/settings/components/model-picker-sheet";
+import { TuneSheet } from "@/features/settings/components/tune-sheet";
+import { useModelSheet } from "@/features/settings/hooks/use-model-sheet";
+import { usePulse } from "@/hooks/use-pulse";
+import { useModelStore } from "@/stores/model";
+import { asColor } from "@/utils/colors";
+import { formatBytes } from "@/utils/format";
 
 /**
  * The offline engine's model card: identity, download progress, memory
@@ -31,10 +38,10 @@ import { formatBytes } from '@/utils/format';
  */
 export function OfflineModelCard() {
   const [primary, mutedForeground, foreground, destructive] = useCSSVariable([
-    '--color-primary',
-    '--color-muted-foreground',
-    '--color-foreground',
-    '--color-destructive',
+    "--color-primary",
+    "--color-muted-foreground",
+    "--color-foreground",
+    "--color-destructive",
   ]);
   const models = useModelStore((s) => s.models);
   const activeModelId = useModelStore((s) => s.activeModelId);
@@ -52,7 +59,9 @@ export function OfflineModelCard() {
 
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [isDownloading, setIsDownloading] = React.useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(
+    null,
+  );
   const [tuneVisible, setTuneVisible] = React.useState(false);
   const [memoryVisible, setMemoryVisible] = React.useState(false);
   const modelSheet = useModelSheet();
@@ -63,11 +72,19 @@ export function OfflineModelCard() {
   // Run when the active model or context size changes — after the sheet is
   // up, never in the same pass as its first paint.
   React.useEffect(() => {
-    if (activeModel?.isDownloaded && activeModel.id) checkMemory(activeModel.id);
-  }, [activeModel?.id, activeModel?.isDownloaded, inference.contextSize, checkMemory]);
+    if (activeModel?.isDownloaded && activeModel.id)
+      checkMemory(activeModel.id);
+  }, [
+    activeModel?.id,
+    activeModel?.isDownloaded,
+    inference.contextSize,
+    checkMemory,
+  ]);
 
-  const memoryStatus = memoryEstimate?.status ?? 'fits';
-  const downloading = activeModel ? downloadProgress[activeModel.id] !== undefined : false;
+  const memoryStatus = memoryEstimate?.status ?? "fits";
+  const downloading = activeModel
+    ? downloadProgress[activeModel.id] !== undefined
+    : false;
   const busy = modelLoading || isDeleting;
 
   return (
@@ -75,11 +92,19 @@ export function OfflineModelCard() {
       <Card className="gap-3 p-4">
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1 gap-1">
-            <ThemedText type="labelSm" color={asColor(mutedForeground)}>MODEL</ThemedText>
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+              BRAIN
+            </ThemedText>
             {activeModel ? (
               <>
-                <ThemedText type="bodyMd" numberOfLines={2}>{activeModel.name}</ThemedText>
-                <ThemedText type="labelSm" color={asColor(mutedForeground)} style={{ fontVariant: ['tabular-nums'] }}>
+                <ThemedText type="bodyMd" numberOfLines={2}>
+                  {activeModel.name}
+                </ThemedText>
+                <ThemedText
+                  type="labelSm"
+                  color={asColor(mutedForeground)}
+                  style={{ fontVariant: ["tabular-nums"] }}
+                >
                   {activeModel.isDownloaded
                     ? `${formatBytes(activeModel.sizeBytes)} · Downloaded`
                     : `${formatBytes(activeModel.sizeBytes)} · Not downloaded`}
@@ -88,25 +113,37 @@ export function OfflineModelCard() {
             ) : (
               /* The empty state is a wayfinding moment, not an error: one
                  line saying what to do, and the picker one tap away. */
-              <ThemedText type="bodyMd" numberOfLines={2}>No model selected</ThemedText>
+              <ThemedText type="bodyMd" numberOfLines={2}>
+                No brain selected
+              </ThemedText>
             )}
             {!activeModel && (
-              <ThemedText type="bodySm" color={asColor(mutedForeground)} numberOfLines={2}>
-                Pick a model to run Samwell on this device.
+              <ThemedText
+                type="bodySm"
+                color={asColor(mutedForeground)}
+                numberOfLines={2}
+              >
+                Pick a brain to run Samwell on this device.
               </ThemedText>
             )}
             {loadError && (
-              <ThemedText type="labelSm" color={asColor(destructive)} numberOfLines={2}>
+              <ThemedText
+                type="labelSm"
+                color={asColor(destructive)}
+                numberOfLines={2}
+              >
                 {loadError}
               </ThemedText>
             )}
           </View>
           <ActionButton
             icon={List}
-            label={activeModel ? 'CHANGE' : 'CHOOSE'}
+            label={activeModel ? "CHANGE" : "CHOOSE"}
             tint={asColor(mutedForeground)}
             onPress={modelSheet.open}
-            accessibilityLabel={activeModel ? 'Change the model' : 'Choose a model'}
+            accessibilityLabel={
+              activeModel ? "Change the brain" : "Choose a brain"
+            }
           />
         </View>
 
@@ -116,29 +153,42 @@ export function OfflineModelCard() {
             <View className="h-1 overflow-hidden bg-surface-tertiary">
               <View
                 className="h-1 bg-primary"
-                style={{ width: `${Math.round((downloadProgress[activeModel.id] ?? 0) * 100)}%` }}
+                style={{
+                  width: `${Math.round((downloadProgress[activeModel.id] ?? 0) * 100)}%`,
+                }}
               />
             </View>
             <View className="flex-row items-center justify-between">
-              <ThemedText type="labelSm" color={asColor(mutedForeground)} style={{ fontVariant: ['tabular-nums'] }}>
+              <ThemedText
+                type="labelSm"
+                color={asColor(mutedForeground)}
+                style={{ fontVariant: ["tabular-nums"] }}
+              >
                 {Math.round((downloadProgress[activeModel.id] ?? 0) * 100)}%
               </ThemedText>
               <Touchable onPress={() => cancelDownload(activeModel.id)}>
-                <ThemedText type="labelSm" color={asColor(destructive)}>CANCEL</ThemedText>
+                <ThemedText type="labelSm" color={asColor(destructive)}>
+                  CANCEL
+                </ThemedText>
               </Touchable>
             </View>
           </View>
         )}
 
-        {activeModel?.isDownloaded && memoryStatus !== 'fits' && (
+        {activeModel?.isDownloaded && memoryStatus !== "fits" && (
           <ActionButton
             className="self-start"
             icon={MemoryStick}
-            label={memoryStatus === 'wont_fit' ? 'TOO LARGE' : 'TIGHT'}
-            tint={memoryStatus === 'wont_fit' ? asColor(destructive) : '#f97316'}
+            label={memoryStatus === "wont_fit" ? "TOO LARGE" : "TIGHT"}
+            tint={
+              memoryStatus === "wont_fit" ? asColor(destructive) : "#f97316"
+            }
             // The one button here that warns rather than acts, so it keeps its
             // own tinted ground.
-            style={{ backgroundColor: memoryStatus === 'wont_fit' ? '#e5393520' : '#f9731620' }}
+            style={{
+              backgroundColor:
+                memoryStatus === "wont_fit" ? "#e5393520" : "#f9731620",
+            }}
             onPress={() => setMemoryVisible(true)}
           />
         )}
@@ -153,7 +203,11 @@ export function OfflineModelCard() {
                 disabled={isDownloading}
                 onPress={async () => {
                   setIsDownloading(true);
-                  try { await downloadModel(activeModel.id); } finally { setIsDownloading(false); }
+                  try {
+                    await downloadModel(activeModel.id);
+                  } finally {
+                    setIsDownloading(false);
+                  }
                 }}
               />
             )}
@@ -164,13 +218,26 @@ export function OfflineModelCard() {
                   // here rather than named by the `icon` prop.
                   leading={
                     <Animated.View style={powerPulseStyle}>
-                      <Power size={14} color={modelLoading ? asColor(primary) : isLoaded ? '#4caf50' : asColor(mutedForeground)} />
+                      <Power
+                        size={14}
+                        color={
+                          modelLoading
+                            ? asColor(primary)
+                            : isLoaded
+                              ? "#4caf50"
+                              : asColor(mutedForeground)
+                        }
+                      />
                     </Animated.View>
                   }
-                  label={isLoaded ? 'SLEEP' : 'WAKEN'}
+                  label={isLoaded ? "SLEEP" : "WAKEN"}
                   tint={isLoaded ? undefined : asColor(mutedForeground)}
                   disabled={busy}
-                  onPress={isLoaded ? releaseContext : () => useModelStore.getState().initContext()}
+                  onPress={
+                    isLoaded
+                      ? releaseContext
+                      : () => useModelStore.getState().initContext()
+                  }
                 />
                 <ActionButton
                   icon={SlidersHorizontal}
@@ -189,7 +256,11 @@ export function OfflineModelCard() {
               onPress={async () => {
                 if (isLoaded) {
                   setIsDeleting(true);
-                  try { await releaseContext(); } finally { setIsDeleting(false); }
+                  try {
+                    await releaseContext();
+                  } finally {
+                    setIsDeleting(false);
+                  }
                 }
                 setConfirmDeleteId(activeModel.id);
               }}
@@ -205,9 +276,16 @@ export function OfflineModelCard() {
         onDeleteRequest={setConfirmDeleteId}
       />
       {activeModel && (
-        <TuneSheet visible={tuneVisible} onClose={() => setTuneVisible(false)} activeModel={activeModel} />
+        <TuneSheet
+          visible={tuneVisible}
+          onClose={() => setTuneVisible(false)}
+          activeModel={activeModel}
+        />
       )}
-      <ConfirmDeleteSheet modelId={confirmDeleteId} onClose={() => setConfirmDeleteId(null)} />
+      <ConfirmDeleteSheet
+        modelId={confirmDeleteId}
+        onClose={() => setConfirmDeleteId(null)}
+      />
       <MemoryInfoSheet
         visible={memoryVisible}
         onClose={() => setMemoryVisible(false)}

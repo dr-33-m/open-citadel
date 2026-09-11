@@ -1,19 +1,20 @@
-import { LinearGradient } from 'expo-linear-gradient';
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import Animated from 'react-native-reanimated';
-import { useCSSVariable } from 'uniwind';
+import { LinearGradient } from "expo-linear-gradient";
+import React from "react";
+import { StyleSheet, View } from "react-native";
+import Animated from "react-native-reanimated";
+import { useCSSVariable } from "uniwind";
 
-import { Spinner } from '@/components/ui/spinner';
-import type { LucideIcon } from '@/components/icons';
-import { Touchable } from '@/components/ui/touchable';
+import type { LucideIcon } from "@/components/icons";
+import { Spinner } from "@/components/ui/spinner";
+import { Touchable } from "@/components/ui/touchable";
 
-import { ThemedText } from '@/components/themed-text';
-import { asColor } from '@/utils/colors';
-import { spacing } from '@/constants/theme';
+import { ThemedText } from "@/components/themed-text";
+import { spacing } from "@/constants/theme";
+import { asColor } from "@/utils/colors";
 
 type GoldButtonProps = {
   label: string;
+  accessibilityLabel?: string;
   onPress?: () => void;
   /**
    * The mark that leads the label, at `ActionButton`'s 14pt.
@@ -44,7 +45,7 @@ type GoldButtonProps = {
    * buttons on one baseline at different heights read as a mistake rather
    * than as a hierarchy.
    */
-  size?: 'full' | 'compact' | 'small';
+  size?: "full" | "compact" | "small";
   /**
    * Nothing to commit yet — an empty note, a blank title.
    *
@@ -65,16 +66,17 @@ type GoldButtonProps = {
 
 export function GoldButton({
   label,
+  accessibilityLabel,
   onPress,
   icon: Icon,
-  size = 'full',
+  size = "full",
   disabled = false,
   loading = false,
 }: GoldButtonProps) {
   const [primary, primaryDeep, primaryForeground] = useCSSVariable([
-    '--color-primary',
-    '--color-primary-deep',
-    '--color-primary-foreground',
+    "--color-primary",
+    "--color-primary-deep",
+    "--color-primary-foreground",
   ]);
   const styles = React.useMemo(
     () =>
@@ -82,22 +84,22 @@ export function GoldButton({
         full: {
           minHeight: 56,
           paddingHorizontal: spacing[6],
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
         },
         compact: {
           minHeight: 40,
           paddingHorizontal: spacing[5],
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
         },
         // 34 = ActionButton's 1px border + its `py-2` + `labelSm`'s 16pt
         // line. Arrived at by adding up the neighbour, not by eye.
         small: {
           minHeight: 34,
           paddingHorizontal: spacing[4],
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
         },
         /*
          * The disabled dim is a two-state change, so it is a CSS transition
@@ -114,9 +116,9 @@ export function GoldButton({
          * A separate child node keeps the two fades from fighting.
          */
         dim: {
-          transitionProperty: ['opacity'],
-          transitionDuration: '120ms',
-          transitionTimingFunction: 'ease-out',
+          transitionProperty: ["opacity"],
+          transitionDuration: "120ms",
+          transitionTimingFunction: "ease-out",
         },
         lit: { opacity: 1 },
         dimmed: { opacity: 0.35 },
@@ -131,9 +133,11 @@ export function GoldButton({
       haptic="commit"
       accessibilityRole="button"
       accessibilityState={{ disabled: disabled || loading, busy: loading }}
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
     >
-      <Animated.View style={[styles.dim, disabled ? styles.dimmed : styles.lit]}>
+      <Animated.View
+        style={[styles.dim, disabled ? styles.dimmed : styles.lit]}
+      >
         <LinearGradient
           colors={[asColor(primary)!, asColor(primaryDeep)!]}
           start={{ x: 0, y: 0 }}
@@ -156,9 +160,17 @@ export function GoldButton({
             // stays a bare child of the gradient, which is what every existing
             // GoldButton renders and what its centring is written around.
             <View className="flex-row items-center gap-2">
-              {Icon ? <Icon size={14} color={asColor(primaryForeground)} /> : null}
+              {Icon ? (
+                <Icon size={14} color={asColor(primaryForeground)} />
+              ) : null}
               <ThemedText
-                type={size === 'full' ? 'labelLg' : size === 'compact' ? 'labelMd' : 'labelSm'}
+                type={
+                  size === "full"
+                    ? "labelLg"
+                    : size === "compact"
+                      ? "labelMd"
+                      : "labelSm"
+                }
                 color={asColor(primaryForeground)}
               >
                 {label}

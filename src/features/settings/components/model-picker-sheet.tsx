@@ -1,20 +1,19 @@
-import React from 'react';
-import { View } from 'react-native';
+import { View } from "react-native";
 
-import { Sheet } from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
-import { Input } from '@/components/ui/input';
-import { Swipe } from '@/components/ui/swipe';
-import { ThemedText } from '@/components/themed-text';
-import { Touchable } from '@/components/ui/touchable';
-import { useModelStore } from '@/stores/model';
-import { useCSSVariable } from 'uniwind';
+import { ThemedText } from "@/components/themed-text";
+import { Input } from "@/components/ui/input";
+import { Sheet } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { Swipe } from "@/components/ui/swipe";
+import { Touchable } from "@/components/ui/touchable";
+import { useModelStore } from "@/stores/model";
+import { useCSSVariable } from "uniwind";
 
-import { asColor } from '@/utils/colors';
-import { formatBytes, formatCount } from '@/utils/format';
-import { Search, Trash2 } from '@/components/icons';
-import type { useModelSheet } from '@/features/settings/hooks/use-model-sheet';
+import { Search, Trash2 } from "@/components/icons";
+import type { useModelSheet } from "@/features/settings/hooks/use-model-sheet";
+import { asColor } from "@/utils/colors";
+import { formatBytes, formatCount } from "@/utils/format";
 
 type SheetState = ReturnType<typeof useModelSheet>;
 
@@ -38,39 +37,55 @@ export function ModelPickerSheet({
   onDeleteRequest: (id: string) => void;
 }) {
   // The colour a chat title is drawn in — see the delete tile below.
-  const foreground = useCSSVariable('--color-foreground');
+  const foreground = useCSSVariable("--color-foreground");
   const models = useModelStore((s) => s.models);
   const activeModelId = useModelStore((s) => s.activeModelId);
   const modelsHydrated = useModelStore((s) => s.modelsHydrated);
   const setActiveModel = useModelStore((s) => s.setActiveModel);
 
   return (
-    <Sheet visible={sheet.visible} onClose={sheet.close} maxHeightRatio={0.8} scrollable>
+    <Sheet
+      visible={sheet.visible}
+      onClose={sheet.close}
+      maxHeightRatio={0.8}
+      scrollable
+    >
       <Sheet.ScrollView keyboardShouldPersistTaps="handled">
         <View className="flex-row items-center justify-between px-6 pb-6">
-          {sheet.view === 'hf' ? (
+          {sheet.view === "hf" ? (
             sheet.repo ? (
               <Touchable
                 className="flex-1 flex-row items-center gap-2"
                 onPress={sheet.backOutOfRepo}
               >
-                <ThemedText type="labelSm" color={primary}>← BACK</ThemedText>
-                <ThemedText type="headlineSm" numberOfLines={1} className="flex-1">
-                  {sheet.repo.split('/')[1] ?? sheet.repo}
+                <ThemedText type="labelSm" color={primary}>
+                  ← BACK
+                </ThemedText>
+                <ThemedText
+                  type="headlineSm"
+                  numberOfLines={1}
+                  className="flex-1"
+                >
+                  {sheet.repo.split("/")[1] ?? sheet.repo}
                 </ThemedText>
               </Touchable>
             ) : (
-              <Touchable className="flex-row items-center gap-2" onPress={sheet.backToList}>
-                <ThemedText type="labelSm" color={primary}>← BACK</ThemedText>
-                <ThemedText type="headlineSm">Find Models</ThemedText>
+              <Touchable
+                className="flex-row items-center gap-2"
+                onPress={sheet.backToList}
+              >
+                <ThemedText type="labelSm" color={primary}>
+                  ← BACK
+                </ThemedText>
+                <ThemedText type="headlineSm">Find Brains</ThemedText>
               </Touchable>
             )
           ) : (
-            <ThemedText type="headlineSm">Choose Model</ThemedText>
+            <ThemedText type="headlineSm">Choose Brain</ThemedText>
           )}
         </View>
 
-        {sheet.view === 'list' ? (
+        {sheet.view === "list" ? (
           !modelsHydrated ? (
             <ModelListSkeleton />
           ) : (
@@ -100,26 +115,28 @@ export function ModelPickerSheet({
                       <ThemedText
                         type="labelSm"
                         color={mutedForeground}
-                        style={{ fontVariant: ['tabular-nums'] }}
+                        style={{ fontVariant: ["tabular-nums"] }}
                       >
                         {formatBytes(m.sizeBytes)}
-                        {m.isDownloaded ? ' · Downloaded' : ''}
-                        {m.id === 'gemma-4-e2b-it' ? ' · Recommended' : ''}
+                        {m.isDownloaded ? " · Downloaded" : ""}
+                        {m.id === "gemma-4-e2b-it" ? " · Recommended" : ""}
                       </ThemedText>
                     </View>
                     {m.id === activeModelId && (
-                      <ThemedText type="bodyMd" color={primary}>✓</ThemedText>
+                      <ThemedText type="bodyMd" color={primary}>
+                        ✓
+                      </ThemedText>
                     )}
                   </Touchable>
                 </Swipe>
               ))}
               <Touchable
                 className="flex-row items-center gap-2 px-4 py-3"
-                onPress={() => sheet.setView('hf')}
+                onPress={() => sheet.setView("hf")}
               >
                 <Search size={14} color={primary} />
                 <ThemedText type="labelSm" color={primary}>
-                  FIND MODELS ON HUGGING FACE
+                  FIND BRAINS ON HUGGING FACE
                 </ThemedText>
               </Touchable>
             </Swipe.Group>
@@ -127,7 +144,11 @@ export function ModelPickerSheet({
         ) : sheet.repo ? (
           <RepoFileList sheet={sheet} mutedForeground={mutedForeground} />
         ) : (
-          <SearchPhase sheet={sheet} mutedForeground={mutedForeground} primary={primary} />
+          <SearchPhase
+            sheet={sheet}
+            mutedForeground={mutedForeground}
+            primary={primary}
+          />
         )}
       </Sheet.ScrollView>
     </Sheet>
@@ -139,9 +160,15 @@ function ModelListSkeleton() {
   return (
     <View>
       {[0, 1, 2].map((i) => (
-        <View key={i} className="flex-row items-center gap-3 border-b border-border bg-popover px-4 py-3">
+        <View
+          key={i}
+          className="flex-row items-center gap-3 border-b border-border bg-popover px-4 py-3"
+        >
           <View className="flex-1 gap-1">
-            <Skeleton className="h-4 w-2/3" label={i === 0 ? 'Loading models' : undefined} />
+            <Skeleton
+              className="h-4 w-2/3"
+              label={i === 0 ? "Loading brains" : undefined}
+            />
             <Skeleton className="h-3 w-1/3" />
           </View>
         </View>
@@ -150,7 +177,13 @@ function ModelListSkeleton() {
   );
 }
 
-function RepoFileList({ sheet, mutedForeground }: { sheet: SheetState; mutedForeground?: string }) {
+function RepoFileList({
+  sheet,
+  mutedForeground,
+}: {
+  sheet: SheetState;
+  mutedForeground?: string;
+}) {
   if (sheet.loadingFiles) {
     return (
       <View className="items-center p-6">
@@ -178,7 +211,11 @@ function RepoFileList({ sheet, mutedForeground }: { sheet: SheetState; mutedFore
           <ThemedText type="bodyMd" className="flex-1" numberOfLines={2}>
             {item.rfilename}
           </ThemedText>
-          <ThemedText type="labelSm" color={mutedForeground} style={{ fontVariant: ['tabular-nums'] }}>
+          <ThemedText
+            type="labelSm"
+            color={mutedForeground}
+            style={{ fontVariant: ["tabular-nums"] }}
+          >
             {formatBytes(item.size)}
           </ThemedText>
         </Touchable>
@@ -213,9 +250,14 @@ function SearchPhase({
           autoCorrect={false}
           returnKeyType="search"
         />
-        <Touchable className="flex-row items-center gap-2 bg-muted px-3 py-2" onPress={sheet.search}>
+        <Touchable
+          className="flex-row items-center gap-2 bg-muted px-3 py-2"
+          onPress={sheet.search}
+        >
           <Search size={14} color={primary} />
-          <ThemedText type="labelSm" color={primary}>SEARCH</ThemedText>
+          <ThemedText type="labelSm" color={primary}>
+            SEARCH
+          </ThemedText>
         </Touchable>
       </View>
       {sheet.searching ? (
@@ -225,7 +267,7 @@ function SearchPhase({
       ) : sheet.results.length === 0 ? (
         <View className="p-4">
           <ThemedText type="bodySm" color={mutedForeground}>
-            Search for LiteRT-LM models to get started.
+            Search for LiteRT-LM brains to get started.
           </ThemedText>
         </View>
       ) : (
@@ -235,8 +277,14 @@ function SearchPhase({
             className="gap-1 border-b border-border px-4 py-3"
             onPress={() => sheet.openRepo(item.id)}
           >
-            <ThemedText type="bodyMd" numberOfLines={1}>{item.id}</ThemedText>
-            <ThemedText type="labelSm" color={mutedForeground} style={{ fontVariant: ['tabular-nums'] }}>
+            <ThemedText type="bodyMd" numberOfLines={1}>
+              {item.id}
+            </ThemedText>
+            <ThemedText
+              type="labelSm"
+              color={mutedForeground}
+              style={{ fontVariant: ["tabular-nums"] }}
+            >
               {formatCount(item.downloads)} downloads
             </ThemedText>
           </Touchable>

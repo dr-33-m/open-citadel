@@ -1,11 +1,10 @@
-import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
+import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { SamwellText } from '@/components/samwell-text';
-import { Sheet } from '@/components/ui/sheet';
-import { ThemedText } from '@/components/themed-text';
-import { asColor } from '@/utils/colors';
+import { SamwellText } from "@/components/samwell-text";
+import { ThemedText } from "@/components/themed-text";
+import { Sheet } from "@/components/ui/sheet";
+import { asColor } from "@/utils/colors";
 
 /**
  * What the account is, for the reader who taps "Optional" to find out.
@@ -23,7 +22,7 @@ export function CloudAccountSheet({
   visible: boolean;
   onClose: () => void;
 }) {
-  const mutedForeground = useCSSVariable('--color-muted-foreground');
+  const mutedForeground = useCSSVariable("--color-muted-foreground");
 
   return (
     <Sheet visible={visible} onClose={onClose}>
@@ -31,18 +30,20 @@ export function CloudAccountSheet({
         <ThemedText type="headlineSm">Why an account?</ThemedText>
 
         <SamwellText type="bodyMd" color={asColor(mutedForeground)}>
-          Your books, highlights, notes and conversations stay on this device. The account never
-          holds them.
+          Your books, highlights, notes and conversations stay on this device.
+          The account never holds them.
         </SamwellText>
 
         <SamwellText type="bodyMd" color={asColor(mutedForeground)}>
-          It is for reaching the cloud models securely, and keeping your subscription active.
+          It is for reaching the cloud brains securely, and keeping your
+          subscription active.
         </SamwellText>
 
         {/* Its own paragraph, and last. The way out matters most to the person
             who has just read the two above and decided the answer is no. */}
         <SamwellText type="bodyMd" color={asColor(mutedForeground)}>
-          Alternatively you can use Samwell on your device without an account via offline mode.
+          Alternatively you can use Samwell on your device without an account
+          via offline mode.
         </SamwellText>
       </View>
     </Sheet>

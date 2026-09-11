@@ -1,27 +1,53 @@
 import {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetView,
-  useBottomSheetScrollableCreator,
-  useBottomSheetSpringConfigs,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
-import React from 'react';
-import { StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
-import { FlashList, type FlashListProps } from '@shopify/flash-list';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useCSSVariable } from 'uniwind';
+    BottomSheetBackdrop,
+    BottomSheetFooter,
+    BottomSheetModal,
+    BottomSheetScrollView,
+    BottomSheetView,
+    useBottomSheetInternal,
+    useBottomSheetScrollableCreator,
+    useBottomSheetSpringConfigs,
+    type BottomSheetBackdropProps,
+    type BottomSheetFooterProps,
+} from "@gorhom/bottom-sheet";
+import { FlashList, type FlashListProps } from "@shopify/flash-list";
+import React from "react";
+import {
+    StyleSheet,
+    useWindowDimensions,
+    View,
+    type LayoutChangeEvent,
+    type StyleProp,
+    type ViewStyle,
+} from "react-native";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCSSVariable } from "uniwind";
 
-import { MaxContentWidth } from '@/constants/theme';
-import { Handover } from '@/components/navigation/handover';
-import { useBackHandler } from '@/hooks/use-back-handler';
-import { asColor } from '@/utils/colors';
+import { Handover } from "@/components/navigation/handover";
+import { MaxContentWidth } from "@/constants/theme";
+import { useBackHandler } from "@/hooks/use-back-handler";
+import { asColor } from "@/utils/colors";
 
 type SheetProps = {
   visible: boolean;
   onClose: () => void;
   children: React.ReactNode;
+  /**
+   * LOCAL EDIT (Open Citadel): nested sheets use `push` so presenting the
+   * child does not minimize a deferred parent and unmount the child with it.
+   */
+  stackBehavior?: React.ComponentProps<
+    typeof BottomSheetModal
+  >["stackBehavior"];
+  /** A fixed action region that follows the sheet's current snap point. */
+  footer?: React.ReactNode;
+  /**
+   * `viewport` keeps the footer at the screen edge while the sheet moves.
+   * `attached` carries it down with the sheet once dismissal passes the
+   * smallest detent.
+   */
+  footerBehavior?: "viewport" | "attached";
   /**
    * Caps the sheet's height as a fraction of the window (0..1), for content
    * that has no bound of its own. Dynamic sizing (the default) fits whatever
@@ -74,7 +100,7 @@ type SheetProps = {
    * through `components/ui/input` registers itself automatically (see
    * `use-sheet-text-input`), which is what makes this work at all.
    */
-  keyboardBehavior?: 'interactive' | 'extend' | 'fillParent';
+  keyboardBehavior?: "interactive" | "extend" | "fillParent";
   /**
    * Turn off the sheet's content-drag gesture, leaving the grabber as the
    * only way to drag it.
@@ -112,6 +138,66 @@ const SheetBottomInsetContext = React.createContext(0);
  * its body back until the rise is over — see the note on `settled` in `Sheet`.
  */
 const SheetSettledContext = React.createContext(false);
+
+function AttachedSheetFooter({
+  animatedFooterPosition,
+  bottomInset,
+  children,
+}: BottomSheetFooterProps & {
+  bottomInset: number;
+  children: React.ReactNode;
+}) {
+  const { animatedDetentsState, animatedLayoutState } =
+    useBottomSheetInternal();
+  const animatedStyle = useAnimatedStyle(() => {
+    const { detents } = animatedDetentsState.get();
+    const { containerHeight, footerHeight, handleHeight } =
+      animatedLayoutState.get();
+    const smallestDetentPosition = detents?.[0];
+    const smallestDetentFooterPosition =
+      smallestDetentPosition === undefined
+        ? 0
+        : containerHeight -
+          smallestDetentPosition -
+          Math.max(0, footerHeight) -
+          Math.max(0, handleHeight) -
+          bottomInset;
+    const currentFooterPosition = animatedFooterPosition.get() - bottomInset;
+
+    return {
+      transform: [
+        {
+          translateY: Math.max(
+            0,
+            currentFooterPosition,
+            smallestDetentFooterPosition,
+          ),
+        },
+      ],
+    };
+  });
+  const handleLayout = React.useCallback(
+    ({ nativeEvent: { layout } }: LayoutChangeEvent) => {
+      animatedLayoutState.modify((state) => {
+        "worklet";
+        state.footerHeight = layout.height;
+        return state;
+      });
+    },
+    [animatedLayoutState],
+  );
+
+  return (
+    <Animated.View
+      className="absolute inset-x-0 top-0 z-50"
+      pointerEvents="box-none"
+      onLayout={handleLayout}
+      style={animatedStyle}
+    >
+      {children}
+    </Animated.View>
+  );
+}
 
 /*
  * The library exports its scrollables but not their prop types, so this is
@@ -199,11 +285,14 @@ export function Sheet({
   visible,
   onClose,
   children,
+  stackBehavior,
+  footer,
+  footerBehavior = "viewport",
   maxHeightRatio,
   fixedHeightRatio,
   snapRatios,
   scrollable = false,
-  keyboardBehavior = 'interactive',
+  keyboardBehavior = "interactive",
   contentPanning = true,
   bare = false,
 }: SheetProps) {
@@ -236,10 +325,10 @@ export function Sheet({
   const insets = useSafeAreaInsets();
   const { height: screenHeight, width: screenWidth } = useWindowDimensions();
   const [popover, border, mutedForeground, scrim] = useCSSVariable([
-    '--color-popover',
-    '--color-border',
-    '--color-muted-foreground',
-    '--color-scrim',
+    "--color-popover",
+    "--color-border",
+    "--color-muted-foreground",
+    "--color-scrim",
   ]);
 
   // Never dismiss a modal that was never presented. The library's `dismiss()`
@@ -295,13 +384,21 @@ export function Sheet({
   // and every frame between the two is dead air. This one fires before the
   // paint that follows the state change instead of after it.
   React.useLayoutEffect(() => {
-    if (visible) {
-      hasPresented.current = true;
-      ref.current?.present();
-    } else if (hasPresented.current) {
-      hasPresented.current = false;
-      ref.current?.dismiss();
-    }
+    if (!visible) return;
+    hasPresented.current = true;
+    ref.current?.present();
+  }, [visible]);
+
+  // Dismissing is the opposite case, and must NOT be a layout effect. The
+  // modal closes through an inner ref built by `useImperativeHandle` with no
+  // dependency array, so it is torn down and rebuilt on every render of the
+  // sheet's subtree. Ask it to dismiss inside that window and the close is
+  // swallowed by an optional chain, leaving the modal stuck in DISMISSING
+  // with its portal discarding every render: content frozen, drag alive.
+  React.useEffect(() => {
+    if (visible || !hasPresented.current) return;
+    hasPresented.current = false;
+    ref.current?.dismiss();
   }, [visible]);
 
   // An open sheet owns the Android back button: back dismisses the sheet
@@ -348,7 +445,9 @@ export function Sheet({
     if (snapRatios && snapRatios.length > 0) {
       return snapRatios.map((ratio) => `${Math.round(ratio * 100)}%`);
     }
-    return fixedHeightRatio != null ? [`${Math.round(fixedHeightRatio * 100)}%`] : undefined;
+    return fixedHeightRatio != null
+      ? [`${Math.round(fixedHeightRatio * 100)}%`]
+      : undefined;
   }, [snapRatios, fixedHeightRatio]);
 
   /** True when the sheet's height comes from detents rather than its content. */
@@ -356,6 +455,29 @@ export function Sheet({
 
   /** Rule 3 of the spacing contract. */
   const bottomInset = bare ? 0 : Math.max(insets.bottom, 16);
+
+  // The same latch as the children below, for the same reason and one more:
+  // the footer is usually the control that closed the sheet, so it changes on
+  // the very commit that starts the exit. Swapping or dropping it there
+  // re-measures the sheet mid-dismissal, and the library reads that as a
+  // reason to abandon the close — leaving the modal stuck in DISMISSING,
+  // which is where it stops applying React updates at all. The sheet then
+  // sits on screen frozen, answering nothing but a drag.
+  const heldFooter = useHeldWhile(footer, visible);
+
+  const renderFooter = React.useCallback(
+    (props: BottomSheetFooterProps) =>
+      footerBehavior === "attached" ? (
+        <AttachedSheetFooter {...props} bottomInset={bottomInset}>
+          {heldFooter}
+        </AttachedSheetFooter>
+      ) : (
+        <BottomSheetFooter {...props} bottomInset={bottomInset}>
+          {heldFooter}
+        </BottomSheetFooter>
+      ),
+    [bottomInset, heldFooter, footerBehavior],
+  );
 
   /**
    * The house spring, in Apple's two designer parameters rather than
@@ -433,7 +555,9 @@ export function Sheet({
     body = heldChildren;
     contentOwesBottomInset = bottomInset;
   } else {
-    body = <BottomSheetView style={styles.padded}>{heldChildren}</BottomSheetView>;
+    body = (
+      <BottomSheetView style={styles.padded}>{heldChildren}</BottomSheetView>
+    );
   }
 
   // Every hook above has run — this is a safe conditional return. Skips the
@@ -443,6 +567,7 @@ export function Sheet({
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={stackBehavior}
       // Never under the status bar, whatever the content measures to.
       topInset={insets.top}
       enableDynamicSizing={!hasDetents}
@@ -470,11 +595,14 @@ export function Sheet({
       handleComponent={bare ? null : undefined}
       handleStyle={styles.handle}
       handleIndicatorStyle={styles.handleIndicator}
+      footerComponent={heldFooter ? renderFooter : undefined}
       onChange={handleChange}
       onDismiss={handleDismiss}
     >
       <SheetBottomInsetContext.Provider value={contentOwesBottomInset}>
-        <SheetSettledContext.Provider value={settled}>{body}</SheetSettledContext.Provider>
+        <SheetSettledContext.Provider value={settled}>
+          {body}
+        </SheetSettledContext.Provider>
       </SheetBottomInsetContext.Provider>
     </BottomSheetModal>
   );
@@ -524,14 +652,20 @@ function SheetDeferred({
  * sheet's bottom inset inside the scroll content when the shell has left it
  * to the content (see `SheetBottomInsetContext`).
  */
-function SheetScrollView({ contentContainerStyle, ...props }: SheetScrollViewProps) {
+function SheetScrollView({
+  contentContainerStyle,
+  ...props
+}: SheetScrollViewProps) {
   const bottomInset = React.useContext(SheetBottomInsetContext);
   return (
     <BottomSheetScrollView
       {...props}
       contentContainerStyle={
         bottomInset > 0
-          ? ([contentContainerStyle, { paddingBottom: bottomInset }] as StyleProp<ViewStyle>)
+          ? ([
+              contentContainerStyle,
+              { paddingBottom: bottomInset },
+            ] as StyleProp<ViewStyle>)
           : contentContainerStyle
       }
     />
@@ -595,7 +729,10 @@ function SheetFlatList<ItemT>({
       scrollEventThrottle={16}
       contentContainerStyle={
         bottomInset > 0
-          ? ([contentContainerStyle, { paddingBottom: bottomInset }] as StyleProp<ViewStyle>)
+          ? ([
+              contentContainerStyle,
+              { paddingBottom: bottomInset },
+            ] as StyleProp<ViewStyle>)
           : contentContainerStyle
       }
     />

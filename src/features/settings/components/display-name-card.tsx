@@ -1,13 +1,13 @@
-import React from 'react';
-import { TextInput, View } from 'react-native';
-import { User } from '@/components/icons';
-import { useCSSVariable } from 'uniwind';
+import { User } from "@/components/icons";
+import React from "react";
+import { TextInput, View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { Card } from '@/components/ui/card';
-import { PrefixIcon } from '@/components/ui/prefix-icon';
-import { asColor } from '@/utils/colors';
-import { useSettingsStore } from '@/stores/settings';
-import { fontFamily } from '@/constants/theme';
+import { Card } from "@/components/ui/card";
+import { PrefixIcon } from "@/components/ui/prefix-icon";
+import { fontFamily } from "@/constants/theme";
+import { useSettingsStore } from "@/stores/settings";
+import { asColor } from "@/utils/colors";
 
 /**
  * What Samwell calls you. Owns the edit draft — the store only hears about a
@@ -18,10 +18,16 @@ import { fontFamily } from '@/constants/theme';
  * there is no reason a display name should need one.
  */
 export const DisplayNameCard = React.memo(function DisplayNameCard() {
-  const mutedForeground = useCSSVariable('--color-muted-foreground');
+  const mutedForeground = useCSSVariable("--color-muted-foreground");
   const username = useSettingsStore((s) => s.username);
   const setUsername = useSettingsStore((s) => s.setUsername);
   const [editingName, setEditingName] = React.useState(username);
+
+  // Sign-in may seed an empty profile while this card is already mounted.
+  // Keep keystrokes local, but accept committed changes from the store.
+  React.useEffect(() => {
+    setEditingName(username);
+  }, [username]);
 
   const commitName = () => {
     const trimmed = editingName.trim();

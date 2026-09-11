@@ -1,15 +1,21 @@
-import React from 'react';
-import { View, type TextStyle } from 'react-native';
-import { useCSSVariable } from 'uniwind';
+import { View, type TextStyle } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { Check, ChessPawn, ChessRook, Crown, Info, type LucideIcon } from '@/components/icons';
-import { ThemedText } from '@/components/themed-text';
-import { Card } from '@/components/ui/card';
-import { PrefixIcon } from '@/components/ui/prefix-icon';
-import { Touchable } from '@/components/ui/touchable';
-import { asColor } from '@/utils/colors';
-import { cn } from '@/lib/cn';
-import type { CreditPlan, PlanId } from 'samwell-shared';
+import {
+    Check,
+    ChessPawn,
+    ChessRook,
+    Crown,
+    Info,
+    type LucideIcon,
+} from "@/components/icons";
+import { ThemedText } from "@/components/themed-text";
+import { Card } from "@/components/ui/card";
+import { PrefixIcon } from "@/components/ui/prefix-icon";
+import { Touchable } from "@/components/ui/touchable";
+import { cn } from "@/lib/cn";
+import { asColor } from "@/utils/colors";
+import type { CreditPlan, PlanId } from "samwell-shared";
 
 /**
  * The mark each plan goes by.
@@ -20,7 +26,7 @@ import type { CreditPlan, PlanId } from 'samwell-shared';
  */
 /** Hoisted: a fresh object per render, times three cards, for a value that
  * never changes. */
-const TABULAR: TextStyle = { fontVariant: ['tabular-nums'] };
+const TABULAR: TextStyle = { fontVariant: ["tabular-nums"] };
 
 const PLAN_ICON: Record<PlanId, LucideIcon> = {
   maester: ChessPawn,
@@ -57,10 +63,16 @@ export type PlanCardProps = {
  * The run selects and one button below commits. Gold then lives in exactly
  * one place and never moves, which is also what the house rule asks for.
  */
-export function PlanCard({ plan, modelCount, priceLabel, selected, onInfo }: PlanCardProps) {
+export function PlanCard({
+  plan,
+  modelCount,
+  priceLabel,
+  selected,
+  onInfo,
+}: PlanCardProps) {
   const [mutedForeground, primary] = useCSSVariable([
-    '--color-muted-foreground',
-    '--color-primary',
+    "--color-muted-foreground",
+    "--color-primary",
   ]);
   const muted = asColor(mutedForeground);
   const gold = asColor(primary);
@@ -74,13 +86,17 @@ export function PlanCard({ plan, modelCount, priceLabel, selected, onInfo }: Pla
    * is the number the meter will show.
    */
   const benefits: { label: string; leads: boolean; lines: number }[] = [
-    { label: `${plan.monthlyCredits.toLocaleString()} AI Credits`, leads: true, lines: 1 },
-    { label: `${modelCount} models to choose from`, leads: false, lines: 2 },
-    { label: 'Unused credits roll over', leads: false, lines: 2 },
+    {
+      label: `${plan.monthlyCredits.toLocaleString()} Neurons`,
+      leads: true,
+      lines: 1,
+    },
+    { label: `${modelCount} brains to choose from`, leads: false, lines: 2 },
+    { label: "Unused neurons roll over", leads: false, lines: 2 },
   ];
 
   return (
-    <Card className={cn('h-full gap-4 p-4', selected && 'border-primary')}>
+    <Card className={cn("h-full gap-4 p-4", selected && "border-primary")}>
       {/* The mark that opens the explanation sheet: absolute, top right, the
           mode card's own treatment, so "the i means more about this thing"
           is one convention across the settings screen. A quiet affordance on
@@ -115,7 +131,11 @@ export function PlanCard({ plan, modelCount, priceLabel, selected, onInfo }: Pla
       <View className="flex-row items-center gap-3">
         <PrefixIcon icon={Icon} size={36} color={selected ? gold : undefined} />
         <View className="flex-1">
-          <ThemedText type="bodySm" color={selected ? gold : muted} numberOfLines={2}>
+          <ThemedText
+            type="bodySm"
+            color={selected ? gold : muted}
+            numberOfLines={2}
+          >
             {plan.label}
           </ThemedText>
         </View>
@@ -146,7 +166,7 @@ export function PlanCard({ plan, modelCount, priceLabel, selected, onInfo }: Pla
               <Check size={14} color={selected ? gold : muted} />
             </View>
             <ThemedText
-              type={benefit.leads ? 'bodyMd' : 'bodySm'}
+              type={benefit.leads ? "bodyMd" : "bodySm"}
               color={benefit.leads ? undefined : muted}
               style={benefit.leads ? TABULAR : undefined}
               numberOfLines={benefit.lines}
@@ -157,7 +177,6 @@ export function PlanCard({ plan, modelCount, priceLabel, selected, onInfo }: Pla
           </View>
         ))}
       </View>
-
     </Card>
   );
 }

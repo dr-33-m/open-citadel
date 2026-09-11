@@ -1,24 +1,29 @@
-import React from 'react';
-import { View, useWindowDimensions, type TextStyle } from 'react-native';
-import { useCSSVariable } from 'uniwind';
-import { useAnimatedReaction, useSharedValue } from 'react-native-reanimated';
-import type { PurchasesPackage } from 'react-native-purchases';
+import React from "react";
+import { View, useWindowDimensions } from "react-native";
+import type { PurchasesPackage } from "react-native-purchases";
+import { useAnimatedReaction, useSharedValue } from "react-native-reanimated";
+import { useCSSVariable } from "uniwind";
 
-import { ThemedText } from '@/components/themed-text';
-import { ROW_FADE } from '@/components/scroll-fades';
-import { ScrollFade } from '@/components/ui/scroll-fade';
-import { Carousel, useCarouselState } from '@/components/ui/carousel';
-import { Spinner } from '@/components/ui/spinner';
-import { GoldButton } from '@/components/ui/gold-button';
-import { Touchable } from '@/components/ui/touchable';
-import { CREDIT_PLANS, PLANS, type CreditPlan, type PlanId } from 'samwell-shared';
-import { asColor } from '@/utils/colors';
-import { haptics } from '@/utils/haptics';
-import { formatStorePrice } from '@/features/billing/utils/price';
-import { PlanCard } from '@/features/billing/components/plan-card';
-import { PlanInfoSheet } from '@/features/billing/components/plan-info-sheet';
-import { PlanSlide } from '@/features/billing/components/plan-slide';
-import type { PlanModel } from '@/stores/subscription';
+import { ROW_FADE } from "@/components/scroll-fades";
+import { ThemedText } from "@/components/themed-text";
+import { Carousel, useCarouselState } from "@/components/ui/carousel";
+import { GoldButton } from "@/components/ui/gold-button";
+import { ScrollFade } from "@/components/ui/scroll-fade";
+import { Spinner } from "@/components/ui/spinner";
+import { Touchable } from "@/components/ui/touchable";
+import { PlanCard } from "@/features/billing/components/plan-card";
+import { PlanInfoSheet } from "@/features/billing/components/plan-info-sheet";
+import { PlanSlide } from "@/features/billing/components/plan-slide";
+import { formatStorePrice } from "@/features/billing/utils/price";
+import type { PlanModel } from "@/stores/subscription";
+import { asColor } from "@/utils/colors";
+import { haptics } from "@/utils/haptics";
+import {
+    CREDIT_PLANS,
+    PLANS,
+    type CreditPlan,
+    type PlanId,
+} from "samwell-shared";
 
 /**
  * Every slide is absolutely positioned, so `Carousel.Content` has to be told
@@ -62,14 +67,6 @@ const MAX_FONT_SCALE = 2;
  * there are two more. */
 const CARD_WIDTH = 232;
 
-const SMALL: TextStyle = { fontSize: 11 };
-
-/** Grand Maester, the middle of a run of three and the plan the app is named
- * around. */
-const DEFAULT_INDEX = 1;
-
-
-
 export type PlanCarouselProps = {
   /** Store packages keyed by plan, or empty while the offering loads. */
   packages: Partial<Record<PlanId, PurchasesPackage>>;
@@ -78,11 +75,20 @@ export type PlanCarouselProps = {
   catalogue: PlanModel[];
   /** How many models each plan opens up. */
   modelCounts: Record<PlanId, number>;
-  busy: PlanId | 'restore' | null;
+  busy: PlanId | "restore" | "manage" | null;
   loading: boolean;
-  error: string | null;
   onChoose: (plan: PlanId, packageToBuy: PurchasesPackage) => void;
-  onRestore: () => void;
+  onSelectionChange?: (plan: PlanId) => void;
+  onRestore?: () => void;
+  /** A subset for plan changes. The initial purchase flow shows all plans. */
+  plans?: CreditPlan[];
+  /** The card the run rests on when it opens. */
+  initialPlanId?: PlanId;
+  /** Upgrade sheets do not repeat the restore escape hatch. */
+  showRestore?: boolean;
+  /** Plan-change sheets pin their action outside the scrolling region. */
+  showAction?: boolean;
+  actionVerb?: "CHOOSE" | "UPGRADE TO" | "DOWNGRADE TO";
 };
 
 /**
@@ -99,12 +105,19 @@ export type PlanCarouselProps = {
  * with every other edge in the app - the cards are wider than book covers,
  * but a second depth number would be a second decision.
  */
-function CarouselEdgeFade({ children }: { children: React.ReactNode }) {
+function CarouselEdgeFade({
+  children,
+  initialIndex,
+}: {
+  children: React.ReactNode;
+  initialIndex: number;
+}) {
   const { progress, count } = useCarouselState();
+  const popover = useCSSVariable("--color-popover");
   // Seeded for the run's resting index, so the first frame is already
   // correct and the reaction only ever maintains it.
-  const start = useSharedValue(DEFAULT_INDEX * CARD_WIDTH);
-  const end = useSharedValue((PLANS.length - 1 - DEFAULT_INDEX) * CARD_WIDTH);
+  const start = useSharedValue(initialIndex * CARD_WIDTH);
+  const end = useSharedValue((count - 1 - initialIndex) * CARD_WIDTH);
 
   useAnimatedReaction(
     () => progress.get(),
@@ -115,7 +128,13 @@ function CarouselEdgeFade({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <ScrollFade orientation="horizontal" edges="both" size={ROW_FADE} distance={{ start, end }}>
+    <ScrollFade
+      orientation="horizontal"
+      edges="both"
+      size={ROW_FADE}
+      color={asColor(popover)}
+      distance={{ start, end }}
+    >
       {children}
     </ScrollFade>
   );
@@ -139,22 +158,32 @@ export function PlanCarousel({
   modelCounts,
   busy,
   loading,
-  error,
   onChoose,
+  onSelectionChange,
   onRestore,
+  plans = PLANS,
+  initialPlanId = "grand_maester",
+  showRestore = true,
+  showAction = true,
+  actionVerb = "CHOOSE",
 }: PlanCarouselProps) {
-  const [mutedForeground, destructive] = useCSSVariable([
-    '--color-muted-foreground',
-    '--color-destructive',
-  ]);
-  const [active, setActive] = React.useState(DEFAULT_INDEX);
+  const mutedForeground = useCSSVariable("--color-muted-foreground");
+  const initialIndex = Math.max(
+    0,
+    plans.findIndex((plan) => plan.id === initialPlanId),
+  );
+  const [active, setActive] = React.useState(initialIndex);
   /** Which plan's explanation sheet is open, if any. One sheet, three keys. */
   const [infoPlanId, setInfoPlanId] = React.useState<PlanId | null>(null);
   // Reactive rather than read once: the setting can change while the app is
   // open, and `PixelRatio.getFontScale()` at module load would never notice.
   const { fontScale } = useWindowDimensions();
   const contentStyle = React.useMemo(
-    () => ({ height: Math.round(BASE_CARD_HEIGHT * Math.min(Math.max(1, fontScale), MAX_FONT_SCALE)) }),
+    () => ({
+      height: Math.round(
+        BASE_CARD_HEIGHT * Math.min(Math.max(1, fontScale), MAX_FONT_SCALE),
+      ),
+    }),
     [fontScale],
   );
 
@@ -163,10 +192,15 @@ export function PlanCarousel({
    * `select` for. It fires on the settled index rather than during the drag,
    * so the buzz lands with the card arriving and not under the finger.
    */
-  const handleIndexChange = React.useCallback((next: number) => {
-    setActive(next);
-    haptics.select();
-  }, []);
+  const handleIndexChange = React.useCallback(
+    (next: number) => {
+      setActive(next);
+      const nextPlan = plans[next];
+      if (nextPlan) onSelectionChange?.(nextPlan.id);
+      haptics.select();
+    },
+    [onSelectionChange, plans],
+  );
 
   const choose = React.useCallback(
     (plan: PlanId) => {
@@ -185,14 +219,17 @@ export function PlanCarousel({
       // in the wrong currency is worse than a price shown a beat late. The
       // string then loses its country qualifier and its exactly-zero cents:
       // "$20", not "US$20.00" - see `formatStorePrice`.
-      formatStorePrice(packages[plan.id]?.product.priceString ?? `$${plan.priceUsd}`),
+      formatStorePrice(
+        packages[plan.id]?.product.priceString ?? `$${plan.priceUsd}`,
+      ),
     [packages],
   );
 
   const nothingToBuy = Object.keys(packages).length === 0;
   // The run is bounded to three, but an index arriving from a gesture is not
   // something to take on trust when it indexes an array.
-  const activePlan = PLANS[Math.min(Math.max(0, active), PLANS.length - 1)];
+  const activePlan =
+    plans[Math.min(Math.max(0, active), plans.length - 1)] ?? PLANS[0];
 
   return (
     <View className="gap-4">
@@ -200,12 +237,12 @@ export function PlanCarousel({
         variant="default"
         align="center"
         itemSize={CARD_WIDTH}
-        defaultIndex={DEFAULT_INDEX}
+        defaultIndex={initialIndex}
         onIndexChange={handleIndexChange}
       >
-        <CarouselEdgeFade>
+        <CarouselEdgeFade initialIndex={initialIndex}>
           <Carousel.Content style={contentStyle}>
-            {PLANS.map((plan, index) => (
+            {plans.map((plan, index) => (
               <PlanSlide key={plan.id} index={index}>
                 <PlanCard
                   plan={plan}
@@ -225,18 +262,16 @@ export function PlanCarousel({
           once per screen and never moves; the run is what selects. A label
           that says which plan is also the difference between a button a
           screen reader can announce and three that all say "choose". */}
-      <GoldButton
-        label={`CHOOSE ${activePlan.label.toUpperCase()}`}
-        size="full"
-        loading={busy === activePlan.id}
-        disabled={nothingToBuy || busy !== null}
-        onPress={() => choose(activePlan.id)}
-      />
-
-      {error ? (
-        <ThemedText type="bodySm" color={asColor(destructive)} style={SMALL}>
-          {error}
-        </ThemedText>
+      {showAction ? (
+        <View>
+          <GoldButton
+            label={`${actionVerb} ${activePlan.label.toUpperCase()}`}
+            size="full"
+            loading={busy === activePlan.id}
+            disabled={nothingToBuy || busy !== null}
+            onPress={() => choose(activePlan.id)}
+          />
+        </View>
       ) : null}
 
       {/*
@@ -248,29 +283,37 @@ export function PlanCarousel({
        * its own line, so their comings and goings never move the centred
        * label a pixel.
        */}
-      <View className="items-center">
-        <Touchable
-          className="px-4 py-2"
-          onPress={onRestore}
-          disabled={busy !== null}
-          haptic="select"
-          accessibilityRole="button"
-          accessibilityLabel="Restore purchases"
-        >
-          <ThemedText
-            type="labelSm"
-            color={asColor(mutedForeground)}
-            className="tracking-[1px]"
+      {showRestore && onRestore ? (
+        <View className="items-center">
+          <Touchable
+            className="px-4 py-2"
+            onPress={onRestore}
+            disabled={busy !== null}
+            haptic="select"
+            accessibilityRole="button"
+            accessibilityLabel="Restore purchases"
           >
-            RESTORE PURCHASES
-          </ThemedText>
-        </Touchable>
-      </View>
-      {busy === 'restore' || loading ? (
+            <ThemedText
+              type="labelSm"
+              color={asColor(mutedForeground)}
+              className="tracking-[1px]"
+            >
+              RESTORE PURCHASES
+            </ThemedText>
+          </Touchable>
+        </View>
+      ) : null}
+      {showRestore &&
+      onRestore &&
+      (busy === "restore" || (loading && busy === null)) ? (
         <View className="items-center">
           <Spinner
             size="sm"
-            label={busy === 'restore' ? 'Looking for your subscription' : 'Checking your plan'}
+            label={
+              busy === "restore"
+                ? "Looking for your subscription"
+                : "Checking your plan"
+            }
           />
         </View>
       ) : null}
