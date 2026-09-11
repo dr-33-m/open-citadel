@@ -126,10 +126,10 @@ export function useSamwellStatus({
         {
           label: 'START NEW CHAT',
           icon: MessageSquarePlus,
-          onPress: () => {
-            clearDeviceLimit();
-            onNewChat();
-          },
+          // `newChat` owns clearing the limit together with resetting the
+          // native conversation. Clearing it here first made the switch run
+          // an unsafe auto-title pass on the exhausted engine.
+          onPress: onNewChat,
         },
       ],
     };

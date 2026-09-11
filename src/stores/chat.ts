@@ -1,35 +1,35 @@
 import { eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
+import { showToast } from '@/components/toast/toast-provider';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
 import { extractChapterTextToLocator } from '@/services/book-context';
 import {
-  APPROVAL_REQUIRED_TOOLS,
-  executeToolCall,
-  ensureBookMarkers,
-  formatToolResultForLLM,
-  toolStatus,
-  type BookCandidate,
-  type ToolCallContext,
-} from '@/services/chat-tools';
-import {
-  listSessions,
-  removeSession,
-  renameSession,
-  type ChatMessage,
-  type ChatSession,
+    listSessions,
+    removeSession,
+    renameSession,
+    type ChatMessage,
+    type ChatSession,
 } from '@/services/chat-sessions';
 import { suggestChatTitle } from '@/services/chat-title';
-import { asCloudRefusal, sendCloudChatTurn } from '@/services/cloud-chat';
-import { showToast } from '@/components/toast/toast-provider';
+import {
+    APPROVAL_REQUIRED_TOOLS,
+    ensureBookMarkers,
+    executeToolCall,
+    formatToolResultForLLM,
+    toolStatus,
+    type BookCandidate,
+    type ToolCallContext,
+} from '@/services/chat-tools';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
+import { asCloudRefusal, sendCloudChatTurn } from '@/services/cloud-chat';
 import { planReplay, type ReplayMessage } from '@/services/context-budget';
-import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import * as Inference from '@/services/inference';
+import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
+import { useAccountStore } from '@/stores/account';
 import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
-import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
 
@@ -470,6 +470,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       isToolCalling: false,
       toolCallStatus: null,
       toolCallName: null,
+      // The incoming conversation gets its own assessment below. Keeping the
+      // previous chat's context limit here left Switch to chat blocked even
+      // after the native conversation had been reset.
+      deviceLimit: null,
     });
 
     // Reset stateful conversation in the engine
@@ -503,7 +507,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const isFirstRealMessage = !activeSession.bookId && realMessageCount(get().messages) === 0;
 
     const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
-    const { enableToolCalling, enableThinking } = useModelStore.getState().inference;
+    const { enableThinking } = useModelStore.getState().inference;
     if (samwellMode === 'offline' && !Inference.isModelLoaded()) return;
     if (samwellMode === 'cloud' && !cloudBaseUrl) return;
     // Grand Maester Samwell runs on accounts, so a turn with nobody behind it
@@ -689,30 +693,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      // When tools are enabled, suppress first-pass display — the model may emit
-      // "I can't find..." text before triggering tool calls (example app pattern).
-      // When tools are off, stream normally.
       let result = limitReached
         ? null
         : await Inference.chat(
             content,
-            enableToolCalling
-              ? () => {} // suppress first-pass tokens; "Processing" indicator shows instead
-              : ({ content: c }) => {
-                  if (c) {
-                    set({ isThinking: false, streamingContent: c });
-                  } else if (enableThinking) {
-                    // Empty callback = model transitioned from prefill to thinking
-                    set({ isThinking: true });
-                  }
-                },
+            ({ content: c }) => {
+              if (c) {
+                set({ isThinking: false, streamingContent: c });
+              } else if (enableThinking) {
+                // Empty callback = model transitioned from prefill to thinking
+                set({ isThinking: true });
+              }
+            },
           );
-
-      // If tools were suppressed but model answered without calling tools,
-      // show the response text now
-      if (result && enableToolCalling && !result.toolCalls?.length) {
-        set({ isThinking: false, streamingContent: result.text });
-      }
 
       for (let i = 0; result && !limitReached && i < MAX_TOOL_ITERATIONS && result.toolCalls?.length; i++) {
         if (!Inference.checkMemoryHeadroom().ok) {

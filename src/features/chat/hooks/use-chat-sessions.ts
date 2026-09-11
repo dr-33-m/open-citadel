@@ -14,6 +14,7 @@
  */
 import React from 'react';
 
+import * as Inference from '@/services/inference';
 import { NEW_CHAT_TITLE, useChatStore, uuid } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 import { useSettingsStore } from '@/stores/settings';
@@ -60,6 +61,9 @@ export function useChatSessions() {
   const refineLeavingTitle = React.useCallback(async () => {
     const cloud = useSettingsStore.getState().samwellMode === 'cloud';
     if (!cloud) {
+      // A device limit means another native generation is unsafe. Titles are
+      // best-effort; leaving the conversation must still be immediate.
+      if (useChatStore.getState().deviceLimit) return;
       await useChatStore.getState().refineSessionTitleOnExit();
       return;
     }
@@ -88,7 +92,25 @@ export function useChatSessions() {
     try {
       if (isGenerating) stopGeneration();
       await refineLeavingTitle();
-      useChatStore.setState({ activeSession: null, messages: [] });
+      // A new chat is also a new native conversation. Clear every turn-local
+      // field now so a stopped generation cannot leave the page locked while
+      // its native promise unwinds.
+      Inference.resetConversation();
+      useChatStore.setState({
+        activeSession: null,
+        messages: [],
+        isGenerating: false,
+        isThinking: false,
+        isToolCalling: false,
+        toolCallStatus: null,
+        toolCallName: null,
+        streamingContent: '',
+        thinkingContent: '',
+        thinkingSeconds: null,
+        lastStreamedMessageId: null,
+        primedGeneration: null,
+        deviceLimit: null,
+      });
       setSession({ pendingBook: null, mode: 'chat' });
     } finally {
       setSwitching(null);
