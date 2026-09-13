@@ -45,8 +45,10 @@ import {
  */
 export function CloudPanel({
   onRequestAccount,
+  onAccessActivated,
 }: {
   onRequestAccount: () => void;
+  onAccessActivated?: () => void;
 }) {
   const focused = useIsFocused();
   const [mutedForeground, primary] = useCSSVariable([
@@ -146,6 +148,7 @@ export function CloudPanel({
           tone: "success",
           key: "billing",
         });
+        if (outcome === "active") onAccessActivated?.();
         return outcome;
       }
 
@@ -155,7 +158,7 @@ export function CloudPanel({
       }
       return false;
     },
-    [buy],
+    [buy, onAccessActivated],
   );
 
   const onRestore = React.useCallback(async () => {
@@ -166,6 +169,7 @@ export function CloudPanel({
         tone: "success",
         key: "billing",
       });
+      onAccessActivated?.();
       return;
     }
 
@@ -173,7 +177,7 @@ export function CloudPanel({
     if (restoreError) {
       showToast({ message: restoreError, key: "billing" });
     }
-  }, [restore]);
+  }, [onAccessActivated, restore]);
 
   const onManage = React.useCallback(async () => {
     const result = await manage();

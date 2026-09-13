@@ -13,13 +13,13 @@
  * "PREPARING x/y" after an app restart.
  */
 
-import { and, eq, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 import {
-  EncodingType,
-  StorageAccessFramework,
-  getInfoAsync,
-  readAsStringAsync,
-  readDirectoryAsync,
+    EncodingType,
+    StorageAccessFramework,
+    getInfoAsync,
+    readAsStringAsync,
+    readDirectoryAsync,
 } from "expo-file-system/legacy";
 
 import { db } from "@/db/client";
@@ -183,6 +183,27 @@ export async function getActiveSyncJob(): Promise<SyncJobView | null> {
     .orderBy(syncJobs.updatedAt);
   if (rows.length > 0) return rows[rows.length - 1] as SyncJobView;
   return null;
+}
+
+/** Whether this folder has already had a sync attempt on the current local day. */
+export async function hasSyncedToday(directoryUri: string): Promise<boolean> {
+  const rows = await db
+    .select({ startedAt: syncJobs.startedAt })
+    .from(syncJobs)
+    .where(eq(syncJobs.directoryUri, directoryUri))
+    .orderBy(desc(syncJobs.startedAt))
+    .limit(1);
+  const startedAt = rows[0]?.startedAt;
+  if (!startedAt) return false;
+
+  const started = new Date(startedAt);
+  if (Number.isNaN(started.getTime())) return false;
+  const today = new Date();
+  return (
+    started.getFullYear() === today.getFullYear() &&
+    started.getMonth() === today.getMonth() &&
+    started.getDate() === today.getDate()
+  );
 }
 
 /**

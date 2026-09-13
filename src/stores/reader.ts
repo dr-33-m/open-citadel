@@ -1,16 +1,16 @@
-import { eq } from "drizzle-orm";
 import type { Link, Locator } from "@dr33m/react-native-readium";
+import { eq } from "drizzle-orm";
 import { create } from "zustand";
 
 import { db } from "@/db/client";
 import {
-  bookmarks,
-  books,
-  highlights,
-  notes,
-  readingDays,
-  readingProgress,
-  thoughts,
+    bookmarks,
+    books,
+    highlights,
+    notes,
+    readingDays,
+    readingProgress,
+    thoughts,
 } from "@/db/schema";
 import { extractSurroundingText } from "@/services/book-context";
 import { countableProgress } from "@/services/reading-day";
@@ -325,6 +325,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       color: color || "#f2ca50",
       chatSessionId: chatSessionId ?? null,
       createdAt: now,
+      createdDay: localDayString(new Date(now)),
     });
 
     // Capture the surrounding chapter text in the background so the highlight

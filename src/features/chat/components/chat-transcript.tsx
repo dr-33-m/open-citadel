@@ -13,22 +13,25 @@
  * a `scrollToEnd` on every content-size change that dragged the reader back to
  * the live edge whatever they were half way through reading.
  */
-import React from 'react';
-import { View, type ViewStyle } from 'react-native';
+import React from "react";
+import { View, type ViewStyle } from "react-native";
 
-import { TranscriptFade } from '@/components/scroll-fades';
-import { MessageScroller } from '@/components/ui/message-scroller';
-import { ChatBubble } from '@/components/chat/chat-bubble';
-import { AgentStatus } from '@/features/chat/components/agent-status';
-import { TurnStatus } from '@/features/chat/components/turn-status';
+import { ChatBubble } from "@/components/chat/chat-bubble";
+import { TranscriptFade } from "@/components/scroll-fades";
+import { MessageScroller } from "@/components/ui/message-scroller";
+import { AgentStatus } from "@/features/chat/components/agent-status";
 import {
-  SamwellStatusBanner,
-  SamwellStatusEmptyState,
-} from '@/features/chat/components/samwell-status';
-import type { SamwellStatus } from '@/features/chat/hooks/use-samwell-status';
-import { PENDING_ACTIVITY, type TurnIndicator } from '@/features/chat/utils/agent-activity';
-import { transcriptContent } from '@/features/chat/utils/transcript-layout';
-import type { ChatMessage } from '@/stores/chat';
+    SamwellStatusBanner,
+    SamwellStatusEmptyState,
+} from "@/features/chat/components/samwell-status";
+import { TurnStatus } from "@/features/chat/components/turn-status";
+import type { SamwellStatus } from "@/features/chat/hooks/use-samwell-status";
+import {
+    PENDING_ACTIVITY,
+    type TurnIndicator,
+} from "@/features/chat/utils/agent-activity";
+import { transcriptContent } from "@/features/chat/utils/transcript-layout";
+import type { ChatMessage } from "@/stores/chat";
 
 interface ChatTranscriptProps {
   /** Which conversation this is. The scroller is keyed on it, so opening
@@ -100,7 +103,8 @@ export function ChatTranscript({
    * would be a duplicate key.
    */
   const awaitingStore =
-    pendingUserMessage != null && !messages.some((m) => m.id === pendingUserMessage.id);
+    pendingUserMessage != null &&
+    !messages.some((m) => m.id === pendingUserMessage.id);
 
   const turns = React.useMemo(() => {
     if (pendingUserMessage == null || !awaitingStore) return messages;
@@ -108,8 +112,8 @@ export function ChatTranscript({
       ...messages,
       {
         id: pendingUserMessage.id,
-        sessionId: sessionId ?? '',
-        role: 'user' as const,
+        sessionId: sessionId ?? "",
+        role: "user" as const,
         content: pendingUserMessage.content,
         createdAt: new Date().toISOString(),
       },
@@ -118,15 +122,19 @@ export function ChatTranscript({
 
   const isEmpty = turns.length === 0 && !streamingContent;
   if (isEmpty) {
-    return <SamwellStatusEmptyState status={status} style={floatingClearance} />;
+    return (
+      <SamwellStatusEmptyState status={status} style={floatingClearance} />
+    );
   }
 
   return (
     <>
-      {status ? <SamwellStatusBanner status={status} style={contentColumn} /> : null}
+      {status ? (
+        <SamwellStatusBanner status={status} style={contentColumn} />
+      ) : null}
 
       <MessageScroller
-        key={sessionId ?? 'new'}
+        key={sessionId ?? "new"}
         autoScroll
         className="flex-1"
         style={contentColumn}
@@ -148,10 +156,10 @@ export function ChatTranscript({
                   messageId={m.id}
                   // The reader's own turns are what a thread is navigated by:
                   // the question, not the tail of the answer to it.
-                  scrollAnchor={m.role === 'user'}
+                  scrollAnchor={m.role === "user"}
                 >
                   <ChatBubble
-                    role={m.role as 'user' | 'assistant'}
+                    role={m.role as "user" | "assistant"}
                     content={m.content}
                     // The just-streamed reply is already on screen; animating
                     // its "arrival" is the flick the reader sees when a turn

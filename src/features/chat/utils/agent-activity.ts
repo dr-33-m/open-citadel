@@ -86,6 +86,8 @@ const TOOL_ORB: Record<string, ThinkingOrbState> = {
 /** The slice of chat state that decides what the indicator shows. */
 export interface AgentActivityInput {
   isGenerating: boolean;
+  /** The reply has landed, but the local engine is naming the conversation. */
+  isTitling?: boolean;
   isToolCalling: boolean;
   /** The tool actually running, for picking a truthful orb. */
   toolCallName: string | null;
@@ -119,6 +121,7 @@ export const PENDING_ACTIVITY: AgentActivity = { orb: 'working', label: 'Process
  */
 export function agentActivity({
   isGenerating,
+  isTitling,
   isToolCalling,
   toolCallName,
   toolCallStatus,
@@ -126,6 +129,10 @@ export function agentActivity({
   isStreaming,
 }: AgentActivityInput): AgentActivity | null {
   if (!isGenerating) return null;
+
+  if (isTitling) {
+    return { orb: 'shaping', label: 'Naming this chat…' };
+  }
 
   if (isToolCalling) {
     return {
@@ -185,6 +192,13 @@ export function turnIndicator(
   const { trace, traceSeconds, ...activityInput } = input;
 
   if (!activityInput.isGenerating && !trace) return null;
+
+  // Titling starts after the answer has landed, so it must replace a
+  // completed reasoning trace rather than hiding behind it.
+  if (activityInput.isGenerating && activityInput.isTitling) {
+    const activity = agentActivity(activityInput);
+    return activity ? { kind: 'activity', activity } : null;
+  }
 
   // Once there is a trace, the reasoning panel owns the footer for the rest of
   // the turn — a tool call folds into its trigger instead of stacking a row.

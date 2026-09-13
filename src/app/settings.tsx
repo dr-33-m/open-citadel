@@ -1,26 +1,26 @@
-import React from 'react';
-import { useCSSVariable } from 'uniwind';
-import { ChevronDown } from '@/components/icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { View, type ScrollView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronDown } from "@/components/icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React from "react";
+import { View, type ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCSSVariable } from "uniwind";
 
-import { PageFade } from '@/components/scroll-fades';
-import { AppearanceSection } from '@/features/settings/components/appearance-section';
-import { BooksTipSection } from '@/features/settings/components/books-tip-section';
-import { ProfileSection } from '@/features/settings/components/profile-section';
-import { ReachOutSection } from '@/features/settings/components/reach-out-section';
-import { SamwellSection } from '@/features/settings/components/samwell-section';
-import { TtsSection } from '@/features/settings/components/tts-section';
-import { Handover } from '@/components/navigation/handover';
-import { SettingsSkeleton } from '@/components/skeletons/settings-skeleton';
-import { TransitionScrollView } from '@/components/navigation/transition-scroll';
-import { ScreenHeader } from '@/components/ui/screen-header';
-import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, iconSize, layout } from '@/constants/theme';
-import { backTo } from '@/navigation/navigate';
-import { useScreenSettled } from '@/navigation/use-screen-settled';
-import { asColor } from '@/utils/colors';
+import { Handover } from "@/components/navigation/handover";
+import { TransitionScrollView } from "@/components/navigation/transition-scroll";
+import { PageFade } from "@/components/scroll-fades";
+import { SettingsSkeleton } from "@/components/skeletons/settings-skeleton";
+import { ThemedView } from "@/components/themed-view";
+import { ScreenHeader } from "@/components/ui/screen-header";
+import { MaxContentWidth, iconSize, layout } from "@/constants/theme";
+import { AppearanceSection } from "@/features/settings/components/appearance-section";
+import { BooksTipSection } from "@/features/settings/components/books-tip-section";
+import { ProfileSection } from "@/features/settings/components/profile-section";
+import { ReachOutSection } from "@/features/settings/components/reach-out-section";
+import { SamwellSection } from "@/features/settings/components/samwell-section";
+import { TtsSection } from "@/features/settings/components/tts-section";
+import { backTo } from "@/navigation/navigate";
+import { useScreenSettled } from "@/navigation/use-screen-settled";
+import { asColor } from "@/utils/colors";
 
 /**
  * Settings.
@@ -39,7 +39,7 @@ import { asColor } from '@/utils/colors';
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [foreground] = useCSSVariable(['--color-foreground']);
+  const [foreground] = useCSSVariable(["--color-foreground"]);
   const settled = useScreenSettled();
 
   /**
@@ -51,7 +51,10 @@ export default function SettingsScreen() {
    * thread, and jump to the offset outright and the reader lands somewhere
    * with no idea what they travelled past.
    */
-  const { section } = useLocalSearchParams<{ section?: string }>();
+  const { section, panel } = useLocalSearchParams<{
+    section?: string;
+    panel?: string;
+  }>();
   const scrollRef = React.useRef<ScrollView>(null);
   const scrolled = React.useRef(false);
   /**
@@ -81,7 +84,10 @@ export default function SettingsScreen() {
   React.useEffect(revealSection, [revealSection]);
 
   /** The cloud panel's "sign in" way out, one section up the same screen. */
-  const revealAccount = React.useCallback(() => scrollToSection('account'), [scrollToSection]);
+  const revealAccount = React.useCallback(
+    () => scrollToSection("account"),
+    [scrollToSection],
+  );
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -90,9 +96,11 @@ export default function SettingsScreen() {
           `navigation/transitions`). */}
       <ScreenHeader
         title="Settings"
-        leftIcon={<ChevronDown size={iconSize.default} color={asColor(foreground)} />}
+        leftIcon={
+          <ChevronDown size={iconSize.default} color={asColor(foreground)} />
+        }
         leftLabel="Close settings"
-        onLeftPress={() => backTo(router, '/')}
+        onLeftPress={() => backTo(router, "/")}
       />
 
       {/* Held until the drawer has settled, not merely a frame past the shell.
@@ -105,7 +113,11 @@ export default function SettingsScreen() {
         skeleton={
           <View
             className="flex-1 px-6"
-            style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+            style={{
+              maxWidth: MaxContentWidth,
+              width: "100%",
+              alignSelf: "center",
+            }}
           >
             <SettingsSkeleton />
           </View>
@@ -116,7 +128,11 @@ export default function SettingsScreen() {
           <TransitionScrollView
             ref={scrollRef}
             className="flex-1 px-6"
-            style={{ maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' }}
+            style={{
+              maxWidth: MaxContentWidth,
+              width: "100%",
+              alignSelf: "center",
+            }}
             contentContainerStyle={{
               paddingBottom: layout.scrollBottom + insets.bottom,
             }}
@@ -141,7 +157,10 @@ export default function SettingsScreen() {
                 revealSection();
               }}
             >
-              <SamwellSection onRequestAccount={revealAccount} />
+              <SamwellSection
+                onRequestAccount={revealAccount}
+                initialMode={panel === "cloud" ? "cloud" : undefined}
+              />
             </View>
 
             {settled && <TtsSection />}

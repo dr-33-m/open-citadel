@@ -3,8 +3,8 @@ import { create } from "zustand";
 
 import { db } from "@/db/client";
 import { books, highlights, notes, thoughts } from "@/db/schema";
-import { localDayString } from "@/utils/day";
 import { useSettingsStore } from "@/stores/settings";
+import { localDayString } from "@/utils/day";
 
 export type TimelineItem = {
   type: "highlight" | "thought";
@@ -272,6 +272,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       tags: tags.length > 0 ? JSON.stringify(tags) : null,
       chatSessionId: chatSessionId ?? null,
       createdAt: now,
+      createdDay: localDayString(new Date(now)),
     });
 
     await get().loadTimeline();

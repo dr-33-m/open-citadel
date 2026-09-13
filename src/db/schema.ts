@@ -43,22 +43,28 @@ export const readingProgress = sqliteTable("reading_progress", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const highlights = sqliteTable("highlights", {
-  id: text("id").primaryKey(),
-  bookId: text("book_id")
-    .notNull()
-    .references(() => books.id),
-  text: text("text").notNull(),
-  locator: text("locator"),
-  page: integer("page"),
-  chapter: text("chapter"),
-  color: text("color").default("#f2ca50"),
-  tags: text("tags"),
-  chatSessionId: text("chat_session_id"),
-  /** JSON {before, after}: chapter text around the highlight, captured at creation */
-  context: text("context"),
-  createdAt: text("created_at").notNull(),
-});
+export const highlights = sqliteTable(
+  "highlights",
+  {
+    id: text("id").primaryKey(),
+    bookId: text("book_id")
+      .notNull()
+      .references(() => books.id),
+    text: text("text").notNull(),
+    locator: text("locator"),
+    page: integer("page"),
+    chapter: text("chapter"),
+    color: text("color").default("#f2ca50"),
+    tags: text("tags"),
+    chatSessionId: text("chat_session_id"),
+    /** JSON {before, after}: chapter text around the highlight, captured at creation */
+    context: text("context"),
+    createdAt: text("created_at").notNull(),
+    /** Local calendar day captured at creation, for indexed Timeline marks. */
+    createdDay: text("created_day").notNull().default(""),
+  },
+  (table) => [index("highlights_created_day_idx").on(table.createdDay)],
+);
 
 export const notes = sqliteTable("notes", {
   id: text("id").primaryKey(),
@@ -99,15 +105,21 @@ export const bookmarks = sqliteTable("bookmarks", {
   createdAt: text("created_at").notNull(),
 });
 
-export const thoughts = sqliteTable("thoughts", {
-  id: text("id").primaryKey(),
-  text: text("text").notNull(),
-  color: text("color").default("#f2ca50"),
-  tags: text("tags"),
-  chatSessionId: text("chat_session_id"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at"),
-});
+export const thoughts = sqliteTable(
+  "thoughts",
+  {
+    id: text("id").primaryKey(),
+    text: text("text").notNull(),
+    color: text("color").default("#f2ca50"),
+    tags: text("tags"),
+    chatSessionId: text("chat_session_id"),
+    createdAt: text("created_at").notNull(),
+    /** Local calendar day captured at creation, for indexed Timeline marks. */
+    createdDay: text("created_day").notNull().default(""),
+    updatedAt: text("updated_at"),
+  },
+  (table) => [index("thoughts_created_day_idx").on(table.createdDay)],
+);
 
 export const appSettings = sqliteTable("app_settings", {
   key: text("key").primaryKey(),

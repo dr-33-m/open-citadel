@@ -68,6 +68,8 @@ export interface SamwellStatus {
 interface UseSamwellStatusArgs {
   readiness: SamwellReadiness;
   onOpenSettings: () => void;
+  /** Opens the Cloud panel without changing the saved engine mode. */
+  onOpenPlans: () => void;
   /**
    * Settings, scrolled to the account rather than to Samwell.
    *
@@ -85,6 +87,7 @@ interface UseSamwellStatusArgs {
 export function useSamwellStatus({
   readiness,
   onOpenSettings,
+  onOpenPlans,
   onOpenAccount,
   onNewChat,
 }: UseSamwellStatusArgs): SamwellStatus | null {
@@ -92,7 +95,6 @@ export function useSamwellStatus({
   const clearDeviceLimit = useChatStore((s) => s.clearDeviceLimit);
   const setSamwellMode = useSettingsStore((s) => s.setSamwellMode);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
-  /** Offering the cloud as a way out is only honest if there is a cloud. */
   const cloudConfigured = cloudBaseUrl.length > 0;
 
   const switchToCloud = React.useCallback(async () => {
@@ -112,17 +114,41 @@ export function useSamwellStatus({
    * end was itself a dead end. When there is no cloud to switch to, the
    * honest offer is the place where one gets set up.
    */
-  const cloudEscape: SamwellStatusAction = cloudConfigured
-    ? { label: 'SWITCH TO CLOUD', icon: Cloud, onPress: () => void switchToCloud() }
-    : { label: 'SET UP CLOUD', icon: Cloud, onPress: onOpenSettings };
-
   const { ready, downloaded, loading, loadError, initContext, mode, cloudBlocker } = readiness;
 
+  let cloudEscape: SamwellStatusAction | null = null;
+  let cloudRequirement: string | null = null;
+
+  if (!cloudConfigured || cloudBlocker === 'notConfigured') {
+    cloudEscape = { label: 'SET UP CLOUD', icon: Cloud, onPress: onOpenSettings };
+  } else if (cloudBlocker === 'needsAccount') {
+    cloudRequirement = 'Samwell Cloud requires an account.';
+    cloudEscape = { label: 'SIGN IN', icon: LogIn, onPress: onOpenAccount };
+  } else if (cloudBlocker === 'needsPlan') {
+    cloudRequirement = 'Choose a plan to continue this chat in Samwell Cloud.';
+    cloudEscape = { label: 'SEE PLANS', icon: Settings, onPress: onOpenPlans };
+  } else if (cloudBlocker === 'checkingAccount' || cloudBlocker === 'checkingPlan') {
+    cloudRequirement = 'Checking your Cloud access…';
+  } else {
+    cloudEscape = {
+      label: 'SWITCH TO CLOUD',
+      icon: Cloud,
+      onPress: () => void switchToCloud(),
+    };
+  }
+
   if (mode === 'offline' && deviceLimit === 'context') {
+    const message = [
+      'This chat has grown too long for Samwell to hold on your device.',
+      cloudRequirement,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
     return {
-      message: 'This chat has grown too long for Samwell to hold on your device.',
+      message,
       actions: [
-        cloudEscape,
+        ...(cloudEscape ? [cloudEscape] : []),
         {
           label: 'START NEW CHAT',
           icon: MessageSquarePlus,
@@ -132,13 +158,22 @@ export function useSamwellStatus({
           onPress: onNewChat,
         },
       ],
+      isLoading: cloudEscape === null,
     };
   }
 
   if (mode === 'offline' && deviceLimit === 'memory') {
+    const message = [
+      'Your device is low on memory, so Samwell had to stop here.',
+      cloudRequirement,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
     return {
-      message: 'Your device is low on memory, so Samwell had to stop here.',
-      actions: [cloudEscape],
+      message,
+      actions: cloudEscape ? [cloudEscape] : undefined,
+      isLoading: cloudEscape === null,
     };
   }
 
@@ -169,6 +204,21 @@ export function useSamwellStatus({
       message: 'Sign in and he can pick up where you left off.',
       actions: [{ label: 'SIGN IN', icon: LogIn, onPress: onOpenAccount }],
     };
+  }
+
+  if (mode === 'cloud' && cloudBlocker === 'needsPlan') {
+    return {
+      title: 'Samwell Cloud needs an active plan.',
+      message: 'Choose the plan that fits how you want to work with him.',
+      actions: [{ label: 'SEE PLANS', icon: Settings, onPress: onOpenPlans }],
+    };
+  }
+
+  if (
+    mode === 'cloud' &&
+    (cloudBlocker === 'checkingAccount' || cloudBlocker === 'checkingPlan')
+  ) {
+    return { message: 'Checking your Cloud access…', isLoading: true };
   }
 
   if (mode === 'cloud') return null;

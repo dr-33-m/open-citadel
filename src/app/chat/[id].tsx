@@ -7,26 +7,26 @@
  * conversation either way, so everything with an opinion about how a chat
  * looks or behaves is shared with the hub page rather than restated here.
  */
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { KeyboardAvoidingView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ChatBubble } from '@/components/chat/chat-bubble';
-import { TranscriptFade } from '@/components/scroll-fades';
-import { MessageScroller } from '@/components/ui/message-scroller';
-import { MaxContentWidth } from '@/constants/theme';
-import { TurnStatus } from '@/features/chat/components/turn-status';
-import { ChatComposer } from '@/features/chat/components/chat-composer';
-import { ChatHeader } from '@/features/chat/components/chat-header';
-import { SamwellBanner } from '@/features/chat/components/samwell-banner';
-import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
-import { turnIndicator } from '@/features/chat/utils/agent-activity';
-import { transcriptContent } from '@/features/chat/utils/transcript-layout';
-import { backTo } from '@/navigation/navigate';
-import { isVisibleChatMessage } from '@/services/chat-transcript';
-import { useChatStore, type ChatMessage } from '@/stores/chat';
-import { HUB, useHubStore } from '@/stores/hub';
+import { ChatBubble } from "@/components/chat/chat-bubble";
+import { TranscriptFade } from "@/components/scroll-fades";
+import { MessageScroller } from "@/components/ui/message-scroller";
+import { MaxContentWidth } from "@/constants/theme";
+import { ChatComposer } from "@/features/chat/components/chat-composer";
+import { ChatHeader } from "@/features/chat/components/chat-header";
+import { SamwellBanner } from "@/features/chat/components/samwell-banner";
+import { TurnStatus } from "@/features/chat/components/turn-status";
+import { useSamwellReadiness } from "@/features/chat/hooks/use-samwell-readiness";
+import { turnIndicator } from "@/features/chat/utils/agent-activity";
+import { transcriptContent } from "@/features/chat/utils/transcript-layout";
+import { backTo } from "@/navigation/navigate";
+import { isVisibleChatMessage } from "@/services/chat-transcript";
+import { useChatStore, type ChatMessage } from "@/stores/chat";
+import { HUB, useHubStore } from "@/stores/hub";
 
 /** One turn, as the virtualized transcript wants it: the message plus the
  *  navigation metadata rows outside the render window still have to carry. */
@@ -37,8 +37,8 @@ type TranscriptRow = ChatMessage & { messageId: string; scrollAnchor: boolean };
 const LIST_STYLE = { flex: 1 } as const;
 const COLUMN_STYLE = {
   maxWidth: MaxContentWidth,
-  width: '100%',
-  alignSelf: 'center',
+  width: "100%",
+  alignSelf: "center",
 } as const;
 
 export default function ChatSessionScreen() {
@@ -59,13 +59,14 @@ export default function ChatSessionScreen() {
   const streamingContent = useChatStore((s) => s.streamingContent);
   const thinkingContent = useChatStore((s) => s.thinkingContent);
   const thinkingSeconds = useChatStore((s) => s.thinkingSeconds);
+  const titleRefreshing = useChatStore((s) => s.titleRefreshing);
   const openSession = useChatStore((s) => s.openSession);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
 
   const readiness = useSamwellReadiness();
 
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputText] = useState("");
   /* "Stop" was tapped for the reply currently running. Derived rather than
      synced: an effect that reset it when generation ended was a setState in
      an effect, i.e. a second render every time a reply finished, to compute
@@ -102,7 +103,7 @@ export default function ChatSessionScreen() {
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text || isGenerating || !readiness.ready) return;
-    setInputText('');
+    setInputText("");
     setStopRequested(false);
     await sendMessage(text);
   }, [inputText, isGenerating, readiness.ready, sendMessage]);
@@ -128,14 +129,17 @@ export default function ChatSessionScreen() {
       messages.filter(isVisibleChatMessage).map((m) => ({
         ...m,
         messageId: m.id,
-        scrollAnchor: m.role === 'user',
+        scrollAnchor: m.role === "user",
       })),
     [messages],
   );
 
   const handleNavigateToHighlight = useCallback(
     (bookId: string, locator: string) => {
-      router.push({ pathname: '/reader/[id]', params: { id: bookId, locator } });
+      router.push({
+        pathname: "/reader/[id]",
+        params: { id: bookId, locator },
+      });
     },
     [router],
   );
@@ -145,12 +149,12 @@ export default function ChatSessionScreen() {
     // the page, then leave the stack so the hub is what's underneath. Pushing
     // the hub again instead would stack a second copy of it.
     useHubStore.getState().goTo(HUB.timeline);
-    backTo(router, '/');
+    backTo(router, "/");
   }, [router]);
 
   const handleNavigateToBook = useCallback(
     (bookId: string) => {
-      router.push({ pathname: '/reader/[id]', params: { id: bookId } });
+      router.push({ pathname: "/reader/[id]", params: { id: bookId } });
     },
     [router],
   );
@@ -158,7 +162,7 @@ export default function ChatSessionScreen() {
   const renderItem = useCallback(
     ({ item }: { item: TranscriptRow }) => (
       <ChatBubble
-        role={item.role as 'user' | 'assistant'}
+        role={item.role as "user" | "assistant"}
         content={item.content}
         onNavigateToHighlight={handleNavigateToHighlight}
         onNavigateToTimeline={handleNavigateToTimeline}
@@ -178,6 +182,7 @@ export default function ChatSessionScreen() {
     () =>
       turnIndicator({
         isGenerating,
+        isTitling: titleRefreshing,
         isToolCalling,
         toolCallName,
         toolCallStatus,
@@ -188,6 +193,7 @@ export default function ChatSessionScreen() {
       }),
     [
       isGenerating,
+      titleRefreshing,
       isToolCalling,
       toolCallName,
       toolCallStatus,
@@ -230,7 +236,7 @@ export default function ChatSessionScreen() {
     activeSession?.bookId && activeSession.contextLocator
       ? () =>
           router.push({
-            pathname: '/reader/[id]',
+            pathname: "/reader/[id]",
             params: {
               id: activeSession.bookId as string,
               locator: activeSession.contextLocator as string,
@@ -241,7 +247,7 @@ export default function ChatSessionScreen() {
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-background"
-      behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'}
+      behavior={process.env.EXPO_OS === "ios" ? "padding" : "height"}
     >
       {/* The content column: centred and capped on wide screens, pixel-
           identical on phones (the cap never bites below 800). The header
@@ -255,11 +261,14 @@ export default function ChatSessionScreen() {
             backLabel="Back"
             onOpenBook={openBookAtPassage}
             onWakeSamwell={readiness.initContext}
-            onOpenSettings={() => router.push('/settings')}
+            onOpenSettings={() => router.push("/settings")}
           />
         </View>
 
-        <SamwellBanner readiness={readiness} onOpenSettings={() => router.push('/settings')} />
+        <SamwellBanner
+          readiness={readiness}
+          onOpenSettings={() => router.push("/settings")}
+        />
 
         {/* The virtualized transcript path: only the rows near the viewport
             are mounted, and following the live edge, holding position through
@@ -267,7 +276,11 @@ export default function ChatSessionScreen() {
             the scroller's, not this screen's. It replaced a FlashList driven
             by a hand-rolled follow that scrolled to the end on a timer — which
             pulled the reader back down whatever they were reading. */}
-        <MessageScroller autoScroll className="flex-1" defaultScrollPosition="last-anchor">
+        <MessageScroller
+          autoScroll
+          className="flex-1"
+          defaultScrollPosition="last-anchor"
+        >
           {/* `start` only: unlike the hub's transcripts, nothing floats over
               this one — the composer below is in normal flow, so the bottom is
               an edge content stops at rather than passes behind. */}

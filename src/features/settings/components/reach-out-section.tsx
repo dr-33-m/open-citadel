@@ -1,19 +1,19 @@
-import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
-import { ChevronUp, MessageCircleHeart } from '@/components/icons';
+import { ChevronUp, MessageCircleHeart } from "@/components/icons";
+import React from "react";
+import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { SettingsSection } from '@/features/settings/components/settings-section';
-import { CreatorNoteSheet } from '@/components/settings/creator-note-sheet';
-import { ThemedText } from '@/components/themed-text';
-import { Card } from '@/components/ui/card';
-import { PrefixIcon } from '@/components/ui/prefix-icon';
-import { Touchable } from '@/components/ui/touchable';
-import { asColor } from '@/utils/colors';
+import { CreatorNoteSheet } from "@/components/settings/creator-note-sheet";
+import { ThemedText } from "@/components/themed-text";
+import { Card } from "@/components/ui/card";
+import { PrefixIcon } from "@/components/ui/prefix-icon";
+import { Touchable } from "@/components/ui/touchable";
+import { SettingsSection } from "@/features/settings/components/settings-section";
+import { asColor } from "@/utils/colors";
 
 /** The note from the creator, in sheet form. */
 export function ReachOutSection() {
-  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
+  const [mutedForeground] = useCSSVariable(["--color-muted-foreground"]);
   const [noteOpen, setNoteOpen] = React.useState(false);
 
   return (
@@ -28,7 +28,7 @@ export function ReachOutSection() {
           <View className="flex-row items-center gap-3 shrink">
             <PrefixIcon icon={MessageCircleHeart} size={36} />
             <ThemedText type="bodyMd" className="shrink">
-              Note from Thamsanqa Dreem
+              A note from Thamsanqa Dreem
             </ThemedText>
           </View>
           <ChevronUp size={14} color={asColor(mutedForeground)} />

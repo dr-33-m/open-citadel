@@ -130,6 +130,14 @@ export function SamwellPage() {
       router.push({ pathname: "/settings", params: { section: "samwell" } }),
     [router],
   );
+  const openCloudPlans = React.useCallback(
+    () =>
+      router.push({
+        pathname: "/settings",
+        params: { section: "samwell", panel: "cloud" },
+      }),
+    [router],
+  );
   /**
    * Settings, opened at the account rather than at the engine.
    *
@@ -158,6 +166,7 @@ export function SamwellPage() {
   const streamingContent = useChatStore((s) => s.streamingContent);
   const thinkingContent = useChatStore((s) => s.thinkingContent);
   const thinkingSeconds = useChatStore((s) => s.thinkingSeconds);
+  const titleRefreshing = useChatStore((s) => s.titleRefreshing);
   const lastStreamedMessageId = useChatStore((s) => s.lastStreamedMessageId);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
@@ -219,6 +228,7 @@ export function SamwellPage() {
   const status = useSamwellStatus({
     readiness,
     onOpenSettings: openSamwellSettings,
+    onOpenPlans: openCloudPlans,
     onOpenAccount: openAccountSettings,
     onNewChat: React.useCallback(() => void newChat(), [newChat]),
   });
@@ -369,13 +379,12 @@ export function SamwellPage() {
   const chatInputBusy = isGenerating || !readiness.ready || readiness.loading;
 
   // `isGenerating` alone isn't "waiting for a reply" — it stays true after the
-  // reply has landed while the engine does follow-up work (auto-titling a
-  // fresh bookless chat runs on it). Once the last message is Samwell's own
-  // there is nothing left to wait for, and showing "thinking" past that point
-  // reads as stuck rather than busy.
+  // reply has landed while the engine names a fresh bookless chat. Keep the
+  // generic wait suppressed then; the explicit titling activity owns it.
   const lastVisibleRole =
     visibleChatMessages[visibleChatMessages.length - 1]?.role;
   const stillWaitingForReply = isGenerating && lastVisibleRole !== "assistant";
+  const hasVisibleActivity = stillWaitingForReply || titleRefreshing;
   const isStreamingText = streamingContent.length > 0;
 
   // Keyed on primitives: the indicator object rides into the transcript and
@@ -384,7 +393,8 @@ export function SamwellPage() {
   const indicator = React.useMemo(
     () =>
       turnIndicator({
-        isGenerating: stillWaitingForReply,
+        isGenerating: hasVisibleActivity,
+        isTitling: titleRefreshing,
         isToolCalling,
         toolCallName,
         toolCallStatus,
@@ -394,7 +404,8 @@ export function SamwellPage() {
         traceSeconds: thinkingSeconds ?? undefined,
       }),
     [
-      stillWaitingForReply,
+      hasVisibleActivity,
+      titleRefreshing,
       isToolCalling,
       toolCallName,
       toolCallStatus,

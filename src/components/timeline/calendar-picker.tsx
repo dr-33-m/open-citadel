@@ -1,14 +1,23 @@
-import React from 'react';
-import { View } from 'react-native';
+import React from "react";
+import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { Calendar } from '@/components/ui/calendar';
-import { Card } from '@/components/ui/card';
-import { Sheet } from '@/components/ui/sheet';
-import { db } from '@/db/client';
-import { readingDays } from '@/db/schema';
-import { didReadOn, readingDotStrength } from '@/services/reading-day';
-import { useToday } from '@/hooks/use-today';
-import { isValidYmd, localDayString, parseYmd, type Ymd } from '@/utils/day';
+import { ThemedText } from "@/components/themed-text";
+import { Calendar } from "@/components/ui/calendar";
+import { Card } from "@/components/ui/card";
+import { Sheet } from "@/components/ui/sheet";
+import { db } from "@/db/client";
+import { highlights, readingDays, thoughts } from "@/db/schema";
+import { useToday } from "@/hooks/use-today";
+import { didReadOn, readingDotStrength } from "@/services/reading-day";
+import { asColor } from "@/utils/colors";
+import { isValidYmd, localDayString, parseYmd, type Ymd } from "@/utils/day";
+
+const ACTIVITY_LEGEND = [
+  { key: "read", label: "Read", className: "bg-primary" },
+  { key: "missed", label: "No reading", className: "bg-destructive" },
+  { key: "ideas", label: "Ideas captured", className: "bg-info" },
+] as const;
 
 type CalendarPickerProps = {
   visible: boolean;
@@ -53,6 +62,7 @@ export const CalendarPicker = React.memo(function CalendarPicker({
   minDate,
   maxDate,
 }: CalendarPickerProps) {
+  const mutedForeground = asColor(useCSSVariable("--color-muted-foreground"));
   /*
    * State, not a read.
    *
@@ -81,10 +91,13 @@ export const CalendarPicker = React.memo(function CalendarPicker({
    * the picker stays mounted for the life of the screen, so without this every
    * open after the first showed whatever month was last paged to.
    */
-  const [month, setMonth] = React.useState<Date>(() => toDate(selectedDate) ?? new Date());
+  const [month, setMonth] = React.useState<Date>(
+    () => toDate(selectedDate) ?? new Date(),
+  );
   const wasVisible = React.useRef(visible);
   React.useEffect(() => {
-    if (visible && !wasVisible.current) setMonth(toDate(selectedDate) ?? new Date());
+    if (visible && !wasVisible.current)
+      setMonth(toDate(selectedDate) ?? new Date());
     wasVisible.current = visible;
   }, [visible, selectedDate]);
 
@@ -104,20 +117,47 @@ export const CalendarPicker = React.memo(function CalendarPicker({
    * One row per book per day actually read, so this is tens to hundreds of
    * rows for a real library — fewer than a single month of cells.
    */
-  const [readingByDay, setReadingByDay] = React.useState<Record<string, number>>({});
+  const [readingByDay, setReadingByDay] = React.useState<
+    Record<string, number>
+  >({});
+  const [ideasByDay, setIdeasByDay] = React.useState<Set<string>>(
+    () => new Set(),
+  );
 
   // Re-read when the sheet opens rather than on every month, so a day read
   // since the last open still shows up.
   React.useEffect(() => {
     if (!legacyMode || !visible) return; // activity dots only in timeline mode
-    db.select({ day: readingDays.day, progressDelta: readingDays.progressDelta })
-      .from(readingDays)
-      .then((rows) => {
+    Promise.all([
+      db
+        .select({
+          day: readingDays.day,
+          progressDelta: readingDays.progressDelta,
+        })
+        .from(readingDays),
+      db
+        .selectDistinct({
+          day: highlights.createdDay,
+        })
+        .from(highlights),
+      db
+        .selectDistinct({
+          day: thoughts.createdDay,
+        })
+        .from(thoughts),
+    ])
+      .then(([readingRows, highlightRows, thoughtRows]) => {
         const totals: Record<string, number> = {};
-        rows.forEach(({ day, progressDelta }) => {
+        readingRows.forEach(({ day, progressDelta }) => {
           totals[day] = (totals[day] ?? 0) + progressDelta;
         });
         setReadingByDay(totals);
+
+        const ideaDays = new Set<string>();
+        [...highlightRows, ...thoughtRows].forEach(({ day }) => {
+          if (day && isValidYmd(day)) ideaDays.add(day);
+        });
+        setIdeasByDay(ideaDays);
       })
       .catch(() => {});
   }, [visible, legacyMode]);
@@ -132,23 +172,36 @@ export const CalendarPicker = React.memo(function CalendarPicker({
   );
 
   /*
-   * The mark under a day: gold for a day that was read, destructive for one
-   * that was not, fading with how much. Only past days carry one — an unlived
-   * day has nothing to report, and marking it red would be an accusation.
+   * The marks under a day: gold/destructive for reading, blue for an idea
+   * captured as a highlight or thought. Today reports positive activity but
+   * never turns red while there is still time to read; future days say nothing.
    */
   const renderDayAccessory = React.useCallback(
     (date: Date) => {
       const ymd = toYmd(date);
-      if (ymd >= today) return null;
+      if (ymd > today) return null;
       const read = readingByDay[ymd] ?? 0;
+      const readToday = didReadOn(read);
+      const hasIdeas = ideasByDay.has(ymd);
+      if (ymd === today && !readToday && !hasIdeas) return null;
+
       return (
-        <View
-          className={didReadOn(read) ? 'h-[3px] w-[3px] bg-primary' : 'h-[3px] w-[3px] bg-destructive'}
-          style={{ opacity: readingDotStrength(read) }}
-        />
+        <View className="flex-row items-center gap-1">
+          {ymd < today || readToday ? (
+            <View
+              className={
+                readToday
+                  ? "h-0.75 w-0.75 bg-primary"
+                  : "h-0.75 w-0.75 bg-destructive"
+              }
+              style={{ opacity: readingDotStrength(read) }}
+            />
+          ) : null}
+          {hasIdeas ? <View className="h-0.75 w-0.75 bg-info" /> : null}
+        </View>
       );
     },
-    [readingByDay, today],
+    [ideasByDay, readingByDay, today],
   );
 
   return (
@@ -169,6 +222,18 @@ export const CalendarPicker = React.memo(function CalendarPicker({
             maxDate={max}
             renderDayAccessory={legacyMode ? renderDayAccessory : undefined}
           />
+          {legacyMode ? (
+            <View className="mt-3 flex-row flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3">
+              {ACTIVITY_LEGEND.map((item) => (
+                <View key={item.key} className="flex-row items-center gap-1.5">
+                  <View className={`h-1.5 w-1.5 ${item.className}`} />
+                  <ThemedText type="labelSm" color={mutedForeground}>
+                    {item.label}
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </Card>
       </View>
     </Sheet>

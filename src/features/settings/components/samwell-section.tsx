@@ -12,12 +12,16 @@ import { ThemedText } from "@/components/themed-text";
 import { Card } from "@/components/ui/card";
 import { PrefixIcon } from "@/components/ui/prefix-icon";
 import { Touchable } from "@/components/ui/touchable";
+import { ACCOUNT_ENABLED } from "@/constants/logto";
+import { getCloudBlocker } from "@/features/chat/utils/cloud-access";
 import { CloudPanel } from "@/features/settings/components/cloud-panel";
 import { OfflineModelCard } from "@/features/settings/components/offline-model-card";
 import { SettingsSection } from "@/features/settings/components/settings-section";
 import { cn } from "@/lib/cn";
 import { isNativeAvailable } from "@/services/inference";
+import { useAccountStore } from "@/stores/account";
 import { useSettingsStore } from "@/stores/settings";
+import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
 
 /**
@@ -26,10 +30,13 @@ import { asColor } from "@/utils/colors";
  */
 export const SamwellSection = React.memo(function SamwellSection({
   onRequestAccount,
+  initialMode,
 }: {
   /** Bring the Profile section into view — the cloud panel's way out when
    *  there is no account yet. Owned by the route, which holds the scroller. */
   onRequestAccount: () => void;
+  /** Panel to reveal from a targeted Settings deep link. */
+  initialMode?: EngineMode;
 }) {
   const [primary, mutedForeground] = useCSSVariable([
     "--color-primary",
@@ -37,8 +44,42 @@ export const SamwellSection = React.memo(function SamwellSection({
   ]);
   const samwellMode = useSettingsStore((s) => s.samwellMode);
   const setSamwellMode = useSettingsStore((s) => s.setSamwellMode);
+  const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
+  const accountStatus = useAccountStore((s) => s.status);
+  const subscriptionStatus = useSubscriptionStore((s) => s.status);
   const [infoSheet, setInfoSheet] = React.useState<EngineMode | null>(null);
+  const [previewMode, setPreviewMode] = React.useState<EngineMode | null>(() =>
+    initialMode && initialMode !== samwellMode ? initialMode : null,
+  );
   const nativeAvailable = React.useMemo(() => isNativeAvailable(), []);
+  const displayedMode = previewMode ?? samwellMode;
+  const cloudBlocker = getCloudBlocker({
+    configured: cloudBaseUrl.length > 0 && ACCOUNT_ENABLED,
+    accountStatus,
+    subscriptionStatus,
+    mode: samwellMode,
+  });
+  const cloudAccessReady =
+    cloudBlocker === null || cloudBlocker === "offlineMode";
+
+  const selectOffline = React.useCallback(() => {
+    setPreviewMode(null);
+    void setSamwellMode("offline");
+  }, [setSamwellMode]);
+
+  const selectCloud = React.useCallback(() => {
+    if (cloudAccessReady) {
+      setPreviewMode(null);
+      void setSamwellMode("cloud");
+      return;
+    }
+    setPreviewMode("cloud");
+  }, [cloudAccessReady, setSamwellMode]);
+
+  const activateCloud = React.useCallback(() => {
+    setPreviewMode(null);
+    void setSamwellMode("cloud");
+  }, [setSamwellMode]);
 
   return (
     <SettingsSection>
@@ -48,10 +89,10 @@ export const SamwellSection = React.memo(function SamwellSection({
           color={asColor(primary)}
           className="tracking-[1.2px]"
         >
-          {samwellMode === "cloud" ? "SAMWELL CLOUD" : "SAMWELL"}
+          {displayedMode === "cloud" ? "SAMWELL CLOUD" : "SAMWELL"}
         </ThemedText>
         <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          {samwellMode === "cloud"
+          {displayedMode === "cloud"
             ? "Puts your knowledge to work."
             : "Your reading companion"}
         </ThemedText>
@@ -60,25 +101,28 @@ export const SamwellSection = React.memo(function SamwellSection({
       {/* Mode cards */}
       <View className="flex-row gap-3">
         <ModeCard
-          active={samwellMode === "offline"}
+          active={displayedMode === "offline"}
           icon={Smartphone}
           label="On-device"
           description="Samwell on your device."
-          onSelect={() => setSamwellMode("offline")}
+          onSelect={selectOffline}
           onInfo={() => setInfoSheet("offline")}
         />
         <ModeCard
-          active={samwellMode === "cloud"}
+          active={displayedMode === "cloud"}
           icon={Cloud}
           label="Cloud"
           description="Samwell in the cloud."
-          onSelect={() => setSamwellMode("cloud")}
+          onSelect={selectCloud}
           onInfo={() => setInfoSheet("cloud")}
         />
       </View>
 
-      {samwellMode === "cloud" ? (
-        <CloudPanel onRequestAccount={onRequestAccount} />
+      {displayedMode === "cloud" ? (
+        <CloudPanel
+          onRequestAccount={onRequestAccount}
+          onAccessActivated={activateCloud}
+        />
       ) : !nativeAvailable ? (
         <ThemedText type="bodySm" color={asColor(mutedForeground)}>
           On-device AI is not supported on this device. Grand Maester Samwell is

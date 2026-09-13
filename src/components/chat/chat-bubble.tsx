@@ -1,18 +1,18 @@
-import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
-import React, { useMemo } from 'react';
-import { View } from 'react-native';
+import React, { useMemo } from "react";
+import { View } from "react-native";
+import { EnrichedMarkdownText } from "react-native-enriched-markdown";
 
-import Animated, { FadeInUp, useReducedMotion } from 'react-native-reanimated';
-import { useCSSVariable } from 'uniwind';
+import Animated, { FadeInUp, useReducedMotion } from "react-native-reanimated";
+import { useCSSVariable } from "uniwind";
 
-import { BookCard } from '@/components/chat/book-card';
-import { HighlightCard } from '@/components/chat/highlight-card';
-import { SuggestionCard } from '@/components/chat/suggestion-card';
-import { Message } from '@/components/ui/message';
-import { ThemedText } from '@/components/themed-text';
-import { easing, fontFamily, motion, spacing } from '@/constants/theme';
-import { useMarkdownStyle } from '@/hooks/use-markdown-style';
-import { asColor } from '@/utils/colors';
+import { BookCard } from "@/components/chat/book-card";
+import { HighlightCard } from "@/components/chat/highlight-card";
+import { SuggestionCard } from "@/components/chat/suggestion-card";
+import { ThemedText } from "@/components/themed-text";
+import { Message } from "@/components/ui/message";
+import { easing, fontFamily, motion, spacing } from "@/constants/theme";
+import { useMarkdownStyle } from "@/hooks/use-markdown-style";
+import { asColor } from "@/utils/colors";
 
 /** New bubbles rise and fade in rather than popping into the list —
  * fires once per bubble instance, so it plays for a freshly-sent or
@@ -26,10 +26,12 @@ const bubbleEntering = FadeInUp.duration(motion.base).easing(easing);
 //   [[ref:highlight:hl-123]] / [[ref:thought:th-123]]  an existing entry, read-only
 //   [[suggest:highlight:sugg-1]] / [[suggest:thought:sugg-1]]  a proposal, approve/reject
 //   [[book:bk-123]]  a book from the library, shown with its cover
-const MARKER_PATTERN = /\[\[(?:(ref|suggest):(highlight|thought)|(book)):([^\]]+)\]\]/g;
+function createMarkerPattern() {
+  return /\[\[(?:(ref|suggest):(highlight|thought)|(book)):([^\]]+)\]\]/g;
+}
 
 interface ChatBubbleProps {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   streaming?: boolean;
   onNavigateToHighlight?: (bookId: string, locator: string) => void;
@@ -43,8 +45,18 @@ interface ChatBubbleProps {
   animateEntry?: boolean;
 }
 
-function MarkdownSegment({ content, streaming }: { content: string; streaming?: boolean }) {
-  const markdownStyle = useMarkdownStyle({ voice: 'sans', fontSize: 15, lineHeight: 22 });
+function MarkdownSegment({
+  content,
+  streaming,
+}: {
+  content: string;
+  streaming?: boolean;
+}) {
+  const markdownStyle = useMarkdownStyle({
+    voice: "sans",
+    fontSize: 15,
+    lineHeight: 22,
+  });
 
   return (
     /*
@@ -72,7 +84,6 @@ function MarkdownSegment({ content, streaming }: { content: string; streaming?: 
   );
 }
 
-
 const AssistantContent = React.memo(function AssistantContent({
   content,
   streaming,
@@ -88,38 +99,44 @@ const AssistantContent = React.memo(function AssistantContent({
 }) {
   // Split content into text segments and reference/suggestion markers
   const segments = useMemo(() => {
-    if (!content.includes('[[ref:') && !content.includes('[[suggest:') && !content.includes('[[book:')) {
+    if (
+      !content.includes("[[ref:") &&
+      !content.includes("[[suggest:") &&
+      !content.includes("[[book:")
+    ) {
       return null; // Fast path: no markers, render as plain markdown
     }
 
     const parts: (
-      | { kind: 'text'; text: string }
-      | { kind: 'ref'; type: 'highlight' | 'thought'; id: string }
-      | { kind: 'suggest'; type: 'highlight' | 'thought'; id: string }
-      | { kind: 'book'; id: string }
+      | { kind: "text"; text: string }
+      | { kind: "ref"; type: "highlight" | "thought"; id: string }
+      | { kind: "suggest"; type: "highlight" | "thought"; id: string }
+      | { kind: "book"; id: string }
     )[] = [];
     let lastIndex = 0;
+    const markerPattern = createMarkerPattern();
 
-    // Reset regex state
-    MARKER_PATTERN.lastIndex = 0;
     let match;
-    while ((match = MARKER_PATTERN.exec(content)) !== null) {
+    while ((match = markerPattern.exec(content)) !== null) {
       if (match.index > lastIndex) {
-        parts.push({ kind: 'text', text: content.slice(lastIndex, match.index) });
+        parts.push({
+          kind: "text",
+          text: content.slice(lastIndex, match.index),
+        });
       }
       parts.push(
-        match[3] === 'book'
-          ? { kind: 'book', id: match[4] }
+        match[3] === "book"
+          ? { kind: "book", id: match[4] }
           : {
-              kind: match[1] as 'ref' | 'suggest',
-              type: match[2] as 'highlight' | 'thought',
+              kind: match[1] as "ref" | "suggest",
+              type: match[2] as "highlight" | "thought",
               id: match[4],
             },
       );
-      lastIndex = MARKER_PATTERN.lastIndex;
+      lastIndex = markerPattern.lastIndex;
     }
     if (lastIndex < content.length) {
-      parts.push({ kind: 'text', text: content.slice(lastIndex) });
+      parts.push({ kind: "text", text: content.slice(lastIndex) });
     }
 
     return parts;
@@ -133,7 +150,7 @@ const AssistantContent = React.memo(function AssistantContent({
   return (
     <View>
       {segments.map((seg, i) => {
-        if (seg.kind === 'text') {
+        if (seg.kind === "text") {
           const isLast = i === segments.length - 1;
           return (
             <MarkdownSegment
@@ -143,11 +160,23 @@ const AssistantContent = React.memo(function AssistantContent({
             />
           );
         }
-        if (seg.kind === 'book') {
-          return <BookCard key={`book-${seg.id}`} id={seg.id} onNavigate={onNavigateToBook} />;
+        if (seg.kind === "book") {
+          return (
+            <BookCard
+              key={`book-${seg.id}`}
+              id={seg.id}
+              onNavigate={onNavigateToBook}
+            />
+          );
         }
-        if (seg.kind === 'suggest') {
-          return <SuggestionCard key={`suggest-${seg.type}-${seg.id}`} id={seg.id} kind={seg.type} />;
+        if (seg.kind === "suggest") {
+          return (
+            <SuggestionCard
+              key={`suggest-${seg.type}-${seg.id}`}
+              id={seg.id}
+              kind={seg.type}
+            />
+          );
         }
         return (
           <HighlightCard
@@ -174,8 +203,8 @@ export const ChatBubble = React.memo(function ChatBubble({
 }: ChatBubbleProps) {
   // Literal colour for ThemedText's `color` prop — the streaming cursor only;
   // everything else reads its colour from Message's align-driven classes.
-  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
-  const isUser = role === 'user';
+  const [mutedForeground] = useCSSVariable(["--color-muted-foreground"]);
+  const isUser = role === "user";
   // Reduce Motion collapses the spatial entrance to nothing — content just
   // appears (opacity-only cross-fades remain the reduced-motion vocabulary
   // elsewhere).
@@ -189,14 +218,25 @@ export const ChatBubble = React.memo(function ChatBubble({
       entering={animateEntry && !reduceMotion ? bubbleEntering : undefined}
       style={{ marginBottom: spacing[1], paddingHorizontal: spacing[4] }}
     >
-      <Message align={isUser ? 'end' : 'start'}>
+      <Message align={isUser ? "end" : "start"}>
         <Message.Content>
-          <Message.Bubble>
+          <Message.Bubble
+            className={
+              isUser
+                ? "border-e-2 border-muted-foreground/50 bg-muted"
+                : "border-s-2 border-primary/60 bg-primary/10"
+            }
+          >
             {isUser ? (
-              <Message.BubbleContent style={{ fontFamily: fontFamily.sans, lineHeight: 22 }}>
+              <Message.BubbleContent
+                className="text-foreground"
+                style={{ fontFamily: fontFamily.sans, lineHeight: 22 }}
+              >
                 {content}
                 {streaming && (
-                  <ThemedText type="bodyMd" color={asColor(mutedForeground)}>{' ▍'}</ThemedText>
+                  <ThemedText type="bodyMd" color={asColor(mutedForeground)}>
+                    {" ▍"}
+                  </ThemedText>
                 )}
               </Message.BubbleContent>
             ) : (

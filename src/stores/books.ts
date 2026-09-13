@@ -3,24 +3,25 @@ import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 
 import { showToast } from "@/components/toast/toast-provider";
+import type { ToastOptions } from "@/components/toast/types";
 import { db } from "@/db/client";
 import { appSettings, books, readingProgress } from "@/db/schema";
 import { deleteBookWithFile } from "@/services/book-delete";
+import {
+    OWNED_DIR,
+    ensureOwnedDir,
+    pickAndImportEpubs,
+} from "@/services/book-import";
 import { saveBookFinishedNote } from "@/services/journey";
 import {
-  OWNED_DIR,
-  ensureOwnedDir,
-  pickAndImportEpubs,
-} from "@/services/book-import";
-import type { ToastOptions } from "@/components/toast/types";
-import {
-  SCAN_ROOT_UNAVAILABLE,
-  getActiveSyncJob,
-  resumeRunningSyncIfAny,
-  startOrResumeSync,
-  type SyncJobView,
-  type SyncPhase,
-  type SyncStatus,
+    SCAN_ROOT_UNAVAILABLE,
+    getActiveSyncJob,
+    hasSyncedToday,
+    resumeRunningSyncIfAny,
+    startOrResumeSync,
+    type SyncJobView,
+    type SyncPhase,
+    type SyncStatus,
 } from "@/services/sync-coordinator";
 
 type Book = typeof books.$inferSelect;
@@ -448,8 +449,10 @@ export const useBooksStore = create<BooksState>((set, get) => ({
 
   scanOnLaunch: async () => {
     if (!get().booksDirectoryUri) await get().loadDirectoryUri();
-    if (!get().booksDirectoryUri) return;
+    const directoryUri = get().booksDirectoryUri;
+    if (!directoryUri) return;
     if (get().sync.status === "running") return;
+    if (await hasSyncedToday(directoryUri)) return;
     await get().syncBooks({ notify: true });
   },
 

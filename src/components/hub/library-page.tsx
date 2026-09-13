@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router/react-navigation";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    AppState,
     ScrollView,
     useWindowDimensions,
     View,
@@ -261,18 +260,14 @@ export function LibraryPage() {
       }
     };
     boot();
-  }, []);
-
-  // iOS: re-scan the owned folder when the app returns to the foreground so
-  // EPUBs dropped in via the Files app get imported. Idempotent — unchanged
-  // files are skipped, and syncBooks() no-ops while a sync is already running.
-  useEffect(() => {
-    if (process.env.EXPO_OS !== "ios") return;
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") syncBooks();
-    });
-    return () => sub.remove();
-  }, [syncBooks]);
+  }, [
+    hydrateSyncState,
+    initLibrary,
+    loadBooks,
+    loadCollections,
+    loadDirectoryUri,
+    scanOnLaunch,
+  ]);
 
   /*
    * Reload when the screen is focused AGAIN, so a status change made in the

@@ -862,7 +862,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         // (so the input stays blocked) until this one-shot title call is
         // done, since it also calls resetConversation() and would otherwise
         // race a second message the user sends in the meantime.
-        await get().maybeTitleFirstMessage(activeSession.id, content, finalContent);
+        set({ titleRefreshing: true });
+        try {
+          await get().maybeTitleFirstMessage(activeSession.id, content, finalContent);
+        } finally {
+          set({ titleRefreshing: false });
+        }
       }
       set({ isGenerating: false });
     } else {

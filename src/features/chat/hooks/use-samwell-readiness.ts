@@ -11,7 +11,13 @@
  * screen on every token of a streaming reply, and the model store changes for
  * reasons the header does not care about.
  */
+import React from 'react';
+
 import { ACCOUNT_ENABLED } from '@/constants/logto';
+import {
+    getCloudBlocker,
+    type CloudBlocker,
+} from '@/features/chat/utils/cloud-access';
 import { useAccountStore } from '@/stores/account';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
@@ -25,55 +31,7 @@ import { useSubscriptionStore } from '@/stores/subscription';
  * to reach a server that does not exist is the sort of thing three separate
  * flags produce the first time one of them is read out of turn.
  */
-export type CloudBlocker =
-  /**
-   * Everything else is in place, but Samwell is set to run on this device.
-   *
-   * Last in the order, because it is the only one of these a reader has
-   * already chosen on purpose. Only Compass, which is cloud-only, treats it
-   * as a problem; chat in offline mode is working exactly as asked, which is
-   * why every chat surface tests `mode === 'cloud'` before reading this at all.
-   */
-  | 'offlineMode'
-  /**
-   * This build cannot reach the cloud at all: no server URL, or no Logto to
-   * hold an account. Nothing the reader does will change either, so surfaces
-   * say what is true and offer nothing.
-   */
-  | 'notConfigured'
-  /** Configured, but nobody is signed in. Grand Maester Samwell runs on accounts. */
-  | 'needsAccount'
-  /**
-   * Signed in, but nothing paid for.
-   *
-   * Ordered after `needsAccount` and before `offlineMode`, for the reason
-   * that ordering already exists: a plan is bought against an account, so
-   * asking somebody to subscribe before they have signed in is a dead end
-   * reachable only through another dead end.
-   */
-  | 'needsPlan'
-  /**
-   * The server has not said what they hold yet.
-   *
-   * Its own case for exactly the reason `checkingAccount` is one, and the
-   * same two answers: say nothing, because telling somebody to subscribe
-   * before looking is how you flash a paywall at a paying reader on every
-   * cold open; and block anyway, because a composer that is live while the
-   * answer is unknown drops the message typed into it.
-   */
-  | 'checkingPlan'
-  /**
-   * The stored session has not been read back yet.
-   *
-   * Its own case rather than folded into either neighbour, because the two
-   * questions surfaces ask have different right answers here. "What do I
-   * say?" is nothing — accusing someone of being signed out before looking is
-   * how you flash a sign-in prompt at somebody who is already signed in.
-   * "What do I enable?" is nothing either, and that half used to be wrong:
-   * treating not-yet-known as no-blocker left the Compass composer live for a
-   * moment, where a message typed into it was dropped without a word.
-   */
-  | 'checkingAccount';
+export type { CloudBlocker } from '@/features/chat/utils/cloud-access';
 
 export interface SamwellReadiness {
   /** Can a message be sent right now. */
@@ -99,6 +57,12 @@ export function useSamwellReadiness(): SamwellReadiness {
   // The status, not the balance: a credit spent mid-conversation must not
   // re-render every chat surface in the app.
   const planStatus = useSubscriptionStore((s) => s.status);
+  const refreshPlan = useSubscriptionStore((s) => s.refresh);
+
+  React.useEffect(() => {
+    if (accountStatus !== 'signedIn' || planStatus !== 'unknown') return;
+    void refreshPlan();
+  }, [accountStatus, planStatus, refreshPlan]);
 
   const isLoaded = useModelStore((s) => s.isLoaded);
   const isLoading = useModelStore((s) => s.isLoading);
@@ -138,20 +102,12 @@ export function useSamwellReadiness(): SamwellReadiness {
    * a build that cannot sell anything should not lock a reader out of a
    * server that may well still answer them.
    */
-  const cloudBlocker: CloudBlocker | null =
-    cloudBaseUrl.length === 0 || !ACCOUNT_ENABLED
-      ? 'notConfigured'
-      : accountStatus === 'unknown'
-        ? 'checkingAccount'
-        : accountStatus === 'signedOut'
-          ? 'needsAccount'
-          : planStatus === 'unknown'
-            ? 'checkingPlan'
-            : planStatus === 'none'
-              ? 'needsPlan'
-              : !isCloud
-                ? 'offlineMode'
-                : null;
+  const cloudBlocker = getCloudBlocker({
+    configured: cloudBaseUrl.length > 0 && ACCOUNT_ENABLED,
+    accountStatus,
+    subscriptionStatus: planStatus,
+    mode: isCloud ? 'cloud' : 'offline',
+  });
 
   return {
     // Read off the blocker rather than rebuilt from the same parts, so the
