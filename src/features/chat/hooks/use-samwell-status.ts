@@ -26,6 +26,7 @@ import React from 'react';
 
 import {
     Cloud,
+    CloudCog,
     LogIn,
     MessageSquarePlus,
     Power,
@@ -46,6 +47,23 @@ export interface SamwellStatusAction {
    * buttons are marked and some are not reads worse than either alone.
    */
   icon?: LucideIcon;
+  /**
+   * Drawn as the quiet outline button even when it comes first. Without it
+   * the first action is the gold one, which is right for every row except one
+   * that leads with a "learn more" before the way through.
+   */
+  secondary?: boolean;
+}
+
+/**
+ * The way to a plan, wherever a missing plan is the wall.
+ *
+ * One definition because chat and Compass each spelled it out and had already
+ * drifted: chat said SEE PLANS while Compass, one tab over and blocked by the
+ * very same missing plan, said OPEN SETTINGS.
+ */
+export function seePlansAction(onPress: () => void): SamwellStatusAction {
+  return { label: 'SEE PLANS', icon: CloudCog, onPress };
 }
 
 export interface SamwellStatus {
@@ -126,7 +144,7 @@ export function useSamwellStatus({
     cloudEscape = { label: 'SIGN IN', icon: LogIn, onPress: onOpenAccount };
   } else if (cloudBlocker === 'needsPlan') {
     cloudRequirement = 'Choose a plan to continue this chat in Samwell Cloud.';
-    cloudEscape = { label: 'SEE PLANS', icon: Settings, onPress: onOpenPlans };
+    cloudEscape = seePlansAction(onOpenPlans);
   } else if (cloudBlocker === 'checkingAccount' || cloudBlocker === 'checkingPlan') {
     cloudRequirement = 'Checking your Cloud access…';
   } else {
@@ -210,7 +228,7 @@ export function useSamwellStatus({
     return {
       title: 'Samwell Cloud needs an active plan.',
       message: 'Choose the plan that fits how you want to work with him.',
-      actions: [{ label: 'SEE PLANS', icon: Settings, onPress: onOpenPlans }],
+      actions: [seePlansAction(onOpenPlans)],
     };
   }
 

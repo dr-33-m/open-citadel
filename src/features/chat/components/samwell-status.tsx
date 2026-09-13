@@ -51,10 +51,14 @@ function StatusActions({ actions }: { actions?: SamwellStatusAction[] }) {
   const mutedForeground = useCSSVariable('--color-muted-foreground');
   if (!actions || actions.length === 0) return null;
 
+  // The gold one is the first action not marked `secondary`, so a row can
+  // lead with an outline button and still have one way through carry weight.
+  const primaryIndex = actions.findIndex((action) => !action.secondary);
+
   return (
     <View className="mt-1 flex-row flex-wrap items-center justify-center gap-2">
       {actions.map((action, i) =>
-        i === 0 ? (
+        i === primaryIndex ? (
           <GoldButton
             key={action.label}
             label={action.label}

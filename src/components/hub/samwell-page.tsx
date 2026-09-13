@@ -48,6 +48,7 @@ import { useChatSessions } from "@/features/chat/hooks/use-chat-sessions";
 import { useSamwellReadiness } from "@/features/chat/hooks/use-samwell-readiness";
 import { useSamwellStatus } from "@/features/chat/hooks/use-samwell-status";
 import { turnIndicator } from "@/features/chat/utils/agent-activity";
+import { AboutCompassSheet } from "@/features/compass/components/about-compass-sheet";
 import { CompassBody } from "@/features/compass/components/compass-body";
 import { InsightsSheet } from "@/features/compass/components/insights-sheet";
 import { LogDeckSheet } from "@/features/compass/components/log-deck-sheet";
@@ -272,6 +273,7 @@ export function SamwellPage() {
   const [showInsights, setShowInsights] = React.useState(false);
   const [showOverview, setShowOverview] = React.useState(false);
   const [showPastGoals, setShowPastGoals] = React.useState(false);
+  const [showAboutCompass, setShowAboutCompass] = React.useState(false);
   // Held, not inline: the planner is memoized so that a reply streaming behind
   // it does not redraw a month grid per token, and a fresh closure per render
   // would defeat that on its own.
@@ -515,6 +517,12 @@ export function SamwellPage() {
     [openSheet],
   );
 
+  /** Compass's "what is this" sheet, offered beside the sign-in and plan walls. */
+  const openAboutCompass = React.useCallback(
+    () => openSheet(setShowAboutCompass),
+    [openSheet],
+  );
+
   const chatSessionCount = sessions.length;
   const compassSessionCount = compass.sessions.length;
   const dueCount = compassDue.length;
@@ -747,13 +755,12 @@ export function SamwellPage() {
               <CompassBody
                 conversation={compass}
                 cloudBlocker={readiness.cloudBlocker}
-                /* Same split as the status hook's: only the missing account
-                   sends you to the account. */
-                onOpenSettings={
-                  readiness.cloudBlocker === "needsAccount"
-                    ? openAccountSettings
-                    : openSamwellSettings
-                }
+                /* The same three destinations the status hook takes, so a
+                   missing plan lands on the plans in both tabs. */
+                onOpenSettings={openSamwellSettings}
+                onOpenPlans={openCloudPlans}
+                onOpenAccount={openAccountSettings}
+                onAboutCompass={openAboutCompass}
                 trackableTitles={trackableTitles}
                 contentColumn={contentColumn}
                 floatingClearance={floatingClearance}
@@ -973,6 +980,11 @@ export function SamwellPage() {
             entries={compassPastGoals}
             writingTakeaway={writingTakeaway}
             onRetryTakeaway={(goalId) => void retryTakeaway(goalId)}
+          />
+
+          <AboutCompassSheet
+            visible={showAboutCompass}
+            onClose={() => setShowAboutCompass(false)}
           />
         </>
       </DeferredBody>

@@ -8,7 +8,7 @@
  * and the month behind PLANNER, for when they are what you actually came for.
  */
 import React from 'react';
-import { Compass, LogIn, Settings, type LucideIcon } from '@/components/icons';
+import { Compass, Info, LogIn, Settings } from '@/components/icons';
 import { View, type ViewStyle } from 'react-native';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
@@ -16,6 +16,10 @@ import { TranscriptFade } from '@/components/scroll-fades';
 import { MessageScroller } from '@/components/ui/message-scroller';
 import { TurnStatus } from '@/features/chat/components/turn-status';
 import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
+import {
+  seePlansAction,
+  type SamwellStatusAction,
+} from '@/features/chat/hooks/use-samwell-status';
 import { turnIndicator } from '@/features/chat/utils/agent-activity';
 import { transcriptContent } from '@/features/chat/utils/transcript-layout';
 import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
@@ -25,44 +29,84 @@ import type { useCompassConversation } from '@/features/compass/hooks/use-compas
 
 type Conversation = ReturnType<typeof useCompassConversation>;
 
+// The two "we have not looked yet" states say nothing out loud: naming a
+// problem before knowing there is one is how a paying reader gets a paywall
+// flashed at them on every cold open.
+type ShownBlocker = Exclude<CloudBlocker, 'checkingAccount' | 'checkingPlan'>;
+
 /**
- * What to say for each way the cloud can be out of reach, and the way out.
+ * What to say for each way the cloud can be out of reach.
  *
- * A table rather than nested ternaries inside the render: there are three of
+ * A table rather than nested ternaries inside the render: there are four of
  * these now, and the next one is a line here instead of another branch in the
  * JSX.
  */
-const COMPASS_BLOCKED: Record<
-  // The two "we have not looked yet" states say nothing out loud: naming a
-  // problem before knowing there is one is how a paying reader gets a paywall
-  // flashed at them on every cold open.
-  Exclude<CloudBlocker, 'checkingAccount' | 'checkingPlan'>,
-  { message: string; action: string; icon: LucideIcon }
-> = {
+const COMPASS_BLOCKED: Record<ShownBlocker, { title: string; message: string }> = {
   offlineMode: {
+    title: 'Compass needs Samwell Cloud.',
     message:
       'Tap the button below to switch Samwell to cloud mode and get started with your goals.',
-    action: 'OPEN SETTINGS',
-    icon: Settings,
   },
   notConfigured: {
+    title: 'Compass needs Samwell Cloud.',
     message: 'This build has no cloud server, so Samwell cannot help you plan a goal yet.',
-    action: 'OPEN SETTINGS',
-    icon: Settings,
   },
   needsAccount: {
+    title: 'Compass works with your Cloud Account.',
     message: 'Sign in and let Samwell track and analyse your goals.',
-    action: 'SIGN IN',
-    icon: LogIn,
   },
   needsPlan: {
+    title: 'Compass works with a Samwell Cloud plan.',
     message: 'Choose a plan and let Samwell track and analyse your goals.',
-    action: 'OPEN SETTINGS',
-    icon: Settings,
   },
 };
 
-interface CompassBodyProps {
+interface CompassEscapes {
+  /** The Samwell section, for switching out of offline mode. */
+  onOpenSettings: () => void;
+  /** The Cloud panel, where the plans are. */
+  onOpenPlans: () => void;
+  /** The account card, for signing in. */
+  onOpenAccount: () => void;
+  /** Explains what Compass is, for somebody not yet able to use it. */
+  onAboutCompass: () => void;
+}
+
+/**
+ * The way out of each wall.
+ *
+ * The two walls a reader clears by signing in or paying also offer ABOUT
+ * COMPASS beside the way through: asking for either without saying what is
+ * behind the door is asking for trust that has not been earned. Offline mode
+ * is a setting the reader chose, not a sale, so it gets no pitch.
+ */
+function blockedActions(
+  blocker: ShownBlocker,
+  escapes: CompassEscapes,
+): SamwellStatusAction[] | undefined {
+  // First in the row but still the outline button: read what it is, then
+  // the gold way through.
+  const about: SamwellStatusAction = {
+    label: 'ABOUT COMPASS',
+    icon: Info,
+    onPress: escapes.onAboutCompass,
+    secondary: true,
+  };
+  switch (blocker) {
+    // Nothing to offer when the build itself has no server: the way out of
+    // that is a different build, not a screen in this one.
+    case 'notConfigured':
+      return undefined;
+    case 'offlineMode':
+      return [{ label: 'OPEN SETTINGS', icon: Settings, onPress: escapes.onOpenSettings }];
+    case 'needsAccount':
+      return [about, { label: 'SIGN IN', icon: LogIn, onPress: escapes.onOpenAccount }];
+    case 'needsPlan':
+      return [about, seePlansAction(escapes.onOpenPlans)];
+  }
+}
+
+interface CompassBodyProps extends CompassEscapes {
   conversation: Conversation;
   /**
    * Compass is a cloud feature; without it there is nothing to talk to.
@@ -73,7 +117,6 @@ interface CompassBodyProps {
    * quiet. Null means there is nothing in the way.
    */
   cloudBlocker: CloudBlocker | null;
-  onOpenSettings: () => void;
   /** Titles by trackable id, so an adjustment can name what it changes. */
   trackableTitles: Record<string, string>;
   /** The shared centred column, so this matches the chat transcript. */
@@ -86,6 +129,9 @@ export function CompassBody({
   conversation,
   cloudBlocker,
   onOpenSettings,
+  onOpenPlans,
+  onOpenAccount,
+  onAboutCompass,
   trackableTitles,
   contentColumn,
   floatingClearance,
@@ -179,32 +225,17 @@ export function CompassBody({
   if (cloudBlocker === 'checkingAccount' || cloudBlocker === 'checkingPlan') return null;
 
   if (cloudBlocker) {
+    const status = {
+      ...COMPASS_BLOCKED[cloudBlocker],
+      actions: blockedActions(cloudBlocker, {
+        onOpenSettings,
+        onOpenPlans,
+        onOpenAccount,
+        onAboutCompass,
+      }),
+    };
     return (
-      <SamwellStatusEmptyState
-        icon={Compass}
-        style={floatingClearance}
-        status={{
-          title:
-            cloudBlocker === 'needsAccount'
-              ? 'Compass works with your Cloud Account.'
-              : cloudBlocker === 'needsPlan'
-                ? 'Compass works with a Samwell Cloud plan.'
-                : 'Compass needs Samwell Cloud.',
-          message: COMPASS_BLOCKED[cloudBlocker].message,
-          // Nothing to offer when the build itself has no server: the way out
-          // of that is a different build, not a screen in this one.
-          actions:
-            cloudBlocker === 'notConfigured'
-              ? undefined
-              : [
-                  {
-                    label: COMPASS_BLOCKED[cloudBlocker].action,
-                    icon: COMPASS_BLOCKED[cloudBlocker].icon,
-                    onPress: onOpenSettings,
-                  },
-                ],
-        }}
-      />
+      <SamwellStatusEmptyState icon={Compass} style={floatingClearance} status={status} />
     );
   }
 

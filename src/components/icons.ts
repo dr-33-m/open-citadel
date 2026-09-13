@@ -42,6 +42,7 @@ export { default as CircleStar } from 'lucide-react-native/icons/circle-star';
 export { default as CircleX } from 'lucide-react-native/icons/circle-x';
 export { default as Clock } from 'lucide-react-native/icons/clock';
 export { default as Cloud } from 'lucide-react-native/icons/cloud';
+export { default as CloudCog } from 'lucide-react-native/icons/cloud-cog';
 export { default as Coins } from 'lucide-react-native/icons/coins';
 export { default as Compass } from 'lucide-react-native/icons/compass';
 export { default as Copy } from 'lucide-react-native/icons/copy';

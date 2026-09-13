@@ -20,6 +20,7 @@ import { SamwellText } from "@/components/samwell-text";
 import { ThemedText } from "@/components/themed-text";
 import { Touchable } from "@/components/ui/touchable";
 import type { SamwellReadiness } from "@/features/chat/hooks/use-samwell-readiness";
+import { seePlansAction } from "@/features/chat/hooks/use-samwell-status";
 import { cn } from "@/lib/cn";
 import { asColor } from "@/utils/colors";
 
@@ -73,7 +74,7 @@ export function SamwellBanner({
       <Banner
         message="Choose a plan to talk with Grand Maester Samwell."
         color={asColor(mutedForeground)}
-        action={{ label: "SEE PLANS", icon: Settings, onPress: onOpenSettings }}
+        action={seePlansAction(onOpenSettings)}
       />
     );
   }
