@@ -21,6 +21,10 @@ const ROWS: { note: boolean }[] = [
 export function TocBookmarksSkeleton() {
   return (
     <SkeletonGroup label="Loading bookmarks">
+      {/* The pinned search field, at the real one's box. */}
+      <View className="mx-6 mb-6 mt-4">
+        <SkeletonBar className="h-12 w-full rounded-lg" />
+      </View>
       {ROWS.map((row, i) => (
         <View
           key={i}

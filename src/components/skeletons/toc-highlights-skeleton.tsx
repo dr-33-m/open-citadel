@@ -20,9 +20,24 @@ const ROWS: { lines: 1 | 2; tags: boolean }[] = [
   { lines: 1, tags: false },
 ];
 
+const SWATCHES = [0, 1, 2, 3, 4];
+
 export function TocHighlightsSkeleton() {
   return (
     <SkeletonGroup label="Loading highlights">
+      {/* The pinned search field and colour filters, at `HighlightsHeader`'s
+          exact box, so the rows below it do not shift when it arrives. */}
+      <View className="mx-6 mb-6 mt-4 gap-4">
+        <SkeletonBar className="h-12 w-full rounded-lg" />
+        <View className="flex-row items-center gap-3">
+          <View className="h-7 justify-center pr-1">
+            <SkeletonBar className="h-3 w-6" />
+          </View>
+          {SWATCHES.map((i) => (
+            <SkeletonBar key={i} className="h-7 w-7 rounded-full" />
+          ))}
+        </View>
+      </View>
       {ROWS.map((row, i) => (
         <View
           key={i}
