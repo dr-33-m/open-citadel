@@ -19,7 +19,14 @@ import {
 import { useAccountStore } from '@/stores/account';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
+import { isNativeAvailable } from '@/services/inference';
 import { useSubscriptionStore } from '@/stores/subscription';
+
+/**
+ * Whether this phone can run on-device Samwell at all. Read once: the answer is
+ * the hardware's and does not change while the app runs.
+ */
+const NATIVE_SUPPORTED = isNativeAvailable();
 
 /**
  * Why the cloud cannot answer.
@@ -36,6 +43,12 @@ export interface SamwellReadiness {
   ready: boolean;
   /** Is there a model to run at all — false is "go to Settings", not "wake up". */
   downloaded: boolean;
+  /**
+   * Whether this phone can run on-device Samwell. Older phones cannot, and for
+   * them offline mode has no way forward but Samwell Cloud, so every surface
+   * offers that instead of a brain to download.
+   */
+  nativeSupported: boolean;
   loading: boolean;
   loadError: string | null;
   /** Wakes the local engine. */
@@ -113,6 +126,7 @@ export function useSamwellReadiness(): SamwellReadiness {
     // is downloaded, so claim nothing: the alternative is telling an install
     // that is already set up to go and set Samwell up, on every cold open.
     downloaded: isCloud ? true : modelsHydrated ? (activeModel?.isDownloaded ?? false) : true,
+    nativeSupported: NATIVE_SUPPORTED,
     loading: isLoading,
     loadError,
     initContext,

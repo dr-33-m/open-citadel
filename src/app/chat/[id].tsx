@@ -27,6 +27,7 @@ import { backTo } from "@/navigation/navigate";
 import { isVisibleChatMessage } from "@/services/chat-transcript";
 import { useChatStore, type ChatMessage } from "@/stores/chat";
 import { HUB, useHubStore } from "@/stores/hub";
+import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
 
 /** One turn, as the virtualized transcript wants it: the message plus the
@@ -272,6 +273,7 @@ export default function ChatSessionScreen() {
           readiness={readiness}
           onOpenSettings={() => router.push("/settings")}
           onRetryCloud={() => void useSubscriptionStore.getState().refresh()}
+          onSwitchToCloud={() => void useSettingsStore.getState().setSamwellMode("cloud")}
         />
 
         {/* The virtualized transcript path: only the rows near the viewport

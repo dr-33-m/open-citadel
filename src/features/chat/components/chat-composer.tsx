@@ -32,7 +32,15 @@ interface ChatComposerProps {
   bottomInset: number;
 }
 
-function placeholderFor({ ready, downloaded, mode, cloudBlocker }: SamwellReadiness): string {
+function placeholderFor({
+  ready,
+  downloaded,
+  nativeSupported,
+  mode,
+  cloudBlocker,
+}: SamwellReadiness): string {
+  // Before the brain setup copy: an older phone has no brain to set up.
+  if (mode === 'offline' && !nativeSupported) return 'Switch to Samwell Cloud…';
   if (!downloaded) return 'Set up Samwell in Settings…';
   // Cloud-only, for the same reason the banner's two branches are: the
   // blocker names a missing account even while running on this device, and

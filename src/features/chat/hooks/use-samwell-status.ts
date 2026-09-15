@@ -136,7 +136,16 @@ export function useSamwellStatus({
    * end was itself a dead end. When there is no cloud to switch to, the
    * honest offer is the place where one gets set up.
    */
-  const { ready, downloaded, loading, loadError, initContext, mode, cloudBlocker } = readiness;
+  const {
+    ready,
+    downloaded,
+    nativeSupported,
+    loading,
+    loadError,
+    initContext,
+    mode,
+    cloudBlocker,
+  } = readiness;
 
   let cloudEscape: SamwellStatusAction | null = null;
   let cloudRequirement: string | null = null;
@@ -260,6 +269,26 @@ export function useSamwellStatus({
   }
 
   if (mode === 'cloud') return null;
+
+  /*
+   * An older phone that cannot run on-device AI. Offering a brain to download
+   * sent it to Settings, which then said the phone was not supported: a dead
+   * end both ways. Cloud is the only way to talk to him here, so that is the
+   * action, gated the same way every other cloud escape is.
+   */
+  if (!nativeSupported) {
+    const unreachable = cloudBlocker === 'cloudUnreachable';
+    return {
+      title: 'On-device Samwell is not supported on this phone.',
+      message: cloudRequirement ?? 'Switch to Samwell Cloud to talk to him.',
+      actions: unreachable
+        ? [{ label: 'TRY AGAIN', icon: RefreshCw, onPress: () => void retryCloud() }]
+        : cloudEscape
+          ? [cloudEscape]
+          : undefined,
+      isLoading: !unreachable && cloudEscape === null,
+    };
+  }
 
   if (!downloaded) {
     return {

@@ -10,6 +10,7 @@ import { View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
 import {
+    Cloud,
     LogIn,
     Power,
     RefreshCw,
@@ -29,12 +30,15 @@ interface SamwellBannerProps {
   onOpenSettings: () => void;
   /** Asks Samwell Cloud again after it failed to answer. */
   onRetryCloud: () => void;
+  /** Moves Samwell to the cloud, for a phone that cannot run him on device. */
+  onSwitchToCloud: () => void;
 }
 
 export function SamwellBanner({
   readiness,
   onOpenSettings,
   onRetryCloud,
+  onSwitchToCloud,
 }: SamwellBannerProps) {
   const [mutedForeground, destructive] = useCSSVariable([
     "--color-muted-foreground",
@@ -96,6 +100,18 @@ export function SamwellBanner({
   // Past the two branches above, cloud has nothing left to report: there is no
   // local model to wake and no local failure to explain.
   if (mode === "cloud") return null;
+
+  // An older phone with no on-device AI. Once in cloud mode, the cloud branches
+  // above take over and ask for an account or a plan if one is missing.
+  if (!readiness.nativeSupported) {
+    return (
+      <Banner
+        message="On-device Samwell is not supported on this phone. Switch to Samwell Cloud to talk to him."
+        color={asColor(mutedForeground)}
+        action={{ label: "SWITCH TO CLOUD", icon: Cloud, onPress: onSwitchToCloud }}
+      />
+    );
+  }
 
   if (!downloaded) {
     return (
