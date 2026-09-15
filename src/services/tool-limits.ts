@@ -29,6 +29,42 @@ export const TOOL_RESULT_TOKEN_BUDGET: Record<ToolRuntime, number> = {
   cloud: 8_000,
 };
 
+/**
+ * The smallest device tool result worth sending. Below this there is not room
+ * for even one entry and its reference marker, so stopping is the honest
+ * outcome rather than a result too thin to answer from.
+ */
+export const DEVICE_TOOL_RESULT_FLOOR_TOKENS = 40;
+
+/**
+ * Slack for the formatters, which estimate line by line and add labels and a
+ * trailing "and more" note that the whole-string estimate counts differently.
+ */
+const DEVICE_TOOL_RESULT_MARGIN_TOKENS = 16;
+
+/**
+ * How large one device tool result may be, given the room the conversation has
+ * left.
+ *
+ * The fixed ceiling alone assumed the window was empty apart from the prompt
+ * and schemas. It rarely is: replaying earlier turns keeps up to 60% of the
+ * free space for history. Measured on a real chat at 4K, the conversation had
+ * about 460 tokens left when Samwell called `suggest_next_book`, its library
+ * list came back at about 580, and the turn stopped at the device-limit banner
+ * the moment the tool ran. Sizing to the room left keeps the tool usable; only
+ * a conversation with no useful room still stops.
+ *
+ * `envelopeTokens` is what the response costs besides its content (the tool
+ * name and message overhead). `roomLeft` may be Infinity when nothing is
+ * budgeting, which leaves the fixed ceiling in charge. Returns null when there
+ * is not room for a useful result.
+ */
+export function deviceToolResultBudget(roomLeft: number, envelopeTokens: number): number | null {
+  const room = Math.floor(roomLeft - envelopeTokens - DEVICE_TOOL_RESULT_MARGIN_TOKENS);
+  const budget = Math.min(TOOL_RESULT_TOKEN_BUDGET.device, room);
+  return budget >= DEVICE_TOOL_RESULT_FLOOR_TOKENS ? budget : null;
+}
+
 export interface SearchLimits {
   /** Rows matched on a query, tag or book title. */
   matched: number;

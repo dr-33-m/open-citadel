@@ -10,7 +10,7 @@ import {
     type BottomSheetBackdropProps,
     type BottomSheetFooterProps,
 } from "@gorhom/bottom-sheet";
-import { FlashList, type FlashListProps } from "@shopify/flash-list";
+import { FlashList, type FlashListProps, type FlashListRef } from "@shopify/flash-list";
 import React from "react";
 import {
     StyleSheet,
@@ -718,7 +718,10 @@ const SHEET_DRAW_DISTANCE = 1000;
 function SheetFlatList<ItemT>({
   contentContainerStyle,
   ...props
-}: FlashListProps<ItemT>) {
+}: FlashListProps<ItemT> & {
+  /** Citadel edit: typed so a caller can reach the list (a ref is a plain prop in React 19). */
+  ref?: React.Ref<FlashListRef<ItemT>>;
+}) {
   const bottomInset = React.useContext(SheetBottomInsetContext);
   const renderScrollComponent = useBottomSheetScrollableCreator();
   return (

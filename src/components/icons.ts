@@ -49,6 +49,7 @@ export { default as Copy } from 'lucide-react-native/icons/copy';
 export { default as Crown } from 'lucide-react-native/icons/crown';
 export { default as Download } from 'lucide-react-native/icons/download';
 export { default as Feather } from 'lucide-react-native/icons/feather';
+export { default as FlaskConical } from 'lucide-react-native/icons/flask-conical';
 export { default as FolderPlus } from 'lucide-react-native/icons/folder-plus';
 export { default as Goal } from 'lucide-react-native/icons/goal';
 export { default as HeartHandshake } from 'lucide-react-native/icons/heart-handshake';

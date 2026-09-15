@@ -52,6 +52,7 @@ export function OfflineModelCard() {
   const cancelDownload = useModelStore((s) => s.cancelDownload);
   const downloadModel = useModelStore((s) => s.downloadModel);
   const releaseContext = useModelStore((s) => s.releaseContext);
+  const deleteModel = useModelStore((s) => s.deleteModel);
   const memoryEstimate = useModelStore((s) => s.memoryEstimate);
   const checkMemory = useModelStore((s) => s.checkMemory);
   const inference = useModelStore((s) => s.inference);
@@ -179,15 +180,15 @@ export function OfflineModelCard() {
           <ActionButton
             className="self-start"
             icon={MemoryStick}
-            label={memoryStatus === "wont_fit" ? "TOO LARGE" : "TIGHT"}
+            label={memoryStatus === "wontRun" ? "TOO LARGE" : "TIGHT"}
             tint={
-              memoryStatus === "wont_fit" ? asColor(destructive) : "#f97316"
+              memoryStatus === "wontRun" ? asColor(destructive) : "#f97316"
             }
             // The one button here that warns rather than acts, so it keeps its
             // own tinted ground.
             style={{
               backgroundColor:
-                memoryStatus === "wont_fit" ? "#e5393520" : "#f9731620",
+                memoryStatus === "wontRun" ? "#e5393520" : "#f9731620",
             }}
             onPress={() => setMemoryVisible(true)}
           />
@@ -273,7 +274,9 @@ export function OfflineModelCard() {
         sheet={modelSheet}
         mutedForeground={asColor(mutedForeground)}
         primary={asColor(primary)}
-        onDeleteRequest={setConfirmDeleteId}
+        // No confirm sheet for a swipe: its reach point is the confirmation.
+        // The DELETE button below still asks, since a tap carries no such cue.
+        onDelete={(id) => void deleteModel(id)}
       />
       {activeModel && (
         <TuneSheet

@@ -51,9 +51,12 @@ import {
 import { View, type LayoutChangeEvent, type ViewProps } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSpring,
+  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -64,7 +67,7 @@ import { IconColorProvider } from '@/components/ui/icons';
 import { AnimatedPressable } from '@/components/ui/animated-pressable';
 import { Text } from '@/components/ui/text';
 import { cn } from '@/lib/cn';
-import { selectionTick } from '@/lib/haptics';
+import { impactKnock, selectionTick } from '@/lib/haptics';
 
 const SPRING = { damping: 22, stiffness: 220, mass: 0.7 } as const;
 
@@ -92,6 +95,24 @@ const OVERSHOOT_FRICTION = 8;
  */
 const FULL_SWIPE_RATIO = 1.2;
 
+/*
+ * Citadel edit: removal. A row whose action takes it out of the list (see
+ * `removeOnCommit`) leaves along the way it was dragged rather than springing
+ * back for a dialog to ask again. Strong ease-out, under the 300ms UI ceiling:
+ * the finger has already let go, so the row should be gone quickly, and the
+ * list below closes the gap once it has.
+ */
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
+const REMOVE_MS = 200;
+/** Reduce Motion: the row fades where it stands instead of travelling. */
+const REMOVE_FADE_MS = 150;
+/**
+ * A removed row that is somehow still mounted this long after its action ran
+ * (the delete failed, or the caller kept the item) comes back rather than
+ * sitting off screen as an empty red strip.
+ */
+const RESTORE_AFTER_MS = 800;
+
 /** Fraction of the panel a release has to clear for the row to stay open. */
 const OPEN_RATIO = 0.5;
 
@@ -112,6 +133,10 @@ export interface SwipeHandle {
 
 interface SwipeContextValue {
   close: () => void;
+  /** Citadel edit: set when the row's action removes it (see `removeOnCommit`). */
+  removeOnCommit: boolean;
+  /** Slide the row out, then run `action`. */
+  remove: (action?: () => void) => void;
 }
 
 const SwipeContext = createContext<SwipeContextValue | null>(null);
@@ -350,6 +375,7 @@ const SwipeAction = forwardRef<View, SwipeActionProps>(
     ref
   ) => {
     const context = useContext(SwipeContext);
+    const removes = context?.removeOnCommit === true && !keepOpen;
     const slots = actionVariants({ color });
     const tint = useActionTint(color);
 
@@ -359,6 +385,12 @@ const SwipeAction = forwardRef<View, SwipeActionProps>(
         accessibilityRole="button"
         accessibilityLabel={label}
         onPress={() => {
+          // Tapping the tile is as deliberate as the full swipe, so it removes
+          // the same way: the row slides out and then the action runs.
+          if (removes) {
+            context?.remove(onPress);
+            return;
+          }
           if (!keepOpen) context?.close();
           onPress?.();
         }}
@@ -486,6 +518,16 @@ export interface SwipeProps extends Omit<ViewProps, 'children'> {
   disabled?: boolean;
   /** Tick when a drag crosses the point at which letting go fires an action. */
   haptics?: boolean;
+  /**
+   * Citadel edit: the action takes the row out of the list, and the reach
+   * point is its confirmation.
+   *
+   * Crossing the full-swipe point knocks (a heavier haptic than the tick, since
+   * letting go now commits), and releasing there, or tapping the tile, slides
+   * the row out the way it was dragged before the action runs. No dialog asks
+   * again. The caller removes the item; the list closes the gap.
+   */
+  removeOnCommit?: boolean;
   /** Told which side opened, or `null` when the row closed. */
   onOpenChange?: (side: SwipeOpenSide) => void;
   /** Extra classes for the moving row. */
@@ -510,12 +552,26 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
       fullSwipe = true,
       disabled = false,
       haptics = false,
+      removeOnCommit = false,
       onOpenChange,
+      onLayout,
       ...props
     },
     ref
   ) => {
     const sign = useDirectionSign();
+    const reducedMotion = useReducedMotion();
+    /** The row's own width, which is how far a removal has to carry it. */
+    const rowWidth = useSharedValue(0);
+    /** Only moved by a removal under Reduce Motion, which fades instead. */
+    const rowOpacity = useSharedValue(1);
+    const mounted = useRef(true);
+    useEffect(
+      () => () => {
+        mounted.current = false;
+      },
+      []
+    );
 
     /** Logical offset of the row in points; positive reveals the start side. */
     const offset = useSharedValue(0);
@@ -647,6 +703,56 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
     );
 
     const tick = useCallback(() => selectionTick(), []);
+    const knock = useCallback(() => impactKnock(), []);
+
+    /** After a removal: put a row that was not actually removed back in place. */
+    const restoreIfKept = useCallback(() => {
+      setTimeout(() => {
+        if (!mounted.current) return;
+        offset.set(0);
+        rowOpacity.set(withTiming(1, { duration: REMOVE_FADE_MS, easing: EASE_OUT }));
+      }, RESTORE_AFTER_MS);
+    }, [offset, rowOpacity]);
+
+    const finishRemoval = useCallback(
+      (action?: () => void) => {
+        reportOpen(null);
+        action?.();
+        restoreIfKept();
+      },
+      [reportOpen, restoreIfKept]
+    );
+
+    const fireAndFinish = useCallback(
+      (side: SwipeSide) => finishRemoval(() => fire(side)),
+      [finishRemoval, fire]
+    );
+
+    /** A removal started from the RN side: a tile tap or an accessibility action. */
+    const remove = useCallback(
+      (action?: () => void) => {
+        if (reducedMotion) {
+          rowOpacity.set(
+            withTiming(0, { duration: REMOVE_FADE_MS }, (finished) => {
+              if (finished) scheduleOnRN(finishRemoval, action);
+            })
+          );
+          return;
+        }
+        // Out the side it is open on; a row at rest leaves toward the end.
+        const direction = offset.get() > 0 ? 1 : -1;
+        offset.set(
+          withTiming(
+            direction * rowWidth.get(),
+            { duration: REMOVE_MS, easing: EASE_OUT },
+            (finished) => {
+              if (finished) scheduleOnRN(finishRemoval, action);
+            }
+          )
+        );
+      },
+      [reducedMotion, offset, rowOpacity, rowWidth, finishRemoval]
+    );
 
     /**
      * The drag has to lose to a scroll, or a list of swipeable rows could not
@@ -688,7 +794,9 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
             const reached = Math.abs(offset.value) > limit * FULL_SWIPE_RATIO;
             if (reached !== armed.value) {
               armed.value = reached;
-              if (reached && haptics) scheduleOnRN(tick);
+              // Past this point letting go commits. For a removal that is the
+              // confirmation, so it is felt as a knock rather than a tick.
+              if (reached && haptics) scheduleOnRN(removeOnCommit ? knock : tick);
             }
           })
           .onEnd((event) => {
@@ -704,6 +812,28 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
 
             if (fullSwipe && armed.value) {
               armed.value = false;
+              if (removeOnCommit) {
+                // Started here on the UI thread, so the row carries straight on
+                // from the release with no round trip first.
+                if (reducedMotion) {
+                  rowOpacity.set(
+                    withTiming(0, { duration: REMOVE_FADE_MS }, (finished) => {
+                      if (finished) scheduleOnRN(fireAndFinish, side);
+                    })
+                  );
+                } else {
+                  offset.set(
+                    withTiming(
+                      (toStart ? 1 : -1) * rowWidth.get(),
+                      { duration: REMOVE_MS, easing: EASE_OUT },
+                      (finished) => {
+                        if (finished) scheduleOnRN(fireAndFinish, side);
+                      }
+                    )
+                  );
+                }
+                return;
+              }
               offset.value = withSpring(0, SPRING);
               scheduleOnRN(fire, side);
               scheduleOnRN(reportOpen, null);
@@ -731,6 +861,12 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
         sign,
         fullSwipe,
         haptics,
+        removeOnCommit,
+        reducedMotion,
+        rowWidth,
+        rowOpacity,
+        knock,
+        fireAndFinish,
         offset,
         origin,
         armed,
@@ -742,6 +878,8 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
         announce,
       ]
     );
+
+    const rootStyle = useAnimatedStyle(() => ({ opacity: rowOpacity.get() }));
 
     const contentStyle = useAnimatedStyle(() => ({
       transform: [{ translateX: offset.value * sign }],
@@ -787,19 +925,29 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
       [allActions]
     );
 
-    const context = useMemo(() => ({ close }), [close]);
+    const context = useMemo(
+      () => ({ close, removeOnCommit, remove }),
+      [close, removeOnCommit, remove]
+    );
 
     return (
       <SwipeContext.Provider value={context}>
-        <View
+        <Animated.View
           accessibilityActions={a11yActions.length > 0 ? a11yActions : undefined}
           onAccessibilityAction={(event) => {
-            allActions
-              .find(({ label }) => label === event.nativeEvent.actionName)
-              ?.onPress?.();
+            const action = allActions.find(
+              ({ label }) => label === event.nativeEvent.actionName
+            );
+            if (removeOnCommit) remove(action?.onPress);
+            else action?.onPress?.();
           }}
           className={cn('relative w-full overflow-hidden', className)}
+          style={rootStyle}
           {...props}
+          onLayout={(event) => {
+            rowWidth.set(event.nativeEvent.layout.width);
+            onLayout?.(event);
+          }}
         >
           {hasStart ? (
             // Yoga puts the panel on the edge text begins at and mirrors it for
@@ -851,7 +999,7 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
               {row}
             </Animated.View>
           </GestureDetector>
-        </View>
+        </Animated.View>
       </SwipeContext.Provider>
     );
   }

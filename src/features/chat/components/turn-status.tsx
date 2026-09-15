@@ -51,15 +51,23 @@ function TraceRow({
 }) {
   const primary = useCSSVariable('--color-primary');
   const tool = indicator.toolActivity;
+  // Only a trace with text is worth opening. Gemma's reasoning never streams as
+  // text, so until its trace lands at the end there is nothing behind the row.
+  const hasTrace = indicator.trace.length > 0;
 
   return (
+    // Capped at the bubble's own width (`Message.Content`), so the orb, the
+    // label, the chevron and the opened trace line up under Samwell's reply
+    // instead of running to the screen edge.
     <View className="mb-1 px-4">
+      <View className="max-w-[82%]">
       <Reasoning
         isStreaming={indicator.active}
         duration={indicator.seconds}
         defaultOpen={false}
       >
         <Reasoning.Trigger
+          expandable={hasTrace}
           // A tool running mid-reasoning takes over the trigger: its own orb
           // shape, its own words. Otherwise the panel's built-in "Thinking…"
           // / "Thought for 2m 20s" stands.
@@ -84,8 +92,9 @@ function TraceRow({
               : undefined
           }
         />
-        <Reasoning.Content>{indicator.trace}</Reasoning.Content>
+        {hasTrace && <Reasoning.Content>{indicator.trace}</Reasoning.Content>}
       </Reasoning>
+      </View>
     </View>
   );
 }

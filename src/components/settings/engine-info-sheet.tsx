@@ -1,7 +1,9 @@
 import { View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
+import { Info } from "@/components/icons";
 import { ThemedText } from "@/components/themed-text";
+import { Alert } from "@/components/ui/alert";
 import { Sheet } from "@/components/ui/sheet";
 
 export type EngineMode = "offline" | "cloud";
@@ -10,6 +12,8 @@ type EngineInfo = {
   label: string;
   persona: string;
   points: string[];
+  /** A caution drawn after the points, for what this mode is not good at. */
+  notice?: { title: string; body: string };
 };
 
 const CONTENT: Record<EngineMode, EngineInfo> = {
@@ -23,12 +27,16 @@ const CONTENT: Record<EngineMode, EngineInfo> = {
       "He is bound by your phone, so he uses a smaller brain than the cloud.",
       "Compass is not available offline.",
     ],
+    notice: {
+      title: "Best for chat",
+      body: "On-device brains are good at conversation, but may struggle to do things for you in Open Citadel. To use everything it offers, switch to Samwell Cloud.",
+    },
   },
   cloud: {
     label: "CLOUD",
     persona: "Samwell in the cloud.",
     points: [
-      "In the Cloud, Samwell has the expert levels to choose from: Maester, Grand Maester and Archmaester.",
+      "In the Cloud, Samwell has three expert levels to choose from: Maester, Grand Maester and Archmaester.",
       "Deeper thinking and sharper insight than any phone can manage.",
       "Compass only available here, with Samwell cloud.",
       "Needs an internet connection. Only what each request needs is sent, nothing more.",
@@ -72,6 +80,20 @@ export function EngineInfoSheet({
               </View>
             ))}
           </View>
+          {info.notice && (
+            // The same quiet card as the catalogue's note: no status colour,
+            // since nothing is wrong, and square like the rest of the app.
+            // Not folded, unlike that one: this sheet exists to be read.
+            <Alert className="rounded-none">
+              <Alert.Indicator>
+                <Info size={16} color={pointColor} strokeWidth={2} />
+              </Alert.Indicator>
+              <Alert.Content>
+                <Alert.Title>{info.notice.title}</Alert.Title>
+                <Alert.Description>{info.notice.body}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          )}
         </View>
       )}
     </Sheet>

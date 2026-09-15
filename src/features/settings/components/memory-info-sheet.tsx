@@ -8,7 +8,8 @@ import { asColor } from "@/utils/colors";
 
 type MemoryEstimate = {
   status: string;
-  minDeviceMemoryGb?: number | null;
+  /** The model's own size on disk, which the verdict is derived from. */
+  modelBytes?: number | null;
   totalGb?: number;
 };
 
@@ -30,7 +31,7 @@ export function MemoryInfoSheet({
     "--color-muted-foreground",
     "--color-destructive",
   ]);
-  const wontFit = status === "wont_fit";
+  const wontFit = status === "wontRun";
 
   return (
     <Sheet visible={visible} onClose={onClose}>
@@ -51,13 +52,13 @@ export function MemoryInfoSheet({
         </ThemedText>
         {estimate && (
           <View className="gap-1">
-            {estimate.minDeviceMemoryGb != null && (
+            {estimate.modelBytes != null && (
               <ThemedText
                 type="labelSm"
                 color={asColor(mutedForeground)}
                 style={{ fontVariant: ["tabular-nums"] }}
               >
-                Minimum RAM: {estimate.minDeviceMemoryGb} GB
+                Brain size: {(estimate.modelBytes / 1024 ** 3).toFixed(1)} GB
               </ThemedText>
             )}
             {estimate.totalGb != null && (

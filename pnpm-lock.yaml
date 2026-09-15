@@ -5,9 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@dr33m/react-native-litert-lm':
-    hash: c18b958421047964b89175f93a177fbad72bcfa22b59dfe5fb1276924b62f1ab
-    path: patches/@dr33m__react-native-litert-lm.patch
   '@dr33m/react-native-readium':
     hash: 199162820afa0be7ea32159e2c1df4d8b9a00ee3cb1a974e7cca04488ce820fd
     path: patches/@dr33m__react-native-readium.patch
@@ -32,8 +29,8 @@ importers:
   .:
     dependencies:
       '@dr33m/react-native-litert-lm':
-        specifier: ^0.6.0
-        version: 0.6.0(patch_hash=c18b958421047964b89175f93a177fbad72bcfa22b59dfe5fb1276924b62f1ab)(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+        specifier: ^0.6.4
+        version: 0.6.4(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       '@dr33m/react-native-readium':
         specifier: 5.0.0-rc.34
         version: 5.0.0-rc.34(patch_hash=199162820afa0be7ea32159e2c1df4d8b9a00ee3cb1a974e7cca04488ce820fd)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -989,8 +986,8 @@ packages:
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
 
-  '@dr33m/react-native-litert-lm@0.6.0':
-    resolution: {integrity: sha512-VUCUqv/sdarYvknx0CWS8bisrYhzFABmxjr6hPwvXc1G/Dluy6iKicloUKCxrbh0BhXr+0TNyQ8EdN8PPNtqZA==}
+  '@dr33m/react-native-litert-lm@0.6.4':
+    resolution: {integrity: sha512-uAPRQN+fqLj2eZ0g5ID1h5lujYb0yYGlsBaRGt+TN7/065IULOQRVfix1IRQZ0DPMpZXz3JFh0eOr7rEAdN/aA==}
     engines: {node: '>=22'}
     peerDependencies:
       expo: '>=55.0.0'
@@ -5674,8 +5671,8 @@ packages:
   text-segmentation@1.0.3:
     resolution: {integrity: sha512-iOiPUo/BGnZ6+54OsWxZidGCsdU8YbE4PSpdPinp7DeMtUJNJBoJ/ouUSTJjHkh1KntHaltHl/gDs2FC4i5+Nw==}
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/ef6d0b3a82b16e7f3a66b9516a6f09d9fe8ad748:
-    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/ef6d0b3a82b16e7f3a66b9516a6f09d9fe8ad748}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/c215f5c479949792d984f38b3c4f1a2beb13902d:
+    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/c215f5c479949792d984f38b3c4f1a2beb13902d}
     version: 1.0.0
 
   throat@5.0.0:
@@ -6983,7 +6980,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@dr33m/react-native-litert-lm@0.6.0(patch_hash=c18b958421047964b89175f93a177fbad72bcfa22b59dfe5fb1276924b62f1ab)(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
+  '@dr33m/react-native-litert-lm@0.6.4(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
     dependencies:
       react-native-nitro-modules: 0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
     optionalDependencies:
@@ -8284,7 +8281,7 @@ snapshots:
 
   '@readium/shared@2.1.5':
     dependencies:
-      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/ef6d0b3a82b16e7f3a66b9516a6f09d9fe8ad748
+      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/c215f5c479949792d984f38b3c4f1a2beb13902d
 
   '@revenuecat/purchases-js-hybrid-mappings@18.33.1':
     dependencies:
@@ -11940,7 +11937,7 @@ snapshots:
     dependencies:
       utrie: 1.0.2
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/ef6d0b3a82b16e7f3a66b9516a6f09d9fe8ad748: {}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/c215f5c479949792d984f38b3c4f1a2beb13902d: {}
 
   throat@5.0.0: {}
 

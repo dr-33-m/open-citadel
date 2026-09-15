@@ -14,8 +14,37 @@ export type ToastOptions = {
   /** Required with `actionIcon`: it is the control's only accessible name. */
   actionLabel?: string;
   onActionPress?: () => void;
+  /**
+   * The action's work is running: its icon becomes a spinner and stops taking
+   * presses. Written by the caller over the same `key` once the action starts.
+   */
+  actionPending?: boolean;
+  /** Accessible name for the close control, when declining means something
+   *  more specific than dismissing. */
+  dismissLabel?: string;
+  /** Called when the close is pressed, so declining can be acted on. */
+  onDismissPress?: () => void;
   /** A tick when something worked, nothing when it is merely recorded. */
   tone?: 'default' | 'success';
+  /**
+   * Holds the toast on screen until something settles it: the action, the
+   * close, a swipe, or a keyed replacement.
+   *
+   * For a notice that asks a question rather than reporting an event. Three
+   * seconds is the right life for "Renamed to X" and the wrong one for "Rename
+   * this chat?", which vanishing unanswered would silently mean no.
+   *
+   * A persistent toast keeps its close control ALONGSIDE its action, which is
+   * the one case where two icons on the row are justified: with no timer, the
+   * close is the only way to decline, so the action cannot stand in for it.
+   */
+  persistent?: boolean;
+  /**
+   * Leaves the toast up when the action is pressed, so the caller can report
+   * what happened by writing over it under the same `key`. Without this an
+   * action that starts slow work dismisses the only thing saying it is running.
+   */
+  keepOpenOnAction?: boolean;
   /**
    * Names a recurring notice, so a fresh one REPLACES the copy still on screen
    * rather than stacking a second behind it.

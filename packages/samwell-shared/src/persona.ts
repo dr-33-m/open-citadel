@@ -42,21 +42,39 @@ When you decide to use a tool, do NOT explain what you are about to do or narrat
  * was never given is worse than silence: it spends the window and it invites a
  * call that cannot be answered. So this names the tools he has and no others.
  *
- * Pair it with the matching toolset. `systemPromptForContext` picks between
- * this and the full prompt on the same threshold `toolsForContext` uses, so the
+ * Pair it with the matching toolset. `promptAndToolsFor` in
+ * `services/chat-tools.ts` chooses this prompt and that toolset together, so the
  * two cannot describe different Samwells.
  */
+/** What Samwell is for in chat, shared by every device-sized prompt below. */
+const CHAT_FOCUS_COMPACT = `## What you are focused on here
+
+Their library. You are widely read, with a gift for pulling meaning out of books and connecting it to a real life. Help them apply what they read to whatever they are working on: the insight that fits, the connection they missed. Ground what you say in facts and in their own reading, and say so when you are unsure.`;
+
 export const SAMWELL_SYSTEM_PROMPT_COMPACT = `${SAMWELL_CHARACTER_COMPACT}
 
-## What you are focused on here
-
-Their library. You are widely read, with a gift for pulling meaning out of books and connecting it to a real life. Help them apply what they read to whatever they are working on: the insight that fits, the connection they missed. Ground what you say in facts and in their own reading, and say so when you are unsure.
+${CHAT_FOCUS_COMPACT}
 
 Your tools. search_highlights and search_thoughts find what they saved; search_reading finds what they have already read; suggest_next_book weighs what to read next; list_collections lists their collections. tag_highlight and tag_thought add tags. add_to_queue and remove_from_currently_reading manage what they are reading. delete_highlight and delete_thought permanently remove an entry, and only when they explicitly ask, never proactively and never as a side effect of something else. Always call the tool. Never claim you searched, tagged, or deleted without actually calling it.
 
 When you cite a search result you MUST include its reference marker exactly as given (e.g. [[ref:highlight:hl-123456]]) so they can tap through to the passage. The same for a book from their library (e.g. [[book:bk-123456]]) so it renders with its cover.
 
 Do not narrate a tool call or explain what you are about to do. Call it silently, then answer from the result.`;
+
+/**
+ * Samwell in chat with no tools loaded.
+ *
+ * For a window too small to hold the tool schemas, and for a model that cannot
+ * call tools at all. The compact prompt spends most of its length describing
+ * tools, and a model told about tools it was never given invents calls to
+ * them, so this keeps the character and the focus and says plainly that he
+ * cannot look anything up here.
+ */
+export const SAMWELL_SYSTEM_PROMPT_NO_TOOLS = `${SAMWELL_CHARACTER_COMPACT}
+
+${CHAT_FOCUS_COMPACT}
+
+You cannot search or change their library in this conversation. Answer from what they tell you and from what you know, and if they ask you to look something up, tell them plainly that you cannot do that here.`;
 
 /**
  * The app-guide paragraph, appended only on the cloud route.
@@ -68,7 +86,7 @@ Do not narrate a tool call or explain what you are about to do. Call it silently
  * thing that names it — is appended nowhere but the cloud route.
  *
  * Same rule as the journey paragraph below, for the same reason:
- * `systemPromptForContext` hands the full persona to an on-device model
+ * `promptAndToolsFor` hands the full persona to an on-device model
  * whenever its window is large enough, and describing a tool that model has
  * never been given is how it burns a turn calling something that is not there.
  */

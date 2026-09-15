@@ -41,8 +41,9 @@ export function useBillingLifecycle(accountId: string | null): void {
     read(true);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
+      // The server's plan is rechecked by `usePlanSync` at the root, in every
+      // mode; this only keeps the store's own renewal details current.
       read(true);
-      void useSubscriptionStore.getState().refresh();
     });
 
     return () => {

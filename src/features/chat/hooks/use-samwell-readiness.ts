@@ -11,8 +11,6 @@
  * screen on every token of a streaming reply, and the model store changes for
  * reasons the header does not care about.
  */
-import React from 'react';
-
 import { ACCOUNT_ENABLED } from '@/constants/logto';
 import {
     getCloudBlocker,
@@ -56,13 +54,9 @@ export function useSamwellReadiness(): SamwellReadiness {
   const accountStatus = useAccountStore((s) => s.status);
   // The status, not the balance: a credit spent mid-conversation must not
   // re-render every chat surface in the app.
+  // Read only. Asking the server is `usePlanSync`'s job, at the root, so the
+  // answer does not depend on a chat screen being mounted.
   const planStatus = useSubscriptionStore((s) => s.status);
-  const refreshPlan = useSubscriptionStore((s) => s.refresh);
-
-  React.useEffect(() => {
-    if (accountStatus !== 'signedIn' || planStatus !== 'unknown') return;
-    void refreshPlan();
-  }, [accountStatus, planStatus, refreshPlan]);
 
   const isLoaded = useModelStore((s) => s.isLoaded);
   const isLoading = useModelStore((s) => s.isLoading);

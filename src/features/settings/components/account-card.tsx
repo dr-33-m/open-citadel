@@ -4,7 +4,7 @@ import { useCSSVariable } from "uniwind";
 
 import { AccountEntryButtons } from "@/components/account/account-entry-buttons";
 import { ActionButton } from "@/components/action-button";
-import { LogOut, UserStar } from "@/components/icons";
+import { Info, LogOut, UserStar } from "@/components/icons";
 import { SamwellText } from "@/components/samwell-text";
 import { ThemedText } from "@/components/themed-text";
 import { showToast } from "@/components/toast/toast-provider";
@@ -34,9 +34,10 @@ import { CREDIT_PLANS } from "samwell-shared";
  * wrong one can still get where they were going without coming back here.
  */
 export function AccountCard() {
-  const [mutedForeground, destructive] = useCSSVariable([
+  const [mutedForeground, destructive, secondaryForeground] = useCSSVariable([
     "--color-muted-foreground",
     "--color-destructive",
+    "--color-secondary-foreground",
   ]);
 
   // Field by field, as everywhere else. `busy` changes twice per sign-in and
@@ -114,7 +115,12 @@ export function AccountCard() {
                   accessibilityRole="button"
                   accessibilityLabel="Why an account is optional"
                 >
-                  <Badge variant="secondary">Optional</Badge>
+                  {/* The info glyph says the chip opens something, which a
+                      filled label alone does not (see above). */}
+                  <Badge variant="secondary">
+                    <Info size={12} color={asColor(secondaryForeground)} strokeWidth={2} />
+                    Optional
+                  </Badge>
                 </Touchable>
               )}
             </View>

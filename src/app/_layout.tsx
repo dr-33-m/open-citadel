@@ -32,7 +32,8 @@ import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 
-import { ApprovalDialog } from "@/components/approval-dialog";
+import { ApprovalSheet } from "@/components/approval-sheet";
+import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { MemoryHud } from "@/components/dev/memory-hud";
 import { ToastProvider } from "@/components/toast/toast-provider";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
@@ -108,6 +109,9 @@ export default function RootLayout() {
   // every screen cross-fades in place instead. Read here rather than per
   // screen so one switch covers the whole navigator.
   const reduceMotion = useReducedMotion();
+  // The server's plan for this account, kept current here rather than by
+  // whichever screen is up, so offline mode is checked as promptly as cloud.
+  usePlanSync();
 
   // The app's own theme setting is the single source of truth; Uniwind (and
   // therefore every PanelUI token class in the app) follows the OS color
@@ -341,7 +345,7 @@ export default function RootLayout() {
                   options={screenTransitions.drawer}
                 />
               </TransitionStack>
-              <ApprovalDialog />
+              <ApprovalSheet />
               {__DEV__ && <MemoryHud />}
             </ThemeProvider>
           </BottomSheetModalProvider>

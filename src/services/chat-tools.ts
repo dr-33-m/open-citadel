@@ -4,6 +4,7 @@ import {
   OPEN_CITADEL_GUIDE,
   SAMWELL_SYSTEM_PROMPT,
   SAMWELL_SYSTEM_PROMPT_COMPACT,
+  SAMWELL_SYSTEM_PROMPT_NO_TOOLS,
 } from 'samwell-shared';
 
 import { db } from '@/db/client';
@@ -564,31 +565,42 @@ export const SAMWELL_TOOLS_LITERT_DEVICE: ToolDefinition[] = SAMWELL_TOOLS.filte
 const FULL_TOOLSET_MIN_CONTEXT_TOKENS = 8192;
 
 /**
- * Tools to load for a given context window.
+ * Smallest window that can hold the device toolset and still leave room to
+ * talk.
  *
- * The subset is a consequence of the budget rather than a permanent
- * downgrade: raise `contextSize` past
- * {@link FULL_TOOLSET_MIN_CONTEXT_TOKENS} and the full catalogue comes back
- * on its own.
+ * Measured, not guessed: at 2048 the compact prompt estimates at 1113 tokens
+ * and the device schemas at 1167, against 1280 usable once the reply reserve is
+ * held back. That is 2280 in a window of 1280, so every first message was
+ * refused as a full conversation. At 4096 the same pair is 2280 of 3328.
  */
-export function toolsForContext(maxContextTokens: number): ToolDefinition[] {
-  return maxContextTokens >= FULL_TOOLSET_MIN_CONTEXT_TOKENS
-    ? SAMWELL_TOOLS_LITERT
-    : SAMWELL_TOOLS_LITERT_DEVICE;
+export const DEVICE_TOOLSET_MIN_CONTEXT_TOKENS = 4096;
+
+export interface PromptAndTools {
+  systemPrompt: string;
+  tools: ToolDefinition[];
 }
 
 /**
- * The system prompt that matches that toolset.
+ * The system prompt and the tools for a window, decided together.
  *
- * Same threshold, deliberately in the same function-pair as `toolsForContext`:
- * the compact prompt names only the tools in `DEVICE_TOOL_NAMES`, so a window
- * that loads the full catalogue must get the full prompt or Samwell will not
- * know he has half his tools. Two thresholds in two files is how they drift.
+ * One decision rather than two functions, because the prompt describes the
+ * tools and the two used to be chosen apart: the toolset honoured
+ * `enableToolCalling` and the prompt did not, so a model with tools switched off
+ * was still told it had them, and a window too small for the schemas was given
+ * them anyway. Both are settled here from the same inputs, so the prompt can
+ * never promise a tool the engine was not handed.
  */
-export function systemPromptForContext(maxContextTokens: number): string {
-  return maxContextTokens >= FULL_TOOLSET_MIN_CONTEXT_TOKENS
-    ? SAMWELL_SYSTEM_PROMPT
-    : SAMWELL_SYSTEM_PROMPT_COMPACT;
+export function promptAndToolsFor(
+  maxContextTokens: number,
+  enableToolCalling: boolean,
+): PromptAndTools {
+  if (enableToolCalling && maxContextTokens >= FULL_TOOLSET_MIN_CONTEXT_TOKENS) {
+    return { systemPrompt: SAMWELL_SYSTEM_PROMPT, tools: SAMWELL_TOOLS_LITERT };
+  }
+  if (enableToolCalling && maxContextTokens >= DEVICE_TOOLSET_MIN_CONTEXT_TOKENS) {
+    return { systemPrompt: SAMWELL_SYSTEM_PROMPT_COMPACT, tools: SAMWELL_TOOLS_LITERT_DEVICE };
+  }
+  return { systemPrompt: SAMWELL_SYSTEM_PROMPT_NO_TOOLS, tools: [] };
 }
 
 // ── Tool result types ───────────────────────────────────────────────────────

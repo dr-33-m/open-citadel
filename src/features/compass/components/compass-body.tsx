@@ -8,7 +8,7 @@
  * and the month behind PLANNER, for when they are what you actually came for.
  */
 import React from 'react';
-import { Compass, Info, LogIn, Settings } from '@/components/icons';
+import { Compass, Info, LogIn, RefreshCw, Settings } from '@/components/icons';
 import { View, type ViewStyle } from 'react-native';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
@@ -59,6 +59,11 @@ const COMPASS_BLOCKED: Record<ShownBlocker, { title: string; message: string }> 
     title: 'Compass works with a Samwell Cloud plan.',
     message: 'Choose a plan and let Samwell track and analyse your goals.',
   },
+  cloudUnreachable: {
+    title: 'Cannot reach Samwell Cloud.',
+    message:
+      'Samwell Cloud did not answer, so Compass cannot load your goals. Check your connection and try again.',
+  },
 };
 
 interface CompassEscapes {
@@ -70,6 +75,8 @@ interface CompassEscapes {
   onOpenAccount: () => void;
   /** Explains what Compass is, for somebody not yet able to use it. */
   onAboutCompass: () => void;
+  /** Asks the server again after a failed read. */
+  onRetryCloud: () => void;
 }
 
 /**
@@ -103,6 +110,10 @@ function blockedActions(
       return [about, { label: 'SIGN IN', icon: LogIn, onPress: escapes.onOpenAccount }];
     case 'needsPlan':
       return [about, seePlansAction(escapes.onOpenPlans)];
+    // No ABOUT COMPASS here: nothing is being asked of the reader, so there is
+    // nothing to justify. The only useful move is to ask the server again.
+    case 'cloudUnreachable':
+      return [{ label: 'TRY AGAIN', icon: RefreshCw, onPress: escapes.onRetryCloud }];
   }
 }
 
@@ -132,6 +143,7 @@ export function CompassBody({
   onOpenPlans,
   onOpenAccount,
   onAboutCompass,
+  onRetryCloud,
   trackableTitles,
   contentColumn,
   floatingClearance,
@@ -232,6 +244,7 @@ export function CompassBody({
         onOpenPlans,
         onOpenAccount,
         onAboutCompass,
+        onRetryCloud,
       }),
     };
     return (

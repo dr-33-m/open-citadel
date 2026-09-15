@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { easing, elevation, motion, spacing } from '@/constants/theme';
+import { easing, motion, spacing } from '@/constants/theme';
 import { db } from '@/db/client';
 import { chatSuggestions } from '@/db/schema';
 import { useReaderStore } from '@/stores/reader';
@@ -37,8 +37,9 @@ interface SuggestionData {
 export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: SuggestionCardProps) {
   // Literal colours for the Reanimated card shell, the lucide props, and
   // ThemedText's `color` prop; everything on a plain View moves to classes.
-  const [surfaceTertiary, primary, mutedForeground] = useCSSVariable([
-    '--color-surface-tertiary',
+  const [card, border, primary, mutedForeground] = useCSSVariable([
+    '--color-card',
+    '--color-border',
     '--color-primary',
     '--color-muted-foreground',
   ]);
@@ -97,18 +98,20 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
   return (
     <Animated.View
       layout={LinearTransition.duration(motion.base).easing(easing)}
-      style={[
-        elevation.soft,
-        {
-          gap: spacing[2],
-          marginVertical: spacing[1],
-          paddingHorizontal: spacing[3],
-          paddingVertical: spacing[2],
-          borderLeftWidth: 3,
-          borderLeftColor: asColor(primary),
-          backgroundColor: asColor(surfaceTertiary),
-        },
-      ]}
+      /*
+       * Same surface as the other in-chat cards: solid `card` with a hairline,
+       * rather than a tan tint with a gold rule inside a gold bubble. Gold is
+       * left to APPROVE, the one thing on this card that is asking to be done.
+       */
+      style={{
+        gap: spacing[2],
+        marginVertical: spacing[1],
+        paddingHorizontal: spacing[3],
+        paddingVertical: spacing[2],
+        borderWidth: 1,
+        borderColor: asColor(border),
+        backgroundColor: asColor(card),
+      }}
     >
       <ThemedText type="bodySm" italic numberOfLines={4}>
         {data.text}
@@ -129,11 +132,16 @@ export const SuggestionCard = React.memo(function SuggestionCard({ id, kind }: S
       {data.status === 'pending' && (
         <Animated.View
           exiting={FadeOut.duration(motion.fast).easing(easing)}
+          // Set off from the proposal by a hairline, so the question reads as the
+          // card's footer rather than another line of the quote.
           style={{
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: spacing[2],
+            borderTopWidth: 1,
+            borderTopColor: asColor(border),
+            paddingTop: spacing[2],
           }}
         >
           <View className="flex-row items-center gap-1">

@@ -419,6 +419,16 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
      * transcript of the conversation being left. Move a read below the await
      * and a switch will rename the wrong conversation.
      */
+    /*
+     * Compass is cloud-only, but `suggestChatTitle` is not: offline it runs a
+     * local generation. Nothing stopped a Compass session left over from a
+     * cloud run being renamed that way, and since every caller fires this
+     * without awaiting, it would start minutes of on-device work behind a
+     * swipe. Reading chat asks permission for that; Compass, which has no
+     * offline mode to ask about, simply does not do it.
+     */
+    if (useSettingsStore.getState().samwellMode !== 'cloud') return;
+
     const { activeSessionId, messages } = get();
     if (!activeSessionId) return;
     const count = realMessageCount(messages);

@@ -11,6 +11,7 @@ import { goals } from '@/db/schema';
 import { cloudJsonHeaders } from '@/services/cloud-identity';
 import * as Inference from '@/services/inference';
 import { useSettingsStore } from '@/stores/settings';
+import { splitThinking } from '@/utils/think-stream';
 
 /**
  * AI tag suggestions for a saved passage. Works on both Samwell paths: cloud
@@ -108,7 +109,9 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
         latest = data.content;
       },
     );
-    const tags = normalizeTags(latest);
+    // Reasoning arrives inline on this path too, and a `<think>` block parses
+    // into a list of nonsense tags rather than failing loudly.
+    const tags = normalizeTags(splitThinking(latest).visible);
     if (tags.length === 0) {
       throw new Error("Couldn't suggest tags for this passage.");
     }

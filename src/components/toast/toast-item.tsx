@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -17,6 +17,7 @@ import { CircleCheck, X } from '@/components/icons';
 import { useCSSVariable } from 'uniwind';
 
 import { Card } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
 import type { ToastEntry } from '@/components/toast/types';
 import { fontFamily } from '@/constants/theme';
 import { asColor } from '@/utils/colors';
@@ -37,6 +38,8 @@ const DISMISS_VELOCITY = 800;
 const STACK_PEEK = 14;
 const STACK_SCALE_STEP = 0.05;
 const MAX_VISIBLE = 3;
+/** The action icon's box, which the pending spinner takes over. */
+const ACTION_BOX = { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' } as const;
 
 /**
  * Resistance in the direction that does NOT dismiss.
@@ -134,11 +137,16 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
     [clearTimer, dragY, finishDismiss, onDismissStart, opacity, reduced, toast.id],
   );
 
+  const persistent = toast.persistent === true;
+
   const restartTimer = React.useCallback(() => {
     if (exiting.current) return;
     clearTimer();
+    // A toast that asked a question waits for the answer. Everything else
+    // still leaves on its own.
+    if (persistent) return;
     timer.current = setTimeout(() => dismiss('timeout'), AUTO_DISMISS_MS);
-  }, [clearTimer, dismiss]);
+  }, [clearTimer, dismiss, persistent]);
 
   const commitSwipeDismiss = React.useCallback(() => dismiss('swipe'), [dismiss]);
 
@@ -244,24 +252,40 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
             {/* The action replaces the close rather than joining it: two icons
                 on one line is the busy, uneven row this layout exists to
                 avoid, and a swipe or the timer still dismisses either way. */}
-            {ActionIcon && toast.actionLabel ? (
+            {ActionIcon && toast.actionLabel && toast.actionPending && (
+              // Same footprint as the icon, so the row does not shift when the
+              // press turns into work.
+              <View style={ACTION_BOX}>
+                <Spinner size="sm" label={toast.actionLabel} />
+              </View>
+            )}
+            {ActionIcon && toast.actionLabel && !toast.actionPending && (
               <Pressable
                 hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel={toast.actionLabel}
                 onPress={() => {
                   toast.onActionPress?.();
-                  dismiss('close');
+                  // Slow work started by the action needs the toast it is
+                  // reported in to survive the press.
+                  if (!toast.keepOpenOnAction) dismiss('close');
                 }}
               >
                 <ActionIcon size={18} color={asColor(foreground)} />
               </Pressable>
-            ) : (
+            )}
+            {/* The close normally steps aside for an action, because a swipe
+                and the timer both still dismiss. A persistent toast has
+                neither, so declining needs its own control. */}
+            {(!ActionIcon || !toast.actionLabel || persistent) && (
               <Pressable
                 hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel="Dismiss"
-                onPress={() => dismiss('close')}
+                accessibilityLabel={toast.dismissLabel ?? 'Dismiss'}
+                onPress={() => {
+                  toast.onDismissPress?.();
+                  dismiss('close');
+                }}
               >
                 <X size={18} color={asColor(mutedForeground)} />
               </Pressable>

@@ -42,11 +42,28 @@ import { asColor } from '@/utils/colors';
  *
  * Copy lives in `NOTE_HINTS`, not here: this is how a tip looks, that is what
  * each one says.
+ *
+ * Samwell's tip is the default. A note that is not his (the catalogue's caution
+ * for tinkerers) passes its own `icon`, `title` and `name`, and keeps the same
+ * fold, so the app has one collapsible note rather than two that drift.
  */
 /** Constant, so the body's position is not a new object on every render. */
 const BODY_POSITION = { position: 'absolute', left: 0, right: 0, top: 0 } as const;
 
-export function FieldHint({ children }: { children: string }) {
+export function FieldHint({
+  children,
+  icon,
+  title,
+  name = 'Samwell tip',
+}: {
+  children: string;
+  /** Replaces his mark. */
+  icon?: React.ReactNode;
+  /** Replaces "Samwell tip!". */
+  title?: string;
+  /** What a screen reader calls the note: "Show {name}". */
+  name?: string;
+}) {
   const [mutedForeground, primary] = useCSSVariable([
     '--color-muted-foreground',
     '--color-primary',
@@ -68,23 +85,27 @@ export function FieldHint({ children }: { children: string }) {
       haptic="select"
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
-      accessibilityLabel={open ? 'Hide Samwell tip' : 'Show Samwell tip'}
+      accessibilityLabel={open ? `Hide ${name}` : `Show ${name}`}
       accessibilityHint={open ? undefined : children}
     >
       <Alert className="rounded-none">
         <Alert.Indicator>
-          <ZodiacPisces size={16} color={gold} strokeWidth={2} />
+          {icon ?? <ZodiacPisces size={16} color={gold} strokeWidth={2} />}
         </Alert.Indicator>
         <Alert.Content>
           <View className="flex-row items-center justify-between gap-2">
-            <Alert.Title>
-              {/* His name in gold here as everywhere else; "tip!" is not part
-                  of the name, so it stays the title's own colour. */}
-              <ThemedText type="labelMd" color={gold}>
-                Samwell
-              </ThemedText>
-              {' tip!'}
-            </Alert.Title>
+            {title ? (
+              <Alert.Title>{title}</Alert.Title>
+            ) : (
+              <Alert.Title>
+                {/* His name in gold here as everywhere else; "tip!" is not part
+                    of the name, so it stays the title's own colour. */}
+                <ThemedText type="labelMd" color={gold}>
+                  Samwell
+                </ThemedText>
+                {' tip!'}
+              </Alert.Title>
+            )}
             {open ? (
               <ChevronUp size={15} color={muted} strokeWidth={2} />
             ) : (

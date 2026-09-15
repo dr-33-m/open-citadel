@@ -274,10 +274,25 @@ export interface ReasoningTriggerProps
   icon?: ReactNode;
   /** Replaces the whole row, icon and chevron included. */
   children?: ReactNode;
+  /**
+   * Citadel edit — whether the row opens at all. A model whose reasoning never
+   * reaches the app as text leaves nothing to show, and a chevron that expands
+   * onto an empty panel is a control that does nothing. Off, the row is plain
+   * text with no chevron and no press.
+   */
+  expandable?: boolean;
 }
 
 /** The row that says how long it thought, and folds the trace away. */
-function ReasoningTrigger({ className, label, icon, children, onPress, ...props }: ReasoningTriggerProps) {
+function ReasoningTrigger({
+  className,
+  label,
+  icon,
+  children,
+  onPress,
+  expandable = true,
+  ...props
+}: ReasoningTriggerProps) {
   const { isStreaming, open, toggle, duration } = useReasoning('Reasoning.Trigger');
   const { trigger, label: labelClass } = reasoningVariants();
   const reducedMotion = useReducedMotion();
@@ -314,6 +329,34 @@ function ReasoningTrigger({ className, label, icon, children, onPress, ...props 
     <Text className={labelClass()}>{thoughtForLabel(duration)}</Text>
   );
 
+  const content = children ?? (
+    <>
+      {icon ?? (
+        <ThinkingOrb
+          state="solving"
+          size={20}
+          paused={!isStreaming}
+          color={asColor(isStreaming ? primary : mutedForeground)}
+          // The row's own label says what is happening; the orb's word
+          // would only be read a second time.
+          importantForAccessibility="no-hide-descendants"
+        />
+      )}
+      {/* Citadel edit: `shrink` rather than `flex-1`, so the chevron sits right
+          after the label instead of at the far edge of the row. */}
+      <View className="shrink">{body}</View>
+      {expandable && (
+        <Animated.View style={chevronStyle}>
+          <ChevronDownIcon size={16} />
+        </Animated.View>
+      )}
+    </>
+  );
+
+  if (!expandable) {
+    return <View className={cn(trigger(), className)}>{content}</View>;
+  }
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -325,25 +368,7 @@ function ReasoningTrigger({ className, label, icon, children, onPress, ...props 
       className={cn(trigger(), className)}
       {...props}
     >
-      {children ?? (
-        <>
-          {icon ?? (
-            <ThinkingOrb
-              state="solving"
-              size={20}
-              paused={!isStreaming}
-              color={asColor(isStreaming ? primary : mutedForeground)}
-              // The row's own label says what is happening; the orb's word
-              // would only be read a second time.
-              importantForAccessibility="no-hide-descendants"
-            />
-          )}
-          <View className="flex-1">{body}</View>
-          <Animated.View style={chevronStyle}>
-            <ChevronDownIcon size={16} />
-          </Animated.View>
-        </>
-      )}
+      {content}
     </Pressable>
   );
 }

@@ -9,13 +9,13 @@ import { Switch } from "@/components/ui/switch";
 import { Touchable } from "@/components/ui/touchable";
 import { spacing } from "@/constants/theme";
 import { cn } from "@/lib/cn";
+import { DEVICE_TOOLSET_MIN_CONTEXT_TOKENS } from "@/services/chat-tools";
 import { useModelStore } from "@/stores/model";
 import { asColor } from "@/utils/colors";
 
 type ModelCapabilities = {
   supportsSpeculativeDecoding?: boolean;
   supportsToolCalling?: boolean;
-  supportsThinking?: boolean;
 };
 
 /**
@@ -41,6 +41,16 @@ export function TuneSheet({
   const activeBackend = useModelStore((s) => s.activeBackend);
   const unavailableBackends = useModelStore((s) => s.unavailableBackends);
   const isLoaded = useModelStore((s) => s.isLoaded);
+
+  // A window below this cannot hold the tool schemas and still leave room to
+  // talk, so tools are off there and the switch says so by being disabled.
+  const toolsFit = inference.contextSize >= DEVICE_TOOLSET_MIN_CONTEXT_TOKENS;
+  const chooseContextSize = (size: number) =>
+    setInference(
+      size >= DEVICE_TOOLSET_MIN_CONTEXT_TOKENS
+        ? { contextSize: size }
+        : { contextSize: size, enableToolCalling: false },
+    );
 
   return (
     // `maxHeightRatio` is the cap and the only cap — the sheet measures this
@@ -118,7 +128,7 @@ export function TuneSheet({
               return (
                 <Touchable
                   key={size}
-                  onPress={() => setInference({ contextSize: size })}
+                  onPress={() => chooseContextSize(size)}
                 >
                   <Card
                     className={cn(
@@ -157,8 +167,7 @@ export function TuneSheet({
           />
         )}
 
-        {(activeModel?.supportsToolCalling ||
-          activeModel?.supportsThinking) && (
+        {activeModel?.supportsToolCalling && (
           <ThemedText type="bodySm" color={asColor(mutedForeground)}>
             CAPABILITIES
           </ThemedText>
@@ -168,31 +177,9 @@ export function TuneSheet({
           <ToggleRow
             title="Tool Calling"
             note="Search highlights, tag items, and more."
-            value={inference.enableToolCalling}
-            // Tools and thinking are mutually exclusive: turning one on
-            // turns the other off.
-            onValueChange={(val) =>
-              setInference(
-                val
-                  ? { enableToolCalling: true, enableThinking: false }
-                  : { enableToolCalling: false },
-              )
-            }
-          />
-        )}
-
-        {activeModel?.supportsThinking && (
-          <ToggleRow
-            title="Thinking Mode"
-            note="Show reasoning before answering. Disables tools."
-            value={inference.enableThinking}
-            onValueChange={(val) =>
-              setInference(
-                val
-                  ? { enableThinking: true, enableToolCalling: false }
-                  : { enableThinking: false },
-              )
-            }
+            value={inference.enableToolCalling && toolsFit}
+            disabled={!toolsFit}
+            onValueChange={(val) => setInference({ enableToolCalling: val })}
           />
         )}
 
@@ -217,18 +204,24 @@ function ToggleRow({
   title,
   note,
   value,
+  disabled = false,
   onValueChange,
 }: {
   title: string;
   note: string;
   value: boolean;
+  disabled?: boolean;
   onValueChange: (value: boolean) => void;
 }) {
   const [mutedForeground] = useCSSVariable(["--color-muted-foreground"]);
+  const toggle = () => {
+    if (!disabled) onValueChange(!value);
+  };
   return (
     <Touchable
-      className="flex-row items-center justify-between"
-      onPress={() => onValueChange(!value)}
+      className={cn("flex-row items-center justify-between", disabled && "opacity-40")}
+      disabled={disabled}
+      onPress={toggle}
     >
       <View className="flex-1 gap-1">
         <ThemedText type="bodySm">{title}</ThemedText>
@@ -240,7 +233,7 @@ function ToggleRow({
           {note}
         </ThemedText>
       </View>
-      <Switch value={value} onValueChange={onValueChange} />
+      <Switch value={value} onValueChange={onValueChange} disabled={disabled} />
     </Touchable>
   );
 }

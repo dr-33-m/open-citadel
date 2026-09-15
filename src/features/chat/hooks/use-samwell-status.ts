@@ -37,6 +37,7 @@ import {
 import type { SamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
 import { useChatStore } from '@/stores/chat';
 import { useSettingsStore } from '@/stores/settings';
+import { useSubscriptionStore } from '@/stores/subscription';
 
 export interface SamwellStatusAction {
   label: string;
@@ -114,6 +115,9 @@ export function useSamwellStatus({
   const setSamwellMode = useSettingsStore((s) => s.setSamwellMode);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
   const cloudConfigured = cloudBaseUrl.length > 0;
+  // Asking the server again. The action, not the status: nothing here draws
+  // from the plan itself.
+  const retryCloud = useSubscriptionStore((s) => s.refresh);
 
   const switchToCloud = React.useCallback(async () => {
     await setSamwellMode('cloud');
@@ -145,6 +149,11 @@ export function useSamwellStatus({
   } else if (cloudBlocker === 'needsPlan') {
     cloudRequirement = 'Choose a plan to continue this chat in Samwell Cloud.';
     cloudEscape = seePlansAction(onOpenPlans);
+  } else if (cloudBlocker === 'cloudUnreachable') {
+    // No escape offered, for the same reason `checkingAccount` offers none:
+    // nothing on this screen fixes a server that did not answer, and a button
+    // that cannot help is worse than a plain statement of what happened.
+    cloudRequirement = 'Samwell Cloud did not answer. Check your connection.';
   } else if (cloudBlocker === 'checkingAccount' || cloudBlocker === 'checkingPlan') {
     cloudRequirement = 'Checking your Cloud access…';
   } else {
@@ -213,6 +222,17 @@ export function useSamwellStatus({
       title: 'Samwell Cloud is not set up.',
       message: 'This build has no cloud server, so there is nothing to talk to yet.',
       actions: [{ label: 'OPEN SETTINGS', icon: Settings, onPress: onOpenSettings }],
+    };
+  }
+
+  // The server never answered. Before `unreachable` existed this rested on
+  // "Checking your Cloud access…" forever; now it says so, and asking again is
+  // the only thing the reader can usefully do from here.
+  if (mode === 'cloud' && cloudBlocker === 'cloudUnreachable') {
+    return {
+      title: 'Cannot reach Samwell Cloud.',
+      message: 'He did not answer. Check your connection and try again.',
+      actions: [{ label: 'TRY AGAIN', icon: RefreshCw, onPress: () => void retryCloud() }],
     };
   }
 

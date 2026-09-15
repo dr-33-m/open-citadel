@@ -17,7 +17,7 @@
     "server:build": "pnpm --filter samwell-cloud-server build"
   },
   "dependencies": {
-    "@dr33m/react-native-litert-lm": "^0.6.0",
+    "@dr33m/react-native-litert-lm": "^0.6.4",
     "@dr33m/react-native-readium": "5.0.0-rc.34",
     "@expo-google-fonts/manrope": "^0.4.2",
     "@expo-google-fonts/newsreader": "^0.4.1",
@@ -122,7 +122,6 @@
       "@openrouter/sdk@0.13.20": "patches/@openrouter__sdk@0.13.20.patch",
       "@gorhom/bottom-sheet": "patches/@gorhom__bottom-sheet.patch",
       "react-native-svg": "patches/react-native-svg.patch",
-      "@dr33m/react-native-litert-lm": "patches/@dr33m__react-native-litert-lm.patch",
       "@dr33m/react-native-readium": "patches/@dr33m__react-native-readium.patch",
       "react-native-screen-transitions": "patches/react-native-screen-transitions.patch",
       "expo-modules-core": "patches/expo-modules-core.patch"

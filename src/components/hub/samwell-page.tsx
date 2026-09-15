@@ -38,7 +38,6 @@ import {
     type ToolboxItem,
 } from "@/components/samwell/samwell-toolbox";
 import { ThemedText } from "@/components/themed-text";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MaxContentWidth, spacing } from "@/constants/theme";
 import { BookPickerSheet } from "@/features/chat/components/book-picker-sheet";
 import { ChatHeader } from "@/features/chat/components/chat-header";
@@ -65,6 +64,7 @@ import { useCompassPastGoals, useCompassStore } from "@/stores/compass";
 import { useCompassChatStore } from "@/stores/compass-chat";
 import { HUB, useHubStore } from "@/stores/hub";
 import { useSamwellSessionStore } from "@/stores/samwell-session";
+import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
 
 // The content column: centred and capped on wide screens, pixel-identical on
@@ -91,10 +91,9 @@ const contentColumn: ViewStyle = {
  * call outlives the switch, and a slow model never holds up a swipe.
  */
 function refineLeavingTitles() {
-  void useChatStore
-    .getState()
-    .refineSessionTitleOnExit()
-    .catch(() => {});
+  // Cloud renames in the background; offline raises the rename offer, since a
+  // rename there is a full local generation the reader agrees to wait for.
+  useChatStore.getState().promptTitleRefineOnExit();
   void useCompassChatStore
     .getState()
     .refineTitleOnExit()
@@ -174,6 +173,9 @@ export function SamwellPage() {
   const deleteSession = useChatStore((s) => s.deleteSession);
 
   const readiness = useSamwellReadiness();
+  // Asking again after a failed read. Selected narrowly: the balance changes
+  // mid-conversation and this screen must not re-render for it.
+  const refreshPlan = useSubscriptionStore((s) => s.refresh);
   /*
    * Whether Compass has anything to talk to.
    *
@@ -260,14 +262,9 @@ export function SamwellPage() {
     [setSession],
   );
 
-  const [confirmDelete, setConfirmDelete] = React.useState<ChatSession | null>(
-    null,
-  );
   const [showBookPicker, setShowBookPicker] = React.useState(false);
   const [showHistory, setShowHistory] = React.useState(false);
   const [showCompassHistory, setShowCompassHistory] = React.useState(false);
-  const [confirmDeleteCompass, setConfirmDeleteCompass] =
-    React.useState<ChatSession | null>(null);
   const [showDeck, setShowDeck] = React.useState(false);
   const [showPlanner, setShowPlanner] = React.useState(false);
   const [showInsights, setShowInsights] = React.useState(false);
@@ -278,6 +275,17 @@ export function SamwellPage() {
   // it does not redraw a month grid per token, and a fresh closure per render
   // would defeat that on its own.
   const closePlanner = React.useCallback(() => setShowPlanner(false), []);
+  // Stable, because each is threaded into the history list's renderItem: a
+  // fresh closure per render re-rendered every row while the sheet was open.
+  const deleteChatSession = React.useCallback(
+    (session: ChatSession) => void deleteSession(session.id),
+    [deleteSession],
+  );
+  const deleteCompassSession = useCompassChatStore((s) => s.deleteSession);
+  const deleteCompassHistorySession = React.useCallback(
+    (session: ChatSession) => void deleteCompassSession(session.id),
+    [deleteCompassSession],
+  );
 
   // The input card and nav float over the transcript so messages stay visible
   // through the gaps around them. Their combined height is measured rather
@@ -761,6 +769,7 @@ export function SamwellPage() {
                 onOpenPlans={openCloudPlans}
                 onOpenAccount={openAccountSettings}
                 onAboutCompass={openAboutCompass}
+                onRetryCloud={refreshPlan}
                 trackableTitles={trackableTitles}
                 contentColumn={contentColumn}
                 floatingClearance={floatingClearance}
@@ -870,13 +879,9 @@ export function SamwellPage() {
               setShowHistory(false);
               void chat.newChat();
             }}
-            // The confirm is a dialog over the page, so the sheet steps aside
-            // first — two overlays stacked on each other is how you end up
-            // dismissing the wrong one.
-            onRequestDelete={(session) => {
-              setShowHistory(false);
-              setConfirmDelete(session);
-            }}
+            // The swipe's reach point is the confirmation, so the chat goes at
+            // once and the sheet stays open with the list closing the gap.
+            onDelete={deleteChatSession}
             onClose={() => setShowHistory(false)}
           />
 
@@ -897,48 +902,8 @@ export function SamwellPage() {
               setShowCompassHistory(false);
               void compass.newSession();
             }}
-            onRequestDelete={(session) => {
-              setShowCompassHistory(false);
-              setConfirmDeleteCompass(session);
-            }}
+            onDelete={deleteCompassHistorySession}
             onClose={() => setShowCompassHistory(false)}
-          />
-
-          <ConfirmDialog
-            visible={confirmDeleteCompass !== null}
-            title="Delete conversation?"
-            message={confirmDeleteCompass?.title}
-            onClose={() => setConfirmDeleteCompass(null)}
-            actions={[
-              { label: "CANCEL", onPress: () => setConfirmDeleteCompass(null) },
-              {
-                label: "DELETE",
-                destructive: true,
-                onPress: () => {
-                  const target = confirmDeleteCompass;
-                  setConfirmDeleteCompass(null);
-                  if (target) void compass.deleteSession(target.id);
-                },
-              },
-            ]}
-          />
-
-          <ConfirmDialog
-            visible={confirmDelete !== null}
-            title="Delete chat?"
-            message={confirmDelete?.title}
-            onClose={() => setConfirmDelete(null)}
-            actions={[
-              { label: "CANCEL", onPress: () => setConfirmDelete(null) },
-              {
-                label: "DELETE",
-                destructive: true,
-                onPress: () => {
-                  if (confirmDelete) void deleteSession(confirmDelete.id);
-                  setConfirmDelete(null);
-                },
-              },
-            ]}
           />
 
           <LogDeckSheet visible={showDeck} onClose={() => setShowDeck(false)} />

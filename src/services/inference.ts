@@ -1,5 +1,5 @@
 import { createLLM, isNativeAvailable, type Backend, type ExecuteResult, type MemoryUsage, type ToolResponse } from '@dr33m/react-native-litert-lm';
-import { systemPromptForContext, toolsForContext } from './chat-tools';
+import { promptAndToolsFor } from './chat-tools';
 import {
   ContextBudget,
   estimateTokens,
@@ -46,10 +46,9 @@ export async function loadModel(filePath: string, settings?: Partial<ModelSettin
   const enableToolCalling = settings?.enableToolCalling ?? true;
 
   const maxContextTokens = settings?.contextSize ?? 4096;
-  const tools = enableToolCalling ? toolsForContext(maxContextTokens) : [];
-  // Paired with the toolset above: the compact prompt describes only the
-  // device toolset, so the two are chosen on the same threshold in one place.
-  const systemPrompt = systemPromptForContext(maxContextTokens);
+  // Chosen together so the prompt never describes a tool the engine lacks,
+  // and so a window too small for the schemas does not load them.
+  const { systemPrompt, tools } = promptAndToolsFor(maxContextTokens, enableToolCalling);
 
   _llm = createLLM();
   await _llm.loadModel(filePath, {
@@ -154,6 +153,20 @@ export function checkMemoryHeadroom(minAvailableBytes = 250 * 1024 * 1024): Memo
   if (!_llm) return { ok: true, usage: null };
   try {
     const usage = _llm.getMemoryUsage();
+    /*
+     * A zero reading is not a measurement.
+     *
+     * The native side reports `availableMemoryBytes = 0` when it cannot reach
+     * ActivityManager at all — a null application context, or a throw it
+     * logged and swallowed — and nothing distinguishes that from a device
+     * genuinely out of memory. Taken at face value it is always below any
+     * floor, so chat refused the first message of every turn and blamed the
+     * device, whatever model was loaded.
+     *
+     * Treated as unknown instead, which is what the catch below already does
+     * for the louder version of the same failure.
+     */
+    if (!(usage.availableMemoryBytes > 0)) return { ok: true, usage };
     return { ok: !usage.isLowMemory && usage.availableMemoryBytes > minAvailableBytes, usage };
   } catch {
     // Fail OPEN — a diagnostic call failing must never itself block chat.
@@ -177,7 +190,12 @@ export async function chat(
    * and a native rebuild. Until then on-device thinking is a finished trace,
    * where cloud's is a live one.
    */
-  onData: (data: { content: string; reasoningContent: string }) => void,
+  /**
+   * `done` is true on the engine's final callback only. That last callback
+   * carries no text, so without the flag it looks exactly like the empty chunks
+   * a reasoning model sends while it thinks.
+   */
+  onData: (data: { content: string; reasoningContent: string; done: boolean }) => void,
 ): Promise<ExecuteResult> {
   if (!_llm) throw new Error('No model loaded');
 
@@ -186,9 +204,9 @@ export async function chat(
   let acc = '';
   const result = await _llm.execute(
     [{ type: 'text', text: userMessage }],
-    (token) => {
+    (token, done) => {
       acc += token;
-      onData({ content: acc, reasoningContent: '' });
+      onData({ content: acc, reasoningContent: '', done });
     },
   );
   chargeResult(result);
@@ -200,7 +218,12 @@ export async function chat(
  */
 export async function sendToolResponses(
   responses: ToolResponse[],
-  onData: (data: { content: string; reasoningContent: string }) => void,
+  /**
+   * `done` is true on the engine's final callback only. That last callback
+   * carries no text, so without the flag it looks exactly like the empty chunks
+   * a reasoning model sends while it thinks.
+   */
+  onData: (data: { content: string; reasoningContent: string; done: boolean }) => void,
 ): Promise<ExecuteResult> {
   if (!_llm) throw new Error('No model loaded');
 
@@ -209,9 +232,9 @@ export async function sendToolResponses(
   let acc = '';
   const result = await _llm.sendToolResponse(
     responses,
-    (token) => {
+    (token, done) => {
       acc += token;
-      onData({ content: acc, reasoningContent: '' });
+      onData({ content: acc, reasoningContent: '', done });
     },
   );
   chargeResult(result);
@@ -241,6 +264,15 @@ export function assessTurn(text: string): ContextPressure {
  */
 export function fitsInContext(text: string): boolean {
   return _budget ? _budget.fits(tokensFor(text)) : true;
+}
+
+/**
+ * Tokens the conversation can still take before the reply reserve, or Infinity
+ * when nothing on device is budgeting (cloud mode). Used to size a tool result
+ * to the room that is actually left rather than to a fixed ceiling.
+ */
+export function remainingContextTokens(): number {
+  return _budget ? _budget.remaining : Number.POSITIVE_INFINITY;
 }
 
 /** Space a compaction has to work with, once the baseline is paid for. */

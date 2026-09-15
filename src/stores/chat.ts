@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
+import { PencilSparkles } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
@@ -24,9 +25,10 @@ import {
 } from '@/services/chat-tools';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
 import { asCloudRefusal, sendCloudChatTurn } from '@/services/cloud-chat';
-import { planReplay, type ReplayMessage } from '@/services/context-budget';
+import { estimateTokens, planReplay, type ReplayMessage } from '@/services/context-budget';
+import { splitThinking } from '@/utils/think-stream';
 import * as Inference from '@/services/inference';
-import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
+import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useAccountStore } from '@/stores/account';
 import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
@@ -39,6 +41,15 @@ import { useSubscriptionStore } from '@/stores/subscription';
  * working while the shapes live with the queries that produce them.
  */
 export type { ChatMessage, ChatSession };
+
+/** A conversation frozen at the moment it was left, ready to be renamed. */
+export type TitleRefineRequest = {
+  sessionId: string;
+  currentTitle: string;
+  /** Real messages the resulting name will cover. */
+  count: number;
+  conversation: string;
+};
 
 interface ChatStore {
   sessions: ChatSession[];
@@ -96,8 +107,19 @@ interface ChatStore {
   maybeTitleFirstMessage(sessionId: string, userText: string, assistantText: string): Promise<void>;
   /** Called when the user leaves a bookless chat screen — re-titles from the
    * whole conversation if it's grown since the last title update. Resolves to
-   * the new title, or null when nothing was renamed. */
-  refineSessionTitleOnExit(): Promise<string | null>;
+   * the new title, or null when nothing was renamed.
+   *
+   * On-device this needs `confirmed`, because re-reading a conversation is a
+   * full local generation the reader has to agree to wait for. See the guard
+   * in the implementation. */
+  refineSessionTitleOnExit(opts?: { confirmed?: boolean }): Promise<string | null>;
+  /** The conversation being left, frozen so it can be renamed after the switch
+   *  has already moved on. Null when nothing is worth renaming. */
+  captureTitleRefine(): TitleRefineRequest | null;
+  /** Rename the captured conversation. Raises its own success notice. */
+  runTitleRefine(request: TitleRefineRequest): Promise<string | null>;
+  /** Offer the rename on the way out. Never blocks the caller. */
+  promptTitleRefineOnExit(): void;
   /** Whether leaving now would run a summary pass worth waiting for. */
   needsTitleRefine(): boolean;
   clearDeviceLimit(): void;
@@ -119,12 +141,125 @@ const titledMessageCounts = new Map<string, number>();
  */
 export const NEW_CHAT_TITLE = 'New chat';
 
+/** One key for the whole rename exchange: ask, progress, outcome. Each writes
+ *  over the last rather than stacking three notices about one rename. */
+const RETITLE_TOAST_KEY = 'chat-retitle';
+
 /**
  * The rename currently running, so a second caller joins it rather than
  * starting another. Module state for the same reason as the map above, and
  * one at a time is enough: there is only ever one open conversation to name.
  */
 let titleRefineInFlight: Promise<string | null> | null = null;
+
+/**
+ * Set by `stopGeneration`, cleared when a turn starts, read by the on-device
+ * tool loop.
+ *
+ * Cancelling the engine ends the reply it is generating, but a reply that had
+ * already asked for a tool still comes back carrying that request, and the
+ * loop used to honour it: run the tool, send the result, and set the engine
+ * generating again. That was the stop that did not stop.
+ */
+let stopRequested = false;
+
+/**
+ * Route one on-device token stream into the same store writes the cloud path
+ * makes.
+ *
+ * Cloud gets two callbacks and keeps them apart: `onStreamingContent` never
+ * touches the trace, `onThinkingContent` never touches the answer, and
+ * `onThinkingDone` reports how long the reasoning took. On device there is one
+ * undifferentiated channel, so the split happens here — but the writes it
+ * produces are deliberately the same shape, because anything else makes the
+ * two surfaces behave differently for no reason the reader could name.
+ *
+ * Writing both halves on every token is what made the bubble jump: during
+ * reasoning it set `streamingContent` to an empty string over and over while
+ * the trace grew, so the answer arrived as a jump from nothing rather than as
+ * a continuation.
+ *
+ * Returns the function to call when the stream ends, which closes off the
+ * timing for a reply that finished while still inside a reasoning block.
+ */
+function onDeviceStreamWriter() {
+  let thinkingStartedAt: number | null = null;
+
+  const finishThinking = () => {
+    if (thinkingStartedAt === null) return;
+    useChatStore.setState({
+      thinkingSeconds: Math.max(1, Math.round((Date.now() - thinkingStartedAt) / 1000)),
+    });
+    thinkingStartedAt = null;
+  };
+
+  return {
+    push(raw: string) {
+      /*
+       * Both channels are trimmed at the edges before they are shown.
+       *
+       * The markers are written with newlines around them — a model emits
+       * `<think>\n … \n</think>\n\n` — so the raw split hands back a trace
+       * that opens with a blank line and an answer that opens with two. Shown
+       * verbatim, the first reads as a large unexplained gap above the
+       * reasoning and the second as a tall empty bubble that collapses once
+       * real text arrives. Trimming is safe on every pass because the whole
+       * accumulated text is re-split each time.
+       */
+      const split = splitThinking(raw);
+
+      if (split.isThinking) {
+        // Measured from the first reasoning token, the same moment the server
+        // starts its own clock.
+        if (thinkingStartedAt === null) thinkingStartedAt = Date.now();
+        useChatStore.setState({ isThinking: true, thinkingContent: split.thinking.trim() });
+        return;
+      }
+
+      finishThinking();
+      useChatStore.setState({
+        isThinking: false,
+        isToolCalling: false,
+        toolCallStatus: null,
+        toolCallName: null,
+        /*
+         * Trimmed at the front, because a reasoning model's first tokens after
+         * `</think>` are the blank lines that separated the trace from the
+         * answer. Passed through, they are content as far as the transcript is
+         * concerned: the streaming bubble appears holding two empty lines, at
+         * the height of a two-line reply, and then collapses to one line when
+         * the first real sentence lands. Safe to trim on every pass because
+         * the whole accumulated text is re-split each time, and no answer
+         * legitimately opens with whitespace.
+         */
+        streamingContent: split.visible.trimStart(),
+        // Carried over once the block closes, so the finished trace is there
+        // to fold away rather than disappearing with the last thinking token.
+        ...(split.thinking ? { thinkingContent: split.thinking.trim() } : {}),
+      });
+    },
+    /**
+     * An empty chunk from a model that reasons.
+     *
+     * Gemma's reasoning never reaches this stream as text: the engine routes it
+     * to its own `thought` channel and hands JS an empty chunk for each piece,
+     * with the finished trace only arriving on `thinkingText` at the end. So
+     * for a reasoning model an empty chunk mid-turn is the thinking, and it is
+     * timed and shown as such.
+     */
+    thinkingWithoutText() {
+      if (thinkingStartedAt === null) thinkingStartedAt = Date.now();
+      useChatStore.setState({ isThinking: true });
+    },
+    finish: finishThinking,
+  };
+}
+
+/** Whether the loaded on-device model is one that reasons before it answers. */
+function activeModelReasons(): boolean {
+  const { models, activeModelId } = useModelStore.getState();
+  return models.find((m) => m.id === activeModelId)?.supportsThinking ?? false;
+}
 
 function realMessageCount(messages: ChatMessage[]): number {
   return messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
@@ -507,7 +642,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const isFirstRealMessage = !activeSession.bookId && realMessageCount(get().messages) === 0;
 
     const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
-    const { enableThinking } = useModelStore.getState().inference;
     if (samwellMode === 'offline' && !Inference.isModelLoaded()) return;
     if (samwellMode === 'cloud' && !cloudBaseUrl) return;
     // Grand Maester Samwell runs on accounts, so a turn with nobody behind it
@@ -535,6 +669,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       isThinking: false, // Start with "Processing…"; SDK empty callback triggers "Thinking…"
       deviceLimit: null,
     }));
+    stopRequested = false;
 
     if (samwellMode === 'cloud') {
       let finalContent = '';
@@ -646,6 +781,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
 
+    // A rename of the previous chat may be running on the same engine: it can
+    // now be answered after the switch rather than before it. Waited out here,
+    // so this turn never shares the engine with it. Its finish invalidates the
+    // priming marker, so the check below rebuilds this conversation.
+    if (titleRefineInFlight) await titleRefineInFlight.catch(() => null);
+
     // Lazy context priming — if the engine wasn't primed for this session's
     // current native engine (never primed, or the engine was rebuilt since
     // e.g. a WAKE UP reload), prime it with book context before the first message
@@ -693,26 +834,56 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
+      /*
+       * The stream is split as it arrives rather than trusted to be clean.
+       *
+       * On-device there is one token channel: reasoning and answer come back
+       * interleaved, and the engine only reports them separately at the end,
+       * and then only for models it was told could reason. A model whose
+       * capabilities we read wrong put its whole `<think>` block in the chat
+       * bubble. Splitting here is model-agnostic, which is what a catalogue of
+       * untested brains needs.
+       *
+       * The writer keeps the two channels apart the way the cloud path's two
+       * callbacks do, so both surfaces move the same way.
+       */
+      const stream = onDeviceStreamWriter();
+      // Whether this model reasons, from what it is, not from the engine flag.
+      // Gemma reasons whether the flag is on or off (measured: time to first
+      // token was the same either way), so keying the status on the flag left
+      // a long reasoning wait labelled "Processing…".
+      const reasonsOnDevice = activeModelReasons();
       let result = limitReached
         ? null
         : await Inference.chat(
             content,
-            ({ content: c }) => {
-              if (c) {
-                set({ isThinking: false, streamingContent: c });
-              } else if (enableThinking) {
-                // Empty callback = model transitioned from prefill to thinking
-                set({ isThinking: true });
+            ({ content: c, done }) => {
+              /*
+               * Empty means nothing for a model that does not reason, and the
+               * reasoning itself for one that does (see
+               * `thinkingWithoutText`). Either way there is no text to show.
+               *
+               * Except the final callback, which is always empty. Read as
+               * reasoning, a reply that ended without text (the first send
+               * after a stop, for one) flashed "Thinking…" on its way out.
+               */
+              if (!c) {
+                if (reasonsOnDevice && !done) stream.thinkingWithoutText();
+                return;
               }
+              stream.push(c);
             },
           );
 
-      for (let i = 0; result && !limitReached && i < MAX_TOOL_ITERATIONS && result.toolCalls?.length; i++) {
+      for (let i = 0; result && !limitReached && !stopRequested && i < MAX_TOOL_ITERATIONS && result.toolCalls?.length; i++) {
         if (!Inference.checkMemoryHeadroom().ok) {
           limitReached = 'memory';
           break;
         }
         const toolNames = result.toolCalls.map((tc) => tc.name);
+        // What the engine streamed in the same round as the call. Should be
+        // empty once automatic tool calling is off in the native module.
+        if (__DEV__) console.log('[Chat] Tool round text:', JSON.stringify(result.text.slice(0, 300)));
         // Deletes block on the reader's approval before any work starts,
         // which is a different state from the work itself. Everything else
         // reads from the same table the executor uses, so the indicator can
@@ -745,6 +916,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           runtime: 'device',
         };
         const toolResponses: Inference.ToolResponse[] = [];
+        // Tokens already spoken for by earlier results in this round, so a turn
+        // that calls two tools does not size both against the same room.
+        let committedTokens = 0;
         for (const tc of result.toolCalls) {
           let args: Record<string, unknown> = {};
           try {
@@ -771,10 +945,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             if (tc.name === 'suggest_next_book' && Array.isArray(toolResult)) {
               suggestedBooks.push(...(toolResult as BookCandidate[]));
             }
+            // Sized to the room the conversation has left, not only the fixed
+            // device ceiling (see `deviceToolResultBudget`). With no useful room
+            // it falls back to the ceiling and the fit check below stops the turn.
+            const budget = deviceToolResultBudget(
+              Inference.remainingContextTokens() - committedTokens,
+              estimateTokens(tc.name),
+            );
             toolContent = formatToolResultForLLM(
               tc.name,
               toolResult,
-              TOOL_RESULT_TOKEN_BUDGET.device,
+              budget ?? TOOL_RESULT_TOKEN_BUDGET.device,
             );
           }
 
@@ -788,6 +969,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           db.insert(chatMessages).values(toolMsg).run();
 
           toolResponses.push({ name: tc.name, responseJson: toolContent });
+          committedTokens += estimateTokens(tc.name + toolContent);
         }
 
         // Feeding these back is what actually overflows the KV cache, and by
@@ -798,18 +980,33 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           break;
         }
 
+        // A stop that landed while the tools ran must not start the engine again.
+        if (stopRequested) break;
+
         // Send all tool responses back — engine continues the conversation
         set({ streamingContent: '' });
         result = await Inference.sendToolResponses(
           toolResponses,
-          ({ content: c }) => {
-            set({ isToolCalling: false, toolCallStatus: null, toolCallName: null, streamingContent: c });
+          // Same writer as the first turn: a model that reasons does it again
+          // after a tool result, and this is the stream that carries it.
+          ({ content: c, done }) => {
+            if (c) stream.push(c);
+            else if (reasonsOnDevice && !done) stream.thinkingWithoutText();
           },
         );
       }
 
       if (result && !limitReached) {
-        finalContent = ensureBookMarkers(result.text.trim(), suggestedBooks);
+        // A reply that ran out while still reasoning never crossed back, so the
+        // clock is closed here rather than left running into the next turn.
+        stream.finish();
+        // Whatever the engine did or did not separate, the bubble gets only the
+        // answer. `thinkingText` stays authoritative when the engine filled it.
+        const split = splitThinking(result.text);
+        if (!result.thinkingText && split.thinking) {
+          set({ thinkingContent: split.thinking.trim() });
+        }
+        finalContent = ensureBookMarkers(split.visible.trim(), suggestedBooks);
         // Exhausted MAX_TOOL_ITERATIONS while the model was still mid-tool-call
         // (not mid-answer) — result.text is typically empty here, which would
         // otherwise silently show nothing at all.
@@ -818,7 +1015,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
         // Capture thinking text from the final result (available after generation completes)
         if (result.thinkingText) {
-          set({ thinkingContent: result.thinkingText });
+          // Trimmed like the streamed path: the engine's own field carries the
+          // same newlines the markers were written with.
+          set({ thinkingContent: result.thinkingText.trim() });
         }
       }
     } catch (err) {
@@ -828,6 +1027,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     if (limitReached) {
+      if (__DEV__) console.log('[Chat] Device limit:', limitReached, JSON.stringify(Inference.getContextSnapshot()));
       set({ deviceLimit: limitReached });
     }
 
@@ -881,7 +1081,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // On-device: stop the local engine. On cloud: abort the HTTP turn — the
     // stop button used to be inert there, so a cloud reply could not be
     // called off at all.
+    stopRequested = true;
     Inference.stopGeneration();
+    /*
+     * A cancel sticks to the native conversation. Measured on device: after a
+     * stop, the next message sent on it was cancelled in 183ms with no output,
+     * and every one after it the same. The SDK has no call that clears the
+     * cancel, so the conversation is replaced rather than reused. Clearing the
+     * priming marker makes the next turn rebuild it from the chat history
+     * (`seedEngineWithSession`), which creates a fresh native conversation and
+     * keeps the context.
+     */
+    set({ primedGeneration: null });
     cloudAbort?.abort();
     // A pending approval dialog would otherwise keep waiting for a tap that
     // will never come once generation is stopped. No-op if nothing pending
@@ -925,7 +1136,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const title = await suggestChatTitle(conversation);
       if (title) {
         await get().updateSessionTitle(sessionId, title);
-        titledMessageCounts.set(sessionId, 1);
+        // What this title actually covered, which is the exchange above: the
+        // opening message and, when it had already landed, the reply to it.
+        // Recording a flat 1 understated it by exactly the assistant turn, so
+        // `pendingTitleRefine` saw two messages against a covered count of one
+        // and renamed on the way out of a conversation nothing had been added
+        // to. Leaving a freshly named chat re-ran the whole titling pass, which
+        // offline means another local generation.
+        titledMessageCounts.set(sessionId, assistantText ? 2 : 1);
       }
     } catch (err) {
       // Best-effort — a failed auto-title just leaves "New chat" in place.
@@ -938,7 +1156,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     return !titleRefreshing && pendingTitleRefine(activeSession, messages);
   },
 
-  async refineSessionTitleOnExit(): Promise<string | null> {
+  async refineSessionTitleOnExit({ confirmed = false } = {}): Promise<string | null> {
     /*
      * A rename already running is joined, not turned away.
      *
@@ -955,17 +1173,122 @@ export const useChatStore = create<ChatStore>((set, get) => ({
      */
     if (titleRefineInFlight) return titleRefineInFlight;
 
+    /*
+     * On-device, a rename is a full generation on the one local engine, and on
+     * a mid-range phone that is minutes. Doing it because someone closed a
+     * screen means the app appears to hang for a name they did not ask to
+     * change, so offline it happens only when they said yes. The asking lives
+     * in the UI; the rule that there must have been an asking lives here, once,
+     * because three different exits reach this method and a rule copied into
+     * each of them is a rule that will disagree with itself.
+     *
+     * Cloud is a stateless HTTP call with no engine to hold up, so it needs no
+     * permission and gets none asked.
+     */
+    const onDevice = useSettingsStore.getState().samwellMode !== 'cloud';
+    if (onDevice && !confirmed) return null;
+
+    const request = get().captureTitleRefine();
+    if (!request) return null;
+    return get().runTitleRefine(request);
+  },
+
+  promptTitleRefineOnExit() {
+    /*
+     * Offered, not demanded.
+     *
+     * This was a modal that blocked the switch until it was answered, which
+     * put a confirmation in front of an action that is neither destructive nor
+     * irreversible — and made leaving a chat wait on a decision the reader had
+     * not asked to make. A toast asks the same question beside the work
+     * instead of across it: the switch happens now, the notice waits for an
+     * answer rather than timing out into a silent no, and skipping costs one
+     * tap.
+     *
+     * Cloud does not ask at all. It has no engine to hold up and the rename is
+     * a background HTTP call, so a question would be ceremony.
+     */
+    if (useSettingsStore.getState().samwellMode === 'cloud') {
+      void get().refineSessionTitleOnExit({ confirmed: true }).catch(() => {});
+      return;
+    }
+
+    // A device limit means another native generation is unsafe, and a question
+    // whose only honest answer is "not now" is worse than no question.
+    if (get().deviceLimit) return;
+
+    const request = get().captureTitleRefine();
+    if (!request) return;
+
+    const ask = (message: string) =>
+      showToast({
+        key: RETITLE_TOAST_KEY,
+        message,
+        persistent: true,
+        actionIcon: PencilSparkles,
+        actionLabel: 'Rename',
+        keepOpenOnAction: true,
+        dismissLabel: 'Skip',
+        onActionPress: rename,
+      });
+
+    const rename = () => {
+        // The rename is a generation on the one local engine. Started while a
+        // reply is still being written in the chat just opened, it would reset
+        // that conversation under it. The question stays up to be answered once
+        // he is done.
+        if (get().isGenerating) {
+          ask('Samwell is still replying. Rename your previous chat when he is done?');
+          return;
+        }
+        // Written over in place so the question becomes its own progress
+        // notice: on device this takes long enough that a toast which simply
+        // vanished would read as nothing having happened.
+        // The pencil turns into a spinner in place, so the tap visibly took.
+        showToast({
+          key: RETITLE_TOAST_KEY,
+          message: 'Renaming your previous chat…',
+          persistent: true,
+          actionIcon: PencilSparkles,
+          actionLabel: 'Renaming',
+          actionPending: true,
+        });
+        void get()
+          .runTitleRefine(request)
+          .then((title) => {
+            // `runTitleRefine` announces a successful rename itself, under the
+            // same key. Only the quiet outcomes are left to report here.
+            if (!title) {
+              showToast({ key: RETITLE_TOAST_KEY, message: 'Kept the name it had.' });
+            }
+          })
+          .catch(() => {
+            showToast({ key: RETITLE_TOAST_KEY, message: 'Could not rename your previous chat.' });
+          });
+    };
+
+    ask('Rename your previous chat to fit the whole conversation?');
+  },
+
+  captureTitleRefine() {
     const { activeSession, messages } = get();
     if (!pendingTitleRefine(activeSession, messages) || !activeSession) return null;
+    return {
+      sessionId: activeSession.id,
+      currentTitle: activeSession.title,
+      count: realMessageCount(messages),
+      conversation: messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
+        .join('\n'),
+    };
+  },
 
-    // Snapshotted before anything awaits, so the rename lands on the
-    // conversation being left even once the switch has moved on.
-    const session = activeSession;
-    const count = realMessageCount(messages);
-    const conversation = messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
-      .join('\n');
+  async runTitleRefine(request): Promise<string | null> {
+    if (titleRefineInFlight) return titleRefineInFlight;
+
+    const { sessionId, currentTitle, count, conversation } = request;
+    const session = { id: sessionId, title: currentTitle };
 
     set({ titleRefreshing: true });
     titleRefineInFlight = (async () => {
@@ -979,12 +1302,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         titledMessageCounts.set(session.id, count);
         // One place raises this notice, so chat and Compass announce a rename
         // the same way and no caller has to remember to.
-        showToast({ message: `Renamed to "${title}"`, tone: 'success' });
+        showToast({ message: `Renamed to "${title}"`, tone: 'success', key: RETITLE_TOAST_KEY });
         return title;
       } catch (err) {
         console.warn('[Chat] Could not refine session title:', err);
         return null;
       } finally {
+        /*
+         * `suggestChatTitle` brackets its one-shot prompt with
+         * `resetConversation()`, which clears whatever the engine was holding —
+         * including the chat the reader has since opened, because this can now
+         * be answered after the switch rather than before it. Invalidating the
+         * priming marker rather than re-seeding here lets `sendMessage` rebuild
+         * the context lazily, on the turn that actually needs it.
+         */
+        if (useSettingsStore.getState().samwellMode !== 'cloud') {
+          set({ primedGeneration: null });
+        }
         set({ titleRefreshing: false });
         titleRefineInFlight = null;
       }

@@ -27,6 +27,7 @@ import { backTo } from "@/navigation/navigate";
 import { isVisibleChatMessage } from "@/services/chat-transcript";
 import { useChatStore, type ChatMessage } from "@/stores/chat";
 import { HUB, useHubStore } from "@/stores/hub";
+import { useSubscriptionStore } from "@/stores/subscription";
 
 /** One turn, as the virtualized transcript wants it: the message plus the
  *  navigation metadata rows outside the render window still have to carry. */
@@ -85,7 +86,9 @@ export default function ChatSessionScreen() {
   useFocusEffect(
     useCallback(() => {
       return () => {
-        useChatStore.getState().refineSessionTitleOnExit();
+        // Cloud renames in the background; offline asks first, since a rename
+        // there is a full local generation.
+        useChatStore.getState().promptTitleRefineOnExit();
       };
     }, []),
   );
@@ -268,6 +271,7 @@ export default function ChatSessionScreen() {
         <SamwellBanner
           readiness={readiness}
           onOpenSettings={() => router.push("/settings")}
+          onRetryCloud={() => void useSubscriptionStore.getState().refresh()}
         />
 
         {/* The virtualized transcript path: only the rows near the viewport

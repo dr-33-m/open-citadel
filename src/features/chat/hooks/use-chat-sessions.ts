@@ -17,7 +17,6 @@ import React from 'react';
 import * as Inference from '@/services/inference';
 import { NEW_CHAT_TITLE, useChatStore, uuid } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
-import { useSettingsStore } from '@/stores/settings';
 
 /** `'new'` for a fresh chat, otherwise the id of the session being opened. */
 export type SwitchingTarget = 'new' | string | null;
@@ -50,24 +49,13 @@ export function useChatSessions() {
   /**
    * The leaving conversation's last chance at a better title.
    *
-   * Offline this must finish before the switch: it runs on the one local
-   * engine, and opening the next session would reset that engine under it.
-   * Cloud is a stateless HTTP call with no engine to race, and slow models
-   * made sitting on it read as a frozen app — the conversation snapshot is
-   * taken synchronously inside, so the switch starts now and the rename lands
-   * in the background. `refineSessionTitleOnExit` raises its own toast when it
-   * renames, so nothing here has to.
+   * Never blocks. Offline it raises a toast offering the rename and the switch
+   * continues underneath; cloud sends it straight off. Both live in the store,
+   * which is where the snapshot of the conversation being left is taken, so
+   * an answer that arrives after the switch still renames the right chat.
    */
-  const refineLeavingTitle = React.useCallback(async () => {
-    const cloud = useSettingsStore.getState().samwellMode === 'cloud';
-    if (!cloud) {
-      // A device limit means another native generation is unsafe. Titles are
-      // best-effort; leaving the conversation must still be immediate.
-      if (useChatStore.getState().deviceLimit) return;
-      await useChatStore.getState().refineSessionTitleOnExit();
-      return;
-    }
-    void useChatStore.getState().refineSessionTitleOnExit().catch(() => {});
+  const refineLeavingTitle = React.useCallback(() => {
+    useChatStore.getState().promptTitleRefineOnExit();
   }, []);
 
   const selectSession = React.useCallback(
@@ -76,7 +64,7 @@ export function useChatSessions() {
       setSwitching(id);
       try {
         if (isGenerating) stopGeneration();
-        await refineLeavingTitle();
+        refineLeavingTitle();
         await openSession(id);
         setSession({ pendingBook: null, mode: 'chat' });
       } finally {
@@ -91,7 +79,7 @@ export function useChatSessions() {
     setSwitching('new');
     try {
       if (isGenerating) stopGeneration();
-      await refineLeavingTitle();
+      refineLeavingTitle();
       // A new chat is also a new native conversation. Clear every turn-local
       // field now so a stopped generation cannot leave the page locked while
       // its native promise unwinds.

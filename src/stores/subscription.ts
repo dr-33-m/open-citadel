@@ -49,7 +49,21 @@ export type PlanModel = CloudModelOption & {
  * treating it as `none` would flash a plan carousel at somebody who is
  * already paying, on every cold open.
  */
-export type SubscriptionStatus = 'unknown' | 'unavailable' | 'none' | 'active';
+export type SubscriptionStatus =
+  | 'unknown'
+  | 'unavailable'
+  | 'none'
+  | 'active'
+  /**
+   * The server has never answered, and a read has failed.
+   *
+   * Distinct from `unknown`, which means "not asked yet" and is drawn as a
+   * quiet beat. A wrong base URL used to rest at `unknown` forever: every read
+   * failed, the status was deliberately left alone, and the surfaces that hide
+   * during the beat simply never stopped hiding. Compass rendered an empty
+   * screen for days with nothing anywhere saying why.
+   */
+  | 'unreachable';
 export type PurchaseOutcome = 'active' | 'scheduled' | 'pending' | false;
 
 type SubscriptionState = {
@@ -292,11 +306,22 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
             previousPlan !== nextPlan,
         });
       } catch (error) {
-        // The status is left alone on a failed read. A network blip is not
-        // evidence that somebody's subscription has gone away, and drawing the
-        // carousel over a paid account would be the worst way to be wrong.
+        /*
+         * A known status is left alone on a failed read: a network blip is not
+         * evidence that somebody's subscription has gone away, and drawing the
+         * carousel over a paid account would be the worst way to be wrong.
+         *
+         * Never having had an answer is the opposite case. There is nothing to
+         * protect, and staying on `unknown` means every surface that waits
+         * politely for the first answer waits forever. So the first failure
+         * from a standing start is reported as such.
+         */
         if (generation === accountGeneration) {
-          set({ error: message(error, 'Could not check your credits.') });
+          const neverAnswered = get().status === 'unknown';
+          set({
+            error: message(error, 'Could not check your credits.'),
+            ...(neverAnswered ? { status: 'unreachable' as const } : {}),
+          });
         }
       } finally {
         if (generation === accountGeneration) set({ loading: false });

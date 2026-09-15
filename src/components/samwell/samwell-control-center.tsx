@@ -5,6 +5,7 @@ import { useCSSVariable } from 'uniwind';
 
 import { SamwellPlaceholder } from '@/components/samwell-placeholder';
 import { ToggleButton } from '@/components/ui/toggle-button';
+import { Spinner } from '@/components/ui/spinner';
 import { Touchable } from '@/components/ui/touchable';
 import { elevation, fontFamily, iconSize, stackedShadow } from '@/constants/theme';
 import { asColor } from '@/utils/colors';
@@ -111,6 +112,18 @@ export function SamwellControlCenter({
     setStopVisible(showStop);
     if (!showStop) setIsStopping(false);
   }
+
+  /*
+   * Refuses a second press itself rather than trusting `disabled` alone.
+   * Stopping can take a while on a slow device, and taps kept landing on the
+   * button while it wound down, each one asking the engine to cancel again.
+   * The spinner that replaces the square says the first tap was heard.
+   */
+  const handleStop = () => {
+    if (isStopping) return;
+    setIsStopping(true);
+    onStop?.();
+  };
 
   return (
     // The drag handle that used to sit at the top of this card is gone with
@@ -241,12 +254,15 @@ export function SamwellControlCenter({
           <Touchable
             className="h-10 w-10 items-center justify-center bg-surface-tertiary"
             disabled={isStopping}
-            onPress={() => {
-              setIsStopping(true);
-              onStop?.();
-            }}
+            accessibilityLabel={isStopping ? 'Stopping' : 'Stop'}
+            accessibilityState={{ disabled: isStopping, busy: isStopping }}
+            onPress={handleStop}
           >
-            <Square size={16} color={asColor(foreground)} fill={asColor(foreground)} />
+            {isStopping ? (
+              <Spinner size="sm" />
+            ) : (
+              <Square size={16} color={asColor(foreground)} fill={asColor(foreground)} />
+            )}
           </Touchable>
         ) : (
           <Touchable

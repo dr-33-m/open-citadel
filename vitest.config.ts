@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { configDefaults, defineConfig } from 'vitest/config';
 
 /**
@@ -14,6 +16,21 @@ import { configDefaults, defineConfig } from 'vitest/config';
  * drop the half-dozen vitest ships with.
  */
 export default defineConfig({
+  /*
+   * The same `@/*` alias `tsconfig.json` defines.
+   *
+   * Vitest resolves imports itself and knows nothing about tsconfig paths, so
+   * a module was only testable while it happened to import nothing through the
+   * alias — which held until `services/huggingface.ts` needed a shared helper
+   * and its suite stopped resolving. Declaring it here means what can be tested
+   * no longer depends on how a module happens to import.
+   */
+  resolve: {
+    alias: {
+      '@/assets': fileURLToPath(new URL('./assets', import.meta.url)),
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   test: {
     exclude: [...configDefaults.exclude, '**/dist/**'],
   },

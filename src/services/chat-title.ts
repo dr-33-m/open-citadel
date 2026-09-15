@@ -8,6 +8,7 @@ import {
 import { cloudJsonHeaders } from '@/services/cloud-identity';
 import * as Inference from '@/services/inference';
 import { useSettingsStore } from '@/stores/settings';
+import { splitThinking } from '@/utils/think-stream';
 
 /**
  * AI-generated titles for bookless chat sessions. Works on both Samwell
@@ -69,7 +70,9 @@ export async function suggestChatTitle(conversation: string): Promise<string> {
         latest = data.content;
       },
     );
-    const title = normalizeChatTitle(latest);
+    // A reasoning model answers a one-shot prompt with its reasoning attached,
+    // and naming a chat "<think>the user asked..." is the visible result.
+    const title = normalizeChatTitle(splitThinking(latest).visible);
     if (!title) throw new Error("Couldn't title this chat.");
     return title;
   } finally {

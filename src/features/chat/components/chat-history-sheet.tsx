@@ -1,6 +1,7 @@
 import { BookOpen, MessageSquarePlus, Trash2 } from '@/components/icons';
 import React from 'react';
-import { View } from 'react-native';
+import type { FlashListRef } from '@shopify/flash-list';
+import { LayoutAnimation, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
@@ -28,6 +29,20 @@ function timeAgo(isoDate: string): string {
 
 const FILL: { flex: 1 } = { flex: 1 };
 
+/**
+ * The rows below a deleted chat moving up into its place.
+ *
+ * Core `LayoutAnimation` rather than a Reanimated layout transition, because
+ * this list is FlashList and that is the path it documents: its cells are
+ * positioned by the list, and `prepareForLayoutAnimationRender()` turns
+ * recycling off for the render so the right cells move. The deleted row has
+ * already slid out, so only `update` animates. On-screen movement: ease-in-out.
+ */
+const ROW_CLOSE = {
+  duration: 220,
+  update: { type: LayoutAnimation.Types.easeInEaseOut },
+};
+
 /** Hairline between rows — `Item.Separator` in the list's separator slot. */
 function RowSeparator() {
   return <Item.Separator />;
@@ -48,7 +63,7 @@ export function ChatHistorySheet({
   newLabel = 'New chat',
   switching,
   onSelect,
-  onRequestDelete,
+  onDelete,
   onNewChat,
   onClose,
 }: {
@@ -65,9 +80,9 @@ export function ChatHistorySheet({
    * happening. */
   switching: 'new' | string | null;
   onSelect: (id: string) => void;
-  /** Swipe a session row to its Delete action (tile tap or full swipe).
-   * Confirmation is the caller's to show. */
-  onRequestDelete: (session: ChatSession) => void;
+  /** A full swipe or the Delete tile. Deletes at once: the swipe's reach
+   * point, felt as a knock, is the confirmation. */
+  onDelete: (session: ChatSession) => void;
   onNewChat: () => void;
   onClose: () => void;
 }) {
@@ -121,7 +136,7 @@ export function ChatHistorySheet({
           sessions={sessions}
           switching={switching}
           onSelect={onSelect}
-          onRequestDelete={onRequestDelete}
+          onDelete={onDelete}
           primary={asColor(primary) ?? ''}
           muted={asColor(mutedForeground) ?? ''}
           ink={asColor(foreground) ?? ''}
@@ -140,7 +155,7 @@ function SessionList({
   sessions,
   switching,
   onSelect,
-  onRequestDelete,
+  onDelete,
   primary,
   muted,
   ink,
@@ -148,12 +163,24 @@ function SessionList({
   sessions: ChatSession[];
   switching: 'new' | string | null;
   onSelect: (id: string) => void;
-  onRequestDelete: (session: ChatSession) => void;
+  onDelete: (session: ChatSession) => void;
   primary: string;
   muted: string;
   ink: string;
 }) {
   const { closeAll } = useSwipeGroup();
+  const listRef = React.useRef<FlashListRef<ChatSession>>(null);
+
+  // Runs once the row has slid out. The layout animation has to be armed
+  // before the store drops the session, since it applies to the next commit.
+  const deleteWithReflow = React.useCallback(
+    (session: ChatSession) => {
+      listRef.current?.prepareForLayoutAnimationRender();
+      LayoutAnimation.configureNext(ROW_CLOSE);
+      onDelete(session);
+    },
+    [onDelete],
+  );
 
   // Stable renderItem + memoized rows: a scroll or a `switching` flip
   // reconciles only the rows whose props actually changed, not every
@@ -164,13 +191,13 @@ function SessionList({
         item={item}
         switching={switching}
         onSelect={onSelect}
-        onRequestDelete={onRequestDelete}
+        onDelete={deleteWithReflow}
         primary={primary}
         muted={muted}
         ink={ink}
       />
     ),
-    [switching, onSelect, onRequestDelete, primary, muted, ink],
+    [switching, onSelect, deleteWithReflow, primary, muted, ink],
   );
 
   return (
@@ -178,6 +205,7 @@ function SessionList({
     // page behind it, or it draws a band of the wrong shade along the edge.
     <PageFade edges="both" surface="popover">
       <Sheet.FlatList
+        ref={listRef}
         style={FILL}
         data={sessions}
         keyExtractor={(item) => item.id}
@@ -200,7 +228,7 @@ const SessionRow = React.memo(function SessionRow({
   item,
   switching,
   onSelect,
-  onRequestDelete,
+  onDelete,
   primary,
   muted,
   ink,
@@ -208,14 +236,14 @@ const SessionRow = React.memo(function SessionRow({
   item: ChatSession;
   switching: 'new' | string | null;
   onSelect: (id: string) => void;
-  onRequestDelete: (session: ChatSession) => void;
+  onDelete: (session: ChatSession) => void;
   primary: string;
   muted: string;
   /** The app's ink — the same colour a chat title is drawn in. */
   ink: string;
 }) {
   return (
-    <Swipe haptics>
+    <Swipe haptics removeOnCommit>
       <Swipe.End>
         {/* Red tile, drawn on in the app's own ink — the colour a chat title
             uses — rather than the variant's white. The fill already carries
@@ -230,7 +258,7 @@ const SessionRow = React.memo(function SessionRow({
           label="Delete"
           color="destructive"
           labelClassName="text-foreground"
-          onPress={() => onRequestDelete(item)}
+          onPress={() => onDelete(item)}
         />
       </Swipe.End>
       <Item

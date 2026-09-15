@@ -7,7 +7,6 @@ import { Touchable } from '@/components/ui/touchable';
 import { eq } from 'drizzle-orm';
 
 import { ThemedText } from '@/components/themed-text';
-import { elevation } from '@/constants/theme';
 import { db } from '@/db/client';
 import { books, highlights, thoughts } from '@/db/schema';
 import { asColor } from '@/utils/colors';
@@ -34,9 +33,8 @@ export const HighlightCard = React.memo(function HighlightCard({
   onNavigate,
   onNavigateToTimeline,
 }: HighlightCardProps) {
-  // Literal colours for the lucide props, ThemedText's `color` prop, and the
-  // entry colour fallback in the left border.
-  const [primary, mutedForeground] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
+  // Literal colour for the lucide props and ThemedText's `color` prop.
+  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
   /*
    * Read during render, not in an effect.
    *
@@ -109,10 +107,26 @@ export const HighlightCard = React.memo(function HighlightCard({
     (type === 'highlight' && data.bookId && data.locator && onNavigate) ||
     (type === 'thought' && onNavigateToTimeline);
 
+  /*
+   * The entry's own colour, when it has one, as a thin accent. That colour is
+   * the reader's (it is how they told this highlight apart when they made it),
+   * so it earns its place. An entry with no colour gets no accent rather than
+   * the gold fallback it used to, which was a second gold inside a gold bubble.
+   */
+  const accent = data.color ? { borderLeftWidth: 2, borderLeftColor: data.color } : undefined;
+
   return (
+    /*
+     * A solid card on the translucent bubble, not a darker tint of it.
+     *
+     * `surface-tertiary` is a deep tan in light mode, and muted text on it fell
+     * to roughly 2.6:1 inside a bubble that is already a gold tint. The card
+     * surface puts the quote on the palette's own reading ground, where both
+     * the quote and its muted source line hold their contrast in either mode.
+     */
     <Touchable
-      className="my-1 gap-1 border-l-[3px] bg-surface-tertiary px-3 py-2"
-      style={[elevation.soft, { borderLeftColor: data.color ?? asColor(primary) }]}
+      className="my-1 gap-1 border border-border bg-card px-3 py-2"
+      style={accent}
       onPress={handlePress}
       disabled={!canPress}
     >

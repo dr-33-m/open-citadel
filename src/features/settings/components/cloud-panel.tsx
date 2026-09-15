@@ -5,7 +5,7 @@ import type { PurchasesPackage } from "react-native-purchases";
 import { useCSSVariable } from "uniwind";
 
 import { ActionButton } from "@/components/action-button";
-import { List, LogIn, Settings, SlidersHorizontal } from "@/components/icons";
+import { List, LogIn, RefreshCw, Settings, SlidersHorizontal } from "@/components/icons";
 import { ThemedText } from "@/components/themed-text";
 import { showToast } from "@/components/toast/toast-provider";
 import { Card } from "@/components/ui/card";
@@ -263,6 +263,26 @@ export function CloudPanel({
    * things being compared; the section around them is the page, and a card
    * inside the section inside the screen was one box too many.
    */
+  // The server never answered, so there is no plan to draw, and falling through
+  // to the subscribed card would show a paying reader an empty one.
+  if (status === "unreachable") {
+    return (
+      <Card className="gap-3 p-4">
+        <View className="flex-row items-center justify-between gap-3">
+          <ThemedText type="bodySm" color={asColor(mutedForeground)} className="flex-1">
+            Samwell Cloud did not answer. Check your connection and try again.
+          </ThemedText>
+          <ActionButton
+            icon={RefreshCw}
+            label="TRY AGAIN"
+            tint={asColor(mutedForeground)}
+            onPress={() => void refresh()}
+          />
+        </View>
+      </Card>
+    );
+  }
+
   if (status === "none" || (status === "unavailable" && PURCHASES_ENABLED)) {
     return (
       <View className="gap-4">

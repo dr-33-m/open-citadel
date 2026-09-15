@@ -151,6 +151,9 @@ const AssistantContent = React.memo(function AssistantContent({
     <View>
       {segments.map((seg, i) => {
         if (seg.kind === "text") {
+          // The whitespace between two back-to-back cards is not a paragraph.
+          // Rendered, it drew an empty line of markdown height between them.
+          if (!seg.text.trim()) return null;
           const isLast = i === segments.length - 1;
           return (
             <MarkdownSegment

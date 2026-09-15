@@ -4,7 +4,7 @@ import { useCompassStore } from '@/stores/compass';
 /**
  * What an approval asks, in the user's terms rather than the model's.
  *
- * Here rather than inside the dialog because there are now two things that ask
+ * Here rather than inside the sheet because there are now two things that ask
  * the question. The modal is right on top of a chat somebody is already in;
  * onboarding puts the same question inline, as a card in the transcript, since
  * a system dialog on somebody's first ninety seconds with an app reads as an
@@ -46,7 +46,7 @@ function approve(title: string, body: string): ApprovalCopy {
  *
  * The tool call carries a trackable id, and confirming "log tr_k3f9x2?" asks
  * someone to vouch for something they cannot read. The title comes from the
- * same store the deck reads, so the dialog and the card cannot disagree about
+ * same store the deck reads, so the sheet and the card cannot disagree about
  * what is being logged.
  */
 function logApprovalCopy(input: unknown): ApprovalCopy {

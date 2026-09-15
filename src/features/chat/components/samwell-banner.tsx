@@ -27,11 +27,14 @@ import { asColor } from "@/utils/colors";
 interface SamwellBannerProps {
   readiness: SamwellReadiness;
   onOpenSettings: () => void;
+  /** Asks Samwell Cloud again after it failed to answer. */
+  onRetryCloud: () => void;
 }
 
 export function SamwellBanner({
   readiness,
   onOpenSettings,
+  onRetryCloud,
 }: SamwellBannerProps) {
   const [mutedForeground, destructive] = useCSSVariable([
     "--color-muted-foreground",
@@ -65,6 +68,17 @@ export function SamwellBanner({
         message="Grand Maester Samwell works with your Cloud Account. Sign in to talk to him."
         color={asColor(mutedForeground)}
         action={{ label: "SIGN IN", icon: LogIn, onPress: onOpenSettings }}
+      />
+    );
+  }
+
+  // Without this the composer sat disabled with nothing saying why.
+  if (mode === "cloud" && cloudBlocker === "cloudUnreachable") {
+    return (
+      <Banner
+        message="Samwell Cloud did not answer. Check your connection and try again."
+        color={asColor(mutedForeground)}
+        action={{ label: "TRY AGAIN", icon: RefreshCw, onPress: onRetryCloud }}
       />
     );
   }

@@ -370,15 +370,47 @@ function MessageScrollerViewport({
    * offset changes. A transcript scrolls constantly; re-rendering on every
    * frame of it would be the most expensive thing on the screen.
    */
+  /*
+   * LOCAL EDIT: re-apply after `panelui-cli update`.
+   *
+   * Only the reader can stop the follow. This used to set `following` from
+   * every at-end flip, whoever caused it. But the list also leaves the end on
+   * its own: content grows a line before the unanimated `scrollToEnd` catches
+   * up, and a reasoning panel animating open grows it for several frames. A
+   * scroll event landing in that gap switched following off, so a streamed
+   * reply stopped being followed and nothing turned it back on until a later
+   * event happened to land exactly at the end.
+   *
+   * So leaving the end only disengages when a drag or its fling is under way,
+   * and reaching the end by any route engages it again.
+   */
+  const readerScrolling = useSharedValue(0);
+
   const publishAtEnd = useCallback(
-    (next: boolean) => {
-      following.current = autoScroll && next;
+    (next: boolean, byReader: boolean) => {
+      if (next) following.current = autoScroll;
+      else if (byReader) following.current = false;
       setAtEndJS(next);
     },
     [autoScroll, following, setAtEndJS]
   );
 
   const scrollHandler = useAnimatedScrollHandler({
+    onBeginDrag: () => {
+      readerScrolling.value = 1;
+    },
+    onEndDrag: () => {
+      // Cleared on every release. A fling sets it again in `onMomentumBegin`;
+      // keying on release velocity instead left it stuck on whenever a slow
+      // release produced no momentum phase to clear it.
+      readerScrolling.value = 0;
+    },
+    onMomentumBegin: () => {
+      readerScrolling.value = 1;
+    },
+    onMomentumEnd: () => {
+      readerScrolling.value = 0;
+    },
     onScroll: (event) => {
       const { contentOffset, contentSize, layoutMeasurement } = event;
       offsetY.value = contentOffset.y;
@@ -398,7 +430,7 @@ function MessageScrollerViewport({
       const next = isMessageScrollerTargetVisible(distanceFromEnd.value) ? 0 : 1;
       if (next !== atEnd.value) {
         atEnd.value = next;
-        runOnJS(publishAtEnd)(next === 1);
+        runOnJS(publishAtEnd)(next === 1, readerScrolling.value === 1);
       }
     },
   });
@@ -577,15 +609,47 @@ function MessageScrollerList<T extends MessageScrollerListItem>({
   const opened = useRef(false);
   const firstVisibleIndex = useRef<number | null>(null);
 
+  /*
+   * LOCAL EDIT: re-apply after `panelui-cli update`.
+   *
+   * Only the reader can stop the follow. This used to set `following` from
+   * every at-end flip, whoever caused it. But the list also leaves the end on
+   * its own: content grows a line before the unanimated `scrollToEnd` catches
+   * up, and a reasoning panel animating open grows it for several frames. A
+   * scroll event landing in that gap switched following off, so a streamed
+   * reply stopped being followed and nothing turned it back on until a later
+   * event happened to land exactly at the end.
+   *
+   * So leaving the end only disengages when a drag or its fling is under way,
+   * and reaching the end by any route engages it again.
+   */
+  const readerScrolling = useSharedValue(0);
+
   const publishAtEnd = useCallback(
-    (next: boolean) => {
-      following.current = autoScroll && next;
+    (next: boolean, byReader: boolean) => {
+      if (next) following.current = autoScroll;
+      else if (byReader) following.current = false;
       setAtEndJS(next);
     },
     [autoScroll, following, setAtEndJS]
   );
 
   const scrollHandler = useAnimatedScrollHandler({
+    onBeginDrag: () => {
+      readerScrolling.value = 1;
+    },
+    onEndDrag: () => {
+      // Cleared on every release. A fling sets it again in `onMomentumBegin`;
+      // keying on release velocity instead left it stuck on whenever a slow
+      // release produced no momentum phase to clear it.
+      readerScrolling.value = 0;
+    },
+    onMomentumBegin: () => {
+      readerScrolling.value = 1;
+    },
+    onMomentumEnd: () => {
+      readerScrolling.value = 0;
+    },
     onScroll: (event) => {
       const { contentOffset, contentSize, layoutMeasurement } = event;
       distanceFromStart.value = distanceFromMessageScrollerTarget(
@@ -603,7 +667,7 @@ function MessageScrollerList<T extends MessageScrollerListItem>({
       const next = isMessageScrollerTargetVisible(distanceFromEnd.value) ? 0 : 1;
       if (next !== atEnd.value) {
         atEnd.value = next;
-        runOnJS(publishAtEnd)(next === 1);
+        runOnJS(publishAtEnd)(next === 1, readerScrolling.value === 1);
       }
     },
   });

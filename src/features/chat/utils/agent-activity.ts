@@ -200,9 +200,22 @@ export function turnIndicator(
     return activity ? { kind: 'activity', activity } : null;
   }
 
-  // Once there is a trace, the reasoning panel owns the footer for the rest of
-  // the turn — a tool call folds into its trigger instead of stacking a row.
-  if (trace) {
+  /*
+   * Once reasoning has begun, the reasoning panel owns the footer for the rest
+   * of the turn, and a tool call folds into its trigger instead of stacking a
+   * row.
+   *
+   * "Begun" is not the same as "has text". A model can be thinking before a
+   * word of its trace exists, and Gemma's trace does not arrive until the reply
+   * is over. Waiting for text drew a plain "Thinking…" row first and swapped it
+   * for this panel when the text landed, which read as the status rendering
+   * twice. So thinking, or a measured duration, is enough.
+   */
+  const reasoning =
+    trace.length > 0 ||
+    traceSeconds !== undefined ||
+    (activityInput.isGenerating && activityInput.isThinking);
+  if (reasoning) {
     return {
       kind: 'trace',
       trace,

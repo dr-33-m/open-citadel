@@ -7,7 +7,6 @@ import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { elevation } from '@/constants/theme';
 import { db } from '@/db/client';
 import { books, readingProgress } from '@/db/schema';
 import { asColor, COVER_PLACEHOLDER_BLURHASH } from '@/utils/colors';
@@ -33,7 +32,7 @@ interface CardData {
  * can act on.
  */
 export const BookCard = React.memo(function BookCard({ id, onNavigate }: BookCardProps) {
-  const [primary, mutedForeground] = useCSSVariable(['--color-primary', '--color-muted-foreground']);
+  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
   /* Read during render. See the note in `highlight-card` — an effect here
      cost a frame and a 0-to-full-height jump mid-reply. */
   const data = React.useMemo<CardData | null>(() => {
@@ -67,9 +66,17 @@ export const BookCard = React.memo(function BookCard({ id, onNavigate }: BookCar
           : null;
 
   return (
+    /*
+     * A solid card, one rung forward from the bubble it sits in.
+     *
+     * It used to draw no surface of its own and a gold rule down its edge,
+     * inside an assistant bubble that is itself a gold tint with a gold rule:
+     * two golds and no separation, so the card read as more bubble. The card
+     * surface gives the cover and title their own ground, the hairline says
+     * where it ends, and the gold stays with the bubble.
+     */
     <Touchable
-      className="my-1 flex-row items-center gap-3 border-l-[3px] border-l-primary px-3 py-2"
-      style={elevation.soft}
+      className="my-1 flex-row items-center gap-3 border border-border bg-card px-3 py-2"
       onPress={() => onNavigate?.(id)}
       disabled={!onNavigate}
     >
@@ -97,7 +104,9 @@ export const BookCard = React.memo(function BookCard({ id, onNavigate }: BookCar
           {data.author}
         </ThemedText>
         {progress && (
-          <ThemedText type="labelSm" color={asColor(primary)} style={{ fontVariant: ['tabular-nums'] }}>
+          // Ink rather than gold: the bubble already spends the gold, and a second
+          // gold inside it competes with the answer for attention.
+          <ThemedText type="labelSm" style={{ fontVariant: ['tabular-nums'] }}>
             {progress}
           </ThemedText>
         )}
