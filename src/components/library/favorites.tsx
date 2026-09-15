@@ -1,12 +1,11 @@
-import { CircleStar, RefreshCw } from 'lucide-react-native';
+import { CircleStar } from '@/components/icons';
 import React from 'react';
-import { Image, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
-import { Touchable } from '@/components/ui/touchable';
+import { RowFade } from '@/components/scroll-fades';
 
-import { ThemedText } from '@/components/themed-text';
-import { useColors } from '@/hooks/use-colors';
-import { fontFamily, spacing } from '@/constants/theme';
+import { BookTile } from '@/components/library/book-tile';
 import type { books as booksTable } from '@/db/schema';
 
 type Book = typeof booksTable.$inferSelect;
@@ -17,107 +16,50 @@ type FavoritesProps = {
   onBookLongPress?: (book: Book) => void;
 };
 
-export function Favorites({ books, onBookPress, onBookLongPress }: FavoritesProps) {
-  const colors = useColors();
-  const styles = React.useMemo(() => StyleSheet.create({
-    scrollContent: {
-      paddingHorizontal: spacing[6],
-      gap: spacing[4],
-    },
-    item: {
-      width: 130,
-      gap: spacing[2],
-    },
-    cover: {
-      width: 130,
-      height: 170,
-      backgroundColor: colors.surface.low,
-    },
-    coverImage: {
-      width: 130,
-      height: 170,
-    },
-    coverPlaceholder: {
-      flex: 1,
-      backgroundColor: colors.surface.mid,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    initial: {
-      fontSize: 36,
-      fontFamily: fontFamily.serif,
-    },
-    coverTitle: {
-      position: 'absolute',
-      bottom: spacing[2],
-      paddingHorizontal: spacing[2],
-      textAlign: 'center',
-      fontSize: 9,
-    },
-    starBadge: {
-      position: 'absolute',
-      top: spacing[2],
-      left: spacing[2],
-      backgroundColor: colors.surface.base,
-      borderRadius: 11,
-    },
-    syncBadge: {
-      position: 'absolute',
-      top: spacing[2],
-      left: spacing[2],
-      backgroundColor: colors.surface.base,
-      borderRadius: 11,
-      padding: 3,
-    },
-    title: {
-      marginTop: spacing[1],
-    },
-  }), [colors]);
-
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.scrollContent}
-    >
-      {books.map((book) => (
-        <Touchable
-          key={book.id}
-          onPress={() => onBookPress?.(book.id)}
-          onLongPress={() => onBookLongPress?.(book)}
-          style={styles.item}
-        >
-          <View style={styles.cover}>
-            {book.coverUrl ? (
-              <Image source={{ uri: book.coverUrl }} style={styles.coverImage} />
-            ) : (
-              <View style={styles.coverPlaceholder}>
-                <ThemedText type="displayLg" color={colors.surface.highest} style={styles.initial}>
-                  {book.title.charAt(0).toUpperCase()}
-                </ThemedText>
-                <ThemedText type="labelSm" color={colors.text.secondary} style={styles.coverTitle} numberOfLines={2}>
-                  {book.title}
-                </ThemedText>
-              </View>
-            )}
-            {!book.filePath ? (
-              <View style={styles.syncBadge}>
-                <RefreshCw size={14} color={colors.text.secondary} />
-              </View>
-            ) : (
-              <View style={styles.starBadge}>
-                <CircleStar size={22} color={colors.primary.default} />
-              </View>
-            )}
-          </View>
-          <ThemedText type="bodySm" numberOfLines={1} style={styles.title}>
-            {book.title}
-          </ThemedText>
-          <ThemedText type="labelSm" color={colors.text.secondary} numberOfLines={1}>
-            {book.author}
-          </ThemedText>
-        </Touchable>
-      ))}
-    </ScrollView>
-  );
+/** ThemedText/lucide icons take a literal color, not a className. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
+
+/** Wider than the old bare cover: the tile is a panel with the cover
+ *  inset in it, so the artwork keeps its size. */
+const SHELF_TILE_WIDTH = 170;
+
+/**
+ * `memo`'d: the library page re-renders on every sync tick, and without
+ * this each one rebuilt every shelf and every tile on it.
+ */
+export const Favorites = React.memo(function Favorites({ books, onBookPress, onBookLongPress }: FavoritesProps) {
+  const [ghostInk, mutedForeground, primary] = useCSSVariable([
+    '--color-surface-tertiary',
+    '--color-muted-foreground',
+    '--color-primary',
+  ]);
+
+  // The fade is the affordance: it says there is more past the edge, and it
+  // shows only when there actually is.
+  return (
+    <RowFade>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName="gap-4 px-6"
+      >
+        {books.map((book) => (
+          <BookTile
+            key={book.id}
+            book={book}
+            width={SHELF_TILE_WIDTH}
+            mutedForeground={asColor(mutedForeground)}
+            surfaceTertiary={asColor(ghostInk)}
+            titleLines={1}
+            badgeIcon={CircleStar}
+            badgeColor={asColor(primary)}
+            onPress={onBookPress}
+            onLongPress={onBookLongPress}
+          />
+        ))}
+      </ScrollView>
+    </RowFade>
+  );
+});

@@ -1,18 +1,15 @@
-import React, { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, type TextInput } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
+import { Input } from '@/components/ui/input';
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
-import { useColors } from '@/hooks/use-colors';
-import { fontFamily, spacing } from '@/constants/theme';
+import { CollectionName, isFilled } from '@/lib/text-fields';
+import { asColor } from '@/utils/colors';
 
 type NewCollectionPromptProps = {
   visible: boolean;
@@ -25,83 +22,51 @@ export function NewCollectionPrompt({
   onClose,
   onCreate,
 }: NewCollectionPromptProps) {
-  const colors = useColors();
+  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
   const [name, setName] = useState('');
+  /*
+   * Uncontrolled field: the text lives in the native buffer and React only
+   * mirrors it out, never back in — a keystroke landing while JS is busy
+   * can no longer be committed over by a stale `value` (dropped letters,
+   * duplicated words). Resets go through the ref's `clear()`, which empties
+   * the buffer where it actually lives.
+   */
+  const fieldRef = useRef<TextInput>(null);
 
-  const styles = React.useMemo(() => StyleSheet.create({
-    container: { flex: 1, justifyContent: 'flex-end' },
-    overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-    kavWrapper: { backgroundColor: colors.surface.low },
-    sheet: {
-      backgroundColor: colors.surface.low,
-      paddingHorizontal: spacing[6],
-      paddingTop: spacing[4],
-      paddingBottom: spacing[10],
-      gap: spacing[5],
-    },
-    handle: {
-      width: 40,
-      height: 4,
-      backgroundColor: colors.surface.highest,
-      alignSelf: 'center',
-      marginBottom: spacing[2],
-    },
-    input: {
-      backgroundColor: colors.surface.mid,
-      color: colors.text.primary,
-      fontFamily: fontFamily.sans,
-      fontSize: 16,
-      paddingHorizontal: spacing[4],
-      paddingVertical: spacing[4],
-    },
-    cancel: {
-      alignItems: 'center',
-      paddingVertical: spacing[3],
-    },
-  }), [colors]);
+  const canCreate = isFilled(CollectionName, name);
 
   const handleCreate = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
     onCreate(trimmed);
     setName('');
+    fieldRef.current?.clear();
   };
 
   const handleClose = () => {
     setName('');
+    fieldRef.current?.clear();
     onClose();
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={handleClose} />
-        <KeyboardAvoidingView behavior="padding" style={styles.kavWrapper}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-            <ThemedText type="headlineSm">New Collection</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="Collection name…"
-              placeholderTextColor={colors.text.secondary}
-              value={name}
-              onChangeText={setName}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleCreate}
-            />
-            <GoldButton label="CREATE" onPress={handleCreate} />
-            <Touchable onPress={handleClose} style={styles.cancel}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>CANCEL</ThemedText>
-            </Touchable>
-          </View>
-        </KeyboardAvoidingView>
+    <Sheet visible={visible} onClose={handleClose}>
+      <View className="gap-6 px-6">
+        <ThemedText type="headlineSm">New Collection</ThemedText>
+        <Input
+          ref={fieldRef}
+          placeholder="Collection name…"
+          onChangeText={setName}
+          returnKeyType="done"
+          onSubmitEditing={handleCreate}
+        />
+        <View className="gap-3">
+          <GoldButton label="CREATE" onPress={handleCreate} disabled={!canCreate} />
+          <Touchable onPress={handleClose} className="items-center py-3">
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>CANCEL</ThemedText>
+          </Touchable>
+        </View>
       </View>
-    </Modal>
+    </Sheet>
   );
 }

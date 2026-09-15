@@ -1,4 +1,5 @@
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { GoalCategory, GoalPriority, LifecycleStatus } from "samwell-shared";
 
 export const books = sqliteTable("books", {
   id: text("id").primaryKey(),
@@ -26,6 +27,9 @@ export const books = sqliteTable("books", {
   metaError: text("meta_error"),
   /** When 1, sync will not overwrite the user-edited title */
   titleLocked: integer("title_locked").notNull().default(0),
+  /** Manual position within the queue (lower = earlier). Null for books
+   * that predate this column or have never been queued. */
+  queueOrder: integer("queue_order"),
 });
 
 export const readingProgress = sqliteTable("reading_progress", {
@@ -39,20 +43,28 @@ export const readingProgress = sqliteTable("reading_progress", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const highlights = sqliteTable("highlights", {
-  id: text("id").primaryKey(),
-  bookId: text("book_id")
-    .notNull()
-    .references(() => books.id),
-  text: text("text").notNull(),
-  locator: text("locator"),
-  page: integer("page"),
-  chapter: text("chapter"),
-  color: text("color").default("#f2ca50"),
-  tags: text("tags"),
-  chatSessionId: text("chat_session_id"),
-  createdAt: text("created_at").notNull(),
-});
+export const highlights = sqliteTable(
+  "highlights",
+  {
+    id: text("id").primaryKey(),
+    bookId: text("book_id")
+      .notNull()
+      .references(() => books.id),
+    text: text("text").notNull(),
+    locator: text("locator"),
+    page: integer("page"),
+    chapter: text("chapter"),
+    color: text("color").default("#f2ca50"),
+    tags: text("tags"),
+    chatSessionId: text("chat_session_id"),
+    /** JSON {before, after}: chapter text around the highlight, captured at creation */
+    context: text("context"),
+    createdAt: text("created_at").notNull(),
+    /** Local calendar day captured at creation, for indexed Timeline marks. */
+    createdDay: text("created_day").notNull().default(""),
+  },
+  (table) => [index("highlights_created_day_idx").on(table.createdDay)],
+);
 
 export const notes = sqliteTable("notes", {
   id: text("id").primaryKey(),
@@ -93,15 +105,21 @@ export const bookmarks = sqliteTable("bookmarks", {
   createdAt: text("created_at").notNull(),
 });
 
-export const thoughts = sqliteTable("thoughts", {
-  id: text("id").primaryKey(),
-  text: text("text").notNull(),
-  color: text("color").default("#f2ca50"),
-  tags: text("tags"),
-  chatSessionId: text("chat_session_id"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at"),
-});
+export const thoughts = sqliteTable(
+  "thoughts",
+  {
+    id: text("id").primaryKey(),
+    text: text("text").notNull(),
+    color: text("color").default("#f2ca50"),
+    tags: text("tags"),
+    chatSessionId: text("chat_session_id"),
+    createdAt: text("created_at").notNull(),
+    /** Local calendar day captured at creation, for indexed Timeline marks. */
+    createdDay: text("created_day").notNull().default(""),
+    updatedAt: text("updated_at"),
+  },
+  (table) => [index("thoughts_created_day_idx").on(table.createdDay)],
+);
 
 export const appSettings = sqliteTable("app_settings", {
   key: text("key").primaryKey(),
@@ -131,6 +149,36 @@ export const localModels = sqliteTable("llama_models", {
 export const chatSessions = sqliteTable("chat_sessions", {
   id: text("id").primaryKey(),
   bookId: text("book_id").references(() => books.id, { onDelete: "set null" }),
+  /**
+   * The goal a Compass conversation belonged to when it started, or null when
+   * it started before there was one.
+   *
+   * Nullable, and deliberately not a filter: a conversation that talked
+   * someone into their goal is part of that goal's history and should not
+   * vanish from the list the moment the goal is created.
+   *
+   * No `onDelete` here on purpose, matching the DDL that actually shipped
+   * (`0018_trackables.sql` and the self-heal both add it bare). Goals are
+   * retired by status and never hard-deleted, so the action would be
+   * unreachable, and declaring one drizzle has not written to the device
+   * would only make this file a less reliable description of it.
+   */
+  goalId: text("goal_id").references(() => goals.id),
+  /**
+   * Which surface the conversation belongs to.
+   *
+   * A Compass conversation is a chat — transcript, streaming, markdown, cited
+   * highlights, a title, a place in history — so it lives in these tables
+   * rather than in a second thread system that would drift from this one.
+   * This column is the only thing keeping the histories apart.
+   *
+   * `onboarding` is the concierge conversation, and being a third value here
+   * is what keeps it out of the reading history sheet without anything having
+   * to filter it: `listSessions` already asks for one kind at a time. No
+   * migration was needed to add it, since this is a text column with a
+   * default and SQLite has no enum to widen.
+   */
+  kind: text("kind").$type<"reading" | "compass" | "onboarding">().notNull().default("reading"),
   title: text("title").notNull(),
   contextText: text("context_text"),
   contextLocator: text("context_locator"),
@@ -145,6 +193,29 @@ export const chatMessages = sqliteTable("chat_messages", {
     .references(() => chatSessions.id, { onDelete: "cascade" }),
   role: text("role", { enum: ["system", "user", "assistant", "tool"] }).notNull(),
   content: text("content").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+/**
+ * A highlight/thought Samwell proposed mid-chat via suggest_highlight /
+ * suggest_thought. Rendered inline as a [[suggest:kind:id]] marker in the
+ * assistant's reply; nothing is saved to the user's real library until they
+ * approve it here.
+ */
+export const chatSuggestions = sqliteTable("chat_suggestions", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => chatSessions.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<"highlight" | "thought">().notNull(),
+  status: text("status").$type<"pending" | "approved" | "rejected">().notNull().default("pending"),
+  text: text("text").notNull(),
+  tags: text("tags"),
+  bookId: text("book_id"),
+  /** JSON Locator, captured at suggestion time (current reading position). */
+  locator: text("locator"),
+  /** The highlights.id / thoughts.id created once approved. */
+  resultEntryId: text("result_entry_id"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -168,6 +239,12 @@ export const syncJobs = sqliteTable("sync_jobs", {
   prepareDone: integer("prepare_done").notNull().default(0),
   prepareTotal: integer("prepare_total").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
+  /** New books this run actually put in the library. `importTotal` counts
+   * every file in the folder, so it cannot answer "what did this sync add". */
+  addedCount: integer("added_count").notNull().default(0),
+  /** Files passed over because they already failed on this exact version.
+   * See `sync_skips` — this is the number the scan notice reports. */
+  skippedCount: integer("skipped_count").notNull().default(0),
   startedAt: text("started_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   finishedAt: text("finished_at"),
@@ -191,5 +268,252 @@ export const syncItems = sqliteTable("sync_items", {
   nextRetryAt: text("next_retry_at"),
   error: text("error"),
   createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/**
+ * Files that will not import, remembered so they are never tried again.
+ *
+ * A book whose EPUB cannot be read fails three times with backoff before the
+ * pipeline gives up, which is about eighty-five seconds of a sync spent on a
+ * file that was never going to open. Without a record of that, the next scan
+ * starts the same eighty-five seconds over, and every scan after it.
+ *
+ * Keyed by the file, qualified by its fingerprint: the claim is not "this
+ * book is broken" but "this exact version of this file did not open". Replace
+ * the file in the folder and the fingerprint moves, so the skip no longer
+ * matches and it is tried again on its own. Delete it from the folder and the
+ * row goes with it on the next scan.
+ *
+ * Separate from `sync_items`, which are per-job and go away with their job —
+ * this has to outlive every job to be worth anything.
+ */
+export const syncSkips = sqliteTable("sync_skips", {
+  /** The file. One row per source, replaced when a new version fails too. */
+  sourceUri: text("source_uri").primaryKey(),
+  /** The version that failed. A different one is a different question. */
+  fingerprint: text("fingerprint").notNull(),
+  error: text("error"),
+  failedAt: text("failed_at").notNull(),
+});
+
+// ── Compass: Goal → Trackable → Schedule → Measurement → Log ────────────────
+//
+// Consistency is NOT here. It is derived from schedules and logs by
+// `services/consistency.ts` on every read, because a stored score is a score
+// that can disagree with the rows it came from — and the number this feature
+// shows is a claim about the user's own discipline. There are no streaks in
+// this model, by design.
+
+export const goals = sqliteTable("goals", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  /** Local calendar days, YYYY-MM-DD — never an instant. */
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date").notNull(),
+  category: text("category").$type<GoalCategory>().notNull(),
+  priority: text("priority").$type<GoalPriority>().notNull().default("MEDIUM"),
+  status: text("status").$type<LifecycleStatus>().notNull().default("ACTIVE"),
+  /**
+   * The one goal that must not slip. At most one active goal is primary; the
+   * rest are tracked because the user wants to, but this is the one Samwell
+   * steers back toward and the one the overview marks. `0`/`1`, matching the
+   * other boolean columns here.
+   */
+  isPrimary: integer("is_primary").notNull().default(0),
+  /**
+   * The numeric outcome, when there is one: 4000 / "USD".
+   *
+   * Execution and outcome are different facts — 92% consistent and $1,200 of
+   * $4,000 answer different questions — so they are never averaged into one
+   * number. Null for a purely behavioural goal.
+   */
+  outcomeTarget: real("outcome_target"),
+  outcomeUnit: text("outcome_unit"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const trackables = sqliteTable(
+  "trackables",
+  {
+    id: text("id").primaryKey(),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => goals.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date").notNull(),
+    /** `HH:MM`, 24-hour. Orders the planner's day list; never gates a log. */
+    timeOfDay: text("time_of_day"),
+    /**
+     * `Schedule` and `Measurement` as JSON.
+     *
+     * Both are strictly 1:1 with a trackable and are never queried by their
+     * internals — occurrence expansion is an in-memory pass over tens of rows.
+     * The alternative is one wide sparse table in which invalid states are
+     * freely representable (a DAILY schedule carrying `daysOfWeek`, a
+     * COMPLETION measurement carrying a target); SQLite cannot enforce a
+     * six-way discriminated union and a zod parse on read can.
+     *
+     * Deliberately plain `text`, not drizzle's `mode: "json"`, which hands back
+     * `any` with no validation and would let a corrupt row propagate a
+     * malformed object into the occurrence engine. Parse explicitly and let one
+     * bad row degrade one trackable.
+     */
+    schedule: text("schedule").notNull(),
+    measurement: text("measurement").notNull(),
+    status: text("status").$type<LifecycleStatus>().notNull().default("ACTIVE"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("trackables_goal_idx").on(t.goalId)],
+);
+
+/**
+ * When a trackable was paused, as a window with its own lifecycle.
+ *
+ * A `status = "PAUSED"` column can only say "paused right now". The moment the
+ * user resumes, nothing records that it was paused from the 5th to the 12th,
+ * so the consistency denominator silently re-absorbs those days and the score
+ * drops retroactively for time the user was never expected to show up. Paused
+ * is not missed, and that promise needs a temporal fact to keep it.
+ *
+ * `endDate` is null while the pause is open.
+ */
+export const trackablePauses = sqliteTable(
+  "trackable_pauses",
+  {
+    id: text("id").primaryKey(),
+    trackableId: text("trackable_id")
+      .notNull()
+      .references(() => trackables.id, { onDelete: "cascade" }),
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("trackable_pauses_trackable_idx").on(t.trackableId)],
+);
+
+export const trackableLogs = sqliteTable(
+  "trackable_logs",
+  {
+    id: text("id").primaryKey(),
+    trackableId: text("trackable_id")
+      .notNull()
+      .references(() => trackables.id, { onDelete: "cascade" }),
+    /** The local day the log counts for. */
+    date: text("date").notNull(),
+    /**
+     * Three states, not a boolean:
+     *
+     *   1    — done, for a COMPLETION measurement
+     *   null — done, and `value` carries the number
+     *   0    — an explicit "this did not happen"
+     *
+     * A value-carrying log stores the raw number and leaves this null on
+     * purpose. Writing `0` because 350 < 500 would bake a derived judgement
+     * into a stored fact, so editing the target later — or turning on partial
+     * credit later — would contradict the row. Whether the target was met is
+     * derived at read time instead, which is what keeps partial credit a
+     * future decision rather than a future migration.
+     */
+    completed: integer("completed"),
+    value: real("value"),
+    /**
+     * The journal. Written on wins as well as misses: what you overcame to do
+     * it is as much material for a check-in as why you didn't.
+     */
+    note: text("note"),
+    createdAt: text("created_at").notNull(),
+  },
+  // Not unique: a flexible target ("six times a week") is logged several times
+  // in a day by design.
+  (t) => [index("trackable_logs_trackable_date_idx").on(t.trackableId, t.date)],
+);
+
+// ── Journey memory (on-device; the arc of the user's reading + execution) ─────
+
+/**
+ * How a goal ended: the reconciliation, written once when it is closed out.
+ *
+ * The logs survive archiving, so most of a past goal's page can be recomputed
+ * from them. Three things cannot. The consistency figure has to be the one the
+ * reader was looking at when they pressed the button, because the denominator
+ * keeps growing after the end date and a number that drifted afterwards would
+ * disagree with the note in their journal. The reason someone stopped exists
+ * nowhere else at all. And Samwell's takeaway is written once, from the whole
+ * run, and is not something to re-ask the model for every time the sheet opens.
+ *
+ * One row per ended goal, keyed by the goal, so re-finishing is a replace
+ * rather than a second history.
+ */
+export const goalOutcomes = sqliteTable("goal_outcomes", {
+  goalId: text("goal_id")
+    .primaryKey()
+    .references(() => goals.id, { onDelete: "cascade" }),
+  /** `1` finished, `0` stopped early. The difference the whole table exists for. */
+  completed: integer("completed").notNull(),
+  /** The local day it was closed out, `YYYY-MM-DD`. Not the goal's end date:
+   *  a goal can be finished early on its number, or stopped months before. */
+  endedOn: text("ended_on").notNull(),
+  /** 0..1 as it stood at that moment, or null when nothing was ever due. */
+  executionRatio: real("execution_ratio"),
+  /** What it banked against its number, frozen the same way. Null when the
+   *  goal carried no numeric outcome. */
+  outcomeValue: real("outcome_value"),
+  outcomeTarget: real("outcome_target"),
+  outcomeUnit: text("outcome_unit"),
+  /** Why they stopped, in their own words. Null on a finished goal. */
+  reason: text("reason"),
+  /**
+   * Samwell's reading of the run.
+   *
+   * Null until it arrives: it is a cloud call made after the goal is already
+   * archived, so the sheet has to be able to draw a past goal that has no
+   * takeaway yet, and one that never got a takeaway because the request failed.
+   */
+  takeaway: text("takeaway"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const journeyNotes = sqliteTable("journey_notes", {
+  id: text("id").primaryKey(),
+  /** 'reflection' = distilled from a night check-in; 'book_finished'/'goal_finished' = deterministic */
+  kind: text("kind").$type<"reflection" | "book_finished" | "goal_finished">().notNull(),
+  text: text("text").notNull(),
+  /** JSON string[] for keyword retrieval */
+  tags: text("tags"),
+  /** originating checkinId / bookId, for provenance */
+  sourceRef: text("source_ref"),
+  createdAt: text("created_at").notNull(),
+});
+
+// ── Daily reading (did the user actually read that day?) ─────────────────────
+
+/**
+ * One row per (local day, book), accumulating how much of that book was read
+ * that day as a 0..1 fraction of its length.
+ *
+ * `reading_progress` only ever holds a book's CURRENT position — it's updated
+ * in place, so it can say where you are but never that you moved today. This
+ * table is the history that answers "did you read?", which is the honest
+ * signal behind the timeline calendar's activity dots (highlight COUNT was
+ * the old proxy, and it rewarded annotating a single paragraph over reading
+ * fifty pages).
+ */
+export const readingDays = sqliteTable("reading_days", {
+  /** `${day}:${bookId}` — makes the daily upsert a primary-key hit. */
+  id: text("id").primaryKey(),
+  /** Local calendar day, `YYYY-MM-DD`. Local, not UTC: it has to line up with
+   * the day cell the user taps in the calendar. */
+  day: text("day").notNull(),
+  bookId: text("book_id")
+    .notNull()
+    .references(() => books.id),
+  /** Summed forward progress for the day, as a fraction of the book (0..1). */
+  progressDelta: real("progress_delta").notNull().default(0),
   updatedAt: text("updated_at").notNull(),
 });

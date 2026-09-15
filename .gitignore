@@ -9,6 +9,9 @@ dist/
 web-build/
 expo-env.d.ts
 
+# Uniwind (regenerated from metro.config.js's extraThemes on every build)
+uniwind-types.d.ts
+
 # Native
 .kotlin/
 *.orig.*
@@ -31,7 +34,15 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
+.env
+.env.*
+!.env.example
+!server/.env.example
+
+# local databases / generated server output
+*.sqlite
+*.sqlite-*
+server/dist/
 
 # typescript
 *.tsbuildinfo
@@ -46,3 +57,6 @@ app-example
 *.tgz
 build-*.apk
 .claude
+# Agent skills — reference material for tooling, not app source (177 files, 1.5MB)
+.agents/
+.vscode/

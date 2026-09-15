@@ -1,0 +1,64 @@
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import {
+  normalizeTags,
+  SUGGEST_TAGS_PROMPT,
+  SuggestTagsRequestSchema,
+  SuggestTagsModelSchema,
+  SuggestTagsResponseSchema,
+} from 'samwell-shared';
+
+import { runStructuredAnalysis } from './structured-analysis.js';
+import { listCloudModels, recordUsageEvent, resolveModelId } from './db.js';
+import { requireOpenRouterKey } from './http-helpers.js';
+import { readIdentity } from './identity.js';
+
+export const tagsRoutes = new Hono();
+
+tagsRoutes.post('/suggest', async (c) => {
+  requireOpenRouterKey();
+  const { id: accountId } = await readIdentity(c);
+
+  const parsed = SuggestTagsRequestSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    throw new HTTPException(400, { message: parsed.error.message });
+  }
+
+  const knownModels = await listCloudModels();
+  const modelId = resolveModelId(
+    parsed.data.modelId,
+    knownModels.map((model) => model.id),
+  );
+  const usageEventId = `tags-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  await recordUsageEvent({
+    id: usageEventId,
+    accountId,
+    modelId,
+    countsTowardLimit: true,
+    kind: 'tag_suggest',
+  });
+
+  const { modelId: _requestedModel, ...payload } = parsed.data;
+  // No tight token cap here: reasoning-capable models spend completion tokens on
+  // reasoning before they emit the JSON, so a small budget gets exhausted first and
+  // the structured output never validates. The reply is a handful of tokens anyway.
+  const result = await runStructuredAnalysis({
+    modelId,
+    systemPrompts: [SUGGEST_TAGS_PROMPT],
+    messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    // Validated loosely, then normalized down to the contract — see
+    // SuggestTagsModelSchema.
+    schema: SuggestTagsModelSchema,
+    usageEventId,
+    failureCode: 'tag_suggest_failed',
+  });
+
+  const tags = normalizeTags(result.tags);
+  // Every candidate was junk (empty, too long, all punctuation). That's a
+  // failed generation, not a suggestion worth showing.
+  if (tags.length === 0) {
+    throw new HTTPException(502, { message: 'tag_suggest_failed' });
+  }
+  return c.json(SuggestTagsResponseSchema.parse({ tags }));
+});

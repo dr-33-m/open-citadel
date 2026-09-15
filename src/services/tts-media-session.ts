@@ -1,18 +1,25 @@
-import { Platform } from "react-native";
 import TrackPlayer from "@rntp/player";
 
 let isSetup = false;
+let backgroundHandlerRegistered = false;
 
 /**
  * Register the Android background event handler.
  * Required by RNTP but we don't need to handle any events. This API is
  * Android-only — on iOS it warns and is a no-op (iOS uses addEventListener,
  * and background audio is already enabled via UIBackgroundModes: ["audio"]).
+ *
+ * Guarded: under Fast Refresh (and any re-evaluation of the root module that
+ * calls this) a second `registerBackgroundEventHandler` for the same
+ * `TrackPlayerServiceBridge` key spams a warning and re-binds the native
+ * headless task. Register exactly once per JS runtime.
  */
 export function registerTTSBackgroundHandler(): void {
-  if (Platform.OS !== "android") return;
+  if (process.env.EXPO_OS !== "android") return;
+  if (backgroundHandlerRegistered) return;
   try {
     TrackPlayer.registerBackgroundEventHandler(() => async () => {});
+    backgroundHandlerRegistered = true;
   } catch {
     // Native module may fail to load on some devices — TTS notification is non-critical.
   }
@@ -28,7 +35,7 @@ export function registerTTSBackgroundHandler(): void {
  * iOS TTS audio is produced by Readium natively and is unaffected.
  */
 export function setupTTSMediaSession(): void {
-  if (Platform.OS !== "android") return;
+  if (process.env.EXPO_OS !== "android") return;
   if (isSetup) return;
 
   try {
@@ -58,7 +65,7 @@ export function startMediaSession(
   artist: string,
   coverUri: string | null,
 ): void {
-  if (Platform.OS !== "android") return;
+  if (process.env.EXPO_OS !== "android") return;
   TrackPlayer.setMediaItem({
     mediaId: "tts-session",
     url: "",
@@ -72,7 +79,7 @@ export function startMediaSession(
  * Stop the media session and clear the notification.
  */
 export function stopMediaSession(): void {
-  if (Platform.OS !== "android") return;
+  if (process.env.EXPO_OS !== "android") return;
   if (!isSetup) return;
   TrackPlayer.clear();
 }

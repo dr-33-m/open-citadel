@@ -1,0 +1,368 @@
+/**
+ * What Compass shows: a conversation, and whatever it has proposed.
+ *
+ * You land on an empty chat. There is no dashboard to read first and no clock
+ * deciding what kind of conversation you are allowed to have — the reason
+ * someone opens this is usually that they are stuck right now, and the useful
+ * response to that is a cursor, not a chart. The numbers live behind INSIGHTS
+ * and the month behind PLANNER, for when they are what you actually came for.
+ */
+import React from 'react';
+import { Compass, Info, LogIn, RefreshCw, Settings } from '@/components/icons';
+import { View, type ViewStyle } from 'react-native';
+
+import { ChatBubble } from '@/components/chat/chat-bubble';
+import { TranscriptFade } from '@/components/scroll-fades';
+import { MessageScroller } from '@/components/ui/message-scroller';
+import { TurnStatus } from '@/features/chat/components/turn-status';
+import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
+import {
+  seePlansAction,
+  type SamwellStatusAction,
+} from '@/features/chat/hooks/use-samwell-status';
+import { turnIndicator } from '@/features/chat/utils/agent-activity';
+import { transcriptContent } from '@/features/chat/utils/transcript-layout';
+import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
+import { GoalProposalCard } from '@/features/compass/components/goal-proposal-card';
+import type { CloudBlocker } from '@/features/chat/hooks/use-samwell-readiness';
+import type { useCompassConversation } from '@/features/compass/hooks/use-compass-conversation';
+
+type Conversation = ReturnType<typeof useCompassConversation>;
+
+// The two "we have not looked yet" states say nothing out loud: naming a
+// problem before knowing there is one is how a paying reader gets a paywall
+// flashed at them on every cold open.
+type ShownBlocker = Exclude<CloudBlocker, 'checkingAccount' | 'checkingPlan'>;
+
+/**
+ * What to say for each way the cloud can be out of reach.
+ *
+ * A table rather than nested ternaries inside the render: there are four of
+ * these now, and the next one is a line here instead of another branch in the
+ * JSX.
+ */
+const COMPASS_BLOCKED: Record<ShownBlocker, { title: string; message: string }> = {
+  offlineMode: {
+    title: 'Compass needs Samwell Cloud.',
+    message:
+      'Tap the button below to switch Samwell to cloud mode and get started with your goals.',
+  },
+  notConfigured: {
+    title: 'Compass needs Samwell Cloud.',
+    message: 'This build has no cloud server, so Samwell cannot help you plan a goal yet.',
+  },
+  needsAccount: {
+    title: 'Compass works with your Cloud Account.',
+    message: 'Sign in and let Samwell track and analyse your goals.',
+  },
+  needsPlan: {
+    title: 'Compass works with a Samwell Cloud plan.',
+    message: 'Choose a plan and let Samwell track and analyse your goals.',
+  },
+  cloudUnreachable: {
+    title: 'Cannot reach Samwell Cloud.',
+    message:
+      'Samwell Cloud did not answer, so Compass cannot load your goals. Check your connection and try again.',
+  },
+};
+
+interface CompassEscapes {
+  /** The Samwell section, for switching out of offline mode. */
+  onOpenSettings: () => void;
+  /** The Cloud panel, where the plans are. */
+  onOpenPlans: () => void;
+  /** The account card, for signing in. */
+  onOpenAccount: () => void;
+  /** Explains what Compass is, for somebody not yet able to use it. */
+  onAboutCompass: () => void;
+  /** Asks the server again after a failed read. */
+  onRetryCloud: () => void;
+}
+
+/**
+ * The way out of each wall.
+ *
+ * The two walls a reader clears by signing in or paying also offer ABOUT
+ * COMPASS beside the way through: asking for either without saying what is
+ * behind the door is asking for trust that has not been earned. Offline mode
+ * is a setting the reader chose, not a sale, so it gets no pitch.
+ */
+function blockedActions(
+  blocker: ShownBlocker,
+  escapes: CompassEscapes,
+): SamwellStatusAction[] | undefined {
+  // First in the row but still the outline button: read what it is, then
+  // the gold way through.
+  const about: SamwellStatusAction = {
+    label: 'ABOUT COMPASS',
+    icon: Info,
+    onPress: escapes.onAboutCompass,
+    secondary: true,
+  };
+  switch (blocker) {
+    // Nothing to offer when the build itself has no server: the way out of
+    // that is a different build, not a screen in this one.
+    case 'notConfigured':
+      return undefined;
+    case 'offlineMode':
+      return [{ label: 'OPEN SETTINGS', icon: Settings, onPress: escapes.onOpenSettings }];
+    case 'needsAccount':
+      return [about, { label: 'SIGN IN', icon: LogIn, onPress: escapes.onOpenAccount }];
+    case 'needsPlan':
+      return [about, seePlansAction(escapes.onOpenPlans)];
+    // No ABOUT COMPASS here: nothing is being asked of the reader, so there is
+    // nothing to justify. The only useful move is to ask the server again.
+    case 'cloudUnreachable':
+      return [{ label: 'TRY AGAIN', icon: RefreshCw, onPress: escapes.onRetryCloud }];
+  }
+}
+
+interface CompassBodyProps extends CompassEscapes {
+  conversation: Conversation;
+  /**
+   * Compass is a cloud feature; without it there is nothing to talk to.
+   *
+   * One value rather than a pair of booleans, and it comes from
+   * `useSamwellReadiness` — the same place the chat surface reads it from, so
+   * the two halves of this screen can never disagree about why Samwell is
+   * quiet. Null means there is nothing in the way.
+   */
+  cloudBlocker: CloudBlocker | null;
+  /** Titles by trackable id, so an adjustment can name what it changes. */
+  trackableTitles: Record<string, string>;
+  /** The shared centred column, so this matches the chat transcript. */
+  contentColumn: ViewStyle;
+  /** Keeps content clear of the floating input card. */
+  floatingClearance: ViewStyle;
+}
+
+export function CompassBody({
+  conversation,
+  cloudBlocker,
+  onOpenSettings,
+  onOpenPlans,
+  onOpenAccount,
+  onAboutCompass,
+  onRetryCloud,
+  trackableTitles,
+  contentColumn,
+  floatingClearance,
+}: CompassBodyProps) {
+  const {
+    kind,
+    activeSessionId,
+    messages,
+    draft,
+    approve,
+    refine,
+    submitting,
+    streamingReply,
+    streamingThinking,
+    streamingThinkingSeconds,
+    lastStreamedMessageId,
+    toolStatus,
+    toolName,
+    committing,
+  } = conversation;
+
+  /*
+   * A reply arriving token by token changes this component's state dozens of
+   * times a second, so anything the scroller is handed has to survive that.
+   *
+   * Following the text is `MessageScroller`'s job now, not this component's.
+   * It used to be a `scrollToEnd` on every content-size change, which pinned
+   * the reader to the bottom whether or not that is where they were.
+   */
+  const streaming = submitting && streamingReply.length > 0;
+  /*
+   * The reasoning is live only until the reply starts, and only when no tool
+   * is in flight — a tool call hands the row over to the tool's own orb and
+   * label, and the trace keeps growing behind the fold. Measured against the
+   * server, thinking is nearly the whole turn: a plan turn thought for 3.8s
+   * and then wrote its reply in 220ms.
+   */
+  const indicator = React.useMemo(
+    () =>
+      turnIndicator({
+        isGenerating: submitting,
+        isToolCalling: toolStatus !== null,
+        toolCallName: toolName,
+        toolCallStatus: toolStatus,
+        isThinking: streamingThinking.length > 0,
+        isStreaming: streaming,
+        trace: streamingThinking,
+        traceSeconds: streamingThinkingSeconds ?? undefined,
+      }),
+    [
+      submitting,
+      toolStatus,
+      toolName,
+      streamingThinking,
+      streamingThinkingSeconds,
+      streaming,
+    ],
+  );
+
+  /* The same column the chat transcript uses, plus whatever the floating
+     input card is covering. */
+  const contentStyle = React.useMemo(
+    () => [transcriptContent, floatingClearance],
+    [floatingClearance],
+  );
+
+  /*
+   * A proposal turn reads card first, then Samwell's line about it. The reply
+   * lands in `messages` above the card, so hold it out of the list and render
+   * it below the card instead — otherwise the card shoves the message off the
+   * top of the view and you scroll up past a plan to read the sentence
+   * introducing it.
+   */
+  const lastMessage = messages[messages.length - 1];
+  const proposalReply =
+    draft != null && lastMessage?.role === 'assistant' ? lastMessage : null;
+  const listMessages = proposalReply ? messages.slice(0, -1) : messages;
+
+  // Said before the empty prompt, not after: inviting someone to start typing
+  // to something that cannot answer is worse than saying so up front.
+  //
+  // Drawn by the same component the chat surface uses, rather than a layout of
+  // its own. It had a full-width `GoldButton` where chat has a small bordered
+  // one, so the two halves of one screen disagreed about how big "the way out
+  // of this" is — and there is no reason for the answer to differ by tab.
+  // Still looking: the stored session is being read, or the server has not
+  // said what this account holds. Naming a problem here and taking it back a
+  // frame later is worse than a beat of nothing - and for `checkingPlan` the
+  // problem it would name is a paywall, shown to somebody who may well
+  // already be paying.
+  if (cloudBlocker === 'checkingAccount' || cloudBlocker === 'checkingPlan') return null;
+
+  if (cloudBlocker) {
+    const status = {
+      ...COMPASS_BLOCKED[cloudBlocker],
+      actions: blockedActions(cloudBlocker, {
+        onOpenSettings,
+        onOpenPlans,
+        onOpenAccount,
+        onAboutCompass,
+        onRetryCloud,
+      }),
+    };
+    return (
+      <SamwellStatusEmptyState icon={Compass} style={floatingClearance} status={status} />
+    );
+  }
+
+  // The same component again, so an empty Compass and an empty chat are one
+  // shape with different words in it. Hand-rolling the title and the paragraph
+  // here is what left this surface without the icon the other one had.
+  if (messages.length === 0) {
+    return (
+      <SamwellStatusEmptyState
+        icon={Compass}
+        style={floatingClearance}
+        status={{
+          title: kind === 'plan' ? 'What do you want to work on?' : 'How is it going?',
+          message:
+            kind === 'plan'
+              ? 'Talk it through with Samwell. He will turn it into something you can actually track.'
+              : 'Tell him where you are. He can see what you have logged and what you wrote about it.',
+        }}
+      />
+    );
+  }
+
+  return (
+    /* Keyed on the conversation: opening an earlier one should open it, not
+       inherit where the last one was left. */
+    <MessageScroller
+      key={activeSessionId ?? 'new'}
+      autoScroll
+      className="flex-1"
+      style={contentColumn}
+    >
+      <TranscriptFade edges="both">
+        <MessageScroller.Viewport>
+          <MessageScroller.Content style={contentStyle}>
+            {/* Only what was actually said. A Compass transcript can carry a
+                system row (the journey summary) and, once tools write to it,
+                tool rows; neither is a turn anybody had. The proposal turn's
+                own reply is held out here and rendered below its card. */}
+            {listMessages.map((m) =>
+              m.role === 'user' || m.role === 'assistant' ? (
+                <MessageScroller.Item
+                  key={m.id}
+                  messageId={m.id}
+                  scrollAnchor={m.role === 'user'}
+                >
+                  <ChatBubble
+                    role={m.role}
+                    content={m.content}
+                    // The just-streamed reply is already on screen; animating
+                    // its arrival is the flick the reader sees when a turn
+                    // finishes.
+                    animateEntry={m.id !== lastStreamedMessageId}
+                  />
+                </MessageScroller.Item>
+              ) : null,
+            )}
+
+            {draft?.kind === 'plan' && (
+              <View className="px-1 py-2">
+                <GoalProposalCard
+                  proposal={draft.proposal}
+                  onApprove={() => void approve()}
+                  onRefine={refine}
+                  disabled={committing}
+                />
+              </View>
+            )}
+
+            {draft?.kind === 'checkin' && (
+              <View className="px-1 py-2">
+                <CheckinDraftCard
+                  draft={draft.draft}
+                  titles={trackableTitles}
+                  onApprove={() => void approve()}
+                  onRefine={refine}
+                  disabled={committing}
+                />
+              </View>
+            )}
+
+            {/* The turn's reply, below its card: streaming bubble while it
+                arrives, the committed message once it lands. Without a draft
+                on screen this falls through and the normal flow above has
+                already drawn it. */}
+            {submitting && streaming ? (
+              <ChatBubble role="assistant" content={streamingReply} streaming />
+            ) : proposalReply ? (
+              <ChatBubble
+                key={proposalReply.id}
+                role="assistant"
+                content={proposalReply.content}
+                animateEntry={proposalReply.id !== lastStreamedMessageId}
+              />
+            ) : null}
+
+            {/* One row for the whole turn: a plain status line on a model that
+                does not reason, or the reasoning panel with tool work folded
+                into its trigger. The panel is never unmounted mid-turn, so a
+                tool call does not reset its "thought for how long" clock. */}
+            <TurnStatus indicator={indicator} />
+          </MessageScroller.Content>
+        </MessageScroller.Viewport>
+      </TranscriptFade>
+
+      {/* Lifted clear of the floating input card the transcript runs under.
+          See the same box in `ChatTranscript` for why it is a box and not a
+          style on the button. */}
+      <View
+        pointerEvents="box-none"
+        className="absolute inset-x-0 bottom-0 items-center"
+        style={floatingClearance}
+      >
+        <MessageScroller.Button className="relative bottom-0" />
+      </View>
+    </MessageScroller>
+  );
+}

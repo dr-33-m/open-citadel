@@ -1,446 +1,319 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Search, Send, Sparkles, Square } from "lucide-react-native";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  AppState,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  TextInput,
-  View,
-} from "react-native";
-import { Touchable } from "@/components/ui/touchable";
-import { FlashList, type FlashListRef } from "@shopify/flash-list";
+/**
+ * One conversation, opened directly.
+ *
+ * The hub's Samwell page is where chat usually happens; this screen is what
+ * the reader and the timeline push when they mean *this* conversation — a
+ * passage you asked about, a thought you followed up on. It is the same
+ * conversation either way, so everything with an opinion about how a chat
+ * looks or behaves is shared with the hub page rather than restated here.
+ */
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { KeyboardAvoidingView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChatBubble } from "@/components/chat/chat-bubble";
-import { ModelStatusBar } from "@/components/chat/model-status-bar";
-import { ThinkingSection } from "@/components/chat/thinking-section";
-import { ThemedText } from "@/components/themed-text";
-import { spacing } from "@/constants/theme";
-import { useColors } from "@/hooks/use-colors";
+import { TranscriptFade } from "@/components/scroll-fades";
+import { MessageScroller } from "@/components/ui/message-scroller";
+import { MaxContentWidth } from "@/constants/theme";
+import { ChatComposer } from "@/features/chat/components/chat-composer";
+import { ChatHeader } from "@/features/chat/components/chat-header";
+import { SamwellBanner } from "@/features/chat/components/samwell-banner";
+import { TurnStatus } from "@/features/chat/components/turn-status";
+import { useSamwellReadiness } from "@/features/chat/hooks/use-samwell-readiness";
+import { turnIndicator } from "@/features/chat/utils/agent-activity";
+import { transcriptContent } from "@/features/chat/utils/transcript-layout";
+import { backTo } from "@/navigation/navigate";
+import { isVisibleChatMessage } from "@/services/chat-transcript";
 import { useChatStore, type ChatMessage } from "@/stores/chat";
-import { useModelStore } from "@/stores/model";
+import { HUB, useHubStore } from "@/stores/hub";
+import { useSettingsStore } from "@/stores/settings";
+import { useSubscriptionStore } from "@/stores/subscription";
+
+/** One turn, as the virtualized transcript wants it: the message plus the
+ *  navigation metadata rows outside the render window still have to carry. */
+type TranscriptRow = ChatMessage & { messageId: string; scrollAnchor: boolean };
+
+/* Static styles hoisted — new objects per render re-layout the list's
+    container for no reason. */
+const LIST_STYLE = { flex: 1 } as const;
+const COLUMN_STYLE = {
+  maxWidth: MaxContentWidth,
+  width: "100%",
+  alignSelf: "center",
+} as const;
 
 export default function ChatSessionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const {
-    activeSession,
-    messages,
-    isGenerating,
-    isThinking,
-    isToolCalling,
-    toolCallStatus,
-    streamingContent,
-    thinkingContent,
-    openSession,
-    sendMessage,
-    stopGeneration,
-  } = useChatStore();
-  const { isLoaded, isLoading, loadError, activeModelId, models, initContext } =
-    useModelStore();
+  /* Field selectors, not the whole store: a streaming reply writes to the
+     store on every token, and the subscribe-to-everything form re-rendered
+     this screen — header, banner and composer included — once per token. */
+  const activeSession = useChatStore((s) => s.activeSession);
+  const messages = useChatStore((s) => s.messages);
+  const isGenerating = useChatStore((s) => s.isGenerating);
+  const isThinking = useChatStore((s) => s.isThinking);
+  const isToolCalling = useChatStore((s) => s.isToolCalling);
+  const toolCallStatus = useChatStore((s) => s.toolCallStatus);
+  const toolCallName = useChatStore((s) => s.toolCallName);
+  const streamingContent = useChatStore((s) => s.streamingContent);
+  const thinkingContent = useChatStore((s) => s.thinkingContent);
+  const thinkingSeconds = useChatStore((s) => s.thinkingSeconds);
+  const titleRefreshing = useChatStore((s) => s.titleRefreshing);
+  const openSession = useChatStore((s) => s.openSession);
+  const sendMessage = useChatStore((s) => s.sendMessage);
+  const stopGeneration = useChatStore((s) => s.stopGeneration);
+
+  const readiness = useSamwellReadiness();
 
   const [inputText, setInputText] = useState("");
-  const [isStopping, setIsStopping] = useState(false);
-  const listRef = useRef<FlashListRef<ChatMessage>>(null);
-
-  const activeModel = models.find((m) => m.id === activeModelId);
-  const modelReady = isLoaded;
-  const modelDownloaded = activeModel?.isDownloaded ?? false;
+  /* "Stop" was tapped for the reply currently running. Derived rather than
+     synced: an effect that reset it when generation ended was a setState in
+     an effect, i.e. a second render every time a reply finished, to compute
+     something already implied by `isGenerating`. It is cleared when the next
+     send starts instead, which is the only moment it could go stale. */
+  const [stopRequested, setStopRequested] = useState(false);
+  const isStopping = isGenerating && stopRequested;
 
   useEffect(() => {
     if (id) openSession(id);
-  }, [id]);
+  }, [id, openSession]);
 
-  // Check model validity when app returns from background
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        // Force re-read of isLoaded — if the native engine was invalidated
-        // while backgrounded, the UI will show the "load model" prompt
-        useModelStore.getState();
-      }
-    });
-    return () => sub.remove();
-  }, []);
+  // Re-title a bookless chat from the whole conversation once the user
+  // leaves it, so a name generated from just the opening exchange can be
+  // corrected once there's more to go on.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Cloud renames in the background; offline asks first, since a rename
+        // there is a full local generation.
+        useChatStore.getState().promptTitleRefineOnExit();
+      };
+    }, []),
+  );
 
-  // Reset stop debounce when generation ends
-  useEffect(() => {
-    if (!isGenerating) setIsStopping(false);
-  }, [isGenerating]);
-
-  // Scroll to bottom whenever messages or streaming content changes
-  useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-    }
-  }, [messages.length, streamingContent]);
-
-  const pulseAnim = useRef(new Animated.Value(0.4)).current;
-  const showPulse = isGenerating && !streamingContent;
-  useEffect(() => {
-    if (showPulse) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
-        ]),
-      ).start();
-    } else {
-      pulseAnim.stopAnimation();
-      pulseAnim.setValue(0.4);
-    }
-  }, [showPulse]);
+  /* There was an AppState listener here that called `useModelStore.getState()`
+     on resume and threw the result away, commented as forcing a re-read of
+     `isLoaded`. It could not do that: `getState` is a plain getter with no
+     side effect, and a Zustand store does not re-render anything because it
+     was read. It was removed rather than kept as decoration. Nothing is lost —
+     this screen subscribes to `isLoaded` through `useSamwellReadiness`, so a
+     genuine change already re-renders it. Re-validating a native engine that
+     was invalidated while backgrounded needs an action on the model store that
+     does not exist yet; that is a separate piece of work, not a getter call. */
 
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
-    if (!text || isGenerating || !modelReady) return;
+    if (!text || isGenerating || !readiness.ready) return;
     setInputText("");
+    setStopRequested(false);
     await sendMessage(text);
-  }, [inputText, isGenerating, modelReady, sendMessage]);
+  }, [inputText, isGenerating, readiness.ready, sendMessage]);
 
-  // Visible messages (hide system prompt, tool messages, and tool-call assistant messages)
-  const visibleMessages = messages.filter(
-    (m) => m.role !== "system" && m.role !== "tool" && !m.content.startsWith('\0TOOL_CALL\0')
+  const handleStop = useCallback(() => {
+    setStopRequested(true);
+    stopGeneration();
+  }, [stopGeneration]);
+
+  /*
+   * Memoized: during a stream this screen re-renders on every token, and an
+   * unmemoized filter hands the list a new `data` array each time — it would
+   * re-run its item diff (new elements for every bubble) on tokens that
+   * changed no message. With a stable reference the list skips entirely; only
+   * the streaming footer re-renders per token.
+   *
+   * The id and the anchor flag ride on the row rather than being passed to a
+   * wrapper, because rows outside the render window are never mounted: the
+   * scroller reads them off the data to know where a turn starts.
+   */
+  const rows = useMemo<TranscriptRow[]>(
+    () =>
+      messages.filter(isVisibleChatMessage).map((m) => ({
+        ...m,
+        messageId: m.id,
+        scrollAnchor: m.role === "user",
+      })),
+    [messages],
   );
 
-  const handleNavigateToHighlight = useCallback((bookId: string, locator: string) => {
-    router.push({
-      pathname: '/reader/[id]' as any,
-      params: { id: bookId, locator },
-    });
-  }, [router]);
+  const handleNavigateToHighlight = useCallback(
+    (bookId: string, locator: string) => {
+      router.push({
+        pathname: "/reader/[id]",
+        params: { id: bookId, locator },
+      });
+    },
+    [router],
+  );
 
   const handleNavigateToTimeline = useCallback(() => {
-    router.push({ pathname: '/(tabs)' as any });
+    // The Timeline is a page of the hub, not a route above this one: ask for
+    // the page, then leave the stack so the hub is what's underneath. Pushing
+    // the hub again instead would stack a second copy of it.
+    useHubStore.getState().goTo(HUB.timeline);
+    backTo(router, "/");
   }, [router]);
 
+  const handleNavigateToBook = useCallback(
+    (bookId: string) => {
+      router.push({ pathname: "/reader/[id]", params: { id: bookId } });
+    },
+    [router],
+  );
+
   const renderItem = useCallback(
-    ({ item }: { item: ChatMessage }) => (
+    ({ item }: { item: TranscriptRow }) => (
       <ChatBubble
         role={item.role as "user" | "assistant"}
         content={item.content}
         onNavigateToHighlight={handleNavigateToHighlight}
         onNavigateToTimeline={handleNavigateToTimeline}
+        onNavigateToBook={handleNavigateToBook}
       />
     ),
-    [handleNavigateToHighlight, handleNavigateToTimeline],
+    [handleNavigateToHighlight, handleNavigateToTimeline, handleNavigateToBook],
   );
 
-  const listFooter = React.useMemo(() => {
-    // After generation completes, show expandable thinking section if available
-    if (!isGenerating && thinkingContent) {
-      return <ThinkingSection content={thinkingContent} />;
-    }
-    if (!isGenerating) return null;
-    // Tool calling in progress — show search indicator
-    if (isToolCalling) return (
-      <View style={{ flexDirection: 'row', justifyContent: 'flex-start', marginBottom: spacing[1], paddingHorizontal: spacing[4] }}>
-        <View style={{ paddingVertical: spacing[2], paddingHorizontal: spacing[3], backgroundColor: colors.surface.mid, flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
-          <Animated.View style={{ opacity: pulseAnim }}>
-            <Search size={14} color={colors.primary.default} />
-          </Animated.View>
-          <ThemedText type="bodySm" color={colors.text.secondary}>
-            {toolCallStatus ?? 'Searching…'}
-          </ThemedText>
-        </View>
-      </View>
-    );
-    // Streaming response tokens
-    if (streamingContent) return (
-      <ChatBubble
-        role="assistant"
-        content={streamingContent}
-        streaming
-        onNavigateToHighlight={handleNavigateToHighlight}
-        onNavigateToTimeline={handleNavigateToTimeline}
-      />
-    );
-    // Waiting for first token — show "Thinking" or "Processing" based on mode
+  /*
+   * Keyed on primitives, not recomputed bare: a fresh indicator object per
+   * render would defeat the footer's memo below and re-render the turn row
+   * on every streamed token.
+   */
+  const isStreamingText = streamingContent.length > 0;
+  const indicator = useMemo(
+    () =>
+      turnIndicator({
+        isGenerating,
+        isTitling: titleRefreshing,
+        isToolCalling,
+        toolCallName,
+        toolCallStatus,
+        isThinking,
+        isStreaming: isStreamingText,
+        trace: thinkingContent,
+        traceSeconds: thinkingSeconds ?? undefined,
+      }),
+    [
+      isGenerating,
+      titleRefreshing,
+      isToolCalling,
+      toolCallName,
+      toolCallStatus,
+      isThinking,
+      isStreamingText,
+      thinkingContent,
+      thinkingSeconds,
+    ],
+  );
+
+  const listFooter = useMemo(() => {
+    // The streaming bubble first, then the one live row beneath it — a plain
+    // status line, or the reasoning panel with any tool work folded into its
+    // trigger. Renders nothing when there is nothing to report.
     return (
-      <View style={{ flexDirection: 'row', justifyContent: 'flex-start', marginBottom: spacing[1], paddingHorizontal: spacing[4] }}>
-        <View style={{ paddingVertical: spacing[2], paddingHorizontal: spacing[3], backgroundColor: colors.surface.mid, flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
-          <Animated.View style={{ opacity: pulseAnim }}>
-            <Sparkles size={14} color={colors.primary.default} />
-          </Animated.View>
-          <ThemedText type="bodySm" color={colors.text.secondary}>
-            {isThinking ? 'Thinking…' : 'Processing…'}
-          </ThemedText>
-        </View>
-      </View>
+      <>
+        {isGenerating && streamingContent ? (
+          <ChatBubble
+            role="assistant"
+            content={streamingContent}
+            streaming
+            onNavigateToHighlight={handleNavigateToHighlight}
+            onNavigateToTimeline={handleNavigateToTimeline}
+            onNavigateToBook={handleNavigateToBook}
+          />
+        ) : null}
+        <TurnStatus indicator={indicator} />
+      </>
     );
-  }, [isGenerating, isThinking, isToolCalling, toolCallStatus, streamingContent, thinkingContent, pulseAnim, colors, handleNavigateToHighlight]);
+  }, [
+    isGenerating,
+    streamingContent,
+    indicator,
+    handleNavigateToHighlight,
+    handleNavigateToTimeline,
+    handleNavigateToBook,
+  ]);
 
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.surface.base,
-    },
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: spacing[3],
-      paddingHorizontal: spacing[3],
-      paddingTop: insets.top + spacing[2],
-      paddingBottom: spacing[2],
-      borderBottomWidth: 1,
-      borderBottomColor: colors.outline.variant,
-    },
-    headerCenter: {
-      flex: 1,
-      gap: 2,
-    },
-    headerSubRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: spacing[2],
-      flexWrap: "nowrap",
-    },
-    bookChip: {
-      alignSelf: "flex-start",
-      paddingHorizontal: spacing[2],
-      paddingVertical: 2,
-      backgroundColor: colors.surface.mid,
-      maxWidth: "55%",
-    },
-    backBtn: {
-      padding: spacing[1],
-    },
-    messageList: {
-      flex: 1,
-    },
-    listContent: {
-      paddingTop: spacing[4],
-      paddingBottom: spacing[2],
-    },
-    inputRow: {
-      flexDirection: "row",
-      alignItems: "flex-end",
-      gap: spacing[2],
-      paddingHorizontal: spacing[3],
-      paddingTop: spacing[2],
-      paddingBottom: Math.max(insets.bottom, spacing[2]),
-      borderTopWidth: 1,
-      borderTopColor: colors.outline.variant,
-      backgroundColor: colors.surface.base,
-    },
-    textInput: {
-      flex: 1,
-      minHeight: 40,
-      maxHeight: 120,
-      backgroundColor: colors.surface.mid,
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[2],
-      color: colors.text.primary,
-      fontFamily: "Manrope_400Regular",
-      fontSize: 15,
-    },
-    sendBtn: {
-      width: 40,
-      height: 40,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.primary.default,
-    },
-    sendBtnDisabled: {
-      backgroundColor: colors.surface.highest,
-    },
-    stopBtn: {
-      width: 40,
-      height: 40,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.surface.highest,
-    },
-    banner: {
-      margin: spacing[3],
-      padding: spacing[3],
-      backgroundColor: colors.surface.mid,
-      borderWidth: 1,
-      borderColor: colors.surface.highest,
-      gap: spacing[2],
-    },
-    loadBtn: {
-      alignSelf: "flex-start",
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[1],
-      backgroundColor: colors.primary.default,
-    },
-  });
-
-  function renderBanner() {
-    if (!modelDownloaded) {
-      return (
-        <View style={styles.banner}>
-          <ThemedText type="bodySm" color={colors.text.secondary}>
-            Samwell needs a model to run. Set one up in Settings.
-          </ThemedText>
-          <Touchable
-            style={styles.loadBtn}
-            onPress={() => router.push({ pathname: "/settings" })}
-          >
-            <ThemedText type="labelSm" color={colors.text.inverse}>
-              SET UP SAMWELL
-            </ThemedText>
-          </Touchable>
-        </View>
-      );
-    }
-
-    if (loadError) {
-      return (
-        <View style={styles.banner}>
-          <ThemedText type="bodySm" color="#e53935">
-            {loadError}
-          </ThemedText>
-          <Touchable
-            style={[styles.loadBtn, isLoading && { opacity: 0.5 }]}
-            disabled={isLoading}
-            onPress={initContext}
-          >
-            <ThemedText type="labelSm" color={colors.text.inverse}>
-              RETRY
-            </ThemedText>
-          </Touchable>
-        </View>
-      );
-    }
-
-    if (!modelReady && !isLoading) {
-      return (
-        <View style={styles.banner}>
-          <ThemedText type="bodySm" color={colors.text.secondary}>
-            Samwell is offline. Wake him up to chat.
-          </ThemedText>
-          <Touchable
-            style={[styles.loadBtn, isLoading && { opacity: 0.5 }]}
-            disabled={isLoading}
-            onPress={initContext}
-          >
-            <ThemedText type="labelSm" color={colors.text.inverse}>
-              WAKE UP
-            </ThemedText>
-          </Touchable>
-        </View>
-      );
-    }
-
-    return null;
-  }
-
-  const canSend = modelReady && inputText.trim().length > 0 && !isGenerating;
+  const openBookAtPassage =
+    activeSession?.bookId && activeSession.contextLocator
+      ? () =>
+          router.push({
+            pathname: "/reader/[id]",
+            params: {
+              id: activeSession.bookId as string,
+              locator: activeSession.contextLocator as string,
+            },
+          })
+      : undefined;
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-background"
+      behavior={process.env.EXPO_OS === "ios" ? "padding" : "height"}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <Touchable style={styles.backBtn} onPress={() => router.back()}>
-          <ArrowLeft size={22} color={colors.text.primary} />
-        </Touchable>
-        <View style={styles.headerCenter}>
-          <ThemedText type="bodyMd" numberOfLines={1}>
-            {activeSession?.title ?? "…"}
-          </ThemedText>
-          <View style={styles.headerSubRow}>
-            <ModelStatusBar onPress={initContext} />
-            {activeSession?.bookTitle && (
-              <Touchable
-                style={styles.bookChip}
-                onPress={() => {
-                  if (activeSession.bookId && activeSession.contextLocator) {
-                    router.push({
-                      pathname: '/reader/[id]' as any,
-                      params: {
-                        id: activeSession.bookId,
-                        locator: activeSession.contextLocator,
-                      },
-                    });
-                  }
-                }}
-              >
-                <ThemedText
-                  type="labelSm"
-                  color={colors.primary.default}
-                  numberOfLines={1}
-                >
-                  {activeSession.bookTitle}
-                </ThemedText>
-              </Touchable>
-            )}
-          </View>
+      {/* The content column: centred and capped on wide screens, pixel-
+          identical on phones (the cap never bites below 800). The header
+          and input rules stop at the column's edges along with it. */}
+      <View className="flex-1" style={COLUMN_STYLE}>
+        <View style={{ paddingTop: insets.top }}>
+          <ChatHeader
+            title={activeSession?.title ?? null}
+            bookTitle={activeSession?.bookTitle ?? null}
+            onBack={() => router.back()}
+            backLabel="Back"
+            onOpenBook={openBookAtPassage}
+            onWakeSamwell={readiness.initContext}
+            onOpenSettings={() => router.push("/settings")}
+          />
         </View>
-      </View>
 
-      {/* Banner area */}
-      {renderBanner()}
-
-      {/* Messages */}
-      <FlashList
-        ref={listRef}
-        style={styles.messageList}
-        contentContainerStyle={styles.listContent}
-        data={visibleMessages}
-        keyExtractor={(item: ChatMessage) => item.id}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        renderItem={renderItem}
-        ListFooterComponent={listFooter}
-      />
-
-      {/* Input bar */}
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.textInput}
-          placeholder={
-            !modelDownloaded
-              ? "Set up Samwell in Settings…"
-              : !modelReady
-                ? "Wake up Samwell…"
-                : "Message Samwell…"
-          }
-          placeholderTextColor={colors.text.secondary}
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-          editable={modelReady && !isGenerating}
-          onSubmitEditing={handleSend}
+        <SamwellBanner
+          readiness={readiness}
+          onOpenSettings={() => router.push("/settings")}
+          onRetryCloud={() => void useSubscriptionStore.getState().refresh()}
+          onSwitchToCloud={() => void useSettingsStore.getState().setSamwellMode("cloud")}
         />
 
-        {isGenerating ? (
-          <Touchable
-            style={[styles.stopBtn, isStopping && { opacity: 0.5 }]}
-            disabled={isStopping}
-            onPress={() => {
-              setIsStopping(true);
-              stopGeneration();
-            }}
-          >
-            <Square
-              size={16}
-              color={colors.text.primary}
-              fill={colors.text.primary}
+        {/* The virtualized transcript path: only the rows near the viewport
+            are mounted, and following the live edge, holding position through
+            a prepend and opening on the last question the reader asked are
+            the scroller's, not this screen's. It replaced a FlashList driven
+            by a hand-rolled follow that scrolled to the end on a timer — which
+            pulled the reader back down whatever they were reading. */}
+        <MessageScroller
+          autoScroll
+          className="flex-1"
+          defaultScrollPosition="last-anchor"
+        >
+          {/* `start` only: unlike the hub's transcripts, nothing floats over
+              this one — the composer below is in normal flow, so the bottom is
+              an edge content stops at rather than passes behind. */}
+          <TranscriptFade edges="start">
+            <MessageScroller.List
+              style={LIST_STYLE}
+              contentContainerStyle={transcriptContent}
+              data={rows}
+              keyboardDismissMode="interactive"
+              keyboardShouldPersistTaps="handled"
+              renderItem={renderItem}
+              ListFooterComponent={listFooter}
             />
-          </Touchable>
-        ) : (
-          <Touchable
-            style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={!canSend}
-          >
-            <Send
-              size={16}
-              color={canSend ? colors.text.inverse : colors.text.secondary}
-            />
-          </Touchable>
-        )}
+          </TranscriptFade>
+          <MessageScroller.Button />
+        </MessageScroller>
+
+        <ChatComposer
+          value={inputText}
+          onChangeText={setInputText}
+          onSend={handleSend}
+          onStop={handleStop}
+          isGenerating={isGenerating}
+          isStopping={isStopping}
+          readiness={readiness}
+          bottomInset={insets.bottom}
+        />
       </View>
     </KeyboardAvoidingView>
   );

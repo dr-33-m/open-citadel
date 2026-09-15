@@ -1,0 +1,106 @@
+diff --git a/lib/commonjs/hooks/reanimated/use-shared-value-ref.js b/lib/commonjs/hooks/reanimated/use-shared-value-ref.js
+index 76238844f06a60cb6203c1c6df1a5b117ddb3deb..249706396aa0d3dbb6efd6e9ecf87b234295b2f2 100644
+--- a/lib/commonjs/hooks/reanimated/use-shared-value-ref.js
++++ b/lib/commonjs/hooks/reanimated/use-shared-value-ref.js
+@@ -8,16 +8,12 @@ exports.useSharedValueRef = useSharedValueRef;
+ var _react = require("react");
+ var _reactNativeReanimated = require("react-native-reanimated");
+ var _reactNativeWorklets = require("react-native-worklets");
+-var _constants = require("../../constants");
+ function readInitialValue(sharedValue) {
+-  if (_constants.IS_WEB) {
+-    return sharedValue.get();
++  const internal = sharedValue;
++  if (typeof internal.getSync === "function") {
++    return internal.getSync();
+   }
+-  return (0, _reactNativeWorklets.runOnUISync)(sv => {
+-    "worklet";
+-
+-    return sv.get();
+-  }, sharedValue);
++  return sharedValue.get();
+ }
+ 
+ /**
+diff --git a/lib/module/hooks/reanimated/use-shared-value-ref.js b/lib/module/hooks/reanimated/use-shared-value-ref.js
+index 06cb62486b234f20b4fa4db69e597ae2969f09ce..a1b64936e138885866e59802d718de0a8d1f0bda 100644
+--- a/lib/module/hooks/reanimated/use-shared-value-ref.js
++++ b/lib/module/hooks/reanimated/use-shared-value-ref.js
+@@ -2,17 +2,13 @@
+ 
+ import { useCallback, useRef } from "react";
+ import { useAnimatedReaction } from "react-native-reanimated";
+-import { runOnUISync, scheduleOnRN } from "react-native-worklets";
+-import { IS_WEB } from "../../constants";
++import { scheduleOnRN } from "react-native-worklets";
+ export function readInitialValue(sharedValue) {
+-  if (IS_WEB) {
+-    return sharedValue.get();
++  const internal = sharedValue;
++  if (typeof internal.getSync === "function") {
++    return internal.getSync();
+   }
+-  return runOnUISync(sv => {
+-    "worklet";
+-
+-    return sv.get();
+-  }, sharedValue);
++  return sharedValue.get();
+ }
+ 
+ /**
+diff --git a/src/hooks/reanimated/use-shared-value-ref.ts b/src/hooks/reanimated/use-shared-value-ref.ts
+index 3f7494aa082e202e7bbd5ce72375d3963271a73e..56fe652284e6759b9acb4b6ec08692184ec722a5 100644
+--- a/src/hooks/reanimated/use-shared-value-ref.ts
++++ b/src/hooks/reanimated/use-shared-value-ref.ts
+@@ -1,16 +1,41 @@
+ import { useCallback, useRef } from "react";
+ import { type SharedValue, useAnimatedReaction } from "react-native-reanimated";
+-import { runOnUISync, scheduleOnRN } from "react-native-worklets";
+-import { IS_WEB } from "../../constants";
++import { scheduleOnRN } from "react-native-worklets";
+ 
++/**
++ * Reads a shared value's current value on the calling (JS) thread, without ever
++ * blocking on the UI thread.
++ *
++ * This used to be `runOnUISync(sv => sv.get(), sharedValue)` - a blocking
++ * JS -> UI round trip. `ActivityScreen` calls it on the first render of every
++ * screen, so every push/pop parked the JS thread on the UI thread at the moment
++ * the UI thread is busiest (mounting the incoming screen). That produced a hard
++ * native abort on `mqt_v_js` - 11 of them on one device in three days:
++ *
++ *   worklets/SharedItems/Serializable.cpp:14 getValueUnpacker:
++ *   assertion failed (valueUnpacker.isObject() && "valueUnpacker not found")
++ *
++ * from `executeOnUIRuntimeSync` reaching the UI runtime while it was not in a
++ * serviceable state.
++ *
++ * Plain `sharedValue.get()` is NOT a safe replacement: it routes through
++ * Reanimated's `value` getter, which - with USE_SYNCHRONIZABLE_FOR_MUTABLES,
++ * on by default in Reanimated 4 - does its own blocking `runOnUISync` whenever
++ * the value is dirty, i.e. exactly while a transition is animating, and trips
++ * the "reading during render" check as well. `getSync()` is the plain
++ * non-blocking read Reanimated itself falls back to.
++ *
++ * Seeding from the last synced value is enough: `useAnimatedReaction` below
++ * starts its mapper immediately with `previous = null`, so the authoritative
++ * UI-side value arrives over `scheduleOnRN` on the first tick after mount - at
++ * worst one frame of a stale seed.
++ */
+ export function readInitialValue<T>(sharedValue: SharedValue<T>): T {
+-	if (IS_WEB) {
+-		return sharedValue.get();
++	const internal = sharedValue as unknown as { getSync?: () => T };
++	if (typeof internal.getSync === "function") {
++		return internal.getSync();
+ 	}
+-	return runOnUISync((sv: SharedValue<T>) => {
+-		"worklet";
+-		return sv.get();
+-	}, sharedValue);
++	return sharedValue.get();
+ }
+ 
+ /**

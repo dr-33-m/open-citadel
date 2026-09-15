@@ -1,271 +1,241 @@
-import { like } from 'drizzle-orm';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
-import {
-  Modal,
-  StyleSheet,
-  View,
-} from 'react-native';
+import React from "react";
+import { View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { ThemedText } from '@/components/themed-text';
-import { Touchable } from '@/components/ui/touchable';
-import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
-import { db } from '@/db/client';
-import { highlights, thoughts } from '@/db/schema';
+import { ThemedText } from "@/components/themed-text";
+import { Calendar } from "@/components/ui/calendar";
+import { Card } from "@/components/ui/card";
+import { Sheet } from "@/components/ui/sheet";
+import { db } from "@/db/client";
+import { highlights, readingDays, thoughts } from "@/db/schema";
+import { useToday } from "@/hooks/use-today";
+import { didReadOn, readingDotStrength } from "@/services/reading-day";
+import { asColor } from "@/utils/colors";
+import { isValidYmd, localDayString, parseYmd, type Ymd } from "@/utils/day";
 
-const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const ACTIVITY_LEGEND = [
+  { key: "read", label: "Read", className: "bg-primary" },
+  { key: "missed", label: "No reading", className: "bg-destructive" },
+  { key: "ideas", label: "Ideas captured", className: "bg-info" },
+] as const;
 
 type CalendarPickerProps = {
   visible: boolean;
   selectedDate: string; // YYYY-MM-DD
   onSelectDate: (date: string) => void;
   onClose: () => void;
+  /** Earliest selectable day (YYYY-MM-DD). Enables future selection (e.g. a target date). */
+  minDate?: string;
+  /** Latest selectable day (YYYY-MM-DD). */
+  maxDate?: string;
 };
 
-function toDateString(year: number, month: number, day: number): string {
-  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+/** `Ymd` -> the local midnight `Calendar` works in. */
+function toDate(ymd: string | undefined): Date | undefined {
+  if (!ymd || !isValidYmd(ymd)) return undefined;
+  const { year, month, day } = parseYmd(ymd);
+  return new Date(year, month - 1, day);
 }
 
-function todayString(): string {
-  const d = new Date();
-  return toDateString(d.getFullYear(), d.getMonth(), d.getDate());
+/** `Calendar` hands back a local `Date`; the app stores days as `Ymd`. */
+function toYmd(date: Date): Ymd {
+  return localDayString(date);
 }
 
-export function CalendarPicker({
+/**
+ * Pick a day.
+ *
+ * The grid, the paging, the six-row height and the accessibility all come from
+ * PanelUI's `Calendar`. This file is the app's part: which days may be picked,
+ * and how much was read on each of them.
+ *
+ * It used to be a month grid of its own — a second calendar in an app that
+ * already vendored one, disagreeing with it about the day mark and rebuilding
+ * forty-two cells on every render of the screen around it. Measured on an A33,
+ * that cost 364ms at Timeline mount for a sheet nobody had opened yet.
+ */
+export const CalendarPicker = React.memo(function CalendarPicker({
   visible,
   selectedDate,
   onSelectDate,
   onClose,
+  minDate,
+  maxDate,
 }: CalendarPickerProps) {
-  const colors = useColors();
-  const today = todayString();
+  const mutedForeground = asColor(useCSSVariable("--color-muted-foreground"));
+  /*
+   * State, not a read.
+   *
+   * `localDayString()` here was only correct for as long as the render that
+   * produced it. This component is `React.memo` and stays mounted for the life
+   * of the screen, so leaving the app open across midnight left `today` on
+   * yesterday: `max` then capped the grid a day short and the day it had just
+   * become was drawn disabled. See `useToday`, which also refreshes when the
+   * app returns to the foreground, for the phone that slept through midnight.
+   */
+  const today = useToday();
 
-  // Parse selectedDate to initialize the view month
-  const [viewYear, setViewYear] = useState(() => {
-    const [y] = selectedDate.split('-').map(Number);
-    return y;
-  });
-  const [viewMonth, setViewMonth] = useState(() => {
-    const [, m] = selectedDate.split('-').map(Number);
-    return m - 1; // 0-indexed
-  });
+  // "Legacy" (timeline) mode = no bounds passed: activity dots on, no future.
+  const legacyMode = !minDate && !maxDate;
 
-  // Activity counts per day for the current view month: { 'YYYY-MM-DD': count }
-  const [activityCounts, setActivityCounts] = useState<Record<string, number>>({});
+  const selected = React.useMemo(() => toDate(selectedDate), [selectedDate]);
+  const min = React.useMemo(() => toDate(minDate), [minDate]);
+  const max = React.useMemo(
+    () => toDate(maxDate) ?? (legacyMode ? toDate(today) : undefined),
+    [maxDate, legacyMode, today],
+  );
 
-  useEffect(() => {
-    const monthStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
-    const prefix = `${monthStr}%`;
+  /*
+   * The month on show. Held here rather than left to `Calendar`'s own state so
+   * that reopening the sheet on a different date lands on that date's month —
+   * the picker stays mounted for the life of the screen, so without this every
+   * open after the first showed whatever month was last paged to.
+   */
+  const [month, setMonth] = React.useState<Date>(
+    () => toDate(selectedDate) ?? new Date(),
+  );
+  const wasVisible = React.useRef(visible);
+  React.useEffect(() => {
+    if (visible && !wasVisible.current)
+      setMonth(toDate(selectedDate) ?? new Date());
+    wasVisible.current = visible;
+  }, [visible, selectedDate]);
 
+  /*
+   * How much was read on every day there is, as a fraction of a book:
+   * { 'YYYY-MM-DD': 0.037 }. Summed across books, so an hour split between two
+   * of them still reads as one solid day.
+   *
+   * The whole history at once, not the month on show. Per month it read well —
+   * one small indexed query — but it made the map change identity every time
+   * the month did, which gave `renderDayAccessory` a new identity, which
+   * rendered all forty-two cells a second time to draw exactly what they had
+   * just drawn. Measured on an A33: two grid renders per month switch, about
+   * 400ms, of which the computation inside them was 8ms. The rest was React
+   * and Fabric moving ~170 views twice.
+   *
+   * One row per book per day actually read, so this is tens to hundreds of
+   * rows for a real library — fewer than a single month of cells.
+   */
+  const [readingByDay, setReadingByDay] = React.useState<
+    Record<string, number>
+  >({});
+  const [ideasByDay, setIdeasByDay] = React.useState<Set<string>>(
+    () => new Set(),
+  );
+
+  // Re-read when the sheet opens rather than on every month, so a day read
+  // since the last open still shows up.
+  React.useEffect(() => {
+    if (!legacyMode || !visible) return; // activity dots only in timeline mode
     Promise.all([
-      db.select({ createdAt: highlights.createdAt }).from(highlights).where(like(highlights.createdAt, prefix)),
-      db.select({ createdAt: thoughts.createdAt }).from(thoughts).where(like(thoughts.createdAt, prefix)),
-    ]).then(([hRows, tRows]) => {
-      const counts: Record<string, number> = {};
-      [...hRows, ...tRows].forEach(({ createdAt }) => {
-        const day = createdAt.split('T')[0];
-        counts[day] = (counts[day] ?? 0) + 1;
-      });
-      setActivityCounts(counts);
-    }).catch(() => {});
-  }, [viewYear, viewMonth]);
+      db
+        .select({
+          day: readingDays.day,
+          progressDelta: readingDays.progressDelta,
+        })
+        .from(readingDays),
+      db
+        .selectDistinct({
+          day: highlights.createdDay,
+        })
+        .from(highlights),
+      db
+        .selectDistinct({
+          day: thoughts.createdDay,
+        })
+        .from(thoughts),
+    ])
+      .then(([readingRows, highlightRows, thoughtRows]) => {
+        const totals: Record<string, number> = {};
+        readingRows.forEach(({ day, progressDelta }) => {
+          totals[day] = (totals[day] ?? 0) + progressDelta;
+        });
+        setReadingByDay(totals);
 
-  const styles = React.useMemo(() => StyleSheet.create({
-    container: { flex: 1, justifyContent: 'flex-end' },
-    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-    sheet: {
-      backgroundColor: colors.surface.low,
-      paddingHorizontal: spacing[6],
-      paddingTop: spacing[4],
-      paddingBottom: spacing[10],
-    },
-    handle: {
-      width: 40,
-      height: 4,
-      backgroundColor: colors.surface.highest,
-      alignSelf: 'center',
-      marginBottom: spacing[4],
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: spacing[4],
-    },
-    navBtn: {
-      width: 36,
-      height: 36,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    weekRow: {
-      flexDirection: 'row',
-      marginBottom: spacing[2],
-    },
-    weekCell: {
-      flex: 1,
-      alignItems: 'center',
-      paddingVertical: spacing[2],
-    },
-    gridRow: {
-      flexDirection: 'row',
-    },
-    dayCell: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: spacing[2],
-    },
-    daySelected: {
-      borderRadius: 20,
-    },
-    dayToday: {
-      borderWidth: 1,
-      borderRadius: 20,
-    },
-    activityDot: {
-      width: 3,
-      height: 3,
-      borderRadius: 2,
-      marginTop: 2,
-    },
-  }), [colors]);
+        const ideaDays = new Set<string>();
+        [...highlightRows, ...thoughtRows].forEach(({ day }) => {
+          if (day && isValidYmd(day)) ideaDays.add(day);
+        });
+        setIdeasByDay(ideaDays);
+      })
+      .catch(() => {});
+  }, [visible, legacyMode]);
 
-  const monthName = new Date(viewYear, viewMonth).toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-  });
+  const handleSelect = React.useCallback(
+    (date: Date | undefined) => {
+      if (!date) return;
+      onSelectDate(toYmd(date));
+      onClose();
+    },
+    [onSelectDate, onClose],
+  );
 
-  const prevMonth = () => {
-    if (viewMonth === 0) {
-      setViewMonth(11);
-      setViewYear(viewYear - 1);
-    } else {
-      setViewMonth(viewMonth - 1);
-    }
-  };
+  /*
+   * The marks under a day: gold/destructive for reading, blue for an idea
+   * captured as a highlight or thought. Today reports positive activity but
+   * never turns red while there is still time to read; future days say nothing.
+   */
+  const renderDayAccessory = React.useCallback(
+    (date: Date) => {
+      const ymd = toYmd(date);
+      if (ymd > today) return null;
+      const read = readingByDay[ymd] ?? 0;
+      const readToday = didReadOn(read);
+      const hasIdeas = ideasByDay.has(ymd);
+      if (ymd === today && !readToday && !hasIdeas) return null;
 
-  const nextMonth = () => {
-    if (viewMonth === 11) {
-      setViewMonth(0);
-      setViewYear(viewYear + 1);
-    } else {
-      setViewMonth(viewMonth + 1);
-    }
-  };
-
-  // Build the calendar grid
-  const firstDayOfMonth = new Date(viewYear, viewMonth, 1).getDay();
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < firstDayOfMonth; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  const rows: (number | null)[][] = [];
-  for (let i = 0; i < cells.length; i += 7) {
-    rows.push(cells.slice(i, i + 7));
-  }
+      return (
+        <View className="flex-row items-center gap-1">
+          {ymd < today || readToday ? (
+            <View
+              className={
+                readToday
+                  ? "h-0.75 w-0.75 bg-primary"
+                  : "h-0.75 w-0.75 bg-destructive"
+              }
+              style={{ opacity: readingDotStrength(read) }}
+            />
+          ) : null}
+          {hasIdeas ? <View className="h-0.75 w-0.75 bg-info" /> : null}
+        </View>
+      );
+    },
+    [ideasByDay, readingByDay, today],
+  );
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={onClose} />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-
-          <View style={styles.header}>
-            <Touchable onPress={prevMonth} style={styles.navBtn}>
-              <ChevronLeft size={20} color={colors.text.primary} />
-            </Touchable>
-            <ThemedText type="bodyMd">{monthName}</ThemedText>
-            <Touchable onPress={nextMonth} style={styles.navBtn}>
-              <ChevronRight size={20} color={colors.text.primary} />
-            </Touchable>
-          </View>
-
-          {/* Week header */}
-          <View style={styles.weekRow}>
-            {DAYS.map((d, i) => (
-              <View key={i} style={styles.weekCell}>
-                <ThemedText type="labelSm" color={colors.text.secondary}>
-                  {d}
-                </ThemedText>
-              </View>
-            ))}
-          </View>
-
-          {/* Calendar grid */}
-          {rows.map((row, ri) => (
-            <View key={ri} style={styles.gridRow}>
-              {row.map((day, ci) => {
-                if (day === null) {
-                  return <View key={ci} style={styles.dayCell} />;
-                }
-                const dateStr = toDateString(viewYear, viewMonth, day);
-                const isSelected = dateStr === selectedDate;
-                const isToday = dateStr === today;
-                const isFuture = dateStr > today;
-                const count = activityCounts[dateStr] ?? 0;
-                const dotOpacity = count === 0 ? 1 : Math.max(0.2, Math.min(count / 10, 1));
-                const dotColor = count === 0 ? '#e53935' : colors.primary.default;
-
-                return (
-                  <Touchable
-                    key={ci}
-                    style={[
-                      styles.dayCell,
-                      isSelected && [
-                        styles.daySelected,
-                        { backgroundColor: colors.primary.default },
-                      ],
-                      isToday && !isSelected && [
-                        styles.dayToday,
-                        { borderColor: colors.primary.default },
-                      ],
-                    ]}
-                    onPress={() => {
-                      if (!isFuture) {
-                        onSelectDate(dateStr);
-                        onClose();
-                      }
-                    }}
-                    disabled={isFuture}
-                  >
-                    <ThemedText
-                      type="bodySm"
-                      color={
-                        isSelected
-                          ? colors.text.inverse
-                          : isFuture
-                            ? colors.surface.highest
-                            : colors.text.primary
-                      }
-                    >
-                      {day}
-                    </ThemedText>
-                    {dateStr < today && (
-                      <View
-                        style={[
-                          styles.activityDot,
-                          { backgroundColor: dotColor, opacity: dotOpacity },
-                        ]}
-                      />
-                    )}
-                  </Touchable>
-                );
-              })}
+    <Sheet visible={visible} onClose={onClose}>
+      {/* The month sits in a card, like the Compass planner's does: a calendar
+          is a surface carrying content, not a bare block of the sheet. The
+          calendar's own panel is off because this is it. */}
+      <View className="px-4">
+        <Card className="p-4">
+          <Calendar
+            mode="single"
+            bordered={false}
+            selected={selected}
+            onSelect={handleSelect}
+            month={month}
+            onMonthChange={setMonth}
+            minDate={min}
+            maxDate={max}
+            renderDayAccessory={legacyMode ? renderDayAccessory : undefined}
+          />
+          {legacyMode ? (
+            <View className="mt-3 flex-row flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3">
+              {ACTIVITY_LEGEND.map((item) => (
+                <View key={item.key} className="flex-row items-center gap-1.5">
+                  <View className={`h-1.5 w-1.5 ${item.className}`} />
+                  <ThemedText type="labelSm" color={mutedForeground}>
+                    {item.label}
+                  </ThemedText>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+          ) : null}
+        </Card>
       </View>
-    </Modal>
+    </Sheet>
   );
-}
+});

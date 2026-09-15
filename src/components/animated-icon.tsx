@@ -1,20 +1,23 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
 
 export function AnimatedSplashOverlay() {
   const [visible, setVisible] = useState(true);
+  // The splash zooms out from a scale covering the screen; derived from the
+  // live window height so rotation/foldables get the right factor too.
+  const { height } = useWindowDimensions();
+  const initialScaleFactor = height / 90;
 
   if (!visible) return null;
 
   const splashKeyframe = new Keyframe({
     0: {
-      transform: [{ scale: INITIAL_SCALE_FACTOR }],
+      transform: [{ scale: initialScaleFactor }],
       opacity: 1,
     },
     20: {
@@ -44,16 +47,6 @@ export function AnimatedSplashOverlay() {
   );
 }
 
-const keyframe = new Keyframe({
-  0: {
-    transform: [{ scale: INITIAL_SCALE_FACTOR }],
-  },
-  100: {
-    transform: [{ scale: 1 }],
-    easing: Easing.elastic(0.7),
-  },
-});
-
 const logoKeyframe = new Keyframe({
   0: {
     transform: [{ scale: 1.3 }],
@@ -81,6 +74,17 @@ const glowKeyframe = new Keyframe({
 });
 
 export function AnimatedIcon() {
+  const { height } = useWindowDimensions();
+  const keyframe = new Keyframe({
+    0: {
+      transform: [{ scale: height / 90 }],
+    },
+    100: {
+      transform: [{ scale: 1 }],
+      easing: Easing.elastic(0.7),
+    },
+  });
+
   return (
     <View style={styles.iconContainer}>
       <Animated.View entering={glowKeyframe.duration(60 * 1000 * 4)} style={styles.glow}>
@@ -125,7 +129,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   backgroundSolidColor: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#208AEF',
     zIndex: 1000,
   },

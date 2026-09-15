@@ -1,9 +1,10 @@
-import { desc, eq, like } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { create } from "zustand";
 
 import { db } from "@/db/client";
 import { books, highlights, notes, thoughts } from "@/db/schema";
 import { useSettingsStore } from "@/stores/settings";
+import { localDayString } from "@/utils/day";
 
 export type TimelineItem = {
   type: "highlight" | "thought";
@@ -37,7 +38,12 @@ interface TimelineState {
 
   loadTimeline: (date?: string) => Promise<void>;
   setSelectedDate: (date: string) => void;
-  addThought: (text: string, color: string, tags: string[]) => Promise<void>;
+  addThought: (
+    text: string,
+    color: string,
+    tags: string[],
+    chatSessionId?: string,
+  ) => Promise<string>;
   updateThought: (
     id: string,
     text: string,
@@ -82,20 +88,30 @@ function formatTime(isoString: string): string {
   });
 }
 
-function todayDateString(): string {
-  return new Date().toISOString().split("T")[0];
+/**
+ * `createdAt` is stored as a UTC instant, but the timeline groups by the
+ * user's LOCAL calendar day. Matching a UTC-date string prefix against that
+ * (the previous approach) files entries under the wrong day for any user not
+ * in UTC — this converts the local day's boundaries to the equivalent UTC
+ * range instead, so the DB query is correct regardless of timezone.
+ */
+function localDayRangeUtc(targetDateYmd: string): { start: string; end: string } {
+  return {
+    start: new Date(`${targetDateYmd}T00:00:00`).toISOString(),
+    end: new Date(`${targetDateYmd}T23:59:59.999`).toISOString(),
+  };
 }
 
 export const useTimelineStore = create<TimelineState>((set, get) => ({
   groups: [],
-  selectedDate: todayDateString(),
+  selectedDate: localDayString(),
   isLoading: false,
 
   loadTimeline: async (date?: string) => {
     const targetDate = date ?? get().selectedDate;
     set({ isLoading: true, selectedDate: targetDate });
 
-    const datePrefix = `${targetDate}%`;
+    const { start, end } = localDayRangeUtc(targetDate);
 
     // Query highlights for the selected date
     const rows = await db
@@ -118,7 +134,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       .from(highlights)
       .innerJoin(books, eq(highlights.bookId, books.id))
       .leftJoin(notes, eq(notes.highlightId, highlights.id))
-      .where(like(highlights.createdAt, datePrefix))
+      .where(and(gte(highlights.createdAt, start), lte(highlights.createdAt, end)))
       .orderBy(desc(highlights.createdAt));
 
     // Aggregate notes per highlight
@@ -191,11 +207,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     const thoughtRows = await db
       .select()
       .from(thoughts)
-      .where(like(thoughts.createdAt, datePrefix))
+      .where(and(gte(thoughts.createdAt, start), lte(thoughts.createdAt, end)))
       .orderBy(desc(thoughts.createdAt));
 
     const username = useSettingsStore.getState().username;
-    const thoughtLabel = username ? `Thought — ${username}` : "Thought";
+    const thoughtLabel = username ? `Thought by ${username}` : "Thought";
 
     const thoughtItems: TimelineItem[] = thoughtRows.map((t) => {
       const hasBeenEdited = !!(t.updatedAt && t.updatedAt.length > 0);
@@ -243,8 +259,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     get().loadTimeline(date);
   },
 
-  addThought: async (text: string, color: string, tags: string[]) => {
-    const id = `th-${Date.now()}`;
+  addThought: async (text: string, color: string, tags: string[], chatSessionId?: string) => {
+    // A random suffix alongside the timestamp avoids id collisions when two
+    // thoughts are created within the same millisecond.
+    const id = `th-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const now = new Date().toISOString();
 
     await db.insert(thoughts).values({
@@ -252,10 +270,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       text,
       color,
       tags: tags.length > 0 ? JSON.stringify(tags) : null,
+      chatSessionId: chatSessionId ?? null,
       createdAt: now,
+      createdDay: localDayString(new Date(now)),
     });
 
     await get().loadTimeline();
+    return id;
   },
 
   updateThought: async (

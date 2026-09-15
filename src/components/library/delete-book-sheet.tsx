@@ -1,10 +1,10 @@
 import React from 'react';
-import { Modal, StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
+import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { ThemedText } from '@/components/themed-text';
-import { useColors } from '@/hooks/use-colors';
-import { spacing } from '@/constants/theme';
 import type { books as booksTable } from '@/db/schema';
 
 type Book = typeof booksTable.$inferSelect;
@@ -16,48 +16,26 @@ type DeleteBookSheetProps = {
   onConfirm: (bookId: string) => void;
 };
 
+/** ThemedText takes a literal color, not a className. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
 export function DeleteBookSheet({
   visible,
   book,
   onClose,
   onConfirm,
 }: DeleteBookSheetProps) {
-  const colors = useColors();
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        container: { flex: 1, justifyContent: 'flex-end' },
-        overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-        sheet: {
-          backgroundColor: colors.surface.low,
-          paddingHorizontal: spacing[6],
-          paddingTop: spacing[4],
-          paddingBottom: spacing[10],
-          gap: spacing[5],
-        },
-        handle: {
-          width: 40,
-          height: 4,
-          backgroundColor: colors.surface.highest,
-          alignSelf: 'center',
-          marginBottom: spacing[2],
-        },
-        deleteButton: {
-          backgroundColor: '#e05252',
-          paddingHorizontal: spacing[6],
-          paddingVertical: spacing[4],
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        cancel: {
-          alignItems: 'center',
-          paddingVertical: spacing[3],
-        },
-      }),
-    [colors],
-  );
+  const [mutedForeground, destructiveForeground] = useCSSVariable([
+    '--color-muted-foreground',
+    '--color-destructive-foreground',
+  ]);
 
-  if (!book) return null;
+  // Not an early `return null` — see the note in book-action-sheet: the
+  // parent clears the book in the same commit that closes the sheet, and
+  // unmounting here takes the exit animation with it.
+  if (!book) return <Sheet visible={visible} onClose={onClose}>{null}</Sheet>;
 
   const handleConfirm = () => {
     onConfirm(book.id);
@@ -65,41 +43,32 @@ export function DeleteBookSheet({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={onClose} />
+    <Sheet visible={visible} onClose={onClose}>
+      <View className="gap-6 px-6">
+        <ThemedText type="headlineSm">Delete Book</ThemedText>
 
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-
-          <ThemedText type="headlineSm">Delete Book</ThemedText>
-
-          <ThemedText type="bodySm" color={colors.text.secondary}>
-            Deleting{' '}
-            <ThemedText type="bodySm" color={colors.text.primary}>
-              {book.title}
-            </ThemedText>
-            {' '}will remove it from Open Citadel and delete it from your phone.
+        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+          Deleting{' '}
+          <ThemedText type="bodySm">
+            {book.title}
           </ThemedText>
+          {' '}will remove it from Open Citadel and delete it from your phone.
+        </ThemedText>
 
-          <Touchable style={styles.deleteButton} onPress={handleConfirm}>
-            <ThemedText type="labelLg" color="#fff">
+        <View className="gap-3">
+          <Touchable className="items-center justify-center bg-destructive px-6 py-4" onPress={handleConfirm}>
+            <ThemedText type="labelLg" color={asColor(destructiveForeground)}>
               DELETE
             </ThemedText>
           </Touchable>
 
-          <Touchable onPress={onClose} style={styles.cancel}>
-            <ThemedText type="labelSm" color={colors.text.secondary}>
+          <Touchable onPress={onClose} className="items-center py-3">
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
               CANCEL
             </ThemedText>
           </Touchable>
         </View>
       </View>
-    </Modal>
+    </Sheet>
   );
 }

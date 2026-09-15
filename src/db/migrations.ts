@@ -5,6 +5,44 @@ import migrations from "../../drizzle/migrations";
 import { db } from "./client";
 
 /**
+ * `chat_sessions` in the shape it had before migration 0018, and the one table
+ * in this database that nothing in `drizzle/` creates.
+ *
+ * It exists only here, which is a genuine hole in the migration chain rather
+ * than a stylistic choice: `0018_trackables.sql` runs two
+ * `ALTER TABLE chat_sessions` statements, and on a database that has never
+ * been migrated there is no such table to alter. Drizzle applies the whole
+ * chain in ONE transaction, so that failure rolls back every migration before
+ * it too, and the app boots against a database with no tables at all. Every
+ * existing install works because its `chat_sessions` was created by the
+ * self-heal below, back when the self-heal ran on an already-migrated
+ * database. Only a first install ever sees it.
+ *
+ * So this runs BEFORE the migrator, and `ensureChatSchema` calls the same
+ * function afterwards rather than repeating the DDL: two copies of a table
+ * definition is two places for it to drift, and the shape here is load-bearing
+ * in a way that is easy to miss. It must NOT carry `goal_id` or `kind`, which
+ * 0018 adds; creating them here would turn the missing-table error into a
+ * duplicate-column one.
+ *
+ * `REFERENCES books(id)` before `books` exists is fine. SQLite resolves a
+ * foreign key when rows are written, not when the table is declared, which is
+ * exactly the difference that lets CREATE survive a forward reference where
+ * ALTER TABLE cannot.
+ */
+function ensureChatSessionsTable(): void {
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`chat_sessions\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`book_id\` text REFERENCES \`books\`(\`id\`) ON DELETE SET NULL,
+    \`title\` text NOT NULL,
+    \`context_text\` text,
+    \`context_locator\` text,
+    \`created_at\` text NOT NULL,
+    \`updated_at\` text NOT NULL
+  )`);
+}
+
+/**
  * Ensures the sync pipeline tables exist even if migration 0007 was partially
  * applied (e.g. the old broken JS format ran but only created some statements).
  * Uses IF NOT EXISTS / PRAGMA so it is always safe to call.
@@ -66,6 +104,31 @@ async function ensureSyncPipelineSchema(): Promise<void> {
     \`updated_at\` text NOT NULL
   )`);
 
+  // ── Counters added after sync_jobs shipped ────────────────────────────────
+  const jobsInfo: { name: string }[] = db.all(
+    sql`PRAGMA table_info(sync_jobs)`,
+  ) as { name: string }[];
+  const jobsCols = new Set(jobsInfo.map((r) => r.name));
+
+  if (!jobsCols.has("added_count")) {
+    db.run(
+      sql`ALTER TABLE \`sync_jobs\` ADD \`added_count\` integer NOT NULL DEFAULT 0`,
+    );
+  }
+  if (!jobsCols.has("skipped_count")) {
+    db.run(
+      sql`ALTER TABLE \`sync_jobs\` ADD \`skipped_count\` integer NOT NULL DEFAULT 0`,
+    );
+  }
+
+  // ── Files that will not import, remembered across jobs ────────────────────
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`sync_skips\` (
+    \`source_uri\` text PRIMARY KEY NOT NULL,
+    \`fingerprint\` text NOT NULL,
+    \`error\` text,
+    \`failed_at\` text NOT NULL
+  )`);
+
   // ── Indexes (IF NOT EXISTS is safe) ───────────────────────────────────────
   db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS \`sync_items_job_uri_idx\`
     ON \`sync_items\` (\`job_id\`, \`source_uri\`)`);
@@ -88,15 +151,7 @@ async function ensureChatSchema(): Promise<void> {
     \`downloaded_at\` text
   )`);
 
-  db.run(sql`CREATE TABLE IF NOT EXISTS \`chat_sessions\` (
-    \`id\` text PRIMARY KEY NOT NULL,
-    \`book_id\` text REFERENCES \`books\`(\`id\`) ON DELETE SET NULL,
-    \`title\` text NOT NULL,
-    \`context_text\` text,
-    \`context_locator\` text,
-    \`created_at\` text NOT NULL,
-    \`updated_at\` text NOT NULL
-  )`);
+  ensureChatSessionsTable();
 
   db.run(sql`CREATE TABLE IF NOT EXISTS \`chat_messages\` (
     \`id\` text PRIMARY KEY NOT NULL,
@@ -150,10 +205,171 @@ async function ensureChatSchema(): Promise<void> {
   }
 }
 
+/**
+ * Daily reading history, backing the timeline calendar's activity dots.
+ * Same self-heal shape as the tables above so it lands regardless of a
+ * device's migration history.
+ */
+async function ensureReadingDaysSchema(): Promise<void> {
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`reading_days\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`day\` text NOT NULL,
+    \`book_id\` text NOT NULL,
+    \`progress_delta\` real NOT NULL DEFAULT 0,
+    \`updated_at\` text NOT NULL
+  )`);
+  // The calendar reads a month at a time, so `day` carries every lookup.
+  db.run(
+    sql`CREATE INDEX IF NOT EXISTS \`reading_days_day_idx\` ON \`reading_days\` (\`day\`)`,
+  );
+}
+
+/**
+ * Compass's rebuilt domain: Goal → Trackable → Schedule → Measurement → Log.
+ *
+ * The four `compass_*` tables this replaces are dropped unconditionally. They
+ * held a different model entirely — milestones, effort units, morning/night
+ * check-ins — and nothing in them maps onto the new shape, so there is no
+ * migration to write, only a deletion.
+ *
+ * The new tables are created under fresh, unprefixed names. Reusing
+ * `compass_goals` for a different shape would make this function ambiguous:
+ * `CREATE TABLE IF NOT EXISTS compass_goals` would silently leave the OLD
+ * shape in place on a device where migration 0018 half-applied, which is the
+ * exact failure class the hand-written migration workflow exists to prevent.
+ */
+async function ensureCompassSchema(): Promise<void> {
+  db.run(sql`DROP TABLE IF EXISTS \`compass_actions\``);
+  db.run(sql`DROP TABLE IF EXISTS \`compass_checkins\``);
+  db.run(sql`DROP TABLE IF EXISTS \`compass_milestones\``);
+  db.run(sql`DROP TABLE IF EXISTS \`compass_goals\``);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`goals\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`title\` text NOT NULL,
+    \`description\` text,
+    \`start_date\` text NOT NULL,
+    \`end_date\` text NOT NULL,
+    \`category\` text NOT NULL,
+    \`priority\` text NOT NULL DEFAULT 'MEDIUM',
+    \`status\` text NOT NULL DEFAULT 'ACTIVE',
+    \`outcome_target\` real,
+    \`outcome_unit\` text,
+    \`is_primary\` integer NOT NULL DEFAULT 0,
+    \`created_at\` text NOT NULL,
+    \`updated_at\` text NOT NULL
+  )`);
+
+  // Self-heal `is_primary` onto a `goals` table that predates it.
+  const goalsInfo: { name: string }[] = db.all(
+    sql`PRAGMA table_info(goals)`,
+  ) as { name: string }[];
+  if (!new Set(goalsInfo.map((r) => r.name)).has("is_primary")) {
+    db.run(sql`ALTER TABLE \`goals\` ADD \`is_primary\` integer NOT NULL DEFAULT 0`);
+  }
+
+  // Backfill: a device that already had goals gets its oldest active one as
+  // the primary, so an existing single-goal user is not left with no primary
+  // and a Samwell that never steers. Only runs while nothing is primary yet,
+  // so it is a one-time promotion the reader can override afterwards.
+  db.run(sql`
+    UPDATE \`goals\` SET \`is_primary\` = 1
+    WHERE \`id\` = (
+      SELECT \`id\` FROM \`goals\` WHERE \`status\` = 'ACTIVE'
+      ORDER BY \`created_at\` ASC LIMIT 1
+    )
+    AND NOT EXISTS (SELECT 1 FROM \`goals\` WHERE \`is_primary\` = 1)
+  `);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`trackables\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`goal_id\` text NOT NULL REFERENCES \`goals\`(\`id\`) ON DELETE cascade,
+    \`title\` text NOT NULL,
+    \`description\` text,
+    \`start_date\` text NOT NULL,
+    \`end_date\` text NOT NULL,
+    \`time_of_day\` text,
+    \`schedule\` text NOT NULL,
+    \`measurement\` text NOT NULL,
+    \`status\` text NOT NULL DEFAULT 'ACTIVE',
+    \`created_at\` text NOT NULL,
+    \`updated_at\` text NOT NULL
+  )`);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`trackable_pauses\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`trackable_id\` text NOT NULL REFERENCES \`trackables\`(\`id\`) ON DELETE cascade,
+    \`start_date\` text NOT NULL,
+    \`end_date\` text,
+    \`created_at\` text NOT NULL
+  )`);
+
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`trackable_logs\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`trackable_id\` text NOT NULL REFERENCES \`trackables\`(\`id\`) ON DELETE cascade,
+    \`date\` text NOT NULL,
+    \`completed\` integer,
+    \`value\` real,
+    \`note\` text,
+    \`created_at\` text NOT NULL
+  )`);
+
+  db.run(
+    sql`CREATE INDEX IF NOT EXISTS \`trackables_goal_idx\` ON \`trackables\` (\`goal_id\`)`,
+  );
+  db.run(
+    sql`CREATE INDEX IF NOT EXISTS \`trackable_pauses_trackable_idx\` ON \`trackable_pauses\` (\`trackable_id\`)`,
+  );
+  // The deck asks "what is due today" and consistency asks for a window, so
+  // every read of this table is by trackable and date together.
+  db.run(sql`CREATE INDEX IF NOT EXISTS \`trackable_logs_trackable_date_idx\`
+    ON \`trackable_logs\` (\`trackable_id\`, \`date\`)`);
+
+  // How each ended goal ended. Separate from `goals` rather than more columns
+  // on it: every row here is written once and never updated except to fill in
+  // the takeaway, and a goal that is still running has nothing to say in any
+  // of them.
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`goal_outcomes\` (
+    \`goal_id\` text PRIMARY KEY NOT NULL REFERENCES \`goals\`(\`id\`) ON DELETE cascade,
+    \`completed\` integer NOT NULL,
+    \`ended_on\` text NOT NULL,
+    \`execution_ratio\` real,
+    \`outcome_value\` real,
+    \`outcome_target\` real,
+    \`outcome_unit\` text,
+    \`reason\` text,
+    \`takeaway\` text,
+    \`created_at\` text NOT NULL
+  )`);
+
+  // A Compass conversation is an ordinary chat session pointed at a goal.
+  const sessionInfo: { name: string }[] = db.all(
+    sql`PRAGMA table_info(chat_sessions)`,
+  ) as { name: string }[];
+  const sessionCols = new Set(sessionInfo.map((r) => r.name));
+
+  if (!sessionCols.has("goal_id")) {
+    db.run(sql`ALTER TABLE \`chat_sessions\` ADD \`goal_id\` text REFERENCES \`goals\`(\`id\`)`);
+  }
+  if (!sessionCols.has("kind")) {
+    db.run(
+      sql`ALTER TABLE \`chat_sessions\` ADD \`kind\` text NOT NULL DEFAULT 'reading'`,
+    );
+  }
+}
+
 export async function runMigrations() {
+  // Before the migrator, not after. See `ensureChatSessionsTable`: migration
+  // 0018 alters this table and nothing in `drizzle/` creates it, so on a first
+  // install the whole chain rolls back and the app starts with no schema.
+  ensureChatSessionsTable();
   await migrate(db, migrations);
   // Self-heal: ensure sync pipeline tables exist regardless of migration history
   await ensureSyncPipelineSchema();
   // Self-heal: ensure chat / local AI tables exist
   await ensureChatSchema();
+  // Self-heal: ensure daily reading history exists
+  await ensureReadingDaysSchema();
+  // Self-heal: drop the old Compass model and ensure the new one exists
+  await ensureCompassSchema();
 }

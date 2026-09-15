@@ -1,62 +1,138 @@
-import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import React from "react";
+import Animated, {
+    FadeIn,
+    FadeOut,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withTiming,
+} from "react-native-reanimated";
+import { CREDIT_PLANS } from "samwell-shared";
+import { useCSSVariable } from "uniwind";
 
-import { ThemedText } from '@/components/themed-text';
-import { Touchable } from '@/components/ui/touchable';
-import { spacing } from '@/constants/theme';
-import { useColors } from '@/hooks/use-colors';
-import { useModelStore } from '@/stores/model';
+import { ThemedText } from "@/components/themed-text";
+import { Touchable } from "@/components/ui/touchable";
+import { ACCOUNT_ENABLED } from "@/constants/logto";
+import { easing, motion } from "@/constants/theme";
+import { getCloudBlocker } from "@/features/chat/utils/cloud-access";
+import { useAccountStore } from "@/stores/account";
+import { useModelStore } from "@/stores/model";
+import { useSettingsStore } from "@/stores/settings";
+import { useSubscriptionStore } from "@/stores/subscription";
+import { asColor } from "@/utils/colors";
 
 interface ModelStatusBarProps {
   onPress?: () => void;
 }
 
 export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
-  const colors = useColors();
-  const { models, activeModelId, isLoaded, isLoading, loadError } = useModelStore();
+  // The dot is drawn inside Reanimated nodes, so its colour has to be a
+  // resolved literal, not a class.
+  const [primary, success, destructive, mutedForeground] = useCSSVariable([
+    "--color-primary",
+    "--color-success",
+    "--color-destructive",
+    "--color-muted-foreground",
+  ]);
+  const models = useModelStore((s) => s.models);
+  const activeModelId = useModelStore((s) => s.activeModelId);
+  const isLoaded = useModelStore((s) => s.isLoaded);
+  const isLoading = useModelStore((s) => s.isLoading);
+  const loadError = useModelStore((s) => s.loadError);
+  const samwellMode = useSettingsStore((s) => s.samwellMode);
+  const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
+  const accountStatus = useAccountStore((s) => s.status);
+  const subscriptionStatus = useSubscriptionStore((s) => s.status);
+  const subscriptionPlan = useSubscriptionStore((s) => s.plan);
+  const cloudReady =
+    getCloudBlocker({
+      configured: cloudBaseUrl.length > 0 && ACCOUNT_ENABLED,
+      accountStatus,
+      subscriptionStatus,
+      mode: samwellMode,
+    }) === null;
 
   const activeModel = models.find((m) => m.id === activeModelId);
 
-  const styles = StyleSheet.create({
-    container: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[2],
-      alignSelf: 'flex-start',
-    },
-    dot: {
-      width: 5,
-      height: 5,
-      borderRadius: 3,
-    },
-  });
+  let dotColor: string | undefined = asColor(mutedForeground);
+  let waking = false;
 
-  let dotColor: string = colors.text.secondary;
-  let showSpinner = false;
-
-  if (!activeModel || !activeModel.isDownloaded) {
-    dotColor = colors.text.secondary;
+  if (samwellMode === "cloud") {
+    dotColor = cloudReady ? asColor(success) : asColor(mutedForeground);
+  } else if (!activeModel || !activeModel.isDownloaded) {
+    dotColor = asColor(mutedForeground);
   } else if (isLoading) {
-    dotColor = '#f2ca50';
-    showSpinner = true;
+    dotColor = asColor(primary);
+    waking = true;
   } else if (isLoaded) {
-    dotColor = '#4caf50';
+    dotColor = asColor(success);
   } else if (loadError) {
-    dotColor = '#e53935';
+    dotColor = asColor(destructive);
   } else {
-    dotColor = colors.text.secondary;
+    dotColor = asColor(mutedForeground);
   }
 
-  const statusText = isLoading ? 'Waking up…' : 'Samwell';
+  const statusText =
+    samwellMode === "cloud"
+      ? subscriptionStatus === "active" && subscriptionPlan
+        ? CREDIT_PLANS[subscriptionPlan].label
+        : "Samwell Cloud"
+      : "Samwell";
+
+  // Pulses in place of a spinner/label swap while waking up — the "wake up"
+  // card already tells the user what's happening in detail, so the dot only
+  // needs to read as "in progress" here, then settle to solid green.
+  const pulseOpacity = useSharedValue(1);
+  React.useEffect(() => {
+    if (waking) {
+      pulseOpacity.value = withRepeat(
+        withTiming(0.3, { duration: 600, easing }),
+        -1,
+        true,
+      );
+    } else {
+      pulseOpacity.value = withTiming(1, { duration: motion.fast, easing });
+    }
+  }, [waking, pulseOpacity]);
+  const pulseAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: pulseOpacity.value,
+  }));
 
   return (
-    <Touchable style={styles.container} onPress={onPress} disabled={isLoading || isLoaded}>
-      {showSpinner ? (
-        <ActivityIndicator size="small" color={dotColor} style={{ width: 8, height: 8 }} />
-      ) : (
-        <View style={[styles.dot, { backgroundColor: dotColor }]} />
-      )}
-      <ThemedText type="labelSm" color={colors.text.secondary} style={{ fontSize: 11 }}>
+    <Touchable
+      className="flex-row items-center gap-2 self-start"
+      onPress={onPress}
+      disabled={samwellMode === "cloud" || isLoading || isLoaded}
+    >
+      <Animated.View
+        style={[{ width: 5, height: 5, borderRadius: 3 }, pulseAnimatedStyle]}
+      >
+        {/* Keyed on color: the outgoing dot plays its exit while the new one
+            crossfades in, instead of the status hard-swapping color. */}
+        <Animated.View
+          key={dotColor}
+          entering={FadeIn.duration(motion.fast).easing(easing)}
+          exiting={FadeOut.duration(motion.fast).easing(easing)}
+          style={[
+            {
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              borderRadius: 3,
+              backgroundColor: dotColor,
+            },
+          ]}
+        />
+      </Animated.View>
+      {/* Only ever his name, so the whole string is his colour rather than a
+          span inside a sentence. */}
+      <ThemedText
+        type="labelSm"
+        color={asColor(primary)}
+        style={{ fontSize: 11 }}
+      >
         {statusText}
       </ThemedText>
     </Touchable>

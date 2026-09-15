@@ -1,17 +1,15 @@
-import React, { useCallback, useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
-
-import { Touchable } from '@/components/ui/touchable';
-import { useFocusEffect } from '@react-navigation/native';
+import { Image } from 'expo-image';
+import React from 'react';
+import { View } from 'react-native';
+import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
-import { ProgressBar } from '@/components/ui/progress-bar';
-import { useColors } from '@/hooks/use-colors';
-import { fontFamily, spacing } from '@/constants/theme';
+import { Card } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Touchable } from '@/components/ui/touchable';
+import { fontFamily, motion } from '@/constants/theme';
 import type { books } from '@/db/schema';
-import { db } from '@/db/client';
-import { readingProgress } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { useBooksStore } from '@/stores/books';
 
 type Book = typeof books.$inferSelect;
 
@@ -21,107 +19,87 @@ type CurrentlyReadingCardProps = {
   onLongPress?: () => void;
 };
 
+/** ThemedText/lucide icons take a literal color, not a className — resolve
+ * the semantic token once per render and fall back to `undefined` (which
+ * lets `ThemedText` apply its own default) if it hasn't resolved yet. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+const COVER_FILL = { width: '100%' as const, height: '100%' as const };
+
 export function CurrentlyReadingCard({ book, onPress, onLongPress }: CurrentlyReadingCardProps) {
-  const colors = useColors();
-  const [progress, setProgress] = useState(0);
-
-  const styles = React.useMemo(() => StyleSheet.create({
-    card: {
-      flexDirection: 'row',
-      backgroundColor: colors.surface.low,
-      padding: spacing[5],
-      gap: spacing[5],
-    },
-    cover: {
-      width: 90,
-      height: 130,
-      backgroundColor: colors.surface.mid,
-      alignItems: 'center',
-      justifyContent: 'center',
-      overflow: 'hidden',
-    },
-    initial: {
-      fontSize: 36,
-      fontFamily: fontFamily.serif,
-    },
-    coverTitle: {
-      position: 'absolute',
-      bottom: spacing[2],
-      paddingHorizontal: spacing[2],
-      textAlign: 'center',
-      fontSize: 9,
-    },
-    info: {
-      flex: 1,
-      gap: spacing[2],
-      justifyContent: 'center',
-    },
-    progressSection: {
-      marginTop: spacing[3],
-      gap: spacing[2],
-    },
-    progressLabels: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-    },
-  }), [colors]);
-
-  useFocusEffect(
-    useCallback(() => {
-      db.select()
-        .from(readingProgress)
-        .where(eq(readingProgress.bookId, book.id))
-        .then(([row]) => {
-          if (row) setProgress(row.percentage);
-        });
-    }, [book.id])
-  );
+  const [ghostInk, mutedForeground, primary] = useCSSVariable([
+    '--color-surface-tertiary',
+    '--color-muted-foreground',
+    '--color-primary',
+  ]);
+  /*
+   * Read, not fetched, and not mirrored into local state.
+   *
+   * This was `useState` filled by a query on every focus, which is two copies
+   * of one fact and a race between them: `closeBook` cannot await its write,
+   * so the read that ran when the Library came back usually beat it and the
+   * bar showed the previous visit's position. The store holds the one copy,
+   * and the code that writes the row is what updates it.
+   */
+  const progress = useBooksStore((s) => s.progressByBook[book.id] ?? 0);
 
   return (
     <Touchable onPress={onPress} onLongPress={onLongPress}>
-      <View style={styles.card}>
-        {book.coverUrl ? (
-          <Image source={{ uri: book.coverUrl }} style={styles.cover} />
-        ) : (
-          <View style={styles.cover}>
-            <ThemedText type="displayLg" color={colors.surface.highest} style={styles.initial}>
-              {book.title.charAt(0).toUpperCase()}
-            </ThemedText>
-            <ThemedText
-              type="labelSm"
-              color={colors.text.secondary}
-              style={styles.coverTitle}
-              numberOfLines={2}
-            >
-              {book.title}
-            </ThemedText>
-          </View>
-        )}
+      <Card className="flex-row gap-5 p-5">
+        <View className="aspect-[2/3] w-[90px] items-center justify-center overflow-hidden bg-muted">
+          {book.coverUrl ? (
+            <Image source={{ uri: book.coverUrl }} style={COVER_FILL} transition={motion.slow} />
+          ) : (
+            <>
+              <ThemedText
+                type="displayLg"
+                color={asColor(ghostInk)}
+                style={{ fontSize: 36, fontFamily: fontFamily.serif }}
+              >
+                {book.title.charAt(0).toUpperCase()}
+              </ThemedText>
+              <ThemedText
+                type="labelSm"
+                color={asColor(mutedForeground)}
+                className="absolute bottom-2 px-2"
+                style={{ textAlign: 'center', fontSize: 9 }}
+                numberOfLines={2}
+              >
+                {book.title}
+              </ThemedText>
+            </>
+          )}
+        </View>
 
-        <View style={styles.info}>
+        <View className="flex-1 justify-center gap-2">
           {book.category && (
-            <ThemedText type="labelSm" color={colors.primary.default}>
+            <ThemedText type="labelSm" color={asColor(primary)}>
               {book.category}
             </ThemedText>
           )}
           <ThemedText type="headlineMd" numberOfLines={2}>{book.title}</ThemedText>
-          <ThemedText type="bodySm" color={colors.text.secondary}>
+          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
             {book.author}
           </ThemedText>
 
-          <View style={styles.progressSection}>
-            <View style={styles.progressLabels}>
-              <ThemedText type="labelSm" color={colors.text.secondary}>
+          <View className="mt-3 gap-2">
+            <Progress value={progress} minValue={0} maxValue={1} size="sm" />
+            {/* Below the bar, the same way the Compass insights card reads.
+                `Progress` only draws its own labels above it, and above is
+                where the title already is. */}
+            <View className="flex-row items-center justify-between gap-3">
+              <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                 PROGRESS
               </ThemedText>
-              <ThemedText type="labelSm" color={colors.primary.default}>
+              <ThemedText type="labelSm" color={asColor(primary)} style={{ fontVariant: ['tabular-nums'] }}>
                 {Math.round(progress * 100)}%
               </ThemedText>
             </View>
-            <ProgressBar progress={progress} />
           </View>
         </View>
-      </View>
+      </Card>
     </Touchable>
   );
 }

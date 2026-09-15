@@ -1,0 +1,30 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index d980fe94a06e00f78e758aac92b4c99dcd433abc..31e2b3c4fa55dea92727b77de47921a0462243c5 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -39,7 +39,24 @@ android {
+       cmake {
+         cppFlags "-O2 -frtti -fexceptions -Wall -fstack-protector-all"
+         arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+-        abiFilters "x86", "x86_64", "armeabi-v7a", "arm64-v8a"
++        // Follow the app's `reactNativeArchitectures` rather than always
++        // configuring every ABI. Building an ABI the app did not build means
++        // linking against a NitroModules prefab that was never produced for it,
++        // which fails with undefined `margelo::nitro::JHybridObject::*` vtable
++        // symbols (this is what broke x86_64 emulator builds).
++        def supportedAbis = ["x86", "x86_64", "armeabi-v7a", "arm64-v8a"]
++        def requestedAbis = (project.findProperty("reactNativeArchitectures")
++                ?: rootProject.findProperty("reactNativeArchitectures")
++                ?: supportedAbis.join(","))
++            .toString()
++            .split(",")
++            .collect { it.trim() }
++        def selectedAbis = requestedAbis.findAll { supportedAbis.contains(it) }
++        if (selectedAbis.isEmpty()) {
++            selectedAbis = supportedAbis
++        }
++        abiFilters.clear()
++        abiFilters.addAll(selectedAbis)
+       }
+     }
+   }

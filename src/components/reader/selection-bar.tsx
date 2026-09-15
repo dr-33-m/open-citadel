@@ -1,12 +1,14 @@
-import { Copy, Highlighter, MessageSquare } from "lucide-react-native";
-import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, View } from "react-native";
+import { Copy, Highlighter, MessageSquare } from "@/components/icons";
+import React from "react";
+import { View } from "react-native";
+import Animated from "react-native-reanimated";
+import { useCSSVariable } from "uniwind";
 
+import { Separator } from "@/components/ui/separator";
 import { Touchable } from "@/components/ui/touchable";
+import { usePulse } from "@/hooks/use-pulse";
 
 import { ThemedText } from "@/components/themed-text";
-import { spacing } from "@/constants/theme";
-import { useColors } from "@/hooks/use-colors";
 
 type SelectionBarProps = {
   onHighlight: () => void;
@@ -16,6 +18,13 @@ type SelectionBarProps = {
   chatLoading?: boolean;
 };
 
+/** ThemedText/lucide icons take a literal color, not a className — resolve the
+ * semantic token once per render and fall back to `undefined` (which lets
+ * `ThemedText` apply its own default) if it hasn't resolved yet. */
+function asColor(value: string | number | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
 export function SelectionBar({
   onHighlight,
   onCopy,
@@ -23,88 +32,41 @@ export function SelectionBar({
   selectedText,
   chatLoading = false,
 }: SelectionBarProps) {
-  const colors = useColors();
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
-
-  useEffect(() => {
-    if (chatLoading) {
-      loopRef.current = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 0.2, duration: 500, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-        ])
-      );
-      loopRef.current.start();
-    } else {
-      loopRef.current?.stop();
-      pulseAnim.setValue(1);
-    }
-  }, [chatLoading]);
-
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        container: {
-          flexDirection: "row",
-          backgroundColor: colors.surface.mid,
-          borderWidth: 1,
-          borderColor: colors.surface.highest,
-          overflow: "hidden",
-        },
-        btn: {
-          alignItems: "center",
-          justifyContent: "center",
-          paddingVertical: spacing[2],
-          paddingHorizontal: spacing[3],
-          gap: 2,
-        },
-        label: {
-          fontSize: 10,
-        },
-        divider: {
-          width: 1,
-          backgroundColor: colors.surface.highest,
-        },
-      }),
-    [colors],
-  );
+  const [primary, foreground, mutedForeground] = useCSSVariable([
+    "--color-primary",
+    "--color-foreground",
+    "--color-muted-foreground",
+  ]);
+  const pulseStyle = usePulse(chatLoading);
 
   return (
-    <View style={styles.container}>
-      <Touchable style={styles.btn} onPress={onHighlight}>
-        <Highlighter size={14} color={colors.primary.default} />
-        <ThemedText
-          type="labelSm"
-          color={colors.primary.default}
-          style={styles.label}
-        >
+    <View className="flex-row items-stretch overflow-hidden border border-border bg-muted">
+      <Touchable className="items-center justify-center gap-0.5 px-3 py-2" onPress={onHighlight}>
+        <Highlighter size={14} color={asColor(primary)} />
+        <ThemedText type="labelSm" color={asColor(primary)} style={{ fontSize: 10 }}>
           HIGHLIGHT
         </ThemedText>
       </Touchable>
-      <View style={styles.divider} />
-      <Touchable style={styles.btn} onPress={onCopy}>
-        <Copy size={14} color={colors.text.primary} />
-        <ThemedText
-          type="labelSm"
-          color={colors.text.secondary}
-          style={styles.label}
-        >
+      <Separator orientation="vertical" />
+      <Touchable className="items-center justify-center gap-0.5 px-3 py-2" onPress={onCopy}>
+        <Copy size={14} color={asColor(foreground)} />
+        <ThemedText type="labelSm" color={asColor(mutedForeground)} style={{ fontSize: 10 }}>
           COPY
         </ThemedText>
       </Touchable>
-      <View style={styles.divider} />
-      <Touchable style={styles.btn} onPress={onChat} disabled={chatLoading}>
-        <Animated.View style={{ opacity: pulseAnim }}>
-          <MessageSquare
-            size={14}
-            color={chatLoading ? colors.primary.default : colors.text.primary}
-          />
+      <Separator orientation="vertical" />
+      <Touchable
+        className="items-center justify-center gap-0.5 px-3 py-2"
+        onPress={onChat}
+        disabled={chatLoading}
+      >
+        <Animated.View style={pulseStyle}>
+          <MessageSquare size={14} color={chatLoading ? asColor(primary) : asColor(foreground)} />
         </Animated.View>
         <ThemedText
           type="labelSm"
-          color={chatLoading ? colors.primary.default : colors.text.secondary}
-          style={styles.label}
+          color={chatLoading ? asColor(primary) : asColor(mutedForeground)}
+          style={{ fontSize: 10 }}
         >
           CHAT
         </ThemedText>

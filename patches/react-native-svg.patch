@@ -1,0 +1,87 @@
+diff --git a/android/src/main/java/com/horcrux/svg/VirtualView.java b/android/src/main/java/com/horcrux/svg/VirtualView.java
+index 4d718063da89404e685654dfd2986a76afde23c2..5f1ba45d9c783980497ac8ae07bc6086d803147e 100644
+--- a/android/src/main/java/com/horcrux/svg/VirtualView.java
++++ b/android/src/main/java/com/horcrux/svg/VirtualView.java
+@@ -608,18 +608,71 @@ public abstract class VirtualView extends ReactViewGroup {
+         setBottom(Math.min(bottom, root.getHeight()));
+       }
+     }
+-    EventDispatcher eventDispatcher =
+-        UIManagerHelper.getEventDispatcherForReactTag(mContext, getId());
+-    if (eventDispatcher != null) {
+-      eventDispatcher.dispatchEvent(
+-        new SvgOnLayoutEvent(
+-          UIManagerHelper.getSurfaceId(VirtualView.this),
+-          this.getId(),
+-          left,
+-          top,
+-          width,
+-          height));
++    // `setClientRect` is only ever reached from a draw pass (RenderableView.draw,
++    // GroupView.drawGroup, ImageView, UseView, ForeignObjectView). Dispatching a
++    // Fabric event from in there re-enters the mounting layer mid-draw: Reanimated
++    // hooks event dispatch and answers it by flushing its whole pending
++    // synchronous prop buffer (NodesManager.onEventDispatch ->
++    // performOperationsRespectingDrawPass -> NativeProxy.synchronouslyUpdateUIProps
++    // -> MountingManager.updatePropsSynchronously). Any buffered entry whose view
++    // is no longer registered in a SurfaceMountingManager then throws
++    // RetryableMountingLayerException, which Reanimated catches and logs with a
++    // full stack trace - on the main thread, inside View.draw(). Measured on a
++    // Galaxy A33: 250-400 of those per second during a screen transition, followed
++    // by 48-82 skipped frames, with the dropped prop updates never re-sent
++    // (Reanimated only ships changed props).
++    //
++    // The layout above must stay synchronous - it feeds touch handling in this
++    // same frame - so only the event is deferred. `post` runs it after the draw
++    // pass on the same (main) thread, which is where an onLayout event belongs
++    // anyway; RN dispatches its own onLayout asynchronously to JS for the same
++    // reason. The dispatcher is re-resolved inside the runnable so a view that was
++    // detached in the meantime dispatches nothing instead of aiming at a dead
++    // surface, and the pending runnable is coalesced so a resize storm queues one
++    // event carrying the latest rect rather than one per intermediate rect.
++    if (mPendingLayoutEvent != null) {
++      removeCallbacks(mPendingLayoutEvent);
+     }
++    final int eventLeft = left;
++    final int eventTop = top;
++    final int eventWidth = width;
++    final int eventHeight = height;
++    mPendingLayoutEvent =
++        new Runnable() {
++          @Override
++          public void run() {
++            mPendingLayoutEvent = null;
++            EventDispatcher eventDispatcher =
++                UIManagerHelper.getEventDispatcherForReactTag(mContext, getId());
++            if (eventDispatcher == null) {
++              return;
++            }
++            eventDispatcher.dispatchEvent(
++                new SvgOnLayoutEvent(
++                    UIManagerHelper.getSurfaceId(VirtualView.this),
++                    VirtualView.this.getId(),
++                    eventLeft,
++                    eventTop,
++                    eventWidth,
++                    eventHeight));
++          }
++        };
++    post(mPendingLayoutEvent);
++  }
++
++  /**
++   * The queued {@link SvgOnLayoutEvent} dispatch, held so a new client rect can
++   * cancel the one it supersedes. Only ever touched on the main thread.
++   */
++  @Nullable private Runnable mPendingLayoutEvent;
++
++  @Override
++  protected void onDetachedFromWindow() {
++    if (mPendingLayoutEvent != null) {
++      removeCallbacks(mPendingLayoutEvent);
++      mPendingLayoutEvent = null;
++    }
++    super.onDetachedFromWindow();
+   }
+ 
+   RectF getClientRect() {

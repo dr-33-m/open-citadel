@@ -1,17 +1,21 @@
-import { eq } from "drizzle-orm";
 import type { Link, Locator } from "@dr33m/react-native-readium";
+import { eq } from "drizzle-orm";
 import { create } from "zustand";
 
 import { db } from "@/db/client";
 import {
-  bookmarks,
-  books,
-  highlights,
-  notes,
-  readingProgress,
-  thoughts,
+    bookmarks,
+    books,
+    highlights,
+    notes,
+    readingDays,
+    readingProgress,
+    thoughts,
 } from "@/db/schema";
+import { extractSurroundingText } from "@/services/book-context";
+import { countableProgress } from "@/services/reading-day";
 import { useBooksStore } from "@/stores/books";
+import { localDayString } from "@/utils/day";
 
 type Book = typeof books.$inferSelect;
 type Bookmark = typeof bookmarks.$inferSelect;
@@ -39,6 +43,8 @@ interface ReaderState {
     locator: Locator,
     color?: string,
     chatSessionId?: string,
+    /** Explicit book to attach to, when called outside the reader (falls back to currentBook). */
+    bookIdOverride?: string,
   ) => Promise<string>;
   updateHighlight: (
     id: string,
@@ -74,6 +80,27 @@ export async function fetchAllTags(): Promise<string[]> {
   return Array.from(unique).sort();
 }
 
+/** Accumulate the day's reading for this book. What counts as reading (and
+ * what is just navigation) lives in `services/reading-day`. */
+async function recordReadingDay(bookId: string, previousPct: number, nextPct: number) {
+  const delta = countableProgress(previousPct, nextPct);
+  if (delta === 0) return;
+
+  const day = localDayString();
+  const id = `${day}:${bookId}`;
+  const now = new Date().toISOString();
+
+  const [row] = await db.select().from(readingDays).where(eq(readingDays.id, id));
+  if (row) {
+    await db
+      .update(readingDays)
+      .set({ progressDelta: row.progressDelta + delta, updatedAt: now })
+      .where(eq(readingDays.id, id));
+  } else {
+    await db.insert(readingDays).values({ id, day, bookId, progressDelta: delta, updatedAt: now });
+  }
+}
+
 async function saveProgressToDb(bookId: string, locator: Locator) {
   const percentage = locator.locations?.totalProgression ?? 0;
   const now = new Date().toISOString();
@@ -99,6 +126,22 @@ async function saveProgressToDb(bookId: string, locator: Locator) {
       updatedAt: now,
     });
   }
+
+  /*
+   * The row is written, so the Library can be told what it says.
+   *
+   * After the await, never before it, and pushed rather than left to be
+   * discovered. The card used to query for this row itself when the Library
+   * regained focus, which raced `closeBook`: that write is fired without being
+   * awaited, because closing a screen cannot wait on a database, and the read
+   * usually won. The bar showed the position from the previous visit and only
+   * caught up on the next one, which is exactly how it was reported.
+   */
+  useBooksStore.getState().setBookProgress(bookId, percentage);
+
+  // First-ever write for a book has no previous position to compare against,
+  // so it contributes nothing — opening a book isn't reading it.
+  await recordReadingDay(bookId, existing?.percentage ?? percentage, percentage);
 }
 
 export const useReaderStore = create<ReaderState>((set, get) => ({
@@ -263,29 +306,56 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     locator: Locator,
     color?: string,
     chatSessionId?: string,
+    bookIdOverride?: string,
   ) => {
     const { currentBook } = get();
-    if (!currentBook) return "";
+    const bookId = bookIdOverride ?? currentBook?.id;
+    if (!bookId) return "";
 
-    const id = `hl-${Date.now()}`;
+    // A random suffix alongside the timestamp avoids id collisions when two
+    // highlights are created within the same millisecond.
+    const id = `hl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const now = new Date().toISOString();
 
     await db.insert(highlights).values({
       id,
-      bookId: currentBook.id,
+      bookId,
       text,
       locator: JSON.stringify(locator),
       color: color || "#f2ca50",
       chatSessionId: chatSessionId ?? null,
       createdAt: now,
+      createdDay: localDayString(new Date(now)),
     });
 
-    const bookHighlights = await db
-      .select()
-      .from(highlights)
-      .where(eq(highlights.bookId, currentBook.id));
+    // Capture the surrounding chapter text in the background so the highlight
+    // keeps the progression it was lifted from (chats, tags, Compass context).
+    const filePath =
+      currentBook?.id === bookId
+        ? currentBook.filePath
+        : db.select({ filePath: books.filePath }).from(books).where(eq(books.id, bookId)).get()
+            ?.filePath;
+    if (filePath) {
+      void extractSurroundingText(filePath, locator)
+        .then((surrounding) =>
+          db
+            .update(highlights)
+            .set({ context: JSON.stringify(surrounding) })
+            .where(eq(highlights.id, id)),
+        )
+        .catch(() => {
+          // Best-effort: a highlight without context is still a highlight.
+        });
+    }
 
-    set({ highlights: bookHighlights });
+    // Only refresh the reader's own highlight list when it's for the book
+    // currently open there — a suggestion approved from chat may target a
+    // different book entirely.
+    if (currentBook?.id === bookId) {
+      const bookHighlights = await db.select().from(highlights).where(eq(highlights.bookId, bookId));
+      set({ highlights: bookHighlights });
+    }
+
     return id;
   },
 
@@ -293,20 +363,23 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     id: string,
     updates: { color?: string; tags?: string; chatSessionId?: string },
   ) => {
-    const { currentBook } = get();
-    if (!currentBook) return;
-
+    // The write itself doesn't need currentBook — only refreshing this
+    // store's own highlight list afterward does. Gating the write on it too
+    // silently dropped updates whenever called from outside the reader.
     await db.update(highlights).set(updates).where(eq(highlights.id, id));
 
-    const bookHighlights = await db
-      .select()
-      .from(highlights)
-      .where(eq(highlights.bookId, currentBook.id));
+    const { currentBook } = get();
+    if (currentBook) {
+      const bookHighlights = await db
+        .select()
+        .from(highlights)
+        .where(eq(highlights.bookId, currentBook.id));
 
-    const allTagsList =
-      "tags" in updates ? await fetchAllTags() : get().allTags;
+      const allTagsList =
+        "tags" in updates ? await fetchAllTags() : get().allTags;
 
-    set({ highlights: bookHighlights, allTags: allTagsList });
+      set({ highlights: bookHighlights, allTags: allTagsList });
+    }
   },
 
   deleteHighlight: async (id: string) => {

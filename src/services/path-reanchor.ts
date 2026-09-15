@@ -16,7 +16,6 @@
  */
 
 import { eq } from "drizzle-orm";
-import { Platform } from "react-native";
 import { documentDirectory } from "expo-file-system/legacy";
 
 import { db } from "@/db/client";
@@ -47,7 +46,7 @@ function reanchor(stored: string | null, docDir: string): string | null {
  * files are referenced in place via content:// URIs.
  */
 export async function reanchorLocalPaths(): Promise<void> {
-  if (Platform.OS !== "ios") return;
+  if (process.env.EXPO_OS !== "ios") return;
   const docDir = documentDirectory;
   if (!docDir) return;
 

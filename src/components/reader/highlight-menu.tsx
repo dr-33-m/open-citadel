@@ -1,32 +1,34 @@
-import { Check, MessageSquare, Pencil, Share, StickyNote, Trash2, X } from "lucide-react-native";
+import { Check, MessageSquare, Pencil, Share, StickyNote, Trash2, X, ZodiacPisces } from "@/components/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Keyboard,
-  KeyboardAvoidingView,
-  Modal,
   ScrollView,
-  StyleSheet,
   TextInput,
   View,
 } from "react-native";
+import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
+import Animated, { FadeInUp } from "react-native-reanimated";
+import { useCSSVariable } from "uniwind";
 
 import { ExportImageCard } from "@/components/export/export-image-card";
 import { captureAndShare } from "@/utils/export-image";
 
+import { Input } from "@/components/ui/input";
+import { Sheet } from "@/components/ui/sheet";
+import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
+import { useSamwellWake } from "@/hooks/use-samwell-wake";
 
 import { ThemedText } from "@/components/themed-text";
+import { ActionButton } from "@/components/action-button";
+import { FieldHint } from "@/components/field-hint";
 import { GoldButton } from "@/components/ui/gold-button";
-import { fontFamily, spacing } from "@/constants/theme";
-import { useColors } from "@/hooks/use-colors";
-
-const COLORS = [
-  "#f2ca50", // gold
-  "#e05252", // red
-  "#52b788", // green
-  "#4a90d9", // blue
-  "#9b72cf", // purple
-];
+import { NOTE_HINTS } from "@/lib/note-hints";
+import { NoteText, isFilled } from "@/lib/text-fields";
+import { easing, fontFamily, motion, spacing } from "@/constants/theme";
+import { cn } from "@/lib/cn";
+import { asColor } from "@/utils/colors";
+import { ColorSwatch, ColorSwatchRow, HIGHLIGHT_COLORS } from "@/components/color-swatch";
 
 type NoteItem = {
   id: string;
@@ -57,6 +59,7 @@ type HighlightMenuProps = {
     updates: { color?: string; tags?: string },
   ) => void;
   onStartChat?: () => void;
+  onSuggestTags?: () => Promise<string[]>;
   onClose: () => void;
 };
 
@@ -79,150 +82,60 @@ export function HighlightMenu({
   onDelete,
   onUpdateHighlight,
   onStartChat,
+  onSuggestTags,
   onClose,
 }: HighlightMenuProps) {
-  const colors = useColors();
-  const styles = React.useMemo(
-    () =>
-      StyleSheet.create({
-        container: { flex: 1, justifyContent: "flex-end" },
-        overlay: {
-          ...StyleSheet.absoluteFillObject,
-          backgroundColor: "rgba(0,0,0,0.5)",
-        },
-        kavWrapper: { backgroundColor: colors.surface.low },
-        sheet: {
-          backgroundColor: colors.surface.low,
-          paddingHorizontal: spacing[6],
-          paddingTop: spacing[4],
-          paddingBottom: spacing[10],
-          gap: spacing[4],
-        },
-        handle: {
-          width: 40,
-          height: 4,
-          backgroundColor: colors.surface.highest,
-          alignSelf: "center",
-          marginBottom: spacing[2],
-        },
-        quoteText: { fontFamily: fontFamily.serifItalic, fontSize: 14 },
-        colorRow: { flexDirection: "row", gap: spacing[3] },
-        swatch: { width: 28, height: 28, borderRadius: 14 },
-        swatchSelected: { borderWidth: 3, borderColor: colors.text.primary },
-        tagSection: { gap: spacing[2] },
-        tagChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-        chip: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing[2],
-          backgroundColor: colors.surface.mid,
-          paddingHorizontal: spacing[3],
-          paddingVertical: spacing[1],
-          borderRadius: 99,
-        },
-        chipText: { fontSize: 12 },
-        tagInputRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          backgroundColor: colors.surface.mid,
-        },
-        tagInput: {
-          flex: 1,
-          color: colors.text.primary,
-          fontFamily: fontFamily.sans,
-          fontSize: 14,
-          paddingHorizontal: spacing[4],
-          paddingVertical: spacing[2],
-        },
-        tagInputBtn: {
-          paddingHorizontal: spacing[3],
-          paddingVertical: spacing[2],
-        },
-        tagInputBtnDisabled: { opacity: 0.4 },
-        notesList: { maxHeight: 140 },
-        noteRow: {
-          flexDirection: "row",
-          alignItems: "flex-start",
-          gap: spacing[3],
-          backgroundColor: colors.surface.mid,
-          padding: spacing[3],
-          marginBottom: spacing[2],
-        },
-        noteRowEditing: { borderWidth: 1, borderColor: colors.primary.default },
-        noteIcon: { marginTop: 2 },
-        noteText: { flex: 1 },
-        noteAction: { paddingTop: 2 },
-        noteInput: {
-          backgroundColor: colors.surface.mid,
-          color: colors.text.primary,
-          fontFamily: fontFamily.sans,
-          fontSize: 16,
-          padding: spacing[4],
-          minHeight: 80,
-          textAlignVertical: "top",
-        },
-        actions: { gap: spacing[3] },
-        actionsRow: {
-          flexDirection: "row",
-          justifyContent: "space-evenly",
-        },
-        actionItem: {
-          alignItems: "center",
-          gap: spacing[1],
-          paddingVertical: spacing[2],
-          flex: 1,
-        },
-        suggestionsScroll: { marginTop: spacing[1] },
-        suggestionsContent: { gap: spacing[2] },
-        suggestionChip: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing[1],
-          backgroundColor: colors.surface.mid,
-          borderWidth: 1,
-          borderColor: colors.surface.highest,
-          paddingHorizontal: spacing[3],
-          paddingVertical: spacing[1],
-          borderRadius: 99,
-        },
-        suggestionChipAdded: { opacity: 0.5 },
-      }),
-    [colors],
-  );
+  const [primary, mutedForeground] = useCSSVariable([
+    "--color-primary",
+    "--color-muted-foreground",
+  ]);
 
   const [noteText, setNoteText] = useState("");
   const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(currentTags);
   const [selectedColor, setSelectedColor] = useState(currentColor);
-  const inputRef = useRef<TextInput>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+  const { ensureAwake, wakeDialog } = useSamwellWake();
+  /*
+   * The fields are uncontrolled: the text lives in the native buffer and
+   * React only mirrors it out (`onChangeText`), never back in. Every
+   * controlled commit re-sets the field from JS state, and a keystroke that
+   * lands while the JS thread is busy gets committed over by a stale string
+   * — the letter drops, or the IME re-inserts it and the word duplicates.
+   * Resets go through the refs; the one case that must *populate* the note
+   * field (editing an existing note) remounts it via `key` with
+   * `defaultValue`, keyed by the note being edited.
+   */
+  const noteFieldRef = useRef<TextInput>(null);
+  const tagFieldRef = useRef<TextInput>(null);
 
   // Export state
   const exportViewRef = useRef<View>(null);
   const [showExport, setShowExport] = useState(false);
 
+  // Reset every time the menu opens, not only when the highlight changes:
+  // the sheet now stays mounted across a close (its content has to survive
+  // the exit animation), so reopening the same highlight would otherwise
+  // come back with the last draft note still in the field.
   useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", () =>
-      setKeyboardVisible(true),
-    );
-    const hide = Keyboard.addListener("keyboardDidHide", () =>
-      setKeyboardVisible(false),
-    );
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-
-  // Reset when the menu opens for a different highlight
-  useEffect(() => {
+    if (!visible) return;
     setNoteText("");
     setEditingNote(null);
     setTagInput("");
     setTags(currentTags);
     setSelectedColor(currentColor);
-  }, [highlightId]);
+    setAiSuggestions([]);
+    setSuggesting(false);
+    setSuggestError(null);
+    // The buffers are native-owned (the fields are uncontrolled — see the
+    // refs above), so the mirror resets alone would leave the old text in
+    // the fields across a reopen or a switch to another highlight.
+    noteFieldRef.current?.clear();
+    tagFieldRef.current?.clear();
+  }, [highlightId, visible]);
 
   // Sync incoming props when re-opened
   useEffect(() => {
@@ -232,17 +145,6 @@ export function HighlightMenu({
   useEffect(() => {
     setSelectedColor(currentColor);
   }, [currentColor]);
-
-  const handleRequestClose = () => {
-    if (keyboardVisible) {
-      Keyboard.dismiss();
-    } else if (editingNote) {
-      setEditingNote(null);
-      setNoteText("");
-    } else {
-      onClose();
-    }
-  };
 
   const handleColorSelect = (color: string) => {
     setSelectedColor(color);
@@ -259,9 +161,20 @@ export function HighlightMenu({
     onUpdateHighlight(highlightId, { tags: JSON.stringify(newTags) });
   };
 
-  const commitTag = () => {
-    addTag(tagInput.trim().replace(/,+$/, ""));
+  /*
+   * Commits from the *event* value, never the mirror: keystrokes can land
+   * faster than renders, so `tagInput` can lag the buffer — committing from
+   * it would clip the tag's tail. The ✓ button and the keyboard action fire
+   * long after the render settled, so the mirror is current there.
+   * `clear()` empties the native buffer; if an IME batch re-applies text
+   * across it, the re-applied value arrives as another `onChangeText`
+   * ending in a comma and commits (deduped) again, so the field always
+   * converges on empty.
+   */
+  const commitTag = (raw: string) => {
+    addTag(raw.trim().replace(/,+$/, ""));
     setTagInput("");
+    tagFieldRef.current?.clear();
   };
 
   const removeTag = (tag: string) => {
@@ -269,6 +182,24 @@ export function HighlightMenu({
     setTags(newTags);
     onUpdateHighlight(highlightId, { tags: JSON.stringify(newTags) });
   };
+
+  const handleSuggestTags = async () => {
+    if (!onSuggestTags || suggesting) return;
+    // Offline Samwell has to be awake to answer. Ask before starting rather
+    // than failing afterwards with an instruction to go to Settings.
+    if (!(await ensureAwake())) return;
+    setSuggesting(true);
+    setSuggestError(null);
+    try {
+      setAiSuggestions(await onSuggestTags());
+    } catch (err) {
+      setSuggestError(err instanceof Error ? err.message : "Could not suggest tags.");
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const canSaveNote = isFilled(NoteText, noteText);
 
   const handleSave = () => {
     const trimmed = noteText.trim();
@@ -280,12 +211,15 @@ export function HighlightMenu({
     }
     setNoteText("");
     setEditingNote(null);
+    // The field is keyed by the note being edited, so dropping
+    // `editingNote` remounts it empty for the next note; the mirror reset
+    // above keeps the save button honest until then.
   };
 
   const handleEditNote = (note: NoteItem) => {
     setEditingNote(note);
     setNoteText(note.text);
-    setTimeout(() => inputRef.current?.focus(), 50);
+    setTimeout(() => noteFieldRef.current?.focus(), 50);
   };
 
   const handleCancelEdit = () => {
@@ -313,169 +247,265 @@ export function HighlightMenu({
   }, []);
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleRequestClose}
-    >
-      <View style={styles.container}>
-        <Touchable style={styles.overlay} onPress={onClose} />
+    <>
+      {/* Dynamic sizing, same as the new-thought sheet, and `scrollable`
+          because the scroll region IS the sheet: it reports its own content
+          height, which is what the sheet sizes itself from. Keyboard
+          clearance is the sheet's — it lifts as a whole for whichever field
+          below takes focus (see components/ui/sheet). */}
+      <Sheet visible={visible} onClose={onClose} scrollable>
+        <Sheet.ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: spacing[6],
+            // The sheet's rhythm: every major block sits 24px from its
+            // neighbours (quote / note field / metadata group / commit
+            // button / action row). Related controls live inside the
+            // metadata group at 12px, so the group reads as one thing.
+            gap: spacing[6],
+          }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Highlight quote — data the reader may want to copy (fidelity
+              law 4). The sheet body is a ScrollView, not a pressable, so a
+              long-press selection here has nothing to fight. */}
+          <ThemedText
+            selectable
+            type="bodySm"
+            color={asColor(mutedForeground)}
+            style={{ fontFamily: fontFamily.serifItalic, fontSize: 14 }}
+            numberOfLines={3}
+          >
+            &ldquo;{highlightText}&rdquo;
+          </ThemedText>
 
-        <KeyboardAvoidingView behavior="padding" style={styles.kavWrapper}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-
-            {/* Highlight quote */}
-            <ThemedText
-              type="bodySm"
-              color={colors.text.secondary}
-              style={styles.quoteText}
-              numberOfLines={3}
+          {/* Existing notes list */}
+          {existingNotes.length > 0 && (
+            // Plain RN, nested inside the sheet's own scroll region: only
+            // the outer one negotiates with the sheet's pan, and a second
+            // registered scrollable would take that role off it.
+            <ScrollView
+              className="max-h-[140px]"
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
             >
-              &ldquo;{highlightText}&rdquo;
-            </ThemedText>
-
-            {/* Existing notes list */}
-            {existingNotes.length > 0 && (
-              <ScrollView
-                style={styles.notesList}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
-                {existingNotes.map((note) => (
-                  <View
-                    key={note.id}
-                    style={[
-                      styles.noteRow,
-                      editingNote?.id === note.id && styles.noteRowEditing,
-                    ]}
-                  >
-                    <StickyNote
-                      size={14}
-                      color={colors.primary.default}
-                      style={styles.noteIcon}
-                    />
-                    <View style={styles.noteText}>
-                      <ThemedText type="bodySm" color={colors.text.primary}>
-                        {note.text}
-                      </ThemedText>
-                      {note.updatedAt && (
-                        <ThemedText
-                          type="labelSm"
-                          color={colors.text.secondary}
-                          style={{ fontStyle: "italic", fontSize: 10 }}
-                        >
-                          edited
-                        </ThemedText>
-                      )}
-                    </View>
-                    <Touchable
-                      onPress={() => handleEditNote(note)}
-                      style={styles.noteAction}
-                      hitSlop={8}
-                    >
-                      <Pencil size={14} color={colors.text.secondary} />
-                    </Touchable>
-                    <Touchable
-                      onPress={() => onDeleteNote(note.id)}
-                      style={styles.noteAction}
-                      hitSlop={8}
-                    >
-                      <Trash2 size={14} color={colors.text.secondary} />
-                    </Touchable>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-
-            {/* Note input */}
-            <TextInput
-              ref={inputRef}
-              style={styles.noteInput}
-              placeholder={editingNote ? "Edit your note…" : "Add a note…"}
-              placeholderTextColor={colors.text.secondary}
-              value={noteText}
-              onChangeText={setNoteText}
-              multiline
-            />
-
-            {/* Color swatches */}
-            <View style={styles.colorRow}>
-              {COLORS.map((c) => (
-                <Touchable
-                  key={c}
-                  style={[
-                    styles.swatch,
-                    { backgroundColor: c },
-                    selectedColor === c && styles.swatchSelected,
-                  ]}
-                  onPress={() => handleColorSelect(c)}
-                />
-              ))}
-            </View>
-
-            {/* Tags */}
-            <View style={styles.tagSection}>
-              {tags.length > 0 && (
-                <View style={styles.tagChips}>
-                  {tags.map((tag) => (
-                    <View key={tag} style={styles.chip}>
+              {existingNotes.map((note) => (
+                <View
+                  key={note.id}
+                  className={cn(
+                    "mb-2 flex-row items-start gap-3 bg-muted p-3",
+                    editingNote?.id === note.id && "border border-primary",
+                  )}
+                >
+                  <StickyNote
+                    size={14}
+                    color={asColor(primary)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <View className="flex-1">
+                    {/* The row itself is a static View — only the trailing
+                        pencil/trash icons are pressable — so selecting the
+                        note text doesn't collide with a row-level gesture. */}
+                    <ThemedText selectable type="bodySm">{note.text}</ThemedText>
+                    {note.updatedAt && (
                       <ThemedText
                         type="labelSm"
-                        color={colors.text.primary}
-                        style={styles.chipText}
+                        color={asColor(mutedForeground)}
+                        italic
+                        style={{ fontSize: 10 }}
                       >
+                        edited
+                      </ThemedText>
+                    )}
+                  </View>
+                  <Touchable
+                    onPress={() => handleEditNote(note)}
+                    className="pt-[2px]"
+                    hitSlop={8}
+                  >
+                    <Pencil size={14} color={asColor(mutedForeground)} />
+                  </Touchable>
+                  <Touchable
+                    onPress={() => onDeleteNote(note.id)}
+                    className="pt-[2px]"
+                    hitSlop={8}
+                  >
+                    <Trash2 size={14} color={asColor(mutedForeground)} />
+                  </Touchable>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Fixed height, not `minHeight`: a growing box changes the
+              sheet's own measured content height on every line wrap, and a
+              dynamically-sized sheet re-measures and re-snaps in response —
+              the jitter. See new-thought-sheet.tsx, which hit this first. */}
+          <Input
+            ref={noteFieldRef}
+            // Keyed by the note being edited: editing remounts the field
+            // with that note's text (the buffer is native-owned, so it
+            // cannot be set from state), and anything else remounts empty.
+            key={editingNote?.id ?? "new"}
+            style={{ height: 80, textAlignVertical: "top" }}
+            placeholder={editingNote ? "Edit your note…" : "Add a note…"}
+            defaultValue={editingNote?.text ?? ""}
+            onChangeText={setNoteText}
+            multiline
+          />
+
+          <FieldHint>{NOTE_HINTS.highlight}</FieldHint>
+
+          {/* Colour and tags are two facets of the highlight, not one
+              cluster. Unlabelled and 24 below the note field but only 12
+              above the tag box, the swatches read as belonging to the tags —
+              so each is now its own labelled block on the sheet's 24 rhythm,
+              12 within. */}
+          <View className="gap-3">
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+              COLOUR
+            </ThemedText>
+            <ColorSwatchRow>
+              {HIGHLIGHT_COLORS.map((c) => (
+                <ColorSwatch
+                  key={c}
+                  color={c}
+                  selected={selectedColor === c}
+                  onPress={() => handleColorSelect(c)}
+                  accessibilityLabel={`Colour ${c}`}
+                />
+              ))}
+            </ColorSwatchRow>
+          </View>
+
+          <View className="gap-3">
+            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+              TAGS
+            </ThemedText>
+              {tags.length > 0 && (
+                <View className="flex-row flex-wrap gap-2">
+                  {tags.map((tag) => (
+                    <View
+                      key={tag}
+                      className="flex-row items-center gap-2 rounded-full bg-muted px-3 py-1"
+                    >
+                      <ThemedText type="labelSm" style={{ fontSize: 12 }}>
                         {tag}
                       </ThemedText>
                       <Touchable onPress={() => removeTag(tag)} hitSlop={6}>
-                        <X size={11} color={colors.text.secondary} />
+                        <X size={11} color={asColor(mutedForeground)} />
                       </Touchable>
                     </View>
                   ))}
                 </View>
               )}
-              <View style={styles.tagInputRow}>
-                <TextInput
-                  style={styles.tagInput}
-                  placeholder="Add tag…"
-                  placeholderTextColor={colors.text.secondary}
-                  value={tagInput}
-                  onChangeText={(v) => {
-                    if (v.endsWith(",")) {
-                      commitTag();
-                    } else {
-                      setTagInput(v);
-                    }
-                  }}
-                  returnKeyType="done"
-                  onSubmitEditing={commitTag}
-                />
+            {/* The commit button is the field's own `endContent`, not a
+                sibling beside it. As a sibling it needed the field to give up
+                width to it — and `className` on `Input` styles the *field*,
+                not the container, so the `flex-1` never reached the box that
+                had to shrink: the field took the full row and pushed the
+                button off the right edge of the screen. */}
+            <Input
+              ref={tagFieldRef}
+              placeholder="Add tag…"
+              onChangeText={(v) => {
+                if (v.endsWith(",")) {
+                  commitTag(v);
+                } else {
+                  setTagInput(v);
+                }
+              }}
+              returnKeyType="done"
+              onSubmitEditing={() => commitTag(tagInput)}
+              endContent={
                 <Touchable
-                  style={[
-                    styles.tagInputBtn,
-                    !tagInput.trim() && styles.tagInputBtnDisabled,
-                  ]}
-                  onPress={commitTag}
+                  onPress={() => commitTag(tagInput)}
+                  disabled={!tagInput.trim()}
                   hitSlop={8}
+                  accessibilityLabel="Add tag"
+                  className={cn(!tagInput.trim() && "opacity-40")}
                 >
                   <Check
-                    size={16}
+                    size={18}
                     color={
                       tagInput.trim()
-                        ? colors.primary.default
-                        : colors.text.secondary
+                        ? asColor(primary)
+                        : asColor(mutedForeground)
                     }
                   />
                 </Touchable>
-              </View>
+              }
+            />
+
+              {onSuggestTags && (
+                <View className="flex-row flex-wrap items-center gap-2">
+                  {/* No empty-text gate here, unlike the thought sheet: this
+                      one reads the highlighted passage, which always exists by
+                      the time this menu is open. */}
+                  <ActionButton
+                    className="bg-card"
+                    icon={suggesting ? undefined : ZodiacPisces}
+                    leading={suggesting ? <Spinner size="sm" /> : undefined}
+                    label={suggesting ? "SUGGESTING…" : "SUGGEST TAGS"}
+                    tint={asColor(primary)}
+                    disabled={suggesting}
+                    onPress={handleSuggestTags}
+                  />
+                  {aiSuggestions.map((tag, index) => {
+                    const isAdded = tags.some(
+                      (t) => t.toLowerCase() === tag.toLowerCase(),
+                    );
+                    return (
+                      <Animated.View
+                        key={tag}
+                        entering={FadeInUp.duration(motion.base)
+                          .easing(easing)
+                          .delay(index * 50)}
+                      >
+                        <Touchable
+                          className={cn(
+                            "flex-row items-center gap-1 rounded-full border border-primary bg-muted px-3 py-1",
+                            isAdded && "opacity-50",
+                          )}
+                          haptic={isAdded ? false : 'tap'}
+                          onPress={() => !isAdded && addTag(tag)}
+                        >
+                          {isAdded && (
+                            <Check size={11} color={asColor(mutedForeground)} />
+                          )}
+                          <ThemedText
+                            type="labelSm"
+                            color={isAdded ? asColor(mutedForeground) : undefined}
+                            style={{ fontSize: 12 }}
+                          >
+                            {tag}
+                          </ThemedText>
+                        </Touchable>
+                      </Animated.View>
+                    );
+                  })}
+                </View>
+              )}
+              {suggestError && (
+                <ThemedText type="labelSm" color={asColor(mutedForeground)}>
+                  {suggestError}
+                </ThemedText>
+              )}
 
               {allTags.length > 0 && (
-                <ScrollView
+                // RNGH's ScrollView, not RN's, and not `Sheet.ScrollView`
+                // either: the sheet wraps its scroll region in a native
+                // gesture, and a plain nested ScrollView loses the horizontal
+                // touch stream to it — the row rendered but never scrolled.
+                // The gesture-handler-aware component registers with the same
+                // system and coordinates correctly. `Sheet.ScrollView` is for
+                // the region the sheet drags against; this one is a sideways
+                // strip inside it and must stay out of that negotiation.
+                <GestureScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  style={styles.suggestionsScroll}
-                  contentContainerStyle={styles.suggestionsContent}
+                  style={{ marginTop: spacing[1] }}
+                  contentContainerStyle={{ gap: spacing[2] }}
                   keyboardShouldPersistTaps="handled"
                 >
                   {allTags.map((tag) => {
@@ -485,75 +515,88 @@ export function HighlightMenu({
                     return (
                       <Touchable
                         key={tag}
-                        style={[
-                          styles.suggestionChip,
-                          isAdded && styles.suggestionChipAdded,
-                        ]}
+                        className={cn(
+                          "flex-row items-center gap-1 rounded-full border border-surface-tertiary bg-muted px-3 py-1",
+                          isAdded && "opacity-50",
+                        )}
                         onPress={() => !isAdded && addTag(tag)}
                       >
                         {isAdded && (
-                          <Check size={11} color={colors.text.secondary} />
+                          <Check size={11} color={asColor(mutedForeground)} />
                         )}
                         <ThemedText
                           type="labelSm"
-                          color={
-                            isAdded
-                              ? colors.text.secondary
-                              : colors.text.primary
-                          }
-                          style={styles.chipText}
+                          color={isAdded ? asColor(mutedForeground) : undefined}
+                          style={{ fontSize: 12 }}
                         >
                           {tag}
                         </ThemedText>
                       </Touchable>
                     );
                   })}
-                </ScrollView>
+                </GestureScrollView>
               )}
-            </View>
+          </View>
 
-            <View style={styles.actions}>
-              <GoldButton
+          {/* Commit group — the button and the row of entry actions are
+              related controls, so 12px inside the 24px block rhythm. */}
+          <View className="gap-3">
+            <GoldButton
                 label={editingNote ? "UPDATE NOTE" : "ADD NOTE"}
                 onPress={handleSave}
+                disabled={!canSaveNote}
               />
-              <View style={styles.actionsRow}>
-                <Touchable style={styles.actionItem} onPress={handleExport} disabled={isExporting}>
-                  <Share size={18} color={colors.text.secondary} />
-                  <ThemedText type="labelSm" color={colors.text.secondary}>
+              <View className="flex-row justify-evenly">
+                <Touchable
+                  className="flex-1 items-center gap-1 py-2"
+                  onPress={handleExport}
+                  disabled={isExporting}
+                >
+                  <Share size={18} color={asColor(mutedForeground)} />
+                  <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                     {isExporting ? 'EXPORTING…' : 'EXPORT'}
                   </ThemedText>
                 </Touchable>
                 {onStartChat && (
-                  <Touchable style={styles.actionItem} onPress={onStartChat}>
-                    <MessageSquare size={18} color={colors.text.secondary} />
-                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                  <Touchable
+                    className="flex-1 items-center gap-1 py-2"
+                    onPress={onStartChat}
+                  >
+                    <MessageSquare size={18} color={asColor(mutedForeground)} />
+                    <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                       {chatSessionId ? "CHAT" : "CHAT"}
                     </ThemedText>
                   </Touchable>
                 )}
                 {editingNote ? (
-                  <Touchable style={styles.actionItem} onPress={handleCancelEdit}>
-                    <X size={18} color={colors.text.secondary} />
-                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                  <Touchable
+                    className="flex-1 items-center gap-1 py-2"
+                    onPress={handleCancelEdit}
+                  >
+                    <X size={18} color={asColor(mutedForeground)} />
+                    <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                       CANCEL
                     </ThemedText>
                   </Touchable>
                 ) : (
-                  <Touchable style={styles.actionItem} onPress={handleDelete}>
-                    <Trash2 size={18} color={colors.text.secondary} />
-                    <ThemedText type="labelSm" color={colors.text.secondary}>
+                  <Touchable
+                    className="flex-1 items-center gap-1 py-2"
+                    onPress={handleDelete}
+                  >
+                    <Trash2 size={18} color={asColor(mutedForeground)} />
+                    <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                       DELETE
                     </ThemedText>
                   </Touchable>
                 )}
               </View>
             </View>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
+        </Sheet.ScrollView>
+      </Sheet>
 
-      {/* Off-screen export card */}
+      {/* Off-screen export card — a sibling of the sheet, not inside it: this
+          is a headless capture target, never meant to be visible, and doesn't
+          need the sheet's presentation at all. */}
       {showExport && (
         <View style={{ position: "absolute", left: -9999, top: -9999 }}>
           <ExportImageCard
@@ -567,6 +610,8 @@ export function HighlightMenu({
           />
         </View>
       )}
-    </Modal>
+
+      {wakeDialog}
+    </>
   );
 }

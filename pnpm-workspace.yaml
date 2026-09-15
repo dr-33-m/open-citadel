@@ -1,2 +1,4 @@
-packages: []
+packages:
+  - "server"
+  - "packages/*"
 nodeLinker: hoisted
