@@ -138,6 +138,22 @@ export function getActiveBackend(): Backend | null {
   }
 }
 
+/**
+ * Whether a failed native call was the engine refusing for low memory.
+ *
+ * The native module runs its own memory check just before generating, and it
+ * does not agree with `checkMemoryHeadroom` exactly: memory can drop between
+ * the two readings, and iOS measures headroom a different way. When the app's
+ * check passes and the native one does not, the call rejects. Read as an
+ * ordinary error, that turn just stopped with no banner. Both platforms reject
+ * with the same message (a Swift NSError, a Kotlin RuntimeException), so it is
+ * matched on that.
+ */
+export function isLowMemoryError(err: unknown): boolean {
+  const text = err instanceof Error ? err.message : String(err);
+  return text.includes('Device memory is critically low');
+}
+
 export type MemoryHeadroomResult = { ok: boolean; usage: MemoryUsage | null };
 
 /**

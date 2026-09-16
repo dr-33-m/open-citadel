@@ -29,8 +29,8 @@ importers:
   .:
     dependencies:
       '@dr33m/react-native-litert-lm':
-        specifier: ^0.6.4
-        version: 0.6.4(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+        specifier: ^0.6.7
+        version: 0.6.7(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       '@dr33m/react-native-readium':
         specifier: 5.0.0-rc.34
         version: 5.0.0-rc.34(patch_hash=199162820afa0be7ea32159e2c1df4d8b9a00ee3cb1a974e7cca04488ce820fd)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -986,8 +986,8 @@ packages:
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
 
-  '@dr33m/react-native-litert-lm@0.6.4':
-    resolution: {integrity: sha512-uAPRQN+fqLj2eZ0g5ID1h5lujYb0yYGlsBaRGt+TN7/065IULOQRVfix1IRQZ0DPMpZXz3JFh0eOr7rEAdN/aA==}
+  '@dr33m/react-native-litert-lm@0.6.7':
+    resolution: {integrity: sha512-Q6lZVLYhcI1ic4dTdMa17IE25xux6IKPv2roSISc+PwwXMfso2FEEc6WPXY4sq+NA2j90miro+xAhft7rPaEZQ==}
     engines: {node: '>=22'}
     peerDependencies:
       expo: '>=55.0.0'
@@ -6980,7 +6980,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@dr33m/react-native-litert-lm@0.6.4(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
+  '@dr33m/react-native-litert-lm@0.6.7(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
     dependencies:
       react-native-nitro-modules: 0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
     optionalDependencies:

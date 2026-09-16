@@ -626,7 +626,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         try {
           await seedEngineWithSession();
         } catch (err) {
-          console.warn('[Chat] Context priming failed:', err);
+          if (Inference.isLowMemoryError(err)) set({ deviceLimit: 'memory' });
+          else console.warn('[Chat] Context priming failed:', err);
         }
       }
     }
@@ -828,8 +829,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             // Making room is the only thing standing between this turn and a
             // native abort, so a failure here stops the turn rather than
             // pressing on and hoping.
-            console.warn('[Chat] Context compaction failed:', err);
-            limitReached = 'context';
+            if (Inference.isLowMemoryError(err)) {
+              limitReached = 'memory';
+            } else {
+              console.warn('[Chat] Context compaction failed:', err);
+              limitReached = 'context';
+            }
           }
         }
       }
@@ -1021,13 +1026,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
     } catch (err) {
-      console.error('[Samwell] Generation error:', err);
+      if (Inference.isLowMemoryError(err)) {
+        // The native module's own memory check refused, after ours had passed.
+        // Same wall as the check above, so it gets the same banner.
+        limitReached = 'memory';
+      } else {
+        console.error('[Samwell] Generation error:', err);
+      }
       // Aborted or error — use whatever streamed so far
       finalContent = get().streamingContent.trim();
     }
 
     if (limitReached) {
-      if (__DEV__) console.log('[Chat] Device limit:', limitReached, JSON.stringify(Inference.getContextSnapshot()));
+      if (__DEV__) {
+        console.log(
+          '[Chat] Device limit:',
+          limitReached,
+          JSON.stringify(Inference.getContextSnapshot()),
+          JSON.stringify(Inference.checkMemoryHeadroom().usage),
+        );
+      }
       set({ deviceLimit: limitReached });
     }
 
