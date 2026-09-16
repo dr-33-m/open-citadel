@@ -4,7 +4,11 @@ import type { PurchasesPackage } from "react-native-purchases";
 import { useAnimatedReaction, useSharedValue } from "react-native-reanimated";
 import { useCSSVariable } from "uniwind";
 
-import { ROW_FADE } from "@/components/scroll-fades";
+import {
+    ROW_FADE,
+    useFadeColor,
+    type FadeSurface,
+} from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
 import { Carousel, useCarouselState } from "@/components/ui/carousel";
 import { GoldButton } from "@/components/ui/gold-button";
@@ -89,6 +93,14 @@ export type PlanCarouselProps = {
   /** Plan-change sheets pin their action outside the scrolling region. */
   showAction?: boolean;
   actionVerb?: "CHOOSE" | "UPGRADE TO" | "DOWNGRADE TO";
+  /** The ground the edge fades blend into. Sheets are `popover`. */
+  surface?: FadeSurface;
+  /**
+   * The gutter of the page the run sits in. The track reaches past it to the
+   * screen edge, so the fade starts at the edge rather than a gutter inside
+   * it; the button and restore row stay in the column.
+   */
+  bleed?: number;
 };
 
 /**
@@ -108,12 +120,14 @@ export type PlanCarouselProps = {
 function CarouselEdgeFade({
   children,
   initialIndex,
+  surface,
 }: {
   children: React.ReactNode;
   initialIndex: number;
+  surface: FadeSurface;
 }) {
   const { progress, count } = useCarouselState();
-  const popover = useCSSVariable("--color-popover");
+  const color = useFadeColor(surface);
   // Seeded for the run's resting index, so the first frame is already
   // correct and the reaction only ever maintains it.
   const start = useSharedValue(initialIndex * CARD_WIDTH);
@@ -132,7 +146,7 @@ function CarouselEdgeFade({
       orientation="horizontal"
       edges="both"
       size={ROW_FADE}
-      color={asColor(popover)}
+      color={color}
       distance={{ start, end }}
     >
       {children}
@@ -149,8 +163,8 @@ function CarouselEdgeFade({
  * tilts a price and a button off-axis - a purchase decision is not a shelf of
  * album art.
  *
- * No scroll fade. Every scrollable in the app carries one except a carousel,
- * where the peeking neighbour is already the affordance.
+ * The edge fades are `CarouselEdgeFade` above. They blend into `surface`
+ * and start at the screen edge only when `bleed` cancels the page gutter.
  */
 export function PlanCarousel({
   packages,
@@ -166,6 +180,8 @@ export function PlanCarousel({
   showRestore = true,
   showAction = true,
   actionVerb = "CHOOSE",
+  surface = "popover",
+  bleed = 0,
 }: PlanCarouselProps) {
   const mutedForeground = useCSSVariable("--color-muted-foreground");
   const initialIndex = Math.max(
@@ -225,6 +241,11 @@ export function PlanCarousel({
     [packages],
   );
 
+  const bleedStyle = React.useMemo(
+    () => ({ marginHorizontal: -bleed }),
+    [bleed],
+  );
+
   const nothingToBuy = Object.keys(packages).length === 0;
   // The run is bounded to three, but an index arriving from a gesture is not
   // something to take on trust when it indexes an array.
@@ -233,30 +254,32 @@ export function PlanCarousel({
 
   return (
     <View className="gap-4">
-      <Carousel
-        variant="default"
-        align="center"
-        itemSize={CARD_WIDTH}
-        defaultIndex={initialIndex}
-        onIndexChange={handleIndexChange}
-      >
-        <CarouselEdgeFade initialIndex={initialIndex}>
-          <Carousel.Content style={contentStyle}>
-            {plans.map((plan, index) => (
-              <PlanSlide key={plan.id} index={index}>
-                <PlanCard
-                  plan={plan}
-                  modelCount={modelCounts[plan.id] ?? 0}
-                  priceLabel={priceFor(plan)}
-                  selected={index === active}
-                  onInfo={() => setInfoPlanId(plan.id)}
-                />
-              </PlanSlide>
-            ))}
-          </Carousel.Content>
-        </CarouselEdgeFade>
-        <Carousel.Dots className="mt-4 self-center" />
-      </Carousel>
+      <View style={bleedStyle}>
+        <Carousel
+          variant="default"
+          align="center"
+          itemSize={CARD_WIDTH}
+          defaultIndex={initialIndex}
+          onIndexChange={handleIndexChange}
+        >
+          <CarouselEdgeFade initialIndex={initialIndex} surface={surface}>
+            <Carousel.Content style={contentStyle}>
+              {plans.map((plan, index) => (
+                <PlanSlide key={plan.id} index={index}>
+                  <PlanCard
+                    plan={plan}
+                    modelCount={modelCounts[plan.id] ?? 0}
+                    priceLabel={priceFor(plan)}
+                    selected={index === active}
+                    onInfo={() => setInfoPlanId(plan.id)}
+                  />
+                </PlanSlide>
+              ))}
+            </Carousel.Content>
+          </CarouselEdgeFade>
+          <Carousel.Dots className="mt-4 self-center" />
+        </Carousel>
+      </View>
 
       {/* One commit, in a fixed place, naming what it will buy. Gold appears
           once per screen and never moves; the run is what selects. A label

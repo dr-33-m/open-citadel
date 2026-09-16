@@ -45,7 +45,8 @@ import { asColor } from '@/utils/colors';
  */
 export type FadeSurface = 'background' | 'popover';
 
-function useFadeColor(surface: FadeSurface) {
+/** Exported for fades outside these wrappers, like the plan carousel's. */
+export function useFadeColor(surface: FadeSurface) {
   const [background, popover] = useCSSVariable(['--color-background', '--color-popover']);
   return asColor(surface === 'popover' ? popover : background);
 }

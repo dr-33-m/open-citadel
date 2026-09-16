@@ -16,6 +16,7 @@ import {
     PURCHASES_ENABLED,
     REVENUECAT_TEST_STORE,
 } from "@/constants/revenuecat";
+import { layout } from "@/constants/theme";
 import { CreditMeter } from "@/features/billing/components/credit-meter";
 import { PlanCarousel } from "@/features/billing/components/plan-carousel";
 import { SubscriptionManagementSheet } from "@/features/billing/components/subscription-management-sheet";
@@ -300,6 +301,8 @@ export function CloudPanel({
           loading={loading}
           onChoose={onChoose}
           onRestore={onRestore}
+          surface="background"
+          bleed={layout.gutter}
         />
       </View>
     );
