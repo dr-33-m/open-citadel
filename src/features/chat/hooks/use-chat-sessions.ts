@@ -3,8 +3,8 @@
  *
  * All three are guarded by one `switching` flag, and that guard is the reason
  * this is a hook rather than three handlers on a screen. Changing session does
- * slow engine work at both ends: re-titling the conversation being left, then
- * priming the incoming one with its book context. On a slow device that is a
+ * slow engine work: priming the incoming conversation with its book context
+ * and history. On a slow device that is a
  * real wait, and nothing stopped a second tap — another row, "New chat", the
  * book picker — from firing an overlapping call into the engine mid-switch,
  * which is the concurrent-access crash class this app has hit before.
@@ -46,32 +46,19 @@ export function useChatSessions() {
     content: string;
   } | null>(null);
 
-  /**
-   * The leaving conversation's last chance at a better title.
-   *
-   * Never blocks. Offline it raises a toast offering the rename and the switch
-   * continues underneath; cloud sends it straight off. Both live in the store,
-   * which is where the snapshot of the conversation being left is taken, so
-   * an answer that arrives after the switch still renames the right chat.
-   */
-  const refineLeavingTitle = React.useCallback(() => {
-    useChatStore.getState().promptTitleRefineOnExit();
-  }, []);
-
   const selectSession = React.useCallback(
     async (id: string) => {
       if (switching) return;
       setSwitching(id);
       try {
         if (isGenerating) stopGeneration();
-        refineLeavingTitle();
         await openSession(id);
         setSession({ pendingBook: null, mode: 'chat' });
       } finally {
         setSwitching(null);
       }
     },
-    [switching, isGenerating, stopGeneration, openSession, setSession, refineLeavingTitle],
+    [switching, isGenerating, stopGeneration, openSession, setSession],
   );
 
   const newChat = React.useCallback(async () => {
@@ -79,7 +66,9 @@ export function useChatSessions() {
     setSwitching('new');
     try {
       if (isGenerating) stopGeneration();
-      refineLeavingTitle();
+      // A rename started from the history sheet may still be generating on
+      // the engine this is about to reset.
+      await useChatStore.getState().waitForRetitle();
       // A new chat is also a new native conversation. Clear every turn-local
       // field now so a stopped generation cannot leave the page locked while
       // its native promise unwinds.
@@ -103,7 +92,7 @@ export function useChatSessions() {
     } finally {
       setSwitching(null);
     }
-  }, [switching, isGenerating, stopGeneration, setSession, refineLeavingTitle]);
+  }, [switching, isGenerating, stopGeneration, setSession]);
 
   const send = React.useCallback(
     async (text: string) => {

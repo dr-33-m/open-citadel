@@ -79,3 +79,24 @@ export async function suggestChatTitle(conversation: string): Promise<string> {
     Inference.resetConversation();
   }
 }
+
+/**
+ * A rename that was refused before it started, carrying a sentence fit to show
+ * the reader as it is. Anything else a rename throws (a network failure, a
+ * native error) is not written for people, so the caller shows its own
+ * wording for those instead.
+ */
+export class RetitleError extends Error {}
+
+/**
+ * A saved conversation as the text a title is suggested from.
+ *
+ * One definition for reading chat and Compass, which each built this string
+ * themselves and could have drifted on the labels the prompt reads.
+ */
+export function conversationForTitle(messages: { role: string; content: string }[]): string {
+  return messages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
+    .join('\n');
+}

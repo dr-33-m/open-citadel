@@ -1,4 +1,4 @@
-import { BookOpen, MessageSquarePlus, Trash2 } from '@/components/icons';
+import { MessageSquarePlus } from '@/components/icons';
 import React from 'react';
 import type { FlashListRef } from '@shopify/flash-list';
 import { LayoutAnimation, View } from 'react-native';
@@ -6,6 +6,7 @@ import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { PageFade } from '@/components/scroll-fades';
+import { ChatHistoryRow } from '@/features/chat/components/chat-history-row';
 import { Item } from '@/components/ui/item';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Sheet } from '@/components/ui/sheet';
@@ -15,17 +16,6 @@ import { Swipe, useSwipeGroup } from '@/components/ui/swipe';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
 import type { ChatSession } from '@/stores/chat';
-
-function timeAgo(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
 
 const FILL: { flex: 1 } = { flex: 1 };
 
@@ -49,7 +39,8 @@ function RowSeparator() {
 }
 
 /**
- * Chat history: past chats, swipe-to-delete, new chat on top.
+ * Chat history: past chats, swipe right to rename and left to delete, new chat
+ * on top.
  *
  * Fixed height for the same reason as the book picker — the list is the whole
  * sheet, so letting it size to content moves every control somewhere different
@@ -62,8 +53,10 @@ export function ChatHistorySheet({
   heading = 'Past chats',
   newLabel = 'New chat',
   switching,
+  renamingId,
   onSelect,
   onDelete,
+  onRename,
   onNewChat,
   onClose,
 }: {
@@ -74,22 +67,26 @@ export function ChatHistorySheet({
   heading?: string;
   newLabel?: string;
   /** Non-null while a switch (to this id, or 'new') is in flight — switching
-   * does its own slow engine work (re-title the outgoing session, re-prime
-   * the incoming one), so rows stay open and disabled with a spinner rather
+   * does its own slow engine work (priming the incoming one), so rows stay open and disabled with a spinner rather
    * than the sheet just closing and leaving the user unsure anything is
    * happening. */
   switching: 'new' | string | null;
+  /** The session whose rename is running, if any. See `useSwipeRename`. */
+  renamingId: string | null;
   onSelect: (id: string) => void;
   /** A full swipe or the Delete tile. Deletes at once: the swipe's reach
    * point, felt as a knock, is the confirmation. */
   onDelete: (session: ChatSession) => void;
+  /** The Rename tile. Settles either way, and the row closes when it does. */
+  onRename: (session: ChatSession) => Promise<void>;
   onNewChat: () => void;
   onClose: () => void;
 }) {
-  const [primary, mutedForeground, foreground] = useCSSVariable([
+  const [primary, mutedForeground, foreground, primaryForeground] = useCSSVariable([
     '--color-primary',
     '--color-muted-foreground',
     '--color-foreground',
+    '--color-primary-foreground',
   ]);
 
   return (
@@ -135,11 +132,14 @@ export function ChatHistorySheet({
         <SessionList
           sessions={sessions}
           switching={switching}
+          renamingId={renamingId}
           onSelect={onSelect}
           onDelete={onDelete}
+          onRename={onRename}
           primary={asColor(primary) ?? ''}
           muted={asColor(mutedForeground) ?? ''}
           ink={asColor(foreground) ?? ''}
+          onPrimary={asColor(primaryForeground) ?? ''}
         />
       </Swipe.Group>
       </Sheet.Deferred>
@@ -154,19 +154,25 @@ export function ChatHistorySheet({
 function SessionList({
   sessions,
   switching,
+  renamingId,
   onSelect,
   onDelete,
+  onRename,
   primary,
   muted,
   ink,
+  onPrimary,
 }: {
   sessions: ChatSession[];
   switching: 'new' | string | null;
+  renamingId: string | null;
   onSelect: (id: string) => void;
   onDelete: (session: ChatSession) => void;
+  onRename: (session: ChatSession) => Promise<void>;
   primary: string;
   muted: string;
   ink: string;
+  onPrimary: string;
 }) {
   const { closeAll } = useSwipeGroup();
   const listRef = React.useRef<FlashListRef<ChatSession>>(null);
@@ -187,18 +193,26 @@ function SessionList({
   // mounted cell.
   const renderItem = React.useCallback(
     ({ item }: { item: ChatSession }) => (
-      <SessionRow
+      <ChatHistoryRow
         item={item}
         switching={switching}
+        // A boolean, not the id: a rename starting or ending re-renders the
+        // one row it concerns, not every mounted row.
+        renaming={renamingId === item.id}
         onSelect={onSelect}
         onDelete={deleteWithReflow}
+        onRename={onRename}
         primary={primary}
         muted={muted}
         ink={ink}
+        onPrimary={onPrimary}
       />
     ),
-    [switching, onSelect, deleteWithReflow, primary, muted, ink],
+    [switching, renamingId, onSelect, deleteWithReflow, onRename, primary, muted, ink, onPrimary],
   );
+  // Both are read inside renderItem but live outside the data, so rows would
+  // keep a stale dimming or spinner without this.
+  const extraData = React.useMemo(() => ({ switching, renamingId }), [switching, renamingId]);
 
   return (
     // `popover`: the fade has to resolve to the sheet's own ground, not the
@@ -209,9 +223,7 @@ function SessionList({
         style={FILL}
         data={sessions}
         keyExtractor={(item) => item.id}
-        // `switching` is read inside renderItem but lives outside the
-        // data, so rows would keep their old dimming without this.
-        extraData={switching}
+        extraData={extraData}
         // Rows dragged aside are put back the moment a scroll begins — the
         // group's documented recipe for a list that scrolls, and half of
         // recycling safety: a row left open must never ride along into a
@@ -223,77 +235,3 @@ function SessionList({
     </PageFade>
   );
 }
-
-const SessionRow = React.memo(function SessionRow({
-  item,
-  switching,
-  onSelect,
-  onDelete,
-  primary,
-  muted,
-  ink,
-}: {
-  item: ChatSession;
-  switching: 'new' | string | null;
-  onSelect: (id: string) => void;
-  onDelete: (session: ChatSession) => void;
-  primary: string;
-  muted: string;
-  /** The app's ink — the same colour a chat title is drawn in. */
-  ink: string;
-}) {
-  return (
-    <Swipe haptics removeOnCommit>
-      <Swipe.End>
-        {/* Red tile, drawn on in the app's own ink — the colour a chat title
-            uses — rather than the variant's white. The fill already carries
-            the warning, so the marks on top only have to read against it, and
-            white on red shouts twice.
-
-            `color` on the icon survives: `sizeIcon` injects a size and nothing
-            else, and lucide takes its colour from the prop rather than from
-            the tile's IconColorProvider. */}
-        <Swipe.Action
-          icon={<Trash2 color={ink} />}
-          label="Delete"
-          color="destructive"
-          labelClassName="text-foreground"
-          onPress={() => onDelete(item)}
-        />
-      </Swipe.End>
-      <Item
-        // Set on every branch, never conditionally omitted: a recycled
-        // cell keeps the style of whatever row it held before, so a
-        // dropped `opacity` leaves an unrelated row dimmed.
-        className={cn('py-3', switching && switching !== item.id ? 'opacity-40' : 'opacity-100')}
-        onPress={switching ? undefined : () => onSelect(item.id)}
-      >
-        <Item.Media>
-          {switching === item.id ? (
-            <View className="h-10 w-10 items-center justify-center">
-              <Spinner size="sm" />
-            </View>
-          ) : (
-            <PrefixIcon icon={item.bookTitle ? BookOpen : MessageSquarePlus} />
-          )}
-        </Item.Media>
-        <Item.Content>
-          <View className="flex-row items-start justify-between gap-2">
-            <Item.Title className="flex-1" numberOfLines={1}>
-              {item.title}
-            </Item.Title>
-            <ThemedText type="labelSm" color={muted}>
-              {timeAgo(item.updatedAt)}
-            </ThemedText>
-          </View>
-          {item.bookTitle && (
-            <ThemedText type="labelSm" color={primary}>
-              {item.bookTitle}
-            </ThemedText>
-          )}
-          {item.lastMessage && <Item.Description numberOfLines={1}>{item.lastMessage}</Item.Description>}
-        </Item.Content>
-      </Item>
-    </Swipe>
-  );
-});

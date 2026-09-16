@@ -7,7 +7,7 @@
  * conversation either way, so everything with an opinion about how a chat
  * looks or behaves is shared with the hub page rather than restated here.
  */
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { KeyboardAvoidingView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -80,19 +80,6 @@ export default function ChatSessionScreen() {
   useEffect(() => {
     if (id) openSession(id);
   }, [id, openSession]);
-
-  // Re-title a bookless chat from the whole conversation once the user
-  // leaves it, so a name generated from just the opening exchange can be
-  // corrected once there's more to go on.
-  useFocusEffect(
-    useCallback(() => {
-      return () => {
-        // Cloud renames in the background; offline asks first, since a rename
-        // there is a full local generation.
-        useChatStore.getState().promptTitleRefineOnExit();
-      };
-    }, []),
-  );
 
   /* There was an AppState listener here that called `useModelStore.getState()`
      on resume and threw the result away, commented as forcing a re-read of

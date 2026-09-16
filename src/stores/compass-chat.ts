@@ -13,9 +13,8 @@ import {
   type ChatMessage,
   type ChatSession,
 } from '@/services/chat-sessions';
-import { suggestChatTitle } from '@/services/chat-title';
+import { conversationForTitle, RetitleError, suggestChatTitle } from '@/services/chat-title';
 import { sendCloudChatTurn } from '@/services/cloud-chat';
-import { showToast } from '@/components/toast/toast-provider';
 import { useApprovalStore } from '@/stores/approval';
 import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
@@ -52,13 +51,8 @@ const PLACEHOLDER_TITLE = 'New conversation';
 const titledMessageCounts = new Map<string, number>();
 
 /**
- * Sessions with a rename already in flight.
- *
- * There are four ways to leave a Compass conversation and two of them can land
- * in the same breath — flipping the mode switch and then swiping to the
- * Library. `titledMessageCounts` cannot stop that on its own, since it is only
- * written once the cloud call comes back: without this the same transcript is
- * titled twice, which is two requests and two toasts for one rename.
+ * Sessions with a rename already in flight, so a second swipe on the same row
+ * while the first is still out does not send the transcript twice.
  */
 const titlingInFlight = new Set<string>();
 
@@ -109,9 +103,10 @@ type CompassChatState = {
   /** Aborts the turn in flight. The reply keeps whatever streamed before the
    *  tap; no error is raised. */
   stop: () => void;
-  /** Re-titles the open conversation from the whole transcript if it has
-   *  grown since it was last named. Called on leaving, as reading chat does. */
-  refineTitleOnExit: () => Promise<void>;
+  /** Re-titles a past conversation from its whole transcript, when the reader
+   *  asks (a swipe on its row). Resolves to the title it now has; rejects when
+   *  it could not, with a `RetitleError` when the reason is worth showing. */
+  retitleSession: (id: string) => Promise<string>;
   clearError: () => void;
 };
 
@@ -145,11 +140,6 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
 
   newSession: async () => {
     const previous = get().activeSessionId;
-    // The conversation being left gets its last chance at a name first. Not
-    // awaited: everything the rename needs is read synchronously inside, so
-    // the snapshot is of the conversation you are leaving even though the
-    // cloud call lands after the switch. See `refineTitleOnExit`.
-    void get().refineTitleOnExit().catch(() => {});
     set({ switching: 'new' });
     try {
       /*
@@ -191,8 +181,6 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
   openSession: async (id) => {
     if (get().activeSessionId === id) return;
     const previous = get().activeSessionId;
-    // Same as `newSession`: name what you are leaving before you leave it.
-    void get().refineTitleOnExit().catch(() => {});
     set({ switching: id });
     try {
       if (previous && previous !== id && isEmptySession(previous)) removeSession(previous);
@@ -385,14 +373,12 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
        */
       if (!titledMessageCounts.has(sessionId)) {
         // Counted from the rows, not from the store: the store may be showing
-        // a different conversation by now. Silent — this is the first name,
-        // not a rename worth announcing.
+        // a different conversation by now. Silent: this is the first name.
         await titleFrom(
           sessionId,
           set,
           `User: ${trimmed}\nSamwell: ${reply}`,
           realMessageCount(readMessages(sessionId)),
-          false,
         );
       }
       await get().loadSessions();
@@ -410,44 +396,38 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
     cloudAbort?.abort();
   },
 
-  refineTitleOnExit: async () => {
+  retitleSession: async (id) => {
     /*
-     * Everything the rename needs is read here, synchronously, before the
-     * first `await`. That is what lets every caller fire this and move on:
-     * the session switch that follows can replace `activeSessionId` and
-     * `messages` freely, because the cloud call already holds the id and the
-     * transcript of the conversation being left. Move a read below the await
-     * and a switch will rename the wrong conversation.
+     * Asked for, never offered, as in reading chat: the first name still comes
+     * on its own after the opening exchange, and every rename after it is a
+     * swipe on the row rather than a notice raised on the way out.
+     *
+     * Compass is cloud-only, but `suggestChatTitle` is not: offline it would
+     * run a local generation for a conversation that never used the engine.
      */
-    /*
-     * Compass is cloud-only, but `suggestChatTitle` is not: offline it runs a
-     * local generation. Nothing stopped a Compass session left over from a
-     * cloud run being renamed that way, and since every caller fires this
-     * without awaiting, it would start minutes of on-device work behind a
-     * swipe. Reading chat asks permission for that; Compass, which has no
-     * offline mode to ask about, simply does not do it.
-     */
-    if (useSettingsStore.getState().samwellMode !== 'cloud') return;
+    if (useSettingsStore.getState().samwellMode !== 'cloud') {
+      throw new RetitleError('Renaming a Compass conversation needs Samwell Cloud.');
+    }
+    if (titlingInFlight.has(id)) throw new RetitleError('Samwell is already renaming this conversation.');
 
-    const { activeSessionId, messages } = get();
-    if (!activeSessionId) return;
-    const count = realMessageCount(messages);
-    // Needs at least one full exchange beyond whatever the quick title saw.
-    if (count < 2 || count <= (titledMessageCounts.get(activeSessionId) ?? 0)) return;
-    if (titlingInFlight.has(activeSessionId)) return;
+    const session = get().sessions.find((s) => s.id === id);
+    if (!session) throw new RetitleError('That conversation is no longer there.');
+    const messages = readMessages(id);
+    const conversation = conversationForTitle(messages);
+    if (!conversation) {
+      throw new RetitleError('There is nothing in this conversation to name it from yet.');
+    }
 
-    const conversation = messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
-      .join('\n');
-    titlingInFlight.add(activeSessionId);
+    titlingInFlight.add(id);
     try {
-      // Announce this one: it is a rename of a conversation the reader has a
-      // name for already, the same event reading chat toasts on leaving.
-      await titleFrom(activeSessionId, set, conversation, count, true);
-      await get().loadSessions();
+      const title = await suggestChatTitle(conversation);
+      if (!title) throw new Error('No title came back.');
+      if (title !== session.title) renameSession(id, title);
+      titledMessageCounts.set(id, realMessageCount(messages));
+      set({ sessions: listSessions('compass') });
+      return title;
     } finally {
-      titlingInFlight.delete(activeSessionId);
+      titlingInFlight.delete(id);
     }
   },
 
@@ -466,7 +446,6 @@ async function titleFrom(
   set: (patch: Partial<CompassChatState>) => void,
   conversation: string,
   count: number,
-  announce: boolean,
 ): Promise<void> {
   try {
     const title = await suggestChatTitle(conversation);
@@ -474,9 +453,6 @@ async function titleFrom(
     renameSession(sessionId, title);
     titledMessageCounts.set(sessionId, count);
     set({ sessions: listSessions('compass') });
-    // The same notice reading chat raises, through the same bridge, so a
-    // rename reads identically whichever surface you were on.
-    if (announce) showToast({ message: `Renamed to "${title}"`, tone: 'success' });
   } catch (err) {
     console.warn('[Compass] Could not auto-title conversation:', err);
   }

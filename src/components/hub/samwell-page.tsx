@@ -11,7 +11,7 @@
  * It used to be all three things at once, which is why a change to Compass's
  * date pickers meant scrolling past the chat transcript to find them.
  */
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import React from "react";
 import { Keyboard, View, type TextInput, type ViewStyle } from "react-native";
 import Animated, {
@@ -46,6 +46,7 @@ import { ChatTranscript } from "@/features/chat/components/chat-transcript";
 import { useChatSessions } from "@/features/chat/hooks/use-chat-sessions";
 import { useSamwellReadiness } from "@/features/chat/hooks/use-samwell-readiness";
 import { useSamwellStatus } from "@/features/chat/hooks/use-samwell-status";
+import { useSwipeRename } from "@/features/chat/hooks/use-swipe-rename";
 import { turnIndicator } from "@/features/chat/utils/agent-activity";
 import { AboutCompassSheet } from "@/features/compass/components/about-compass-sheet";
 import { CompassBody } from "@/features/compass/components/compass-body";
@@ -76,29 +77,6 @@ const contentColumn: ViewStyle = {
   width: "100%",
   alignSelf: "center",
 };
-
-/**
- * The conversation you are leaving gets its last chance at a better title.
- *
- * Both stores are asked, whichever mode was on screen: each one already knows
- * whether it has anything to rename — the transcript has to have grown past
- * what the quick title saw, and a title that comes back unchanged raises no
- * notice — so branching on the mode here would be a second opinion about the
- * same question, in the one place least able to answer it.
- *
- * Never awaited. Both snapshot the conversation synchronously before their
- * first `await`, so the rename lands on what was left even though the cloud
- * call outlives the switch, and a slow model never holds up a swipe.
- */
-function refineLeavingTitles() {
-  // Cloud renames in the background; offline raises the rename offer, since a
-  // rename there is a full local generation the reader agrees to wait for.
-  useChatStore.getState().promptTitleRefineOnExit();
-  void useCompassChatStore
-    .getState()
-    .refineTitleOnExit()
-    .catch(() => {});
-}
 
 export function SamwellPage() {
   // Library and Timeline are peer pages of this one, reached by moving the
@@ -245,16 +223,8 @@ export function SamwellPage() {
   const text = useSamwellSessionStore((s) => s.draft);
   const pendingBook = useSamwellSessionStore((s) => s.pendingBook);
   const setSession = useSamwellSessionStore((s) => s.set);
-  // Flipping the mode switch leaves a conversation as surely as walking off
-  // the screen does, so it names the one being left. Read from the store
-  // rather than from the `mode` above, so a double tap on the mode already
-  // showing is not treated as leaving anything.
   const setMode = React.useCallback(
-    (next: "chat" | "compass") => {
-      if (next !== useSamwellSessionStore.getState().mode)
-        refineLeavingTitles();
-      setSession({ mode: next });
-    },
+    (next: "chat" | "compass") => setSession({ mode: next }),
     [setSession],
   );
   const setText = React.useCallback(
@@ -286,39 +256,22 @@ export function SamwellPage() {
     (session: ChatSession) => void deleteCompassSession(session.id),
     [deleteCompassSession],
   );
+  // Renames are asked for from each history sheet with a swipe, never raised
+  // on the way out of a conversation.
+  const chatRename = useSwipeRename(
+    useChatStore((s) => s.retitleSession),
+    "Could not rename this chat. Try again.",
+  );
+  const compassRename = useSwipeRename(
+    useCompassChatStore((s) => s.retitleSession),
+    "Could not rename this conversation. Try again.",
+  );
 
   // The input card and nav float over the transcript so messages stay visible
   // through the gaps around them. Their combined height is measured rather
   // than assumed, since the card grows with the text field and the nav
   // collapses when dragged away.
   const [floatingBottomHeight, setFloatingBottomHeight] = React.useState(0);
-
-  // Leaving the hub route — a book, Settings, a chat opened on its own — is
-  // one of the ways out, the same thing `chat/[id]` does on its own blur.
-  useFocusEffect(React.useCallback(() => refineLeavingTitles, []));
-
-  /*
-   * And swiping off this page is the other, far more common one.
-   *
-   * This screen is the third page of a pager, not a route: all three are
-   * mounted at once and moving between them is deliberately not navigation,
-   * so `useFocusEffect` above never fires for it. Without this, walking back
-   * to the Library — which is how anyone actually leaves a conversation —
-   * skipped the rename entirely.
-   *
-   * Subscribed imperatively rather than through a selector: this is the app's
-   * largest render, and reading the page through `useHubStore` would re-run
-   * all of it every time the pager settles anywhere, to answer a question
-   * nothing on screen draws from.
-   */
-  React.useEffect(() => {
-    let wasHere = useHubStore.getState().page === HUB.samwell;
-    return useHubStore.subscribe((state) => {
-      const isHere = state.page === HUB.samwell;
-      if (wasHere && !isHere) refineLeavingTitles();
-      wasHere = isHere;
-    });
-  }, []);
 
   // No KeyboardAvoidingView: this screen is edge-to-edge, so the window never
   // resizes for the keyboard and a KAV can only fight the absolute layout —
@@ -871,6 +824,8 @@ export function SamwellPage() {
             visible={showHistory}
             sessions={sessions}
             switching={chat.switching}
+            renamingId={chatRename.renamingId}
+            onRename={chatRename.rename}
             onSelect={(id) => {
               setShowHistory(false);
               void chat.selectSession(id);
@@ -894,6 +849,8 @@ export function SamwellPage() {
             newLabel="New conversation"
             sessions={compass.sessions}
             switching={compass.switching}
+            renamingId={compassRename.renamingId}
+            onRename={compassRename.rename}
             onSelect={(id) => {
               setShowCompassHistory(false);
               void compass.openSession(id);

@@ -1,19 +1,18 @@
 import { eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
-import { PencilSparkles } from '@/components/icons';
-import { showToast } from '@/components/toast/toast-provider';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
 import { extractChapterTextToLocator } from '@/services/book-context';
 import {
     listSessions,
+    readMessages,
     removeSession,
     renameSession,
     type ChatMessage,
     type ChatSession,
 } from '@/services/chat-sessions';
-import { suggestChatTitle } from '@/services/chat-title';
+import { conversationForTitle, RetitleError, suggestChatTitle } from '@/services/chat-title';
 import {
     APPROVAL_REQUIRED_TOOLS,
     ensureBookMarkers,
@@ -41,15 +40,6 @@ import { useSubscriptionStore } from '@/stores/subscription';
  * working while the shapes live with the queries that produce them.
  */
 export type { ChatMessage, ChatSession };
-
-/** A conversation frozen at the moment it was left, ready to be renamed. */
-export type TitleRefineRequest = {
-  sessionId: string;
-  currentTitle: string;
-  /** Real messages the resulting name will cover. */
-  count: number;
-  conversation: string;
-};
 
 interface ChatStore {
   sessions: ChatSession[];
@@ -105,52 +95,37 @@ interface ChatStore {
   /** Best-effort quick title from a bookless session's opening exchange.
    * Never throws — a failure just leaves the placeholder title in place. */
   maybeTitleFirstMessage(sessionId: string, userText: string, assistantText: string): Promise<void>;
-  /** Called when the user leaves a bookless chat screen — re-titles from the
-   * whole conversation if it's grown since the last title update. Resolves to
-   * the new title, or null when nothing was renamed.
-   *
-   * On-device this needs `confirmed`, because re-reading a conversation is a
-   * full local generation the reader has to agree to wait for. See the guard
-   * in the implementation. */
-  refineSessionTitleOnExit(opts?: { confirmed?: boolean }): Promise<string | null>;
-  /** The conversation being left, frozen so it can be renamed after the switch
-   *  has already moved on. Null when nothing is worth renaming. */
-  captureTitleRefine(): TitleRefineRequest | null;
-  /** Rename the captured conversation. Raises its own success notice. */
-  runTitleRefine(request: TitleRefineRequest): Promise<string | null>;
-  /** Offer the rename on the way out. Never blocks the caller. */
-  promptTitleRefineOnExit(): void;
-  /** Whether leaving now would run a summary pass worth waiting for. */
-  needsTitleRefine(): boolean;
+  /**
+   * Re-titles a past bookless chat from everything said in it, when the reader
+   * asks (a swipe on its row). Resolves to the title it now has; rejects when
+   * it could not, with a `RetitleError` when the reason is worth showing.
+   */
+  retitleSession(id: string): Promise<string>;
+  /**
+   * Resolves once no rename is using the local engine. Everything that resets
+   * or generates on the engine waits here first, because a rename can now be
+   * started from the history sheet at any moment, including just before a
+   * switch or a send.
+   */
+  waitForRetitle(): Promise<void>;
   clearDeviceLimit(): void;
 }
-
-// How many real (user/assistant) messages a session had the last time its
-// title was auto-generated, keyed by session id. Plain module state, not
-// store state — purely to avoid redundant re-titling, doesn't need to
-// persist or trigger re-renders.
-const titledMessageCounts = new Map<string, number>();
 
 /**
  * What a bookless conversation is called before it has been named.
  *
- * Exported because it is not just a label: it is how the retitling below tells
- * a conversation that has a name from one that is still waiting for one, so
- * the row that creates a session and the code that decides whether to rename
- * it have to mean the same string.
+ * Exported so the code that creates a session and anything that asks whether
+ * one has been named yet mean the same string.
  */
 export const NEW_CHAT_TITLE = 'New chat';
 
-/** One key for the whole rename exchange: ask, progress, outcome. Each writes
- *  over the last rather than stacking three notices about one rename. */
-const RETITLE_TOAST_KEY = 'chat-retitle';
-
 /**
- * The rename currently running, so a second caller joins it rather than
- * starting another. Module state for the same reason as the map above, and
- * one at a time is enough: there is only ever one open conversation to name.
+ * The rename currently running. One at a time: on device it is a generation on
+ * the one local engine, and `sendMessage` waits it out rather than share it.
  */
-let titleRefineInFlight: Promise<string | null> | null = null;
+let titleRefineInFlight: Promise<string> | null = null;
+/** Whether that rename is a local generation rather than a cloud call. */
+let titleRefineOnEngine = false;
 
 /**
  * Set by `stopGeneration`, cleared when a turn starts, read by the on-device
@@ -263,21 +238,6 @@ function activeModelReasons(): boolean {
 
 function realMessageCount(messages: ChatMessage[]): number {
   return messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
-}
-
-/**
- * Whether leaving the active session would trigger a re-title.
- *
- * Shared by the check and the work so the two cannot disagree: a caller that
- * blocks on the summary needs to know in advance whether there is one coming,
- * and answering that separately is how the two drift apart.
- */
-function pendingTitleRefine(activeSession: ChatSession | null, messages: ChatMessage[]): boolean {
-  // Book-context sessions are named after the book and never re-titled.
-  if (!activeSession || activeSession.bookId) return false;
-  const count = realMessageCount(messages);
-  // Needs at least one full exchange beyond what the quick title covered.
-  return count >= 2 && count > (titledMessageCounts.get(activeSession.id) ?? 0);
 }
 
 // Base identity for sessions started without a book. The engine-level system
@@ -572,25 +532,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       createdAt: r.createdAt,
     }));
 
-    /*
-     * What this conversation's name already covers.
-     *
-     * `titledMessageCounts` only remembers what THIS run of the app titled, so
-     * a conversation opened from history looked unnamed to `pendingTitleRefine`
-     * and every visit re-titled it — reading one back without saying anything
-     * spent a request and raised a toast for a name that did not change.
-     * Opening a named conversation records that its name covers everything in
-     * it, so leaving only renames it if something was said meanwhile.
-     *
-     * A placeholder is not a name, so it covers nothing and stays at zero: a
-     * conversation whose first title never landed can still pick one up on the
-     * way out.
-     */
-    titledMessageCounts.set(
-      id,
-      session && session.title !== NEW_CHAT_TITLE ? realMessageCount(messages) : 0,
-    );
-
     set({
       activeSession: session,
       messages,
@@ -611,7 +552,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       deviceLimit: null,
     });
 
-    // Reset stateful conversation in the engine
+    // Reset stateful conversation in the engine, once no rename is using it.
+    await get().waitForRetitle();
     Inference.resetConversation();
 
     // Prime the engine with session-specific context (book passage etc.)
@@ -782,11 +724,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
 
-    // A rename of the previous chat may be running on the same engine: it can
-    // now be answered after the switch rather than before it. Waited out here,
-    // so this turn never shares the engine with it. Its finish invalidates the
-    // priming marker, so the check below rebuilds this conversation.
-    if (titleRefineInFlight) await titleRefineInFlight.catch(() => null);
+    // A rename from the history sheet may be running on the same engine.
+    // Waited out here, so this turn never shares the engine with it. Its
+    // finish invalidates the priming marker, so the check below rebuilds this
+    // conversation.
+    await get().waitForRetitle();
 
     // Lazy context priming — if the engine wasn't primed for this session's
     // current native engine (never primed, or the engine was rebuilt since
@@ -1154,14 +1096,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const title = await suggestChatTitle(conversation);
       if (title) {
         await get().updateSessionTitle(sessionId, title);
-        // What this title actually covered, which is the exchange above: the
-        // opening message and, when it had already landed, the reply to it.
-        // Recording a flat 1 understated it by exactly the assistant turn, so
-        // `pendingTitleRefine` saw two messages against a covered count of one
-        // and renamed on the way out of a conversation nothing had been added
-        // to. Leaving a freshly named chat re-ran the whole titling pass, which
-        // offline means another local generation.
-        titledMessageCounts.set(sessionId, assistantText ? 2 : 1);
       }
     } catch (err) {
       // Best-effort — a failed auto-title just leaves "New chat" in place.
@@ -1169,179 +1103,76 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  needsTitleRefine() {
-    const { activeSession, messages, titleRefreshing } = get();
-    return !titleRefreshing && pendingTitleRefine(activeSession, messages);
-  },
-
-  async refineSessionTitleOnExit({ confirmed = false } = {}): Promise<string | null> {
+  async retitleSession(id) {
     /*
-     * A rename already running is joined, not turned away.
+     * Asked for, never offered.
      *
-     * Leaving a conversation has several triggers now — a session switch, the
-     * mode switch, swiping off the hub page, leaving the route — and two can
-     * land in the same breath. `titledMessageCounts` cannot dedupe them: it is
-     * only written once the call comes back, so both would go out and both
-     * would toast. Returning early instead would be worse for the one caller
-     * that awaits this on purpose — offline, `selectSession` waits so the
-     * switch does not reset the local engine underneath a title still using
-     * it, and a caller told "nothing to do" would walk straight into that
-     * race. Handing back the promise satisfies both: one request, and every
-     * caller still waits for it.
+     * A rename used to be raised on the way out of a conversation: a toast
+     * asking offline, a silent call on cloud. Leaving is something the reader
+     * does all day, and a question every time, whether or not anything had
+     * been said since, was noise. The first title still arrives on its own
+     * after the opening exchange (`maybeTitleFirstMessage`). Every rename after
+     * that is a swipe on the chat's row, so it only happens when wanted.
      */
-    if (titleRefineInFlight) return titleRefineInFlight;
+    if (titleRefineInFlight) throw new RetitleError('Samwell is already renaming a chat.');
 
-    /*
-     * On-device, a rename is a full generation on the one local engine, and on
-     * a mid-range phone that is minutes. Doing it because someone closed a
-     * screen means the app appears to hang for a name they did not ask to
-     * change, so offline it happens only when they said yes. The asking lives
-     * in the UI; the rule that there must have been an asking lives here, once,
-     * because three different exits reach this method and a rule copied into
-     * each of them is a rule that will disagree with itself.
-     *
-     * Cloud is a stateless HTTP call with no engine to hold up, so it needs no
-     * permission and gets none asked.
-     */
+    const session = get().sessions.find((s) => s.id === id);
+    if (!session) throw new RetitleError('That chat is no longer there.');
+    // Book chats are named after their book, which is how they are found.
+    if (session.bookId) throw new RetitleError('Chats about a book keep its name.');
+
+    // From the database, not the store: the chat being renamed is usually not
+    // the one on screen.
+    const conversation = conversationForTitle(readMessages(id));
+    if (!conversation) throw new RetitleError('There is nothing in this chat to name it from yet.');
+
     const onDevice = useSettingsStore.getState().samwellMode !== 'cloud';
-    if (onDevice && !confirmed) return null;
-
-    const request = get().captureTitleRefine();
-    if (!request) return null;
-    return get().runTitleRefine(request);
-  },
-
-  promptTitleRefineOnExit() {
-    /*
-     * Offered, not demanded.
-     *
-     * This was a modal that blocked the switch until it was answered, which
-     * put a confirmation in front of an action that is neither destructive nor
-     * irreversible — and made leaving a chat wait on a decision the reader had
-     * not asked to make. A toast asks the same question beside the work
-     * instead of across it: the switch happens now, the notice waits for an
-     * answer rather than timing out into a silent no, and skipping costs one
-     * tap.
-     *
-     * Cloud does not ask at all. It has no engine to hold up and the rename is
-     * a background HTTP call, so a question would be ceremony.
-     */
-    if (useSettingsStore.getState().samwellMode === 'cloud') {
-      void get().refineSessionTitleOnExit({ confirmed: true }).catch(() => {});
-      return;
+    if (onDevice) {
+      if (!Inference.isModelLoaded()) {
+        throw new RetitleError('Wake Samwell up to rename chats on your device.');
+      }
+      // On device a title is a generation on the one local engine, and
+      // `suggestChatTitle` resets its conversation. Under a reply, that would
+      // wipe the conversation the reply is being written into.
+      if (get().isGenerating) {
+        throw new RetitleError('Samwell is still replying. Try again when he is done.');
+      }
+      // A device limit means another native generation is the unsafe call it
+      // exists to stop.
+      if (get().deviceLimit) {
+        throw new RetitleError('Samwell cannot rename chats on your device right now.');
+      }
     }
 
-    // A device limit means another native generation is unsafe, and a question
-    // whose only honest answer is "not now" is worse than no question.
-    if (get().deviceLimit) return;
-
-    const request = get().captureTitleRefine();
-    if (!request) return;
-
-    const ask = (message: string) =>
-      showToast({
-        key: RETITLE_TOAST_KEY,
-        message,
-        persistent: true,
-        actionIcon: PencilSparkles,
-        actionLabel: 'Rename',
-        keepOpenOnAction: true,
-        dismissLabel: 'Skip',
-        onActionPress: rename,
-      });
-
-    const rename = () => {
-        // The rename is a generation on the one local engine. Started while a
-        // reply is still being written in the chat just opened, it would reset
-        // that conversation under it. The question stays up to be answered once
-        // he is done.
-        if (get().isGenerating) {
-          ask('Samwell is still replying. Rename your previous chat when he is done?');
-          return;
-        }
-        // Written over in place so the question becomes its own progress
-        // notice: on device this takes long enough that a toast which simply
-        // vanished would read as nothing having happened.
-        // The pencil turns into a spinner in place, so the tap visibly took.
-        showToast({
-          key: RETITLE_TOAST_KEY,
-          message: 'Renaming your previous chat…',
-          persistent: true,
-          actionIcon: PencilSparkles,
-          actionLabel: 'Renaming',
-          actionPending: true,
-        });
-        void get()
-          .runTitleRefine(request)
-          .then((title) => {
-            // `runTitleRefine` announces a successful rename itself, under the
-            // same key. Only the quiet outcomes are left to report here.
-            if (!title) {
-              showToast({ key: RETITLE_TOAST_KEY, message: 'Kept the name it had.' });
-            }
-          })
-          .catch(() => {
-            showToast({ key: RETITLE_TOAST_KEY, message: 'Could not rename your previous chat.' });
-          });
-    };
-
-    ask('Rename your previous chat to fit the whole conversation?');
-  },
-
-  captureTitleRefine() {
-    const { activeSession, messages } = get();
-    if (!pendingTitleRefine(activeSession, messages) || !activeSession) return null;
-    return {
-      sessionId: activeSession.id,
-      currentTitle: activeSession.title,
-      count: realMessageCount(messages),
-      conversation: messages
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
-        .join('\n'),
-    };
-  },
-
-  async runTitleRefine(request): Promise<string | null> {
-    if (titleRefineInFlight) return titleRefineInFlight;
-
-    const { sessionId, currentTitle, count, conversation } = request;
-    const session = { id: sessionId, title: currentTitle };
-
     set({ titleRefreshing: true });
-    titleRefineInFlight = (async () => {
+    const run = (async () => {
       try {
         const title = await suggestChatTitle(conversation);
-        // Unchanged is not renamed: the background callers treat a null return
-        // as "nothing to report", and a toast for a title the reader already
-        // knows is noise.
-        if (!title || title === session.title) return null;
-        await get().updateSessionTitle(session.id, title);
-        titledMessageCounts.set(session.id, count);
-        // One place raises this notice, so chat and Compass announce a rename
-        // the same way and no caller has to remember to.
-        showToast({ message: `Renamed to "${title}"`, tone: 'success', key: RETITLE_TOAST_KEY });
+        if (!title) throw new Error('No title came back.');
+        // The same name back is still an answer to what was asked.
+        if (title !== session.title) await get().updateSessionTitle(id, title);
         return title;
-      } catch (err) {
-        console.warn('[Chat] Could not refine session title:', err);
-        return null;
       } finally {
         /*
          * `suggestChatTitle` brackets its one-shot prompt with
-         * `resetConversation()`, which clears whatever the engine was holding —
-         * including the chat the reader has since opened, because this can now
-         * be answered after the switch rather than before it. Invalidating the
-         * priming marker rather than re-seeding here lets `sendMessage` rebuild
-         * the context lazily, on the turn that actually needs it.
+         * `resetConversation()`, which clears whatever the engine was holding,
+         * including the chat on screen. Invalidating the priming marker rather
+         * than re-seeding here lets `sendMessage` rebuild that context lazily,
+         * on the turn that actually needs it.
          */
-        if (useSettingsStore.getState().samwellMode !== 'cloud') {
-          set({ primedGeneration: null });
-        }
+        if (onDevice) set({ primedGeneration: null });
         set({ titleRefreshing: false });
         titleRefineInFlight = null;
       }
     })();
+    titleRefineInFlight = run;
+    titleRefineOnEngine = onDevice;
+    return run;
+  },
 
-    return titleRefineInFlight;
+  async waitForRetitle() {
+    if (titleRefineInFlight && titleRefineOnEngine) {
+      await titleRefineInFlight.catch(() => null);
+    }
   },
 }));

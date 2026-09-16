@@ -350,6 +350,12 @@ export interface SwipeActionProps
    * Leave the row open after the action runs. Off by default: an action that
    * has already happened has nothing left to offer, and a row left standing
    * open is the most common way a swipe list ends up feeling stuck.
+   *
+   * Citadel edit: also exempts the action from `removeOnCommit`, for a tap and
+   * for a full swipe alike. A full swipe to it springs the row to the open
+   * position and holds it there while the action runs, for work the caller
+   * shows progress for on the tile and then closes the row itself. Without an
+   * `onPress` a full swipe to it just puts the row back.
    */
   keepOpen?: boolean;
   /** Extra classes for the label. */
@@ -477,6 +483,25 @@ interface DeclaredAction {
   label: string;
   color: SwipeActionColor;
   onPress?: () => void;
+  keepOpen?: boolean;
+}
+
+/**
+ * Citadel edit: what releasing a full swipe does, decided by the outermost
+ * action on that side rather than once for the whole row, so a row can delete
+ * one way and rename the other.
+ *
+ * - `remove`: slides the row out, then runs the action (`removeOnCommit`).
+ * - `hold`: springs the row open and runs the action (`keepOpen`).
+ * - `fire`: springs the row back and runs the action.
+ * - `none`: springs the row back.
+ */
+type SwipeCommit = 'remove' | 'hold' | 'fire' | 'none';
+
+function commitOf(action: DeclaredAction | undefined, removeOnCommit: boolean): SwipeCommit {
+  if (!action) return 'none';
+  if (action.keepOpen) return action.onPress ? 'hold' : 'none';
+  return removeOnCommit ? 'remove' : 'fire';
 }
 
 /**
@@ -490,8 +515,8 @@ function collectActions(node: ReactNode): DeclaredAction[] {
 
   for (const child of Children.toArray(node)) {
     if (!isValidElement(child) || child.type !== SwipeAction) continue;
-    const { label, color, onPress } = (child as ReactElement<SwipeActionProps>).props;
-    found.push({ label, color: (color as SwipeActionColor) ?? 'default', onPress });
+    const { label, color, onPress, keepOpen } = (child as ReactElement<SwipeActionProps>).props;
+    found.push({ label, color: (color as SwipeActionColor) ?? 'default', onPress, keepOpen });
   }
 
   return found;
@@ -526,6 +551,9 @@ export interface SwipeProps extends Omit<ViewProps, 'children'> {
    * letting go now commits), and releasing there, or tapping the tile, slides
    * the row out the way it was dragged before the action runs. No dialog asks
    * again. The caller removes the item; the list closes the gap.
+   *
+   * An action marked `keepOpen` is exempt, so the other side of the same row
+   * can hold an action that does not remove it.
    */
   removeOnCommit?: boolean;
   /** Told which side opened, or `null` when the row closed. */
@@ -607,6 +635,9 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
 
     const startActions = useMemo(() => collectActions(startNode), [startNode]);
     const endActions = useMemo(() => collectActions(endNode), [endNode]);
+    // Plain strings, so the gesture worklets can read them without a hop.
+    const startCommit = commitOf(startActions[0], removeOnCommit);
+    const endCommit = commitOf(endActions[endActions.length - 1], removeOnCommit);
 
     const hasStart = startNode != null;
     const hasEnd = endNode != null;
@@ -796,7 +827,8 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
               armed.value = reached;
               // Past this point letting go commits. For a removal that is the
               // confirmation, so it is felt as a knock rather than a tick.
-              if (reached && haptics) scheduleOnRN(removeOnCommit ? knock : tick);
+              const removes = (next > 0 ? startCommit : endCommit) === 'remove';
+              if (reached && haptics) scheduleOnRN(removes ? knock : tick);
             }
           })
           .onEnd((event) => {
@@ -812,7 +844,8 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
 
             if (fullSwipe && armed.value) {
               armed.value = false;
-              if (removeOnCommit) {
+              const commit = toStart ? startCommit : endCommit;
+              if (commit === 'remove') {
                 // Started here on the UI thread, so the row carries straight on
                 // from the release with no round trip first.
                 if (reducedMotion) {
@@ -834,8 +867,14 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
                 }
                 return;
               }
+              if (commit === 'hold') {
+                offset.value = withSpring(toStart ? limit : -limit, SPRING);
+                scheduleOnRN(announce, side);
+                scheduleOnRN(fire, side);
+                return;
+              }
               offset.value = withSpring(0, SPRING);
-              scheduleOnRN(fire, side);
+              if (commit === 'fire') scheduleOnRN(fire, side);
               scheduleOnRN(reportOpen, null);
               return;
             }
@@ -861,7 +900,8 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
         sign,
         fullSwipe,
         haptics,
-        removeOnCommit,
+        startCommit,
+        endCommit,
         reducedMotion,
         rowWidth,
         rowOpacity,
@@ -938,7 +978,7 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
             const action = allActions.find(
               ({ label }) => label === event.nativeEvent.actionName
             );
-            if (removeOnCommit) remove(action?.onPress);
+            if (removeOnCommit && !action?.keepOpen) remove(action?.onPress);
             else action?.onPress?.();
           }}
           className={cn('relative w-full overflow-hidden', className)}
