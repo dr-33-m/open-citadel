@@ -2,6 +2,7 @@
   "name": "open-citadel",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "expo start",
     "start:dev": "APP_VARIANT=development expo start",
