@@ -4,7 +4,7 @@ import { useCSSVariable } from "uniwind";
 
 import { AccountEntryButtons } from "@/components/account/account-entry-buttons";
 import { ActionButton } from "@/components/action-button";
-import { Info, LogOut, UserStar } from "@/components/icons";
+import { Info, LogOut, Trash2, UserStar } from "@/components/icons";
 import { SamwellText } from "@/components/samwell-text";
 import { ThemedText } from "@/components/themed-text";
 import { showToast } from "@/components/toast/toast-provider";
@@ -15,6 +15,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
 import { CloudAccountSheet } from "@/features/settings/components/cloud-account-sheet";
+import { ConfirmDeleteAccountSheet } from "@/features/settings/components/confirm-delete-account-sheet";
 import { ConfirmSignOutSheet } from "@/features/settings/components/confirm-sign-out-sheet";
 import { useAccountStore } from "@/stores/account";
 import { useSubscriptionStore } from "@/stores/subscription";
@@ -48,6 +49,7 @@ export function AccountCard() {
   const busy = useAccountStore((s) => s.busy);
   const error = useAccountStore((s) => s.error);
   const signOut = useAccountStore((s) => s.signOut);
+  const deleteAccount = useAccountStore((s) => s.deleteAccount);
   // Signing in and subscribing are two separate steps; this card must not
   // say Samwell is "yours" for the one that has not happened yet.
   const planStatus = useSubscriptionStore((s) => s.status);
@@ -56,6 +58,9 @@ export function AccountCard() {
   const planName = plan ? CREDIT_PLANS[plan].label : null;
 
   const [confirming, setConfirming] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  /** The request is in flight. `busy` quietens the buttons; this says why. */
+  const [erasing, setErasing] = React.useState(false);
   const [explaining, setExplaining] = React.useState(false);
 
   // A build made with no Logto credentials has no accounts, which is a
@@ -69,6 +74,22 @@ export function AccountCard() {
     await signOut();
     if (useAccountStore.getState().status === "signedOut") {
       showToast({ message: "Signed out.", key: "account" });
+    }
+  };
+
+  /*
+   * App Review guideline 5.1.1(v): an account that can be made in the app has
+   * to be deletable in the app. The failure has nowhere else to go, so it is
+   * left in the card's own error line rather than a toast that disappears.
+   */
+  const erase = async () => {
+    setErasing(true);
+    try {
+      if (await deleteAccount()) {
+        showToast({ message: "Account deleted.", key: "account" });
+      }
+    } finally {
+      setErasing(false);
     }
   };
 
@@ -168,6 +189,17 @@ export function AccountCard() {
               disabled={busy}
               onPress={() => setConfirming(true)}
             />
+            <ActionButton
+              icon={Trash2}
+              label="DELETE ACCOUNT"
+              tint={asColor(destructive)}
+              disabled={busy}
+              onPress={() => setDeleting(true)}
+            />
+            {/* The server calls Logto and RevenueCat inside this request, so
+                it can run for seconds. Disabled buttons alone read as a tap
+                that did nothing. */}
+            {erasing ? <Spinner size="sm" label="Deleting your account" /> : null}
           </View>
         ) : (
           // The same two buttons onboarding's sign-in sheet draws. See
@@ -197,6 +229,13 @@ export function AccountCard() {
         visible={confirming}
         onClose={() => setConfirming(false)}
         onConfirm={() => void leave()}
+      />
+
+      <ConfirmDeleteAccountSheet
+        visible={deleting}
+        hasSubscription={planActive}
+        onClose={() => setDeleting(false)}
+        onConfirm={() => void erase()}
       />
     </>
   );

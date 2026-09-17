@@ -18,6 +18,7 @@ import { Touchable } from "@/components/ui/touchable";
 import { PlanCard } from "@/features/billing/components/plan-card";
 import { PlanInfoSheet } from "@/features/billing/components/plan-info-sheet";
 import { PlanSlide } from "@/features/billing/components/plan-slide";
+import { SubscriptionLegalLinks } from "@/features/billing/components/subscription-legal-links";
 import { formatStorePrice } from "@/features/billing/utils/price";
 import type { PlanModel } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
@@ -340,6 +341,12 @@ export function PlanCarousel({
           />
         </View>
       ) : null}
+
+      {/*
+       * Every plan picker sells a subscription, including the upgrade sheet
+       * whose button lives in its footer, so App Review wants the terms here.
+       */}
+      <SubscriptionLegalLinks />
 
       {/*
        * One sheet for the run. It opens on the card whose mark was tapped,

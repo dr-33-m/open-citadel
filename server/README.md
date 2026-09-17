@@ -25,6 +25,16 @@ LOGTO_ENDPOINT=https://your-tenant.logto.app
 Samwell Cloud runs on accounts: there is no anonymous path, and a request
 without a valid Logto access token for the Samwell API resource is a 401.
 
+### Deleting an account
+
+`DELETE /account` empties this server's rows for the caller, forgets their
+RevenueCat customer, and deletes their Logto user. The last step needs
+credentials of its own: create a machine-to-machine application in the Logto
+console, give it the Logto Management API role, and set `LOGTO_M2M_APP_ID` and
+`LOGTO_M2M_APP_SECRET`. `/health` reports `deletionReady` so the setup can be
+checked from outside, which matters because App Store guideline 5.1.1(v) makes
+the app's Delete account button a condition of review.
+
 **Deploy this before shipping an app build that expects it.** The two halves
 changed together: the app stopped sending `x-samwell-device-id` and started
 sending `Authorization`, and a server still on the old build rejects every one

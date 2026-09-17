@@ -31,6 +31,8 @@ import {
 } from 'samwell-shared';
 import { z } from 'zod';
 
+import { accountRoutes } from './account-routes.js';
+import { managementConfigured } from './logto-management.js';
 import { chatTitleRoutes } from './chat-title.js';
 import { gutenbergRoutes } from './gutenberg.js';
 import { onboardingRoutes } from './onboarding.js';
@@ -520,7 +522,7 @@ app.use(
     // requires. The device header it replaced is gone: Grand Maester Samwell
     // runs on accounts, so there is nothing anonymous left to allow.
     allowHeaders: ['Content-Type', 'Authorization'],
-    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   }),
 );
 
@@ -550,6 +552,13 @@ app.get('/health', async (c) => {
      */
     webhookReady: Boolean(process.env.REVENUECAT_WEBHOOK_SECRET),
     reconcileReady: Boolean(process.env.REVENUECAT_SECRET_API_KEY),
+    /*
+     * Whether DELETE /account can finish. False means the machine-to-machine
+     * credentials are missing, the route answers 500, and the app's Delete
+     * account button reports a fault the reader cannot do anything about -
+     * which is the one failure App Review is looking for here.
+     */
+    deletionReady: managementConfigured(),
     models: models.map((model) => model.id),
     // Which model the house is paying for on the onboarding route.
     //
@@ -744,6 +753,9 @@ app.route('/library', gutenbergRoutes);
 app.route('/billing', billingRoutes);
 app.route('/billing', billingWebhookRoutes);
 app.route('/admin/insider', insiderAdminRoutes);
+// Deleting an account, which App Review requires the app to offer and only
+// this side can carry out: the Logto user goes with the rows.
+app.route('/account', accountRoutes);
 
 app.post('/chat/http', async (c) => {
   requireOpenRouterKey();

@@ -8,6 +8,7 @@ import {
     signIn as startSignIn,
     type AccountEntry,
 } from '@/services/account';
+import { deleteCloudAccount } from '@/services/account-delete';
 import { configurePurchases, forget, identify } from '@/services/purchases';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
@@ -35,6 +36,14 @@ type AccountState = {
   restore: () => Promise<void>;
   signIn: (entry: AccountEntry) => Promise<void>;
   signOut: () => Promise<void>;
+  /**
+   * Deletes the account, then ends the session.
+   *
+   * Resolves true only when the server said it was done. A false leaves the
+   * reader signed in on purpose: the account still exists, and signing them
+   * out of one they cannot then delete is the worst of both.
+   */
+  deleteAccount: () => Promise<boolean>;
 };
 
 const signedOut = { status: 'signedOut' as const, sub: null, email: null, name: null };
@@ -141,6 +150,38 @@ export const useAccountStore = create<AccountState>((set) => ({
     } finally {
       set({ busy: false });
     }
+  },
+
+  deleteAccount: async () => {
+    set({ busy: true, error: null });
+    try {
+      await deleteCloudAccount();
+    } catch (error) {
+      set({
+        busy: false,
+        error: message(error, 'Your account could not be deleted. Try again.'),
+      });
+      return false;
+    }
+
+    /*
+     * The account is gone, so the session is worthless and the local sign-out
+     * must not be allowed to fail visibly. Logto revokes tokens for a user it
+     * no longer has, which is a 4xx the SDK reports as an error; swallowing it
+     * here is right, because the one thing the reader asked for has already
+     * happened.
+     */
+    try {
+      await endSession();
+    } catch (error) {
+      if (__DEV__) console.warn('[Account] Session cleanup after delete:', error);
+    }
+    set({ ...signedOut, busy: false, error: null });
+    useSubscriptionStore.getState().reset();
+    void forget().catch((error) => {
+      if (__DEV__) console.warn('[Account] Could not sign out of RevenueCat:', error);
+    });
+    return true;
   },
 
   signOut: async () => {

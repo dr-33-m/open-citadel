@@ -888,3 +888,38 @@ export async function getOnboardingModelId(): Promise<string> {
   const stored = await readServerSetting('onboarding_model_id');
   return stored ?? process.env.ONBOARDING_MODEL_ID ?? (await getDefaultModelId());
 }
+
+/**
+ * Everything this server holds about one account, gone.
+ *
+ * App Review guideline 5.1.1(v) asks that an account can be deleted from
+ * inside the app, and "deleted" is meant literally: the rows keyed to it, not
+ * a flag saying to ignore them. Five tables hold anything, and they are dealt
+ * with in one batch so a half-deleted account is not a state that exists.
+ *
+ * The ledger goes with the rest. It is the record a balance is rebuilt from,
+ * which is an argument for keeping it and a better one for not: rebuilding a
+ * balance for an account nobody can sign into again has no use, and the rows
+ * name what somebody read and spent.
+ */
+export async function deleteAccountData(accountId: string): Promise<void> {
+  await db.batch(
+    [
+      { sql: 'DELETE FROM usage_events WHERE account_id = ?', args: [accountId] },
+      { sql: 'DELETE FROM account_credits WHERE account_id = ?', args: [accountId] },
+      { sql: 'DELETE FROM credit_ledger WHERE account_id = ?', args: [accountId] },
+      { sql: 'DELETE FROM onboarding_grants WHERE account_id = ?', args: [accountId] },
+      /*
+       * The one row that is edited rather than dropped. A redeemed insider
+       * code must stay spent - deleting an account cannot be a way to hand
+       * the code back for somebody else to use - so the row keeps the fact
+       * and loses the name.
+       */
+      {
+        sql: `UPDATE insider_invites SET redeemed_by = 'deleted-account' WHERE redeemed_by = ?`,
+        args: [accountId],
+      },
+    ],
+    'write',
+  );
+}
