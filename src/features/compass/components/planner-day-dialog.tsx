@@ -28,10 +28,10 @@ type PlannerDayDialogProps = {
 /**
  * Every card is this tall, whatever is on the day.
  *
- * Sized to the busiest realistic day — a goal carries at most five trackables —
- * because a card that shrinks to its content makes the run jump as you swipe
- * from a full day to an empty one, and how full each day was is the thing you
- * are comparing.
+ * Fixed rather than sized to content, because a card that shrinks to its
+ * content makes the run jump as you swipe from a full day to an empty one, and
+ * how full each day was is the thing you are comparing. A day across several
+ * goals can hold more than this, so the card scrolls its own list.
  */
 const CARD_HEIGHT = 420;
 

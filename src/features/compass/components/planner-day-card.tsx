@@ -1,9 +1,16 @@
 import React from 'react';
-import { View } from 'react-native';
+// Core's ScrollView, not Gesture Handler's. The card sits inside the carousel's
+// pan, and Gesture Handler's scroller claimed every touch on the list, so a
+// horizontal swipe over the activities stopped changing the day. Core's native
+// scroller only takes a vertical drag, which the pan gives up on anyway
+// (`failOffsetY`), so each gesture goes to the one it belongs to.
+import { ScrollView, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { PageFade } from '@/components/scroll-fades';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
+import { spacing } from '@/constants/theme';
 import { byTimeThenTitle, type PlannerCell } from '@/features/compass/utils/planner-entries';
 import { asColor } from '@/utils/colors';
 import { parseYmd, type Ymd } from '@/utils/day';
@@ -49,6 +56,12 @@ const MONTHS = [
 ];
 
 /**
+ * The list's own padding, in place of the card's at the bottom, so the last
+ * activity can scroll clear of the fade instead of resting underneath it.
+ */
+const LIST_STYLE = { gap: spacing[3], paddingBottom: spacing[5] } as const;
+
+/**
  * One day, and what was on it.
  *
  * The number leads at display size with the weekday beside it, because when
@@ -58,6 +71,10 @@ const MONTHS = [
  * Ordered by time, with untimed activities at the bottom: a time here is a
  * shape for the day, not a deadline, so an untimed activity is not late, it
  * just has no place in the order.
+ *
+ * The card is a fixed size and a day across five goals can hold more than fits,
+ * so the activities scroll inside it under the header. Letting them grow past
+ * the card drew them over the month behind it.
  */
 export function PlannerDayCard({
   date,
@@ -88,7 +105,7 @@ export function PlannerDayCard({
 
   return (
     <Card style={{ width, height }}>
-      <Card.Content className="flex-1 gap-4 p-5">
+      <Card.Content className="flex-1 gap-4 p-5 pb-0">
         <View className="flex-row items-center justify-between gap-3">
           {/* Centred, not baseline-aligned: on a baseline the display-size
               number sits level with the weekday and leaves the month hanging
@@ -116,35 +133,40 @@ export function PlannerDayCard({
             Nothing was scheduled.
           </ThemedText>
         ) : (
-          <View className="gap-3">
-            {ordered.map((cell) => (
-              <View key={cell.id} className="flex-row items-start gap-3">
-                <View className="w-12 pt-0.5">
-                  <ThemedText type="labelSm" color={muted}>
-                    {cell.timeOfDay ?? '—'}
-                  </ThemedText>
-                </View>
-                <View className="flex-1 gap-1">
-                  <ThemedText type="bodyMd">{cell.title}</ThemedText>
-                  <View className="flex-row flex-wrap items-center gap-x-2">
-                    <ThemedText type="labelSm" color={statusColor[cell.status]}>
-                      {STATUS_LABEL[cell.status]}
+          <PageFade edges="both" surface="card">
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={LIST_STYLE}
+            >
+              {ordered.map((cell) => (
+                <View key={cell.id} className="flex-row items-start gap-3">
+                  <View className="w-12 pt-0.5">
+                    <ThemedText type="labelSm" color={muted}>
+                      {cell.timeOfDay ?? '—'}
                     </ThemedText>
-                    {cell.detail && (
-                      <ThemedText type="labelSm" color={muted}>
-                        {cell.detail.toUpperCase()}
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <ThemedText type="bodyMd">{cell.title}</ThemedText>
+                    <View className="flex-row flex-wrap items-center gap-x-2">
+                      <ThemedText type="labelSm" color={statusColor[cell.status]}>
+                        {STATUS_LABEL[cell.status]}
+                      </ThemedText>
+                      {cell.detail && (
+                        <ThemedText type="labelSm" color={muted}>
+                          {cell.detail.toUpperCase()}
+                        </ThemedText>
+                      )}
+                    </View>
+                    {cell.note && (
+                      <ThemedText type="bodySm" color={muted} italic>
+                        {cell.note}
                       </ThemedText>
                     )}
                   </View>
-                  {cell.note && (
-                    <ThemedText type="bodySm" color={muted} italic>
-                      {cell.note}
-                    </ThemedText>
-                  )}
                 </View>
-              </View>
-            ))}
-          </View>
+              ))}
+            </ScrollView>
+          </PageFade>
         )}
       </Card.Content>
     </Card>

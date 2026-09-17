@@ -41,14 +41,22 @@ import { asColor } from '@/utils/colors';
  *
  * A gradient that resolves to the wrong colour does not disappear — it draws a
  * visible band of the wrong shade along the edge, which is worse than no fade
- * at all. Sheets sit on `popover`, everything else on `background`.
+ * at all. Sheets sit on `popover`, a scroll inside a `Card` on `card`, and
+ * everything else on `background`. `card` and `popover` match in light mode and
+ * not in dark, so the two are not interchangeable.
  */
-export type FadeSurface = 'background' | 'popover';
+export type FadeSurface = 'background' | 'popover' | 'card';
 
 /** Exported for fades outside these wrappers, like the plan carousel's. */
 export function useFadeColor(surface: FadeSurface) {
-  const [background, popover] = useCSSVariable(['--color-background', '--color-popover']);
-  return asColor(surface === 'popover' ? popover : background);
+  const [background, popover, card] = useCSSVariable([
+    '--color-background',
+    '--color-popover',
+    '--color-card',
+  ]);
+  if (surface === 'popover') return asColor(popover);
+  if (surface === 'card') return asColor(card);
+  return asColor(background);
 }
 
 /**
