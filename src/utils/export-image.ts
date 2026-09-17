@@ -13,8 +13,10 @@ export async function captureAndShare(viewRef: RefObject<View | null>): Promise<
       result: "tmpfile",
     });
 
-    // Save to gallery first so the image persists even if sharing times out
-    const { status } = await MediaLibrary.requestPermissionsAsync();
+    // Save to gallery first so the image persists even if sharing times out.
+    // Write-only: saving needs no read access, and Play rejects READ_MEDIA_*
+    // for an app that never browses the gallery (blocked in app.json).
+    const { status } = await MediaLibrary.requestPermissionsAsync(true);
     if (status === "granted") {
       await MediaLibrary.saveToLibraryAsync(uri);
     }
