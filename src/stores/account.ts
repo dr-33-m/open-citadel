@@ -34,6 +34,8 @@ type AccountState = {
   /** The last thing that went wrong, shown in the account card. */
   error: string | null;
   restore: () => Promise<void>;
+  /** Drops the last failure, once it has been shown. See `useAccountErrorToast`. */
+  clearError: () => void;
   signIn: (entry: AccountEntry) => Promise<void>;
   signOut: () => Promise<void>;
   /**
@@ -151,6 +153,8 @@ export const useAccountStore = create<AccountState>((set) => ({
       set({ busy: false });
     }
   },
+
+  clearError: () => set({ error: null }),
 
   deleteAccount: async () => {
     set({ busy: true, error: null });

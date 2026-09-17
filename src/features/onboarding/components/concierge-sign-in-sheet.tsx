@@ -6,7 +6,7 @@ import { AccountEntryButtons } from '@/components/account/account-entry-buttons'
 import { SamwellText } from '@/components/samwell-text';
 import { Sheet } from '@/components/ui/sheet';
 import { ThemedText } from '@/components/themed-text';
-import { useAccountStore } from '@/stores/account';
+import { useAccountErrorToast } from '@/hooks/use-account-error-toast';
 import { asColor } from '@/utils/colors';
 
 /**
@@ -30,12 +30,9 @@ export function ConciergeSignInSheet({
   onClose: () => void;
   onSignedIn: () => void;
 }) {
-  const [mutedForeground, destructive] = useCSSVariable([
-    '--color-muted-foreground',
-    '--color-destructive',
-  ]);
+  const mutedForeground = useCSSVariable('--color-muted-foreground');
 
-  const error = useAccountStore((s) => s.error);
+  useAccountErrorToast();
 
   return (
     <Sheet visible={visible} onClose={onClose}>
@@ -53,13 +50,6 @@ export function ConciergeSignInSheet({
         </SamwellText>
 
         <AccountEntryButtons onSignedIn={onSignedIn} />
-
-        {/* Same treatment the account card gives its own warning line. */}
-        {error && (
-          <ThemedText type="bodySm" color={asColor(destructive)} style={{ fontSize: 11 }}>
-            {error}
-          </ThemedText>
-        )}
       </View>
     </Sheet>
   );

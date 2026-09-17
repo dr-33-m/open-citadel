@@ -20,13 +20,39 @@ const endpoint = (process.env.LOGTO_ENDPOINT ?? '').trim().replace(/\/+$/, '');
 /**
  * The management API's own resource indicator.
  *
- * On Logto Cloud this is the tenant endpoint with `/api` on it, which is what
- * `LOGTO_ENDPOINT` already holds. A self-hosted tenant reached through a
- * custom domain names itself `https://default.logto.app/api` instead - an
- * identifier, not an address - so `LOGTO_MANAGEMENT_RESOURCE` can override it.
+ * A resource indicator names an API rather than pointing at one, and Logto
+ * uses two different names for the same API. A Logto Cloud tenant calls it
+ * `https://<tenant>.logto.app/api`, which is `LOGTO_ENDPOINT` with `/api` on
+ * the end. A self-hosted tenant calls itself the default tenant and keeps
+ * that name whatever domain it is served from, so a custom-domain deployment
+ * answers `invalid_target` for the address it is actually reached at, which is
+ * how this was found.
+ *
+ * Decided by the host: only `*.logto.app` is Logto Cloud. A tenant that
+ * disagrees can say so with `LOGTO_MANAGEMENT_RESOURCE`.
  */
-const MANAGEMENT_RESOURCE =
-  process.env.LOGTO_MANAGEMENT_RESOURCE?.trim() || `${endpoint}/api`;
+const SELF_HOSTED_RESOURCE = 'https://default.logto.app/api';
+
+function managementResources(): string[] {
+  const override = process.env.LOGTO_MANAGEMENT_RESOURCE?.trim();
+  if (override) return [override];
+
+  let cloudFirst = false;
+  try {
+    cloudFirst = new URL(endpoint).hostname.endsWith('.logto.app');
+  } catch {
+    cloudFirst = false;
+  }
+
+  /*
+   * Both names, likeliest first. The unlikely one is only ever tried after
+   * the tenant has said `invalid_target` about the other, and trying it saves
+   * a deploy spent guessing which kind of tenant this is.
+   */
+  const cloud = `${endpoint}/api`;
+  const ordered = cloudFirst ? [cloud, SELF_HOSTED_RESOURCE] : [SELF_HOSTED_RESOURCE, cloud];
+  return [...new Set(ordered)];
+}
 
 export function managementConfigured(): boolean {
   return Boolean(
@@ -50,34 +76,44 @@ async function managementToken(): Promise<string> {
     });
   }
 
-  const response = await fetch(`${endpoint}/oidc/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${Buffer.from(`${appId}:${appSecret}`).toString('base64')}`,
-    },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      resource: MANAGEMENT_RESOURCE,
-      scope: 'all',
-    }).toString(),
-  });
+  const authorization = `Basic ${Buffer.from(`${appId}:${appSecret}`).toString('base64')}`;
+  const resources = managementResources();
 
-  if (!response.ok) {
+  for (const [index, resource] of resources.entries()) {
+    const response = await fetch(`${endpoint}/oidc/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: authorization,
+      },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        resource,
+        scope: 'all',
+      }).toString(),
+    });
+
+    if (response.ok) {
+      const body = (await response.json()) as { access_token?: string };
+      if (body.access_token) return body.access_token;
+      console.error('[Logto] Management token came back without one.');
+      break;
+    }
+
     const detail = await response.text().catch(() => '');
-    console.error(`[Logto] Management token refused (${response.status}): ${detail}`);
-    throw new HTTPException(502, {
-      message: 'Your account could not be deleted. Try again.',
-    });
+    // Only the resource is worth a second attempt. A refused client or a
+    // missing management role says the same thing about every resource.
+    const unknownResource = detail.includes('invalid_target');
+    const lastChance = index === resources.length - 1;
+    console.error(
+      `[Logto] Management token refused for ${resource} (${response.status}): ${detail}`,
+    );
+    if (!unknownResource || lastChance) break;
   }
 
-  const body = (await response.json()) as { access_token?: string };
-  if (!body.access_token) {
-    throw new HTTPException(502, {
-      message: 'Your account could not be deleted. Try again.',
-    });
-  }
-  return body.access_token;
+  throw new HTTPException(502, {
+    message: 'Your account could not be deleted. Try again.',
+  });
 }
 
 /**

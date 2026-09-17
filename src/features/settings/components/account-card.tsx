@@ -14,6 +14,7 @@ import { PrefixIcon } from "@/components/ui/prefix-icon";
 import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
+import { useAccountErrorToast } from "@/hooks/use-account-error-toast";
 import { CloudAccountSheet } from "@/features/settings/components/cloud-account-sheet";
 import { ConfirmDeleteAccountSheet } from "@/features/settings/components/confirm-delete-account-sheet";
 import { ConfirmSignOutSheet } from "@/features/settings/components/confirm-sign-out-sheet";
@@ -35,6 +36,8 @@ import { CREDIT_PLANS } from "samwell-shared";
  * wrong one can still get where they were going without coming back here.
  */
 export function AccountCard() {
+  useAccountErrorToast();
+
   const [mutedForeground, destructive, secondaryForeground] = useCSSVariable([
     "--color-muted-foreground",
     "--color-destructive",
@@ -47,7 +50,6 @@ export function AccountCard() {
   const email = useAccountStore((s) => s.email);
   const name = useAccountStore((s) => s.name);
   const busy = useAccountStore((s) => s.busy);
-  const error = useAccountStore((s) => s.error);
   const signOut = useAccountStore((s) => s.signOut);
   const deleteAccount = useAccountStore((s) => s.deleteAccount);
   // Signing in and subscribing are two separate steps; this card must not
@@ -205,18 +207,6 @@ export function AccountCard() {
           // The same two buttons onboarding's sign-in sheet draws. See
           // `components/account/account-entry-buttons`.
           <AccountEntryButtons />
-        )}
-
-        {/* Same treatment the cloud panel gives its own warning line, so the
-            two settings surfaces report trouble the same way. */}
-        {error && (
-          <ThemedText
-            type="bodySm"
-            color={asColor(destructive)}
-            style={{ fontSize: 11 }}
-          >
-            {error}
-          </ThemedText>
         )}
       </Card>
 
