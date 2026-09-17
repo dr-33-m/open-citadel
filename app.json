@@ -29,9 +29,11 @@
       }
     },
     "android": {
+      "icon": "./assets/icons/android-icon.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icons/oc-adaptive-icon.png",
-        "backgroundColor": "#131313"
+        "foregroundImage": "./assets/icons/android-adaptive-foreground.png",
+        "backgroundImage": "./assets/icons/android-adaptive-background.png",
+        "monochromeImage": "./assets/icons/android-adaptive-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.dr33m.opencitadel",

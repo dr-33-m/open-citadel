@@ -5,7 +5,7 @@ import { useCSSVariable } from "uniwind";
 import { fontFamily } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
 
-const LOGO = require("../../../assets/icons/oc-adaptive-icon.png");
+const LOGO = require("../../../assets/icons/android-adaptive-foreground.png");
 
 type ExportImageCardProps = {
   quoteText: string;
@@ -114,7 +114,10 @@ export function ExportImageCard({
             className="h-[170px] w-[120px] rounded-[6px] border"
             style={{ borderColor: `${asColor(primary)}26` }}
             fadeDuration={0}
-            onLoad={() => { coverLoaded.current = true; checkReady(); }}
+            onLoad={() => {
+              coverLoaded.current = true;
+              checkReady();
+            }}
           />
         )}
 
@@ -164,7 +167,10 @@ export function ExportImageCard({
               source={LOGO}
               className="-mt-[30px] h-[132px] w-[132px] opacity-80"
               fadeDuration={0}
-              onLoad={() => { logoLoaded.current = true; checkReady(); }}
+              onLoad={() => {
+                logoLoaded.current = true;
+                checkReady();
+              }}
             />
             <Text
               style={{
