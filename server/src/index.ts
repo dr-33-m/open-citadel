@@ -33,6 +33,7 @@ import { z } from 'zod';
 
 import { accountRoutes } from './account-routes.js';
 import { managementConfigured } from './logto-management.js';
+import { PROVIDER_PREFERENCES } from './openrouter.js';
 import { chatTitleRoutes } from './chat-title.js';
 import { gutenbergRoutes } from './gutenberg.js';
 import { onboardingRoutes } from './onboarding.js';
@@ -1133,6 +1134,7 @@ app.post('/chat/http', async (c) => {
       }),
     ],
     modelOptions: {
+      provider: PROVIDER_PREFERENCES,
       models: fallbackModels.map((model) => model.id) as any,
       temperature: 0.7,
       toolChoice: 'auto',

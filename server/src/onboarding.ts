@@ -18,6 +18,7 @@ import {
 } from './db.js';
 import { requireOpenRouterKey } from './http-helpers.js';
 import { readIdentity } from './identity.js';
+import { PROVIDER_PREFERENCES } from './openrouter.js';
 
 /**
  * The introduction, on the house.
@@ -141,6 +142,7 @@ onboardingRoutes.post('/chat', async (c) => {
       }),
     ],
     modelOptions: {
+      provider: PROVIDER_PREFERENCES,
       // No fallback chain. The house picked this model and knows what it
       // costs; silently rerouting a free conversation to something else is how
       // an unmetered route becomes an unpredictable bill.

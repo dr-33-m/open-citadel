@@ -4,6 +4,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import { updateUsageEvent } from './db.js';
+import { PROVIDER_PREFERENCES } from './openrouter.js';
 
 /**
  * One-shot structured output, for the small background jobs.
@@ -66,6 +67,7 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
         },
       ],
       modelOptions: {
+        provider: PROVIDER_PREFERENCES,
         temperature: 0.2,
         // No default cap: reasoning-capable models (our default is a GPT-5 chat
         // model) spend completion tokens on hidden reasoning before they ever write
