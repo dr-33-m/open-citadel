@@ -7,6 +7,7 @@ import {
     readProfile,
     signIn as startSignIn,
     type AccountEntry,
+    type AccountProfile,
 } from '@/services/account';
 import { deleteCloudAccount } from '@/services/account-delete';
 import { configurePurchases, forget, identify } from '@/services/purchases';
@@ -121,18 +122,31 @@ export const useAccountStore = create<AccountState>((set) => ({
       set(signedOut);
       return;
     }
+    let profile: AccountProfile | null = null;
     try {
-      const profile = await readProfile();
+      profile = await readProfile();
       set(profile ? { status: 'signedIn', ...profile, error: null } : signedOut);
-      // Configured with the account in hand rather than anonymously, so
-      // RevenueCat never mints a throwaway customer that a purchase could
-      // land on before the alias catches up. See `services/purchases`.
-      configurePurchases(profile?.sub ?? null);
-      if (profile) bindPurchases(profile.sub);
     } catch (error) {
       if (__DEV__) console.warn('[Account] Could not restore the session:', error);
       set(signedOut);
     }
+
+    /*
+     * Outside the try, and that is the fix rather than tidying.
+     *
+     * This used to sit on the success path, so anything thrown while reading
+     * the session left the purchases SDK unconfigured for the life of the
+     * process - and the failure did not look like an account problem at all.
+     * The plan carousel could not price a single card, every CustomerInfo
+     * read came back "this build cannot take payments", and the reader was
+     * shown a build that appeared to have no plans in it.
+     *
+     * Configured with the account in hand rather than anonymously, so
+     * RevenueCat never mints a throwaway customer that a purchase could land
+     * on before the alias catches up. See `services/purchases`.
+     */
+    configurePurchases(profile?.sub ?? null);
+    if (profile) bindPurchases(profile.sub);
   },
 
   signIn: async (entry) => {

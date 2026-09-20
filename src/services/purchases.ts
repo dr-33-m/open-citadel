@@ -197,7 +197,11 @@ export async function forget(): Promise<void> {
  * been configured yet is a state the panel can draw.
  */
 export async function getOffering(): Promise<PurchasesOffering | null> {
-  if (!PURCHASES_ENABLED) throw new PurchasesUnavailable();
+  // `configured` as well as the key, matching `readCustomerInfo`. Without it
+  // an SDK that was never started threw the SDK's own "no singleton instance"
+  // from inside the panel's first effect, which reads as a crash rather than
+  // as the one thing it is: this build has nothing to sell yet.
+  if (!PURCHASES_ENABLED || !configured) throw new PurchasesUnavailable();
   const offerings = await Purchases.getOfferings();
   return offerings.all[REVENUECAT_OFFERING] ?? offerings.current ?? null;
 }

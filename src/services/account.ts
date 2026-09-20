@@ -151,18 +151,50 @@ export async function signOut(): Promise<void> {
   await logto.signOut();
 }
 
+/**
+ * Is there a session here that can actually be read?
+ *
+ * `isAuthenticated` decrypts the stored session, and a blob it cannot decrypt
+ * throws `Malformed UTF-8 data` rather than answering false. That is still an
+ * answer - a session nobody can read is not one anybody is signed in with -
+ * and letting it throw took far more down with it than the account.
+ *
+ * The restore below skipped `configurePurchases`, so the purchases SDK was
+ * never started and no plan could be priced for the rest of the session. And
+ * `cloudHeaders` calls this before it falls back to the guest token, so a
+ * reader who had paid without an account was told the server did not answer,
+ * on a request that never left the phone.
+ *
+ * Nothing is cleared. The blob is harmless once every reader of it treats a
+ * failure as "no session", and the next successful sign-in writes over it.
+ */
+async function hasReadableSession(logto: LogtoClient): Promise<boolean> {
+  try {
+    return await logto.isAuthenticated();
+  } catch (error) {
+    if (__DEV__) console.warn('[Account] The stored session could not be read:', error);
+    return false;
+  }
+}
+
 /** Who is signed in, read from the stored ID token. No network. */
 export async function readProfile(): Promise<AccountProfile | null> {
   const logto = getClient();
   if (!logto) return null;
-  if (!(await logto.isAuthenticated())) return null;
+  if (!(await hasReadableSession(logto))) return null;
 
-  const claims = await logto.getIdTokenClaims();
-  return {
-    sub: claims.sub,
-    email: claims.email ?? null,
-    name: claims.name ?? null,
-  };
+  try {
+    const claims = await logto.getIdTokenClaims();
+    return {
+      sub: claims.sub,
+      email: claims.email ?? null,
+      name: claims.name ?? null,
+    };
+  } catch (error) {
+    // Same argument as above: claims that cannot be read are not a session.
+    if (__DEV__) console.warn('[Account] The stored claims could not be read:', error);
+    return null;
+  }
 }
 
 /**
@@ -194,7 +226,7 @@ export class AccountTokenUnavailable extends Error {
 export async function getAccountToken(): Promise<string | null> {
   const logto = getClient();
   if (!logto) return null;
-  if (!(await logto.isAuthenticated())) return null;
+  if (!(await hasReadableSession(logto))) return null;
 
   try {
     return await logto.getAccessToken(SAMWELL_API_RESOURCE);
