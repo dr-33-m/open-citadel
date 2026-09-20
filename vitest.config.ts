@@ -31,6 +31,17 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  /*
+   * `__DEV__`, which React Native's own bundler injects and vitest does not.
+   *
+   * Without it, any module guarding a warning with `if (__DEV__)` throws a
+   * ReferenceError the moment a test reaches that line - so the branches the
+   * app runs in development were the ones tests could not enter. True rather
+   * than false for the same reason: it is what a developer runs, and a
+   * mistake inside one of those guards should fail here rather than on a
+   * phone.
+   */
+  define: { __DEV__: 'true' },
   test: {
     exclude: [...configDefaults.exclude, '**/dist/**'],
   },
