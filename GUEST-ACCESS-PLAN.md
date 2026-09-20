@@ -39,9 +39,21 @@ gone, and so is its copy, which said the opposite of what is now true.
 User ID" with no separate sandbox behaviour, so restore-after-reinstall works
 and sandbox testing will behave the same.
 
-**Next:** step 5, the link flow and the account card copy. Still open before
-it: whether `logIn` from `guest:<uuid>` to a Logto sub aliases or switches,
-which decides whether the app should `logOut` first. Settle it on a device.
+**Step 5, linking.** `services/guest-link` proves both identities separately
+and `useGuestLink` at the root fires whenever an account and a guest identity
+are both present - so it covers registering after buying, a retry after a
+failed attempt, and signing in on a phone that bought something long ago,
+without three call sites deciding the same thing. The RevenueCat convergence
+happens AFTER the server link, never before: the other order moves the
+entitlement to the account while the ledger row is still under the guest id,
+and the next reconcile finds a paying reader with nothing. The account card
+now has copy for the state that reads as a contradiction, signed out with an
+active plan, which is just somebody who bought without registering.
+
+**Next:** step 6, the device pass, and the two Android jobs in
+`TODO-ANDROID.md`. Still open: whether `logIn` from `guest:<uuid>` to a Logto
+sub aliases or switches, which decides whether the app should `logOut` first.
+Settle it on a device.
 
 ## Why
 

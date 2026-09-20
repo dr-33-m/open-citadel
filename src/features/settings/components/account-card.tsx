@@ -7,6 +7,7 @@ import { ActionButton } from "@/components/action-button";
 import { Info, LogOut, Trash2, UserStar } from "@/components/icons";
 import { SamwellText } from "@/components/samwell-text";
 import { ThemedText } from "@/components/themed-text";
+import { useCloudIdentity } from "@/hooks/use-cloud-identity";
 import { showToast } from "@/components/toast/toast-provider";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -59,6 +60,9 @@ export function AccountCard() {
   const plan = useSubscriptionStore((s) => s.plan);
   const planName = plan ? CREDIT_PLANS[plan].label : null;
 
+  /** Whether the plan on show belongs to this phone rather than to a person. */
+  const isGuest = useCloudIdentity().kind === "guest";
+
   const [confirming, setConfirming] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   /** The request is in flight. `busy` quietens the buttons; this says why. */
@@ -71,6 +75,34 @@ export function AccountCard() {
   if (!ACCOUNT_ENABLED) return null;
 
   const signedIn = status === "signedIn";
+  /*
+   * The beat before the first answer, for either identity. A guest has one
+   * too, and without this their card claimed there was nothing to sign in for
+   * while the read that would have said otherwise was still in flight.
+   */
+  const checkingPlan = (signedIn || isGuest) && planStatus === "unknown";
+  /**
+   * What this card says about the plan, in one string.
+   *
+   * Derived here because the house rule says no logic in JSX, and because it
+   * grew a state that reads as a contradiction if you meet it as a ternary: a
+   * reader who is signed OUT and has an ACTIVE plan. That is not a glitch, it
+   * is somebody who bought without registering, and telling them to "sign in
+   * to use Samwell Cloud" while he is answering them would be nonsense. What
+   * an account buys them is the plan on their other devices, so that is what
+   * it offers.
+   */
+  let planSummary: string;
+  if (signedIn) {
+    planSummary =
+      planActive && planName
+        ? `${planName} is all yours.`
+        : "Samwell cloud is now available, subscribe to activate.";
+  } else if (isGuest && planActive && planName) {
+    planSummary = `${planName} is on this device. Sign in to use it anywhere else.`;
+  } else {
+    planSummary = "Sign in or create account to use Samwell Cloud.";
+  }
 
   const leave = async () => {
     await signOut();
@@ -149,7 +181,7 @@ export function AccountCard() {
             </View>
             {/* `SamwellText`, so his name carries the gold here as it does in
                 every other sentence about him. */}
-            {signedIn && planStatus === "unknown" ? (
+            {checkingPlan ? (
               <View className="flex-row items-center gap-2 py-1">
                 <Spinner size="sm" />
                 <ThemedText type="bodySm" color={asColor(mutedForeground)}>
@@ -162,11 +194,7 @@ export function AccountCard() {
                 color={asColor(mutedForeground)}
                 numberOfLines={2}
               >
-                {signedIn
-                  ? planActive && planName
-                    ? `${planName} is all yours.`
-                    : "Samwell cloud is now available, subscribe to activate."
-                  : "Sign in or create account to use Samwell Cloud."}
+                {planSummary}
               </SamwellText>
             )}
           </View>

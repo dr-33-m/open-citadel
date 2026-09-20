@@ -33,6 +33,7 @@ import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 
 import { ApprovalSheet } from "@/components/approval-sheet";
+import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
 import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
 import { useAppUpdates } from "@/hooks/use-app-updates";
@@ -115,6 +116,7 @@ export default function RootLayout() {
   // The server's plan for this account, kept current here rather than by
   // whichever screen is up, so offline mode is checked as promptly as cloud.
   usePlanSync();
+  useGuestLink();
   // Samwell's journal: what he writes down about them once a conversation
   // goes quiet, for him to recall in later chats.
   useJourneyWriter();
