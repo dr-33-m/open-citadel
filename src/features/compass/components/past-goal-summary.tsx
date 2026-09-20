@@ -10,7 +10,7 @@ import { Shimmer } from '@/components/ui/shimmer';
 import { Touchable } from '@/components/ui/touchable';
 import { LogHeatmapCard } from '@/features/compass/components/log-heatmap-card';
 import { useGoalInsights } from '@/features/compass/hooks/use-goal-insights';
-import { categoryLabel } from '@/features/compass/utils/category';
+import { categoryLabel } from '@/utils/goal-category';
 import { StatCard } from '@/features/compass/components/stat-card';
 import type { PastGoal } from '@/stores/compass';
 import { asColor } from '@/utils/colors';

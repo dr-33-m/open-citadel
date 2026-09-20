@@ -13,8 +13,3 @@ export function categoryColorVar(category: GoalCategory): string {
   const i = GOAL_CATEGORIES.indexOf(category);
   return `--color-chart-${((i < 0 ? 0 : i) % 5) + 1}`;
 }
-
-/** `"HEALTH"` → `"Health"`, for anywhere a category is shown to the reader. */
-export function categoryLabel(category: GoalCategory): string {
-  return category.charAt(0) + category.slice(1).toLowerCase();
-}

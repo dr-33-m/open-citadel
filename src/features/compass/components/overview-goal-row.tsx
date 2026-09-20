@@ -8,7 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { elevation } from '@/constants/theme';
 import { GoalDot } from '@/features/compass/components/goal-dot';
-import { categoryLabel } from '@/features/compass/utils/category';
+import { categoryLabel } from '@/utils/goal-category';
 import type { GoalConsistency, GoalRow } from '@/stores/compass';
 import { asColor } from '@/utils/colors';
 import { daysBetween, type Ymd } from '@/utils/day';

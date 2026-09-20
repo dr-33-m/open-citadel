@@ -19,7 +19,11 @@ import {
   type GoalExecution,
   type GoalOutcome,
 } from '@/services/consistency';
-import { saveGoalFinishedNote, saveJourneyReflection } from '@/services/journey';
+import {
+  formatOutcomeSummary,
+  saveGoalFinishedNote,
+  saveJourneyReflection,
+} from '@/services/journey';
 import {
   byTimeThenTitle,
   dueOn,
@@ -736,6 +740,32 @@ export const useCompassStore = create<CompassState>((set, get) => ({
       .where(eq(goalOutcomes.goalId, goalId))
       .run();
 
+    // And into his memory. The journey note is written at the archive, before
+    // the takeaway exists, and nothing ever went back to it: the one sentence
+    // Samwell wrote about how the goal went reached the past-goal page and
+    // never reached a chat. Rewritten from the frozen row, so the note and
+    // the page state the same figures.
+    const goal = get().goals.find((g) => g.id === goalId);
+    const ending = db.select().from(goalOutcomes).where(eq(goalOutcomes.goalId, goalId)).get();
+    if (goal && ending) {
+      try {
+        saveGoalFinishedNote(goalId, goal.title, {
+          completed: ending.completed === 1,
+          executionRatio: ending.executionRatio,
+          outcomeSummary: formatOutcomeSummary(
+            ending.outcomeValue,
+            ending.outcomeTarget,
+            ending.outcomeUnit,
+          ),
+          reason: ending.reason,
+          takeaway: text,
+        });
+      } catch (err) {
+        // The takeaway is saved where the page reads it; memory is best-effort.
+        console.warn('[Compass] journey note update failed', err);
+      }
+    }
+
     // Only the archive changes, so only the archive is re-read. A full
     // `loadCompass` here would rebuild the deck and every goal's consistency
     // to record a sentence about a goal that is no longer running.
@@ -808,7 +838,11 @@ function archiveGoal(
   saveGoalFinishedNote(goalId, goal.title, {
     completed,
     executionRatio: consistency?.execution.ratio ?? null,
-    outcomeSummary: outcome ? `${outcome.value} of ${outcome.target} ${outcome.unit}` : null,
+    outcomeSummary: formatOutcomeSummary(
+      outcome?.value ?? null,
+      outcome?.target ?? null,
+      outcome?.unit ?? null,
+    ),
     reason,
   });
 

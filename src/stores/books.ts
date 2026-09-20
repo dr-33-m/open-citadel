@@ -12,7 +12,12 @@ import {
     ensureOwnedDir,
     pickAndImportEpubs,
 } from "@/services/book-import";
-import { saveBookFinishedNote } from "@/services/journey";
+import {
+  describeBookRemoval,
+  saveBookFinishedNote,
+  saveBookRemovedNote,
+  type BookRemoval,
+} from "@/services/journey";
 import {
     SCAN_ROOT_UNAVAILABLE,
     getActiveSyncJob,
@@ -563,7 +568,23 @@ export const useBooksStore = create<BooksState>((set, get) => ({
   },
 
   deleteBook: async (bookId) => {
+    // Read before the rows go, written after they have: a delete that throws
+    // must not leave Samwell believing the book is gone. Best-effort, like
+    // the finished note: memory never blocks a delete.
+    let removal: BookRemoval | null = null;
+    try {
+      removal = describeBookRemoval(bookId);
+    } catch (err) {
+      console.warn("[books-store] reading book for journey note failed", err);
+    }
     await deleteBookWithFile(bookId);
+    if (removal) {
+      try {
+        saveBookRemovedNote(removal);
+      } catch (err) {
+        console.warn("[books-store] journey note on delete failed", err);
+      }
+    }
     await get().loadBooks();
   },
 

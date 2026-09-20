@@ -17,6 +17,7 @@ import {
   type LogView,
   type TrackableView,
 } from '@/services/occurrences';
+import { writeGoalTakeaway } from '@/services/goal-takeaway';
 import { readGoals, useCompassStore, type GoalRow } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 import {
@@ -574,6 +575,17 @@ function goalById(goalId: string) {
   return useCompassStore.getState().goals.find((g) => g.id === goalId) ?? null;
 }
 
+/**
+ * The same takeaway the Compass screen asks for when a goal ends there. Not
+ * awaited: the tool answers the conversation now, and the takeaway is a
+ * second cloud call that lands on the goal's page and in his memory later.
+ */
+function writeTakeawayInBackground(goalId: string): void {
+  writeGoalTakeaway(goalId).catch((error) => {
+    console.warn('[Compass] takeaway failed', error);
+  });
+}
+
 export async function runFinishGoal(input: { goal_id: string }) {
   const goal = goalById(input.goal_id);
   if (!goal) {
@@ -605,6 +617,7 @@ export async function runFinishGoal(input: { goal_id: string }) {
   }
 
   await useCompassStore.getState().finishGoal(goal.id);
+  writeTakeawayInBackground(goal.id);
   return { ok: true, formatted: `Closed out "${goal.title}" as finished.` };
 }
 
@@ -630,6 +643,7 @@ export async function runStopGoal(input: { goal_id: string; reason: string }) {
   }
 
   await useCompassStore.getState().abandonGoal(goal.id, reason);
+  writeTakeawayInBackground(goal.id);
   return { ok: true, formatted: `Stopped "${goal.title}" before the end, and kept their reason.` };
 }
 

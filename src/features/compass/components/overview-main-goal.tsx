@@ -16,7 +16,7 @@ import {
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Touchable } from '@/components/ui/touchable';
-import { categoryLabel } from '@/features/compass/utils/category';
+import { categoryLabel } from '@/utils/goal-category';
 import type { GoalConsistency, GoalRow } from '@/stores/compass';
 import { asColor } from '@/utils/colors';
 import { daysBetween, type Ymd } from '@/utils/day';

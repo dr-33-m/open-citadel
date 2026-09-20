@@ -17,7 +17,7 @@ import { GoalAwardDialog } from '@/features/compass/components/goal-award-dialog
 import { GoalDetailPanel } from '@/features/compass/components/goal-detail-panel';
 import { OverviewGoalRow } from '@/features/compass/components/overview-goal-row';
 import { OverviewMainGoal } from '@/features/compass/components/overview-main-goal';
-import { categoryLabel } from '@/features/compass/utils/category';
+import { categoryLabel } from '@/utils/goal-category';
 import { useBackHandler } from '@/hooks/use-back-handler';
 import { useToday } from '@/hooks/use-today';
 import { leanSignal } from '@/services/consistency';
