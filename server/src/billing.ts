@@ -158,6 +158,14 @@ export interface BillingService {
   }): Promise<GrantResult>;
   /** Clears the plan, keeps the balance for the record. */
   clearPlan(accountId: string): Promise<void>;
+  /** Moves a guest's plan onto the account they have just made. */
+  linkGuest(args: {
+    guestId: string;
+    accountId: string;
+  }): Promise<
+    | { linked: true; balance: CreditBalance }
+    | { linked: false; reason: 'account_has_plan' }
+  >;
   /**
    * Fresh available credits, read straight from the row.
    *
@@ -374,6 +382,33 @@ export function createBillingService(options: BillingOptions): BillingService {
   * `Purchases.logIn(sub)` - while the column stores the prefixed account id,
   * so the prefix comes off here and nowhere else.
    */
+  /**
+   * Which RevenueCat customers can hold this ledger's subscription.
+   *
+   * Normally one. For an account it is the bare Logto subject, because that
+   * is the `app_user_id` the app calls `logIn` with; for a guest it is the
+   * guest id itself, which is already its own `app_user_id`.
+   *
+   * The second case is the one that matters. RevenueCat does not move a
+   * subscription from one identified id to another, so after a guest links to
+   * an account, the ledger says `account:<sub>` while RevenueCat still knows
+   * the subscription as `guest:<uuid>`. Asking only about the subject would
+   * come back empty, and empty is read below as "cancelled" - which would
+   * clear a paying reader's plan the first time the cache expired. So the
+   * linked guest ids are asked about too.
+   */
+  async function revenueCatSubjectsFor(accountId: string): Promise<string[]> {
+    if (!accountId.startsWith(ACCOUNT_PREFIX)) return [accountId];
+
+    const subjects = [accountId.slice(ACCOUNT_PREFIX.length)];
+    const linked = await client.execute({
+      sql: 'SELECT guest_id FROM guest_identities WHERE linked_account_id = ?',
+      args: [accountId],
+    });
+    for (const row of linked.rows) subjects.push(String(row.guest_id));
+    return subjects;
+  }
+
   async function syncEntitlement(
     accountId: string,
     syncOptions: { clearIfInactive?: boolean } = {},
@@ -382,39 +417,50 @@ export function createBillingService(options: BillingOptions): BillingService {
     const apiKey = options.revenueCatApiKey ?? process.env.REVENUECAT_SECRET_API_KEY;
     if (!apiKey) return { status: 'unavailable' };
 
-    const sub = accountId.startsWith(ACCOUNT_PREFIX) ? accountId.slice(ACCOUNT_PREFIX.length) : accountId;
+    const subjects = await revenueCatSubjectsFor(accountId);
     try {
-      const response = await doFetch(`${REVENUECAT_API}/${encodeURIComponent(sub)}`, {
-        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-        signal: AbortSignal.timeout(5_000),
-      });
-      if (!response.ok) {
-        console.error(
-          `[Billing] RevenueCat reconcile for ${accountId} answered ${response.status}.`,
-        );
-        return { status: 'unavailable' };
-      }
-      const payload = (await response.json()) as {
-        subscriber?: {
-          entitlements?: Record<
-            string,
-            { expires_date?: string | null; product_identifier?: string | null }
-          >;
-        };
-      };
-      const entitlements = payload.subscriber?.entitlements ?? {};
-
       // Active means no expiry (a lifetime grant) or an expiry in the future.
       // Of the active ones the best plan wins, for the same reason
       // `bestPlan` exists: an overlap must never read as the lesser tier.
       let best: { plan: PlanId; expiresAtMs: number | null; key: string } | null = null;
-      for (const [key, entitlement] of Object.entries(entitlements)) {
-        const plan = planForEntitlement(key);
-        if (!plan) continue;
-        const expiresAtMs = entitlement.expires_date ? Date.parse(entitlement.expires_date) : null;
-        if (expiresAtMs !== null && expiresAtMs <= atMs) continue;
-        if (!best || planRank(plan) > planRank(best.plan)) {
-          best = { plan, expiresAtMs, key };
+
+      for (const subject of subjects) {
+        const response = await doFetch(`${REVENUECAT_API}/${encodeURIComponent(subject)}`, {
+          headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (!response.ok) {
+          console.error(
+            `[Billing] RevenueCat reconcile for ${accountId} answered ${response.status}.`,
+          );
+          /*
+           * One unanswered subject makes the whole answer unsafe, not partial.
+           * Carrying on would let a failed read of the id that actually holds
+           * the subscription look like "no entitlements anywhere" and clear a
+           * paying reader's plan.
+           */
+          return { status: 'unavailable' };
+        }
+        const payload = (await response.json()) as {
+          subscriber?: {
+            entitlements?: Record<
+              string,
+              { expires_date?: string | null; product_identifier?: string | null }
+            >;
+          };
+        };
+        const entitlements = payload.subscriber?.entitlements ?? {};
+
+        for (const [key, entitlement] of Object.entries(entitlements)) {
+          const plan = planForEntitlement(key);
+          if (!plan) continue;
+          const expiresAtMs = entitlement.expires_date
+            ? Date.parse(entitlement.expires_date)
+            : null;
+          if (expiresAtMs !== null && expiresAtMs <= atMs) continue;
+          if (!best || planRank(plan) > planRank(best.plan)) {
+            best = { plan, expiresAtMs, key };
+          }
         }
       }
       const current = await readAccountRow(accountId);
@@ -579,6 +625,77 @@ export function createBillingService(options: BillingOptions): BillingService {
       args: [now(), accountId],
     });
     invalidate(accountId);
+  }
+
+  // -- Guests ------------------------------------------------------------------
+
+  /**
+   * Move a guest's plan and history onto the account they have just made.
+   *
+   * The reason this exists rather than leaning on RevenueCat: what `logIn`
+   * does from one IDENTIFIED id to another is not something their own
+   * guidance settles - it may alias the two together, or it may switch and
+   * leave the subscription where it was. Both readings are survivable here
+   * and neither is relied on. If it aliases, later events arrive under the
+   * account and find this row already waiting; if it does not, they keep
+   * arriving under `guest:<uuid>` and the link recorded here is what
+   * redirects them, for as long as the subscription lives.
+   *
+   * Refused when the account already holds something of its own, per the
+   * decision in `GUEST-ACCESS-PLAN.md`: no silent merge, and no arithmetic on
+   * two balances nobody asked us to combine. A leftover balance from a lapsed
+   * plan counts as something of its own, because deleting it would be quietly
+   * throwing away credits somebody paid for.
+   *
+   * One batch, so a crash cannot leave the plan moved and the link unwritten,
+   * or the other way about. `usage_events` rows stay where they are: they are
+   * metering history rather than anything the reader is shown, and rewriting
+   * them would be a large write for no one's benefit.
+   */
+  async function linkGuest(args: {
+    guestId: string;
+    accountId: string;
+  }): Promise<
+    | { linked: true; balance: CreditBalance }
+    | { linked: false; reason: 'account_has_plan' }
+  > {
+    const target = await readAccountRow(args.accountId);
+    if (target && (target.plan != null || target.balance > 0 || target.reserved > 0)) {
+      return { linked: false, reason: 'account_has_plan' };
+    }
+
+    const atMs = now();
+    const statements = [];
+    // An empty row would collide with the one being re-keyed onto it, and it
+    // holds nothing worth keeping - that is what the guard above established.
+    if (target) {
+      statements.push({
+        sql: 'DELETE FROM account_credits WHERE account_id = ?',
+        args: [args.accountId],
+      });
+    }
+    statements.push(
+      {
+        sql: `UPDATE account_credits SET account_id = ?, updated_at_ms = ?
+              WHERE account_id = ?`,
+        args: [args.accountId, atMs, args.guestId],
+      },
+      {
+        sql: 'UPDATE credit_ledger SET account_id = ? WHERE account_id = ?',
+        args: [args.accountId, args.guestId],
+      },
+      {
+        sql: `UPDATE guest_identities
+              SET linked_account_id = ?, linked_at_ms = ?
+              WHERE guest_id = ?`,
+        args: [args.accountId, atMs, args.guestId],
+      },
+    );
+    await client.batch(statements, 'write');
+
+    invalidate(args.guestId);
+    invalidate(args.accountId);
+    return { linked: true, balance: await readEntitlement(args.accountId) };
   }
 
   // -- Insiders ----------------------------------------------------------------
@@ -1092,6 +1209,7 @@ export function createBillingService(options: BillingOptions): BillingService {
     syncEntitlement,
     grantMonthly,
     clearPlan,
+    linkGuest,
     peekCredits,
     reserveCredits,
     settleCredits,
@@ -1116,6 +1234,7 @@ export const {
   readEntitlement,
   grantMonthly,
   clearPlan,
+  linkGuest,
   peekCredits,
   reserveCredits,
   settleCredits,

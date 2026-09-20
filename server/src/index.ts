@@ -32,6 +32,7 @@ import {
 import { z } from 'zod';
 
 import { accountRoutes } from './account-routes.js';
+import { guestRoutes } from './guest-routes.js';
 import { managementConfigured } from './logto-management.js';
 import { PROVIDER_PREFERENCES } from './openrouter.js';
 import { chatTitleRoutes } from './chat-title.js';
@@ -761,6 +762,10 @@ app.route('/admin/insider', insiderAdminRoutes);
 // Deleting an account, which App Review requires the app to offer and only
 // this side can carry out: the Logto user goes with the rows.
 app.route('/account', accountRoutes);
+// A device that bought a plan without making an account: registering itself,
+// trading its secret for a token, and attaching what it bought to an account
+// if it later makes one. See `guest-identity.ts`.
+app.route('/account', guestRoutes);
 
 app.post('/chat/http', async (c) => {
   requireOpenRouterKey();

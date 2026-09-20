@@ -21,13 +21,37 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { planForEntitlement, planRank, type PlanId } from 'samwell-shared';
 
 import { billing, type BillingService } from './billing.js';
+import { db } from './db.js';
 
 const ACCOUNT_PREFIX = 'account:';
 
-function toAccountId(appUserId: string): string {
-  // RevenueCat's `app_user_id` is the bare Logto subject, because that is
-  // what the app passes to `Purchases.logIn`. The column stores the prefixed
-  // form, so the prefix goes on here and nowhere else.
+const GUEST_PREFIX = 'guest:';
+
+/**
+ * The ledger an event belongs to.
+ *
+ * Three cases, and the third is the one with teeth:
+ *
+ *  - a bare id is a Logto subject, because that is what the app passes to
+ *    `Purchases.logIn`, and the column stores the prefixed form;
+ *  - a `guest:` id is a device that bought without an account, and it is
+ *    already its own ledger key;
+ *  - a `guest:` id that has since been LINKED belongs to the account it was
+ *    linked to. RevenueCat will not move a subscription off an identified id,
+ *    so renewals keep arriving under the guest id for as long as the
+ *    subscription lives. Without this lookup they would credit an identity
+ *    nobody can sign in as, and the reader would watch their plan lapse while
+ *    being charged for it.
+ */
+async function toAccountId(appUserId: string): Promise<string> {
+  if (appUserId.startsWith(GUEST_PREFIX)) {
+    const linked = await db.execute({
+      sql: 'SELECT linked_account_id FROM guest_identities WHERE guest_id = ?',
+      args: [appUserId],
+    });
+    const linkedTo = linked.rows[0]?.linked_account_id;
+    return linkedTo == null ? appUserId : String(linkedTo);
+  }
   return appUserId.startsWith(ACCOUNT_PREFIX) ? appUserId : `${ACCOUNT_PREFIX}${appUserId}`;
 }
 
@@ -103,7 +127,7 @@ export async function routeRevenueCatEvent(
       : [];
 
     for (const from of fromIds) {
-      await billing.clearPlan(toAccountId(from));
+      await billing.clearPlan(await toAccountId(from));
     }
     const plan = bestPlanOf(event);
     if (plan && toIds.length > 0) {
@@ -111,7 +135,7 @@ export async function routeRevenueCatEvent(
         typeof event.expiration_at_ms === 'number' ? event.expiration_at_ms : null;
       for (const to of toIds) {
         await billing.grantMonthly({
-          accountId: toAccountId(to),
+          accountId: await toAccountId(to),
           plan,
           periodEndMs: expirationAtMs,
           description: 'Entitlement transferred',
@@ -127,7 +151,7 @@ export async function routeRevenueCatEvent(
     // retrying for: no account means nothing to act on, whoever resends it.
     return { action: 'ignored', note: 'no app_user_id' };
   }
-  const accountId = toAccountId(appUserId);
+  const accountId = await toAccountId(appUserId);
 
   if (type === 'CANCELLATION') {
     /*

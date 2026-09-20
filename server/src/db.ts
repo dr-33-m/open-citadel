@@ -361,6 +361,36 @@ export async function ensureBillingSchema(client: Client): Promise<void> {
         expires_at_ms   INTEGER
       )`,
       /*
+       * A reader who bought a plan without making an account.
+       *
+       * The id is the RevenueCat `app_user_id` for that device, so a purchase
+       * and its renewals land on `guest:<uuid>` exactly as an account's land
+       * on `account:<sub>`. Both are keys into `account_credits`, which needs
+       * no column for this: it has only ever cared that the key is opaque.
+       *
+       * Only the hash of the device's secret is kept. The secret itself is
+       * 256 bits of device-generated randomness, which is why a single
+       * SHA-256 is enough and a slow hash would be theatre: there is no
+       * low-entropy password here to grind through.
+       *
+       * `linked_account_id` is the whole point of the table. RevenueCat will
+       * not move a subscription from one identified id to another, so when a
+       * guest later makes an account, the subscription STAYS on the guest id
+       * and its renewals keep arriving under it. This column is how a webhook
+       * eighteen months later still finds the right ledger.
+       */
+      `CREATE TABLE IF NOT EXISTS guest_identities (
+        guest_id          TEXT PRIMARY KEY,
+        secret_sha256     TEXT NOT NULL,
+        created_at_ms     INTEGER NOT NULL,
+        linked_account_id TEXT,
+        linked_at_ms      INTEGER
+      )`,
+      /* The reverse lookup, for the reconcile: given an account, which guest
+         ids does RevenueCat still hold its subscription under. */
+      `CREATE INDEX IF NOT EXISTS guest_identities_linked_idx
+        ON guest_identities (linked_account_id)`,
+      /*
        * The usage index follows the rename. The old name survives on
        * databases created before it, so it is dropped and rebuilt under the
        * new one rather than left as a duplicate with a lying name.

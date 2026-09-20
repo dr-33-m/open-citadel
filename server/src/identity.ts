@@ -1,7 +1,13 @@
-import { createRemoteJWKSet, jwtVerify, errors as joseErrors } from 'jose';
+import { createRemoteJWKSet, decodeJwt, jwtVerify, errors as joseErrors } from 'jose';
 import { type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { SAMWELL_API_RESOURCE } from 'samwell-shared';
+
+import {
+  GUEST_ISSUER,
+  guestAccessConfigured,
+  verifyGuestToken,
+} from './guest-identity.js';
 
 /**
  * Who a request belongs to.
@@ -46,14 +52,33 @@ export type Identity = {
    * Logto's subject claim, prefixed. The prefix is not decoration: this value
    * goes in the same column that used to hold device ids, and `account:` is
    * what stops an old row and a new one ever colliding.
+   *
+   * For a guest it is `guest:<uuid>` as minted on the device, unprefixed
+   * because it already carries one. The two can never collide, and every
+   * route downstream treats them the same: an opaque key to meter against.
    */
   id: string;
-  /** The bare subject, for anything that wants to talk to Logto about them. */
+  /**
+   * The bare subject, for anything that wants to talk to Logto about them.
+   *
+   * For a guest this is the guest id, which is also its RevenueCat
+   * `app_user_id`. Check `kind` before handing it to Logto, which has never
+   * heard of them.
+   */
   sub: string;
+  /** Which of the two this is. Most routes do not care. */
+  kind: 'account' | 'guest';
 };
 
 /**
- * The account behind this request, or a 401.
+ * Who this request belongs to, or a 401.
+ *
+ * Two kinds of bearer token reach this server and they are told apart by
+ * issuer, not by guesswork: Logto's own, verified against their JWKS, and the
+ * short-lived ones we sign for a device that bought a plan without making an
+ * account. The issuer is read from the unverified payload only to choose a
+ * verifier - nothing is trusted until one of them has checked the signature,
+ * the issuer, the audience and the expiry.
  *
  * Deliberately strict about a token that is present but does not verify. The
  * tempting alternative — fall back to anonymous — would hand every expired
@@ -69,6 +94,8 @@ export async function readIdentity(c: Context): Promise<Identity> {
     });
   }
 
+  if (looksLikeGuestToken(token)) return readGuestIdentity(token);
+
   try {
     const { payload } = await jwtVerify(token, keys(), {
       issuer: `${endpoint}/oidc`,
@@ -77,7 +104,7 @@ export async function readIdentity(c: Context): Promise<Identity> {
     if (!payload.sub) {
       throw new HTTPException(401, { message: 'That sign-in carries no account.' });
     }
-    return { id: `account:${payload.sub}`, sub: payload.sub };
+    return { id: `account:${payload.sub}`, sub: payload.sub, kind: 'account' };
   } catch (error) {
     // A 500 from `keys()` is a server misconfiguration and must not be
     // reported to the app as "your sign-in expired".
@@ -86,5 +113,46 @@ export async function readIdentity(c: Context): Promise<Identity> {
       throw new HTTPException(401, { message: 'Your sign-in has expired. Sign in again.' });
     }
     throw new HTTPException(401, { message: 'That sign-in could not be verified.' });
+  }
+}
+
+/**
+ * Is this one of ours?
+ *
+ * Reads the issuer from the payload without verifying anything, purely to
+ * choose which verifier runs. A forged issuer gets a forged token sent to the
+ * guest verifier, which will reject it for the signature; it cannot be used
+ * to skip verification, only to pick the wrong door and be turned away.
+ */
+function looksLikeGuestToken(token: string): boolean {
+  try {
+    return decodeJwt(token).iss === GUEST_ISSUER;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The device behind this request.
+ *
+ * No link check here, deliberately. A token minted just before its guest was
+ * linked to an account stays valid for the rest of its hour, and it does not
+ * matter: linking moves the credit row to the account, so the guest id is
+ * left with nothing to spend and every metered route refuses it on the
+ * balance. The alternative is a database read in front of every request to
+ * re-answer a question the ledger already answers.
+ */
+async function readGuestIdentity(token: string): Promise<Identity> {
+  if (!guestAccessConfigured()) {
+    throw new HTTPException(401, { message: 'That token could not be verified.' });
+  }
+  try {
+    const guestId = await verifyGuestToken(token);
+    return { id: guestId, sub: guestId, kind: 'guest' };
+  } catch (error) {
+    if (error instanceof joseErrors.JWTExpired) {
+      throw new HTTPException(401, { message: 'That token has expired.' });
+    }
+    throw new HTTPException(401, { message: 'That token could not be verified.' });
   }
 }
