@@ -15,7 +15,8 @@ import { Touchable } from "@/components/ui/touchable";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
 import { easing, motion } from "@/constants/theme";
 import { getCloudBlocker } from "@/features/chat/utils/cloud-access";
-import { useAccountStore } from "@/stores/account";
+import { PURCHASES_ENABLED } from "@/constants/revenuecat";
+import { useCloudIdentity } from "@/hooks/use-cloud-identity";
 import { useModelStore } from "@/stores/model";
 import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
@@ -41,13 +42,14 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
   const loadError = useModelStore((s) => s.loadError);
   const samwellMode = useSettingsStore((s) => s.samwellMode);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
-  const accountStatus = useAccountStore((s) => s.status);
+  const identity = useCloudIdentity();
   const subscriptionStatus = useSubscriptionStore((s) => s.status);
   const subscriptionPlan = useSubscriptionStore((s) => s.plan);
   const cloudReady =
     getCloudBlocker({
       configured: cloudBaseUrl.length > 0 && ACCOUNT_ENABLED,
-      accountStatus,
+      identity: identity.kind,
+      purchasable: PURCHASES_ENABLED,
       subscriptionStatus,
       mode: samwellMode,
     }) === null;

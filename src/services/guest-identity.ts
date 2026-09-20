@@ -100,11 +100,14 @@ export async function readGuestIdentity(): Promise<GuestIdentity | null> {
 /**
  * The identity to buy against, minting and registering one if needed.
  *
- * Written to the Keychain before the server is told, deliberately. If
- * registration fails the identity is still the one RevenueCat will be given,
- * so a purchase made on a bad connection still lands somewhere the webhook
- * can credit; `guestToken` registers again when it finds the server does not
- * know this device yet.
+ * Written to the Keychain before the server is told, and answered with even
+ * if the server could not be told at all. This is the one call whose failure
+ * must not stop anything: it runs at the moment of purchase, the store sheet
+ * is about to open, and a reader whose connection is good enough for Apple
+ * but not for us should still be able to pay. The id is what RevenueCat is
+ * about to be given, so the purchase lands somewhere the webhook can credit
+ * either way, and `guestToken` registers again the moment it finds the server
+ * does not know this device.
  *
  * An identity that already exists is returned as it stands, with no call to
  * the server. Re-registering on every purchase would be a round trip to learn
@@ -124,7 +127,11 @@ export async function ensureGuestIdentity(): Promise<GuestIdentity> {
     SecureStore.setItemAsync(SECRET_KEY, identity.secret, STORE_OPTIONS),
   ]);
   identityCache = { value: identity };
-  await registerGuest(identity);
+  try {
+    await registerGuest(identity);
+  } catch (error) {
+    if (__DEV__) console.warn('[Guest] Could not register this device yet:', error);
+  }
   return identity;
 }
 

@@ -14,12 +14,13 @@ import { PrefixIcon } from "@/components/ui/prefix-icon";
 import { Touchable } from "@/components/ui/touchable";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
 import { getCloudBlocker } from "@/features/chat/utils/cloud-access";
+import { PURCHASES_ENABLED } from "@/constants/revenuecat";
+import { useCloudIdentity } from "@/hooks/use-cloud-identity";
 import { CloudPanel } from "@/features/settings/components/cloud-panel";
 import { OfflineModelCard } from "@/features/settings/components/offline-model-card";
 import { SettingsSection } from "@/features/settings/components/settings-section";
 import { cn } from "@/lib/cn";
 import { isNativeAvailable } from "@/services/inference";
-import { useAccountStore } from "@/stores/account";
 import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
@@ -45,7 +46,7 @@ export const SamwellSection = React.memo(function SamwellSection({
   const samwellMode = useSettingsStore((s) => s.samwellMode);
   const setSamwellMode = useSettingsStore((s) => s.setSamwellMode);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
-  const accountStatus = useAccountStore((s) => s.status);
+  const identity = useCloudIdentity();
   const subscriptionStatus = useSubscriptionStore((s) => s.status);
   const [infoSheet, setInfoSheet] = React.useState<EngineMode | null>(null);
   const [previewMode, setPreviewMode] = React.useState<EngineMode | null>(() =>
@@ -55,7 +56,8 @@ export const SamwellSection = React.memo(function SamwellSection({
   const displayedMode = previewMode ?? samwellMode;
   const cloudBlocker = getCloudBlocker({
     configured: cloudBaseUrl.length > 0 && ACCOUNT_ENABLED,
-    accountStatus,
+    identity: identity.kind,
+    purchasable: PURCHASES_ENABLED,
     subscriptionStatus,
     mode: samwellMode,
   });

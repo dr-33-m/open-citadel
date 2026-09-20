@@ -6,14 +6,20 @@ import {
     readCustomerInfo,
     subscribeToCustomerInfo,
 } from '@/services/purchases';
-import { useAccountStore } from '@/stores/account';
+import { readCloudIdentity } from '@/hooks/use-cloud-identity';
 import { useSubscriptionStore } from '@/stores/subscription';
 
-/** Keep renewal metadata current across SDK updates and store handoffs. */
-export function useBillingLifecycle(accountId: string | null): void {
+/**
+ * Keep renewal metadata current across SDK updates and store handoffs.
+ *
+ * Takes whoever the server meters against, account or guest. A device that
+ * bought a plan without an account has the same renewal date to draw, and
+ * keying this on the account alone left it with none.
+ */
+export function useBillingLifecycle(identityId: string | null): void {
   React.useEffect(() => {
     const store = useSubscriptionStore.getState();
-    if (!accountId || !PURCHASES_ENABLED) {
+    if (!identityId || !PURCHASES_ENABLED) {
       store.applyCustomerInfo(null);
       return;
     }
@@ -21,7 +27,10 @@ export function useBillingLifecycle(accountId: string | null): void {
     let mounted = true;
     let readInFlight: Promise<void> | null = null;
     const apply = (customerInfo: Awaited<ReturnType<typeof readCustomerInfo>>) => {
-      if (mounted && useAccountStore.getState().sub === accountId) {
+      // Still the same reader. A sign-in mid-read moves the ledger key, and
+      // applying the phone's CustomerInfo to the person would be the wrong
+      // renewal date on the right card.
+      if (mounted && readCloudIdentity().id === identityId) {
         useSubscriptionStore.getState().applyCustomerInfo(customerInfo);
       }
     };
@@ -51,5 +60,5 @@ export function useBillingLifecycle(accountId: string | null): void {
       unsubscribe();
       appStateSubscription.remove();
     };
-  }, [accountId]);
+  }, [identityId]);
 }

@@ -19,14 +19,13 @@ import {
 } from "@/constants/revenuecat";
 import { layout } from "@/constants/theme";
 import { CreditMeter } from "@/features/billing/components/credit-meter";
-import { PlanAccountSheet } from "@/features/billing/components/plan-account-sheet";
 import { PlanPicker } from "@/features/billing/components/plan-picker";
 import { SubscriptionManagementSheet } from "@/features/billing/components/subscription-management-sheet";
 import { useBillingLifecycle } from "@/features/billing/hooks/use-billing-lifecycle";
 import { usePlanCheckout } from "@/features/billing/hooks/use-plan-checkout";
 import { CloudModelSheet } from "@/features/settings/components/cloud-model-sheet";
 import { CloudTuneSheet } from "@/features/settings/components/cloud-tune-sheet";
-import { useAccountStore } from "@/stores/account";
+import { useCloudIdentity } from "@/hooks/use-cloud-identity";
 import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
@@ -85,14 +84,16 @@ export function CloudPanel({
   // being true the first time `/admin/models` adds one.
   const modelCounts = useSubscriptionStore((s) => s.modelsByPlan);
 
-  const accountId = useAccountStore((state) =>
-    state.status === "signedIn" ? state.sub : null,
-  );
-  // The status as well as the id, because "not read yet" and "signed out"
-  // want different behaviour here and both report a null id.
-  const accountStatus = useAccountStore((state) => state.status);
-  const signedIn = accountId !== null;
-  useBillingLifecycle(focused ? accountId : null);
+  /*
+   * Account or guest, in one value. This panel used to ask "is there an
+   * account", which stopped being the right question the moment a device
+   * could buy a plan without one: a guest who had paid went on being shown
+   * the price list forever, because the branch that draws the subscribed card
+   * was behind a sign-in. See `hooks/use-cloud-identity`.
+   */
+  const identity = useCloudIdentity();
+  const hasIdentity = identity.kind === "account" || identity.kind === "guest";
+  useBillingLifecycle(focused ? identity.id : null);
   const [pickerVisible, setPickerVisible] = React.useState(false);
   const [tuneVisible, setTuneVisible] = React.useState(false);
   const [manageVisible, setManageVisible] = React.useState(false);
@@ -115,7 +116,7 @@ export function CloudPanel({
   );
 
   /*
-   * Ask the server what this account holds, and the store what is on sale.
+   * Ask the server what this reader holds, and the store what is on sale.
    *
    * What is on sale is asked either way. The plans have to draw for somebody
    * who has never signed in - App Review reads a price list behind a sign-in
@@ -125,21 +126,21 @@ export function CloudPanel({
    */
   React.useEffect(() => {
     /*
-     * Not before the stored session has been read. Two reasons, and the
-     * second is the one that bites: `unknown` is not "signed out", so acting
-     * on it would ask the anonymous route about a reader who has an account;
-     * and the account store is what configures the purchases SDK, so asking
-     * the store for its offering first throws and leaves the cards with no
-     * prices until something else re-runs this.
+     * Not before the stored session and the Keychain have been read. Two
+     * reasons, and the second is the one that bites: `unknown` is not
+     * "nobody", so acting on it would ask the anonymous route about a reader
+     * who has an account; and the account store is what configures the
+     * purchases SDK, so asking the store for its offering first throws and
+     * leaves the cards with no prices until something else re-runs this.
      */
-    if (accountStatus === "unknown") return;
+    if (identity.kind === "unknown") return;
     void loadOffering();
-    if (signedIn) {
+    if (hasIdentity) {
       void refresh();
       return;
     }
     void loadPlanPreview();
-  }, [accountStatus, signedIn, refresh, loadOffering, loadPlanPreview]);
+  }, [identity.kind, hasIdentity, refresh, loadOffering, loadPlanPreview]);
 
   /** The store package behind each plan, keyed exactly. See `planForPackage`. */
   const packages = React.useMemo(() => {
@@ -235,16 +236,15 @@ export function CloudPanel({
     [start],
   );
   const startRestore = React.useCallback(() => start({ kind: "restore" }), [start]);
-  /** A sign-in has landed and the purchase it was for is still going. */
+  /**
+   * A purchase is under way.
+   *
+   * Holds this branch up while it runs. Minting a guest identity makes
+   * `hasIdentity` true one render into the purchase, and without this the
+   * panel would swap to the subscribed card with the store's own sheet still
+   * open over it, then swap back if they changed their mind.
+   */
   const checkingOut = checkout.preparing !== null;
-  // Derived here rather than in the sheet's props: the house rule is no logic
-  // in JSX, and "which plan did they tap" is exactly the sort of thing that
-  // goes wrong unnoticed when it is written as a ternary inside an attribute.
-  const pendingKind = checkout.pending?.kind === "restore" ? "restore" : "buy";
-  const pendingPlanLabel =
-    checkout.pending?.kind === "buy"
-      ? CREDIT_PLANS[checkout.pending.plan].label
-      : null;
 
   // This build cannot reach him, and no amount of signing in changes that.
   if (!cloudBaseUrl || !ACCOUNT_ENABLED) {
@@ -265,7 +265,7 @@ export function CloudPanel({
    * somebody who is already paying for one, at prices the store has not
    * answered for yet. The same quiet card the subscription check uses below.
    */
-  if (accountStatus === "unknown") {
+  if (identity.kind === "unknown") {
     return (
       <Card className="p-4">
         <View className="flex-row items-center gap-2">
@@ -283,7 +283,7 @@ export function CloudPanel({
    * anyway. No carousel to draw, so it keeps the plain card and the one thing
    * left worth doing.
    */
-  if (!signedIn && !PURCHASES_ENABLED) {
+  if (!hasIdentity && !PURCHASES_ENABLED) {
     return (
       <Card className="gap-4 p-4">
         <View className="gap-1">
@@ -305,25 +305,20 @@ export function CloudPanel({
   }
 
   /*
-   * Nobody signed in, and plans to sell.
+   * Nobody yet, and plans to sell.
    *
-   * They are readable here, priced, with their explanation sheets, and
-   * choosing one asks for the account then rather than now. What is being
-   * sold is credits spent on models that run on our servers, so an account is
-   * genuinely where a plan has to live - but that is a reason to give at the
-   * moment somebody decides to buy, not a wall to put in front of the price
-   * list. See `PlanAccountSheet`, and `usePlanCheckout` for the order.
+   * Readable, priced, with their explanation sheets, and choosing one asks
+   * for nothing. The device mints its own identity at that moment and buys
+   * against it; an account is offered afterwards and buys one thing, which is
+   * the same plan on a second device. That is the shape App Review asked for
+   * under 5.1.1(v), and it is the honest one: what is being sold is credits
+   * spent on models that run on our servers, and the server can meter a phone
+   * as easily as a person.
    *
-   * The same view stays up while a checkout is under way, which is what
-   * `checkingOut` is for. Signing in from the sheet flips this into the
-   * signed-in branches below, and the purchase it was signing in FOR is still
-   * running. Held here, the sheet keeps its close animation, the button keeps
-   * spinning into the store's own sheet, and nothing on screen jumps to
-   * "Checking subscription" and back. The account landing and `preparing`
-   * being set are one React update, since both follow the same awaited
-   * sign-in, so there is no frame in between where this is false.
+   * See `usePlanCheckout` for the order, which is the part that costs money
+   * to get wrong.
    */
-  if (!signedIn || checkingOut) {
+  if (!hasIdentity || checkingOut) {
     return (
       <>
         {/* Keyed, and the branch below returns the same fragment with the
@@ -347,7 +342,7 @@ export function CloudPanel({
         {/* The quiet third door, for somebody who wants neither to buy nor to
             restore: it scrolls to the account card rather than opening the
             browser from here, so sign-in still happens in one place. */}
-        {!signedIn ? (
+        {!hasIdentity ? (
           <View className="items-center">
             <Touchable
               className="px-4 py-2"
@@ -366,16 +361,6 @@ export function CloudPanel({
             </Touchable>
           </View>
         ) : null}
-        {/* Outside the `!signedIn` test above on purpose. Taking the sheet
-            away in the same update that signs somebody in would unmount a
-            presented modal mid-animation; here it closes the ordinary way. */}
-        <PlanAccountSheet
-          visible={checkout.pending !== null}
-          kind={pendingKind}
-          planLabel={pendingPlanLabel}
-          onClose={checkout.dismiss}
-          onSignedIn={() => void checkout.onSignedIn()}
-        />
       </>
     );
   }
@@ -438,7 +423,11 @@ export function CloudPanel({
           packages={packages}
           catalogue={catalogue}
           modelCounts={modelCounts}
-          busy={busy}
+          /* `preparing` first, the same as the branch above: the checkout
+             asks the server before it opens the store sheet, and without this
+             the button went quiet for that round trip and invited a second
+             tap. */
+          busy={checkout.preparing ?? busy}
           loading={loading}
           onChoose={startPurchase}
           onRestore={startRestore}

@@ -5,41 +5,62 @@ import type { PlanId } from 'samwell-shared';
 import { showToast } from '@/components/toast/toast-provider';
 import { identify } from '@/services/purchases';
 import { useAccountStore } from '@/stores/account';
+import { useGuestStore } from '@/stores/guest';
 import { useSubscriptionStore } from '@/stores/subscription';
 
-/** What the reader asked for before anyone knew whether they had an account. */
+/** What the reader asked for, before anyone worked out who they are. */
 export type CheckoutIntent =
   | { kind: 'buy'; plan: PlanId; packageToBuy: PurchasesPackage }
   | { kind: 'restore' };
 
 /**
- * Choosing a plan, whether or not there is an account yet.
+ * Choosing a plan, with or without an account.
  *
- * Signed in, this is a straight passthrough to the store's own purchase. The
- * work is the other case: the carousel now draws for a reader who has never
- * signed in, so `start` has to hold what they asked for, ask for an account,
- * and then carry out the original request without making them find the plan
- * again.
+ * ## Why there is no sign-in here any more
+ *
+ * App Review rejected the build under guideline 5.1.1(v): a subscription may
+ * not require registration unless the purchase is tied to account-specific
+ * functionality. This used to hold the intent, ask for an account, and then
+ * carry it out. It does not ask any more. A device that has never signed in
+ * mints a guest identity at this moment - an id and a secret, both random,
+ * both kept in the Keychain - and buys against that. Registering is still
+ * offered afterwards, and buys exactly one thing: the same plan on a second
+ * device.
  *
  * ## The order is not a preference
  *
- * Sign in first, then buy. RevenueCat's `app_user_id` IS the Logto subject,
- * and the server's credit ledger is keyed on that same value with a prefix -
- * so a purchase made before the join lands is recorded against the anonymous
- * customer the app was configured with while signed out. The store would take
- * the money, the webhook would carry an id nobody can ever authenticate as,
- * and the credits would be granted to a ghost. Aliasing afterwards moves
- * entitlements, not ledger rows.
+ * Tell the store who this is, THEN buy. RevenueCat's `app_user_id` is the
+ * same value the server's credit ledger is keyed on, so a purchase made
+ * before the join lands is recorded against the anonymous customer the SDK
+ * was configured with. The store would take the money, the webhook would
+ * carry an id nobody can ever authenticate as, and the credits would be
+ * granted to a ghost. Aliasing afterwards moves entitlements, not ledger
+ * rows.
  *
- * Which is why `identify` is awaited here. The account store fires it on
- * sign-in and deliberately does not wait, because a session is real whether
- * or not a purchases SDK could be reached; a purchase seconds later cannot
- * take that view. See `services/purchases`.
+ * Which is why `identify` is awaited. The account store fires it on sign-in
+ * and deliberately does not wait, because a session is real whether or not a
+ * purchases SDK could be reached; a purchase seconds later cannot take that
+ * view. See `services/purchases`.
  */
+
 /**
- * Everything between a sign-in landing and the thing they asked for
- * happening. Lifted out of the hook so the order can be tested without a
- * renderer, since the order is the part that costs money to get wrong.
+ * Who this purchase belongs to, minting a guest identity if there is nobody.
+ *
+ * The account wins when there is one, the same order `cloudHeaders` uses. The
+ * guest is minted here rather than at launch on purpose: an install that
+ * never buys anything should not be registering itself with a server, and a
+ * guest receives no free credits, so there is nothing to farm by reinstalling.
+ */
+async function checkoutSubject(): Promise<string | null> {
+  const account = useAccountStore.getState();
+  if (account.status === 'signedIn' && account.sub) return account.sub;
+  return useGuestStore.getState().adopt();
+}
+
+/**
+ * Everything between the tap and the store sheet. Lifted out of the hook so
+ * the order can be tested without a renderer, since the order is the part
+ * that costs money to get wrong.
  *
  * `carryOut` is the original intent: the store's purchase, or its restore.
  */
@@ -48,13 +69,25 @@ export async function completeCheckout(
   carryOut: (intent: CheckoutIntent) => Promise<void>,
   onAlreadyActive?: () => void,
 ): Promise<void> {
-  const sub = useAccountStore.getState().sub;
-  // Signed in without a subject is not a state to guess at. Nothing was
-  // charged and nothing was lost; the button is theirs to press again.
-  if (!sub) return;
+  let subject: string | null;
+  try {
+    subject = await checkoutSubject();
+  } catch (error) {
+    if (__DEV__) console.warn('[Checkout] Could not mint a device identity:', error);
+    subject = null;
+  }
+  // No id to buy against is not a state to guess at. Nothing was charged and
+  // nothing was lost; the button is theirs to press again.
+  if (!subject) {
+    showToast({
+      message: 'Could not start the purchase. Try again in a moment.',
+      key: 'billing',
+    });
+    return;
+  }
 
   try {
-    await identify(sub);
+    await identify(subject);
   } catch (error) {
     if (__DEV__) console.warn('[Checkout] Could not identify with RevenueCat:', error);
     showToast({
@@ -65,21 +98,22 @@ export async function completeCheckout(
   }
 
   /*
-   * Signing in can be how a plan arrives. RevenueCat moves a purchase made
-   * on this device onto the account it has just been told about, and the
-   * server reconciles an account it has never seen straight from RevenueCat
-   * on the first read. Selling somebody a second subscription they already
-   * hold is the one outcome here that costs real money.
+   * Ask the server before selling. A plan can already be here without this
+   * screen knowing: RevenueCat moves a purchase made on this device onto the
+   * id it has just been told about, and the server reconciles an id it has
+   * never seen straight from RevenueCat on the first read. Selling somebody a
+   * second subscription they already hold is the one outcome here that costs
+   * real money.
    *
    * Only on the way to a purchase. A restore does its own read, and this one
-   * would turn "restored" into "already active" for every reader who took
-   * the restore door.
+   * would turn "restored" into "already active" for every reader who took the
+   * restore door.
    */
   if (intent.kind === 'buy') {
     await useSubscriptionStore.getState().refresh();
     if (useSubscriptionStore.getState().status === 'active') {
       showToast({
-        message: 'Your plan is already active on this account.',
+        message: 'You already have an active plan.',
         tone: 'success',
         key: 'billing',
       });
@@ -98,13 +132,11 @@ export function usePlanCheckout({
 }: {
   buy: (plan: PlanId, packageToBuy: PurchasesPackage) => Promise<unknown>;
   restore: () => Promise<void>;
-  /** A plan arrived with the sign-in, so there is nothing left to buy. */
+  /** A plan was already here, so there is nothing left to buy. */
   onAlreadyActive?: () => void;
 }) {
-  /** The intent waiting on an account. Also whether the sheet is up. */
-  const [pending, setPending] = React.useState<CheckoutIntent | null>(null);
   /**
-   * The step between the sign-in landing and the store sheet opening.
+   * The step between the tap and the store sheet opening.
    *
    * Shaped like the subscription store's own `busy` so the carousel can take
    * either: the button keeps spinning from the tap through to the purchase,
@@ -123,31 +155,31 @@ export function usePlanCheckout({
     [buy, restore],
   );
 
+  /**
+   * The real guard on a second tap.
+   *
+   * `preparing` is what the button reads, but state lands a render later, and
+   * a tap in that gap would start a second purchase. A ref is the same fact
+   * without the delay.
+   */
+  const inFlight = React.useRef(false);
+
   const start = React.useCallback(
     (intent: CheckoutIntent) => {
-      if (useAccountStore.getState().status === 'signedIn') {
-        void run(intent);
-        return;
-      }
-      setPending(intent);
+      if (inFlight.current) return;
+      inFlight.current = true;
+      setPreparing(intent.kind === 'restore' ? 'restore' : intent.plan);
+      void (async () => {
+        try {
+          await completeCheckout(intent, run, onAlreadyActive);
+        } finally {
+          inFlight.current = false;
+          setPreparing(null);
+        }
+      })();
     },
-    [run],
+    [run, onAlreadyActive],
   );
 
-  const dismiss = React.useCallback(() => setPending(null), []);
-
-  const onSignedIn = React.useCallback(async () => {
-    const intent = pending;
-    setPending(null);
-    if (!intent) return;
-
-    setPreparing(intent.kind === 'restore' ? 'restore' : intent.plan);
-    try {
-      await completeCheckout(intent, run, onAlreadyActive);
-    } finally {
-      setPreparing(null);
-    }
-  }, [pending, run, onAlreadyActive]);
-
-  return { pending, preparing, start, dismiss, onSignedIn };
+  return { preparing, start };
 }

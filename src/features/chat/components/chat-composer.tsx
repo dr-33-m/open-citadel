@@ -48,6 +48,11 @@ function placeholderFor({
   if (mode === 'cloud') {
     if (cloudBlocker === 'notConfigured') return 'Cloud unavailable in this build…';
     if (cloudBlocker === 'needsAccount') return 'Sign in to reach Samwell…';
+    // Was missing, and it used to be rare: only a signed-in reader whose plan
+    // had lapsed reached it, and they read "Wake up Samwell…" instead, which
+    // is offline copy. Now it is the ordinary state of anybody who has not
+    // bought anything, so the field has to say what is actually wanted.
+    if (cloudBlocker === 'needsPlan') return 'Choose a plan to reach Samwell…';
     // Nothing to wake in cloud mode, so the offline copy below would be a
     // lie. The field is disabled for this beat either way.
     if (cloudBlocker === 'checkingAccount') return 'Message Samwell…';

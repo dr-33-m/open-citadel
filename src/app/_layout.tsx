@@ -59,6 +59,7 @@ import {
     setupTTSMediaSession,
 } from "@/services/tts-media-session";
 import { useAccountStore } from "@/stores/account";
+import { useGuestStore } from "@/stores/guest";
 import { useBooksStore } from "@/stores/books";
 import { useModelStore } from "@/stores/model";
 import { useSettingsStore } from "@/stores/settings";
@@ -177,6 +178,11 @@ export default function RootLayout() {
         // and nothing that sends a request reads its result anyway (see
         // `services/account`), so there is nothing here worth waiting for.
         void useAccountStore.getState().restore();
+        // And whether this device bought a plan on its own, which is the
+        // other half of the same question. Also a local read, also fired and
+        // forgotten, and `usePlanSync` below waits on neither: it runs again
+        // the moment either one lands.
+        void useGuestStore.getState().restore();
       })
       .catch((err) => {
         console.error("Startup failed:", err);

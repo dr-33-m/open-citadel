@@ -117,12 +117,16 @@ export function configurePurchases(appUserID: string | null): void {
 let identified: { sub: string; done: Promise<void> } | null = null;
 
 /**
- * Tie the RevenueCat customer to the Logto account.
+ * Tie the RevenueCat customer to whoever is buying.
  *
- * `app_user_id` IS the Logto subject. That equality is what lets the server
- * read a webhook's `app_user_id`, prefix it, and have it be the same
- * `account:<sub>` the credit ledger is keyed on - with no mapping table to
- * drift. Changing it here breaks billing silently.
+ * `app_user_id` IS the ledger key, and that equality is the whole billing
+ * design: the server reads a webhook's `app_user_id` and has the row it needs
+ * with no mapping table to drift. Changing it here breaks billing silently.
+ *
+ * Two shapes reach it. A Logto subject, which the server prefixes into
+ * `account:<sub>`. Or a `guest:<uuid>` minted on the device at the moment of
+ * purchase, which it takes as the key unchanged - that is what lets somebody
+ * buy a plan without registering. See `services/guest-identity`.
  *
  * Idempotent, and that is what makes it safe to await before a purchase. The
  * account store fires this on sign-in and does not wait, because a session is

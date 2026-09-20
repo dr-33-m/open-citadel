@@ -77,11 +77,13 @@ describe('minting an identity', () => {
     expect(second).toEqual(first);
   });
 
-  it('keeps an identity the server could not be told about', async () => {
-    // The purchase still has to land somewhere the webhook can credit, so the
-    // id RevenueCat is about to be given must survive a failed registration.
+  it('mints anyway when the server cannot be told', async () => {
+    // This runs with the store sheet about to open. The purchase has to land
+    // somewhere the webhook can credit, and the id is what decides that, so a
+    // failed registration must not stop the sale. `guestToken` repairs it.
     fetchMock.mockRejectedValue(new Error('offline'));
-    await expect(ensureGuestIdentity()).rejects.toThrow();
+
+    expect(await ensureGuestIdentity()).toEqual({ guestId: GUEST_ID, secret: SECRET });
     expect(await readGuestIdentity()).toEqual({ guestId: GUEST_ID, secret: SECRET });
   });
 

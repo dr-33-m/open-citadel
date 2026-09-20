@@ -1,7 +1,7 @@
 import React from 'react';
 import { AppState } from 'react-native';
 
-import { useAccountStore } from '@/stores/account';
+import { useCloudIdentity } from '@/hooks/use-cloud-identity';
 import { useSubscriptionStore } from '@/stores/subscription';
 
 /**
@@ -22,16 +22,22 @@ const FOREGROUND_RECHECK_MS = 30_000;
  * panel that finally sent the request. A network call is not a property of
  * whichever screen happens to be up.
  *
- * Asks when an account becomes signed in, and again whenever the app comes
- * back to the foreground: straight away if the last read never got an answer,
- * otherwise only after `FOREGROUND_RECHECK_MS`. Concurrent asks from anywhere
- * collapse into one request inside the store.
+ * Asks when an identity arrives, and again whenever the app comes back to the
+ * foreground: straight away if the last read never got an answer, otherwise
+ * only after `FOREGROUND_RECHECK_MS`. Concurrent asks from anywhere collapse
+ * into one request inside the store.
+ *
+ * An identity, not an account. A device that bought a plan without one has
+ * exactly the same need to know what it may spend, and keying this on the
+ * account would have left every guest reading their own plan as absent. Keyed
+ * on the id rather than the kind, so signing in after a purchase re-asks as
+ * the person instead of going on answering as the phone.
  */
 export function usePlanSync(): void {
-  const accountId = useAccountStore((s) => (s.status === 'signedIn' ? s.sub : null));
+  const identityId = useCloudIdentity().id;
 
   React.useEffect(() => {
-    if (!accountId) return;
+    if (!identityId) return;
 
     let lastCheck = Date.now();
     void useSubscriptionStore.getState().refresh();
@@ -45,5 +51,5 @@ export function usePlanSync(): void {
     });
 
     return () => subscription.remove();
-  }, [accountId]);
+  }, [identityId]);
 }

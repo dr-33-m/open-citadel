@@ -6,34 +6,42 @@
 
 ## Progress log
 
-**Step 1 is done and green** (2026-09-20, uncommitted). App and server
-typecheck, 499 tests pass, 21 of them new.
+**Steps 1 to 4 are done and green.** App and server typecheck, 521 app tests
+pass. The server is deployed: registering a fresh device answers 201 and the
+secret exchanges for a one hour token.
 
-- `guest_identities` in `ensureBillingSchema`, with the reverse index the
-  reconcile needs.
-- `guest-identity.ts`: id and secret shapes, registration, SHA-256 of the
-  secret and nothing else, token minting and verification.
-- `identity.ts` dispatches on issuer. `Identity` gained `kind`, so a route can
-  tell the two apart; nothing downstream had to change.
-- `billing.linkGuest`, one batch, refusing an account that already holds
-  anything of its own.
-- `syncEntitlement` asks about linked guest ids too. **The reconcile trap is
-  covered by three tests**, including that one unanswered subject reads as
-  unknown rather than cancelled.
-- The webhook resolves `guest:` ids through `linked_account_id`.
-- `guest-routes.ts` mounted at `/account`. `GUEST_TOKEN_SECRET` documented in
-  `server/.env.example`; without it the routes answer 503 and guest tokens are
-  never accepted, so a deployment that forgets it fails closed.
+**Step 1 and 2, server** (`7b11c52`). `guest_identities` in
+`ensureBillingSchema`. `guest-identity.ts`: id and secret shapes, registration,
+SHA-256 of the secret and nothing else, token minting and verification.
+`identity.ts` dispatches on issuer; `Identity` gained `kind`. `billing.linkGuest`,
+one batch, refusing an account that already holds anything of its own.
+`syncEntitlement` asks about linked guest ids too - **the reconcile trap is
+covered by three tests**, including that one unanswered subject reads as
+unknown rather than cancelled. The webhook resolves `guest:` ids through
+`linked_account_id`.
+
+**Step 3, the device's identity** (`2243d60`, fixed in `0a5af79`). Mint, store,
+register, exchange. `cloudHeaders` falls back to the guest token. The fixes
+were worth having: a missing request timeout, a wasted round trip, two
+Keychain reads per request, and a generation counter so a link landing
+mid-fetch cannot resurrect a deleted identity.
+
+**Step 4, buying without an account.** One notion, `hooks/use-cloud-identity`,
+replacing four separate "is there an account" checks: the cloud blocker, the
+plan sync, the billing lifecycle and the Cloud panel. `getCloudBlocker` now
+asks a reader with nobody for a PLAN rather than an account, and keeps
+`needsAccount` only for a build with no RevenueCat key, which can draw the
+plans but cannot sell them. `usePlanCheckout` mints a guest identity at the
+tap and buys against it; the sheet that used to ask for an account first is
+gone, and so is its copy, which said the opposite of what is now true.
 
 **Confirmed, not assumed:** the RevenueCat project is on "Transfer to new App
 User ID" with no separate sandbox behaviour, so restore-after-reinstall works
 and sandbox testing will behave the same.
 
-**Next:** step 3, the app's guest identity service. Step 2 folded into step 1,
-since the webhook resolution was one lookup in the same file.
-
-**Before deploying:** set `GUEST_TOKEN_SECRET` on the server. Everything else
-degrades safely without it.
+**Next:** step 5, the link flow and the account card copy. Still open before
+it: whether `logIn` from `guest:<uuid>` to a Logto sub aliases or switches,
+which decides whether the app should `logOut` first. Settle it on a device.
 
 ## Why
 

@@ -12,11 +12,12 @@
  * reasons the header does not care about.
  */
 import { ACCOUNT_ENABLED } from '@/constants/logto';
+import { PURCHASES_ENABLED } from '@/constants/revenuecat';
+import { useCloudIdentity } from '@/hooks/use-cloud-identity';
 import {
     getCloudBlocker,
     type CloudBlocker,
 } from '@/features/chat/utils/cloud-access';
-import { useAccountStore } from '@/stores/account';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
 import { isNativeAvailable } from '@/services/inference';
@@ -62,9 +63,9 @@ export interface SamwellReadiness {
 export function useSamwellReadiness(): SamwellReadiness {
   const samwellMode = useSettingsStore((s) => s.samwellMode);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
-  // The status, not the account: an email or a name arriving would otherwise
+  // The kind, not the account: an email or a name arriving would otherwise
   // re-render both chat surfaces for something neither of them draws.
-  const accountStatus = useAccountStore((s) => s.status);
+  const identity = useCloudIdentity();
   // The status, not the balance: a credit spent mid-conversation must not
   // re-render every chat surface in the app.
   // Read only. Asking the server is `usePlanSync`'s job, at the root, so the
@@ -111,7 +112,8 @@ export function useSamwellReadiness(): SamwellReadiness {
    */
   const cloudBlocker = getCloudBlocker({
     configured: cloudBaseUrl.length > 0 && ACCOUNT_ENABLED,
-    accountStatus,
+    identity: identity.kind,
+    purchasable: PURCHASES_ENABLED,
     subscriptionStatus: planStatus,
     mode: isCloud ? 'cloud' : 'offline',
   });
