@@ -237,6 +237,14 @@ export function CloudPanel({
   const startRestore = React.useCallback(() => start({ kind: "restore" }), [start]);
   /** A sign-in has landed and the purchase it was for is still going. */
   const checkingOut = checkout.preparing !== null;
+  // Derived here rather than in the sheet's props: the house rule is no logic
+  // in JSX, and "which plan did they tap" is exactly the sort of thing that
+  // goes wrong unnoticed when it is written as a ternary inside an attribute.
+  const pendingKind = checkout.pending?.kind === "restore" ? "restore" : "buy";
+  const pendingPlanLabel =
+    checkout.pending?.kind === "buy"
+      ? CREDIT_PLANS[checkout.pending.plan].label
+      : null;
 
   // This build cannot reach him, and no amount of signing in changes that.
   if (!cloudBaseUrl || !ACCOUNT_ENABLED) {
@@ -363,7 +371,8 @@ export function CloudPanel({
             presented modal mid-animation; here it closes the ordinary way. */}
         <PlanAccountSheet
           visible={checkout.pending !== null}
-          kind={checkout.pending?.kind === "restore" ? "restore" : "buy"}
+          kind={pendingKind}
+          planLabel={pendingPlanLabel}
           onClose={checkout.dismiss}
           onSignedIn={() => void checkout.onSignedIn()}
         />

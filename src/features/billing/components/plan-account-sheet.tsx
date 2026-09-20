@@ -30,6 +30,7 @@ import { asColor } from '@/utils/colors';
 export function PlanAccountSheet({
   visible,
   kind,
+  planLabel,
   onClose,
   onSignedIn,
 }: {
@@ -37,6 +38,14 @@ export function PlanAccountSheet({
   /** Buying asks for somewhere to put a new plan; restoring asks for the
    *  account that already holds one. */
   kind: 'buy' | 'restore';
+  /**
+   * The plan they just chose, by name: "Maester Samwell", "Grand Maester
+   * Samwell", "Archmaester Samwell". The sheet used to name the middle one
+   * whatever had been tapped, which told somebody buying the Archmaester
+   * that they were buying something else. Null when restoring, where no plan
+   * has been picked.
+   */
+  planLabel: string | null;
   onClose: () => void;
   onSignedIn: () => void;
 }) {
@@ -53,7 +62,7 @@ export function PlanAccountSheet({
 
         <SamwellText type="bodyMd" color={asColor(mutedForeground)}>
           {kind === 'buy'
-            ? 'Grand Maester Samwell thinks on our servers, so a plan is a monthly balance of Neurons counted against your account. There is nowhere else to keep it.'
+            ? `${planLabel ?? 'He'} thinks on our servers, so a plan is a monthly balance of Neurons counted against your account. There is nowhere else to keep it.`
             : 'A plan belongs to an account rather than to a phone, so signing in is how yours comes back to this device.'}
         </SamwellText>
 

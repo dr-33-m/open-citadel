@@ -12,6 +12,7 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { Card } from "@/components/ui/card";
 import { PrefixIcon } from "@/components/ui/prefix-icon";
+import { Shimmer } from "@/components/ui/shimmer";
 import { Touchable } from "@/components/ui/touchable";
 import { cn } from "@/lib/cn";
 import { asColor } from "@/utils/colors";
@@ -39,8 +40,12 @@ export type PlanCardProps = {
   /** How many models this plan opens up. Answered by the server, not counted
    * here: a tier can gain a model without a deploy. */
   modelCount: number;
-  /** The store's own price string, which is localised and authoritative. */
-  priceLabel: string;
+  /**
+   * The store's own price string, which is localised and authoritative, or
+   * null until the store has answered. Never a price this app made up: see
+   * `priceFor` in the carousel.
+   */
+  priceLabel: string | null;
   /** This is the card the carousel is resting on. */
   selected: boolean;
   /** Opens the sheet that explains the card's three lines. */
@@ -154,9 +159,18 @@ export function PlanCard({
         {/* `shrink` and a line cap rather than letting it push the cadence
             off the card: at large type a localised price is long, and the
             slide is a fixed width. */}
-        <ThemedText type="headlineLg" numberOfLines={1} className="shrink">
-          {priceLabel}
-        </ThemedText>
+        {priceLabel ? (
+          <ThemedText type="headlineLg" numberOfLines={1} className="shrink">
+            {priceLabel}
+          </ThemedText>
+        ) : (
+          /* Waiting on the store rather than inventing a number. Sized to a
+             short price so the card does not resize when the real one lands,
+             and one shimmer over one bar, not a skeleton per card element. */
+          <Shimmer as="view">
+            <View className="h-8 w-20 bg-muted" />
+          </Shimmer>
+        )}
         <ThemedText type="bodySm" color={muted} numberOfLines={1}>
           a month
         </ThemedText>

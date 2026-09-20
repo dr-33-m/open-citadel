@@ -230,15 +230,24 @@ export function PlanCarousel({
   );
 
   const priceFor = React.useCallback(
-    (plan: CreditPlan) =>
-      // The store's own localised string when it is known, and the plan's own
-      // number only as a placeholder while the offering loads. A price shown
-      // in the wrong currency is worse than a price shown a beat late. The
-      // string then loses its country qualifier and its exactly-zero cents:
-      // "$20", not "US$20.00" - see `formatStorePrice`.
-      formatStorePrice(
-        packages[plan.id]?.product.priceString ?? `$${plan.priceUsd}`,
-      ),
+    (plan: CreditPlan): string | null => {
+      /*
+       * The store's own localised string, or nothing at all.
+       *
+       * It used to fall back to the plan's own `priceUsd` while the offering
+       * loaded, which drew a real-looking price that nobody was being
+       * charged: wrong currency outside the US, and wrong everywhere the
+       * moment a store price changes, since that constant is only what the
+       * product was set up as. The card shows a waiting shimmer instead, and
+       * the CHOOSE button is already disabled until the packages arrive, so
+       * no purchase can start from a price that was never quoted.
+       *
+       * The string loses its country qualifier and its exactly-zero cents:
+       * "$20", not "US$20.00" - see `formatStorePrice`.
+       */
+      const priceString = packages[plan.id]?.product.priceString;
+      return priceString ? formatStorePrice(priceString) : null;
+    },
     [packages],
   );
 

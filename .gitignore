@@ -60,3 +60,5 @@ build-*.apk
 # Agent skills — reference material for tooling, not app source (177 files, 1.5MB)
 .agents/
 .vscode/
+# Local build artifacts. `eas build --local` drops these in the repo root.
+build-*.tar.gz
