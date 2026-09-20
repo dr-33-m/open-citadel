@@ -55,6 +55,17 @@ let tokenInFlight: Promise<string> | null = null;
 /** What the Keychain last said, absence included. See `readGuestIdentity`. */
 let identityCache: { value: GuestIdentity | null } | null = null;
 /**
+ * The mint in flight, so two callers cannot each make one.
+ *
+ * Without it both see no identity, both generate their own id and secret, and
+ * the four Keychain writes interleave - leaving this device holding one
+ * caller's id beside the other's secret. The server has each pair registered
+ * correctly, so that mongrel matches neither: the token is refused, the repair
+ * tries to register an id that is taken, and the device is stuck for good with
+ * a subscription it cannot prove it owns.
+ */
+let mintInFlight: Promise<GuestIdentity> | null = null;
+/**
  * Bumped by `forgetGuestIdentity`, so work that began while this device was a
  * guest and finished after it stopped can tell that it is out of date.
  *
@@ -126,6 +137,13 @@ export async function ensureGuestIdentity(): Promise<GuestIdentity> {
   const existing = await readGuestIdentity();
   if (existing) return existing;
 
+  mintInFlight ??= mint().finally(() => {
+    mintInFlight = null;
+  });
+  return mintInFlight;
+}
+
+async function mint(): Promise<GuestIdentity> {
   const identity: GuestIdentity = {
     guestId: `guest:${Crypto.randomUUID()}`,
     secret: toHex(await Crypto.getRandomBytesAsync(32)),
@@ -217,6 +235,19 @@ async function exchange(identity: GuestIdentity, mine: number): Promise<string> 
   }
 
   if (!response.ok) {
+    /*
+     * Worth a line of its own, because the status is the whole diagnosis and
+     * by the time this reaches the reader it has become "could not check your
+     * credits". 401 after the repair means the server does not know this
+     * device and registering did not fix it; 409 means it knows the id under
+     * a different secret, which this device cannot talk its way out of; 503
+     * means the deployment has no `GUEST_TOKEN_SECRET`.
+     */
+    if (__DEV__) {
+      console.warn(
+        `[Guest] Token refused (${response.status}) for ${identity.guestId}.`,
+      );
+    }
     throw new Error(`Guest token refused (${response.status}).`);
   }
   const body = (await response.json()) as { token?: string; expiresIn?: number };
@@ -239,7 +270,14 @@ async function registerGuest(identity: GuestIdentity): Promise<void> {
   // 409 is this id under a different secret, which a v4 UUID does not do; if
   // it ever happens, minting another would be the repair and it is not one to
   // guess at silently.
-  if (!response.ok) throw new Error(`Guest registration refused (${response.status}).`);
+  if (!response.ok) {
+    if (__DEV__) {
+      console.warn(
+        `[Guest] Registration refused (${response.status}) for ${identity.guestId}.`,
+      );
+    }
+    throw new Error(`Guest registration refused (${response.status}).`);
+  }
 }
 
 /**

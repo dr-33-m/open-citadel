@@ -134,6 +134,19 @@ describe('minting an identity', () => {
     expect(await readGuestIdentity()).toEqual(minted);
   });
 
+  it('mints once when two callers ask together', async () => {
+    // Both see no identity and both mint. Their four Keychain writes
+    // interleave, and this device ends up holding one caller's id beside the
+    // other's secret - a pair the server has never seen and never will.
+    fetchMock.mockResolvedValue(jsonResponse({ guestId: GUEST_ID }, 201));
+
+    const [first, second] = await Promise.all([ensureGuestIdentity(), ensureGuestIdentity()]);
+
+    expect(second).toEqual(first);
+    expect(calls()).toEqual(['/account/guest']);
+    expect(await readGuestIdentity()).toEqual(first);
+  });
+
   it('asks the Keychain once and remembers the no', async () => {
     // Every request a signed-out reader makes asks this question, and for
     // almost all of them the answer is the same no.
