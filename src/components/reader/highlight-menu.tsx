@@ -1,11 +1,6 @@
-import { Check, MessageSquare, Pencil, Share, StickyNote, Trash2, X, ZodiacPisces } from "@/components/icons";
+import { Check, MessageSquare, Share, Trash2, X, ZodiacPisces } from "@/components/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Keyboard,
-  ScrollView,
-  TextInput,
-  View,
-} from "react-native";
+import { Keyboard, TextInput, View } from "react-native";
 import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useCSSVariable } from "uniwind";
@@ -20,22 +15,20 @@ import { Touchable } from "@/components/ui/touchable";
 import { useSamwellWake } from "@/hooks/use-samwell-wake";
 
 import { ThemedText } from "@/components/themed-text";
+import {
+  HighlightNoteList,
+  type HighlightNote,
+} from "@/components/reader/highlight-note-list";
 import { ActionButton } from "@/components/action-button";
 import { FieldHint } from "@/components/field-hint";
 import { GoldButton } from "@/components/ui/gold-button";
 import { NOTE_HINTS } from "@/lib/note-hints";
-import { NoteText, isFilled } from "@/lib/text-fields";
+import { NoteText } from "@/lib/text-fields";
+import { useTextValidity } from "@/hooks/use-text-validity";
 import { easing, fontFamily, motion, spacing } from "@/constants/theme";
 import { cn } from "@/lib/cn";
 import { asColor } from "@/utils/colors";
 import { ColorSwatch, ColorSwatchRow, HIGHLIGHT_COLORS } from "@/components/color-swatch";
-
-type NoteItem = {
-  id: string;
-  text: string;
-  createdAt: string;
-  updatedAt?: string | null;
-};
 
 type HighlightMenuProps = {
   visible: boolean;
@@ -45,7 +38,7 @@ type HighlightMenuProps = {
   currentTags: string[];
   chatSessionId?: string | null;
   allTags: string[];
-  existingNotes: NoteItem[];
+  existingNotes: HighlightNote[];
   bookTitle: string;
   authorName: string;
   bookCoverUri: string | null;
@@ -90,9 +83,22 @@ export function HighlightMenu({
     "--color-muted-foreground",
   ]);
 
-  const [noteText, setNoteText] = useState("");
-  const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
-  const [tagInput, setTagInput] = useState("");
+  /*
+   * The drafts are refs, not state. As state, every keystroke re-rendered this
+   * whole sheet (notes, swatches, tag rows) to update two buttons. The buttons
+   * only care whether a field is empty, which changes twice per sentence, so
+   * that is all that is kept in state: `useTextValidity` for the note, a
+   * boolean for the tag.
+   */
+  const noteDraft = useRef("");
+  const {
+    isValid: canSaveNote,
+    check: checkNote,
+    reset: resetNote,
+  } = useTextValidity(NoteText);
+  const [editingNote, setEditingNote] = useState<HighlightNote | null>(null);
+  const tagDraft = useRef("");
+  const [hasTagDraft, setHasTagDraft] = useState(false);
   const [tags, setTags] = useState<string[]>(currentTags);
   const [selectedColor, setSelectedColor] = useState(currentColor);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
@@ -122,9 +128,11 @@ export function HighlightMenu({
   // come back with the last draft note still in the field.
   useEffect(() => {
     if (!visible) return;
-    setNoteText("");
+    noteDraft.current = "";
+    resetNote();
     setEditingNote(null);
-    setTagInput("");
+    tagDraft.current = "";
+    setHasTagDraft(false);
     setTags(currentTags);
     setSelectedColor(currentColor);
     setAiSuggestions([]);
@@ -135,7 +143,7 @@ export function HighlightMenu({
     // the fields across a reopen or a switch to another highlight.
     noteFieldRef.current?.clear();
     tagFieldRef.current?.clear();
-  }, [highlightId, visible]);
+  }, [highlightId, visible, resetNote]);
 
   // Sync incoming props when re-opened
   useEffect(() => {
@@ -162,10 +170,9 @@ export function HighlightMenu({
   };
 
   /*
-   * Commits from the *event* value, never the mirror: keystrokes can land
-   * faster than renders, so `tagInput` can lag the buffer — committing from
-   * it would clip the tag's tail. The ✓ button and the keyboard action fire
-   * long after the render settled, so the mirror is current there.
+   * Commits from the *event* value when it has one: that is the buffer as it
+   * stands, where the ✓ button and the keyboard action read `tagDraft`, which
+   * `onChangeText` has kept current by then.
    * `clear()` empties the native buffer; if an IME batch re-applies text
    * across it, the re-applied value arrives as another `onChangeText`
    * ending in a comma and commits (deduped) again, so the field always
@@ -173,7 +180,8 @@ export function HighlightMenu({
    */
   const commitTag = (raw: string) => {
     addTag(raw.trim().replace(/,+$/, ""));
-    setTagInput("");
+    tagDraft.current = "";
+    setHasTagDraft(false);
     tagFieldRef.current?.clear();
   };
 
@@ -199,32 +207,41 @@ export function HighlightMenu({
     }
   };
 
-  const canSaveNote = isFilled(NoteText, noteText);
-
   const handleSave = () => {
-    const trimmed = noteText.trim();
+    const trimmed = noteDraft.current.trim();
     if (!trimmed) return;
     if (editingNote) {
       onUpdateNote(editingNote.id, trimmed);
     } else {
       onAddNote(highlightId, trimmed);
     }
-    setNoteText("");
+    noteDraft.current = "";
+    resetNote();
     setEditingNote(null);
-    // The field is keyed by the note being edited, so dropping
-    // `editingNote` remounts it empty for the next note; the mirror reset
-    // above keeps the save button honest until then.
+    // Leaving an edit remounts the field empty (it is keyed by the note
+    // being edited), but adding one keeps the key at "new", so nothing
+    // remounts and the buffer has to be emptied by hand.
+    noteFieldRef.current?.clear();
   };
 
-  const handleEditNote = (note: NoteItem) => {
-    setEditingNote(note);
-    setNoteText(note.text);
+  const handleEditNote = (target: HighlightNote) => {
+    setEditingNote(target);
+    noteDraft.current = target.text;
+    resetNote(target.text);
     setTimeout(() => noteFieldRef.current?.focus(), 50);
+  };
+
+  // Deleting the note being edited must drop the edit too, or UPDATE NOTE
+  // would write to a note that no longer exists.
+  const handleDeleteNote = (noteId: string) => {
+    if (editingNote?.id === noteId) handleCancelEdit();
+    onDeleteNote(noteId);
   };
 
   const handleCancelEdit = () => {
     setEditingNote(null);
-    setNoteText("");
+    noteDraft.current = "";
+    resetNote();
     Keyboard.dismiss();
   };
 
@@ -278,63 +295,13 @@ export function HighlightMenu({
             &ldquo;{highlightText}&rdquo;
           </ThemedText>
 
-          {/* Existing notes list */}
           {existingNotes.length > 0 && (
-            // Plain RN, nested inside the sheet's own scroll region: only
-            // the outer one negotiates with the sheet's pan, and a second
-            // registered scrollable would take that role off it.
-            <ScrollView
-              className="max-h-[140px]"
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-            >
-              {existingNotes.map((note) => (
-                <View
-                  key={note.id}
-                  className={cn(
-                    "mb-2 flex-row items-start gap-3 bg-muted p-3",
-                    editingNote?.id === note.id && "border border-primary",
-                  )}
-                >
-                  <StickyNote
-                    size={14}
-                    color={asColor(primary)}
-                    style={{ marginTop: 2 }}
-                  />
-                  <View className="flex-1">
-                    {/* The row itself is a static View — only the trailing
-                        pencil/trash icons are pressable — so selecting the
-                        note text doesn't collide with a row-level gesture. */}
-                    <ThemedText selectable type="bodySm">{note.text}</ThemedText>
-                    {note.updatedAt && (
-                      <ThemedText
-                        type="labelSm"
-                        color={asColor(mutedForeground)}
-                        italic
-                        style={{ fontSize: 10 }}
-                      >
-                        edited
-                      </ThemedText>
-                    )}
-                  </View>
-                  <Touchable
-                    onPress={() => handleEditNote(note)}
-                    className="pt-[2px]"
-                    hitSlop={8}
-                  >
-                    <Pencil size={14} color={asColor(mutedForeground)} />
-                  </Touchable>
-                  <Touchable
-                    onPress={() => onDeleteNote(note.id)}
-                    className="pt-[2px]"
-                    hitSlop={8}
-                  >
-                    <Trash2 size={14} color={asColor(mutedForeground)} />
-                  </Touchable>
-                </View>
-              ))}
-            </ScrollView>
+            <HighlightNoteList
+              notes={existingNotes}
+              editingId={editingNote?.id ?? null}
+              onEdit={handleEditNote}
+              onDelete={handleDeleteNote}
+            />
           )}
 
           {/* Fixed height, not `minHeight`: a growing box changes the
@@ -350,7 +317,10 @@ export function HighlightMenu({
             style={{ height: 80, textAlignVertical: "top" }}
             placeholder={editingNote ? "Edit your note…" : "Add a note…"}
             defaultValue={editingNote?.text ?? ""}
-            onChangeText={setNoteText}
+            onChangeText={(text) => {
+              noteDraft.current = text;
+              checkNote(text);
+            }}
             multiline
           />
 
@@ -412,23 +382,25 @@ export function HighlightMenu({
                 if (v.endsWith(",")) {
                   commitTag(v);
                 } else {
-                  setTagInput(v);
+                  tagDraft.current = v;
+                  // Same value is a React bail-out: re-renders on the edge only.
+                  setHasTagDraft(v.trim().length > 0);
                 }
               }}
               returnKeyType="done"
-              onSubmitEditing={() => commitTag(tagInput)}
+              onSubmitEditing={() => commitTag(tagDraft.current)}
               endContent={
                 <Touchable
-                  onPress={() => commitTag(tagInput)}
-                  disabled={!tagInput.trim()}
+                  onPress={() => commitTag(tagDraft.current)}
+                  disabled={!hasTagDraft}
                   hitSlop={8}
                   accessibilityLabel="Add tag"
-                  className={cn(!tagInput.trim() && "opacity-40")}
+                  className={cn(!hasTagDraft && "opacity-40")}
                 >
                   <Check
                     size={18}
                     color={
-                      tagInput.trim()
+                      hasTagDraft
                         ? asColor(primary)
                         : asColor(mutedForeground)
                     }
