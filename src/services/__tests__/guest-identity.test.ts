@@ -31,8 +31,14 @@ vi.mock('@/constants/samwell-cloud', () => ({
   SAMWELL_CLOUD_BASE_URL: 'https://cloud.example.com',
 }));
 
-const { clearGuestToken, ensureGuestIdentity, forgetGuestIdentity, guestToken, readGuestIdentity } =
-  await import('../guest-identity');
+const {
+  GuestLinked,
+  clearGuestToken,
+  ensureGuestIdentity,
+  forgetGuestIdentity,
+  guestToken,
+  readGuestIdentity,
+} = await import('../guest-identity');
 
 const GUEST_ID = 'guest:0f5f1d3a-9b1c-4e2a-8f6d-2b7c9e4a1d55';
 const SECRET = 'ab'.repeat(32);
@@ -193,10 +199,12 @@ describe('tokens', () => {
     ]);
   });
 
-  it('gives up rather than pretending, once the device has an account', async () => {
-    // The plan has moved to an account; the app must sign in, not keep asking.
+  it('says so by name, once the plan has moved to an account', async () => {
+    // Its own type, not a status code in a string, because this is the one
+    // refusal with somewhere to go: the caller lets the identity go rather
+    // than retrying a request that can never work again.
     fetchMock.mockResolvedValue(jsonResponse({ error: 'guest_linked' }, 409));
-    await expect(guestToken()).rejects.toThrow(/409/);
+    await expect(guestToken()).rejects.toBeInstanceOf(GuestLinked);
   });
 
   it('shares one exchange between callers waking together', async () => {

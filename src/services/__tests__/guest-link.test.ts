@@ -12,7 +12,13 @@ const { getAccountToken, guestToken, fetchMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/services/account', () => ({ getAccountToken }));
-vi.mock('@/services/guest-identity', () => ({ guestToken }));
+class GuestLinked extends Error {
+  constructor() {
+    super('This device now belongs to an account.');
+    this.name = 'GuestLinked';
+  }
+}
+vi.mock('@/services/guest-identity', () => ({ guestToken, GuestLinked }));
 vi.mock('@/constants/samwell-cloud', () => ({
   SAMWELL_CLOUD_BASE_URL: 'https://cloud.example.com',
 }));
@@ -66,6 +72,17 @@ describe('linkGuestToAccount', () => {
     );
 
     expect(await linkGuestToAccount()).toBe('accountHasPlan');
+  });
+
+  it('reads a linked device as the success the last attempt could not report', async () => {
+    // The previous attempt worked and its answer never arrived. The server
+    // will not mint for a linked guest, so this is where the app finds out -
+    // and without it the device retries forever and never lets the
+    // credential go.
+    guestToken.mockRejectedValue(new GuestLinked());
+
+    expect(await linkGuestToAccount()).toBe('alreadyLinked');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('throws on anything else, so the next launch tries again', async () => {

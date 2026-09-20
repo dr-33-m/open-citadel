@@ -48,6 +48,22 @@ const EXPIRY_SKEW_MS = 60_000;
 
 export type GuestIdentity = { guestId: string; secret: string };
 
+/**
+ * This device's plan has moved onto an account, so its own credential is
+ * finished.
+ *
+ * Its own type because it is the one refusal that is not a failure, and the
+ * one the caller can act on: there is nothing to retry and nothing to repair,
+ * the identity should simply be let go. Told apart from a flat refusal for
+ * the same reason `PurchaseCancelled` is told apart from a failed purchase.
+ */
+export class GuestLinked extends Error {
+  constructor() {
+    super('This device now belongs to an account.');
+    this.name = 'GuestLinked';
+  }
+}
+
 /** Held in memory only. A bearer token is not worth persisting when the
  *  secret can mint another in one request. */
 let cachedToken: { token: string; expiresAtMs: number } | null = null;
@@ -248,6 +264,8 @@ async function exchange(identity: GuestIdentity, mine: number): Promise<string> 
         `[Guest] Token refused (${response.status}) for ${identity.guestId}.`,
       );
     }
+    // The one refusal with somewhere to go. See `GuestLinked`.
+    if (response.status === 409) throw new GuestLinked();
     throw new Error(`Guest token refused (${response.status}).`);
   }
   const body = (await response.json()) as { token?: string; expiresIn?: number };

@@ -116,5 +116,18 @@ Step 6 of `GUEST-ACCESS-PLAN.md`, which wants both platforms anyway.
 5. The one question the plan leaves open: does `Purchases.logIn` from
    `guest:<uuid>` to a Logto sub **alias** the two or **switch** between them?
    The sources disagree and the server link is correct either way, but the
-   answer decides whether the app should `logOut` first. Settle it by watching
-   what the RevenueCat dashboard does to the guest customer during step 2.
+   answer decides whether the app should `logOut` first. `identify` now logs
+   `[Purchases] Joined <sub> (new customer: true|false)` in dev, so read it
+   off Metro during step 2 rather than off the dashboard afterwards.
+
+---
+
+## Known, not worth building yet
+
+**A reader who ends up paying twice has no route out.** If somebody buys as a
+guest, then signs in to an account that already holds its own plan, the link
+is refused and explained - which is the decision in `GUEST-ACCESS-PLAN.md` and
+is right, because nobody asked us to do arithmetic on two balances. But the
+toast then appears on every launch, since the state stays unresolved and
+nothing in the app can resolve it. Rare enough to leave alone; if it ever
+shows up in support, the answer is a refund on one of them, not code.

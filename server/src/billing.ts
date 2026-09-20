@@ -659,6 +659,26 @@ export function createBillingService(options: BillingOptions): BillingService {
     | { linked: true; balance: CreditBalance }
     | { linked: false; reason: 'account_has_plan' }
   > {
+    /*
+     * This exact pair, already joined. Answered as a success, because it is
+     * one: the work this call asks for is done.
+     *
+     * Before the guard below, deliberately. A second attempt for the same
+     * pair finds the account row holding the plan it was itself given a
+     * moment ago, reads that as "this account already has one of its own",
+     * and tells a reader who has paid once that they have paid twice. That
+     * is not hypothetical - a dropped response on the first attempt is all
+     * it takes, and the app is built to retry.
+     */
+    const guest = await client.execute({
+      sql: 'SELECT linked_account_id FROM guest_identities WHERE guest_id = ?',
+      args: [args.guestId],
+    });
+    const linkedTo = guest.rows[0]?.linked_account_id as string | null | undefined;
+    if (linkedTo === args.accountId) {
+      return { linked: true, balance: await readEntitlement(args.accountId) };
+    }
+
     const target = await readAccountRow(args.accountId);
     if (target && (target.plan != null || target.balance > 0 || target.reserved > 0)) {
       return { linked: false, reason: 'account_has_plan' };

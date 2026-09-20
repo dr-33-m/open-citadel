@@ -13,10 +13,10 @@ import { useSubscriptionStore } from '@/stores/subscription';
  * Mounted once at the root, and keyed on the pair rather than fired from the
  * sign-in. Three moments want this and only one of them is a sign-in: the
  * reader registering after buying, a launch where last time's attempt never
- * got an answer, and a reader who signs in on a phone that had bought
- * something long ago. One effect covers all three, and the alternative was
- * three call sites deciding the same thing, which is how this codebase has
- * drifted before.
+ * got an answer, and a reader who signs in on a phone that bought something
+ * long ago. One effect covers all three, and the alternative was three call
+ * sites deciding the same thing, which is how this codebase has drifted
+ * before.
  *
  * Until it runs, the two identities are both real and the app shows the
  * account's answer, which for a new account is no plan at all. That is
@@ -30,7 +30,16 @@ export function useGuestLink(): void {
   React.useEffect(() => {
     if (!accountId || !guestId) return;
 
-    let live = true;
+    /**
+     * Whether this pair is still the one on screen.
+     *
+     * Read ONCE, before anything has been committed to, and never again.
+     * Letting go of the identity re-renders the root and tears this effect
+     * down, so a second check after that point is a check against our own
+     * success: the refresh and the toast would be skipped for exactly the
+     * readers the link worked for.
+     */
+    let current = true;
     void (async () => {
       let outcome;
       try {
@@ -46,7 +55,7 @@ export function useGuestLink(): void {
         if (__DEV__) console.warn('[Guest] Could not link this device yet:', error);
         return;
       }
-      if (!live || outcome === 'nothing') return;
+      if (!current || outcome === 'nothing') return;
 
       if (outcome === 'accountHasPlan') {
         showToast({
@@ -54,6 +63,17 @@ export function useGuestLink(): void {
             'This account already has its own plan, so the one on this device was left where it is. Nothing has been taken from either.',
           key: 'billing',
         });
+        return;
+      }
+
+      /*
+       * The last attempt worked and its answer never arrived. There is
+       * nothing to move and nothing to announce - they were told the first
+       * time - so this only lets go of a credential for a plan that has
+       * already moved on, which is what stops the retry happening forever.
+       */
+      if (outcome === 'alreadyLinked') {
+        await useGuestStore.getState().release();
         return;
       }
 
@@ -76,21 +96,23 @@ export function useGuestLink(): void {
         if (__DEV__) console.warn('[Guest] Linked, but the store did not follow:', error);
       }
 
-      // Last. The guest token is refused from here on anyway, and dropping
-      // the credential before the work above would leave nothing to retry with.
-      await useGuestStore.getState().release();
-      if (!live) return;
+      // Before letting the identity go, so the reader hears about it from a
+      // component that is still mounted. `refresh` asks as the account, which
+      // is where the plan now is.
       await useSubscriptionStore.getState().refresh();
-
       showToast({
         message: 'Your plan is on your account now. Sign in anywhere to use it.',
         tone: 'success',
         key: 'billing',
       });
+
+      // Last. The guest token is refused from here on anyway, and dropping
+      // the credential earlier would leave nothing to retry with.
+      await useGuestStore.getState().release();
     })();
 
     return () => {
-      live = false;
+      current = false;
     };
   }, [accountId, guestId]);
 }

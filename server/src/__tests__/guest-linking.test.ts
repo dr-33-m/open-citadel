@@ -115,6 +115,38 @@ describe('linkGuest', () => {
     expect(await billing.peekCredits(GUEST)).toBeNull();
   });
 
+  it('answers a repeat of the same pair as the success it is', async () => {
+    /*
+     * The app retries a link whose response it never saw, which is the whole
+     * reason this matters. Without it the second attempt finds the account
+     * holding the plan it was itself given a moment ago, reads that as the
+     * account having one of its own, and tells somebody who paid once that
+     * they paid twice.
+     */
+    await makeGuest();
+    await billing.grantMonthly({ accountId: GUEST, plan: 'grand_maester', periodEndMs: FUTURE });
+    await billing.linkGuest({ guestId: GUEST, accountId: ACCOUNT });
+
+    const again = await billing.linkGuest({ guestId: GUEST, accountId: ACCOUNT });
+
+    expect(again).toMatchObject({ linked: true });
+    const balance = await billing.readEntitlement(ACCOUNT);
+    expect(balance.plan).toBe('grand_maester');
+    // Not doubled. The repeat moved nothing, it only said so.
+    expect(balance.available).toBe(GRANT);
+  });
+
+  it('still refuses a DIFFERENT account that already holds a plan', async () => {
+    await makeGuest();
+    await billing.grantMonthly({ accountId: GUEST, plan: 'maester', periodEndMs: FUTURE });
+    await billing.grantMonthly({ accountId: ACCOUNT, plan: 'archmaester', periodEndMs: FUTURE });
+
+    expect(await billing.linkGuest({ guestId: GUEST, accountId: ACCOUNT })).toMatchObject({
+      linked: false,
+      reason: 'account_has_plan',
+    });
+  });
+
   it('records the link, so a later renewal can be resolved', async () => {
     await makeGuest();
     await billing.linkGuest({ guestId: GUEST, accountId: ACCOUNT });

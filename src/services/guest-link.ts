@@ -1,6 +1,6 @@
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { getAccountToken } from '@/services/account';
-import { guestToken } from '@/services/guest-identity';
+import { GuestLinked, guestToken } from '@/services/guest-identity';
 
 /**
  * Moving a plan off a phone and onto an account.
@@ -21,6 +21,12 @@ export type LinkOutcome =
   | 'linked'
   /** Nothing to do: no account, or this device never bought anything. */
   | 'nothing'
+  /**
+   * It was already done, and this attempt only found out. The first one's
+   * answer never arrived, so the device still holds a credential for a plan
+   * that has moved on. Nothing to move, something to let go of.
+   */
+  | 'alreadyLinked'
   /**
    * The account already holds a plan of its own. Refused rather than merged:
    * nobody asked us to do arithmetic on two balances, and somebody has
@@ -45,7 +51,19 @@ export async function linkGuestToAccount(): Promise<LinkOutcome> {
   const account = await getAccountToken();
   if (!account) return 'nothing';
 
-  const guest = await guestToken();
+  /*
+   * The server refuses to mint for a guest that has been linked, so this is
+   * where a repeat attempt finds out that the last one worked. Without it the
+   * device retries a request it can never complete on every launch, and never
+   * lets go of a credential for a plan it no longer holds.
+   */
+  let guest: string | null;
+  try {
+    guest = await guestToken();
+  } catch (error) {
+    if (error instanceof GuestLinked) return 'alreadyLinked';
+    throw error;
+  }
   if (!guest) return 'nothing';
 
   const controller = new AbortController();

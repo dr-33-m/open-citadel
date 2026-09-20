@@ -164,7 +164,19 @@ export function identify(sub: string): Promise<void> {
   if (identified?.sub === sub) return identified.done;
 
   const done = Purchases.logIn(sub)
-    .then(() => undefined)
+    .then(({ created }) => {
+      /*
+       * `created` is the one cheap answer to a question the guest design
+       * leaves open: whether logging in from `guest:<uuid>` to a Logto
+       * subject ALIASES the two customers or switches between them. False
+       * means RevenueCat found a customer already there. Worth a line during
+       * the device pass, because the answer decides whether the app should
+       * `logOut` first, and the alternative is reading it off the dashboard
+       * afterwards. Nothing branches on it: the server link is authoritative
+       * either way.
+       */
+      if (__DEV__) console.log(`[Purchases] Joined ${sub} (new customer: ${created}).`);
+    })
     .catch((error: unknown) => {
       if (identified?.sub === sub) identified = null;
       throw error;
