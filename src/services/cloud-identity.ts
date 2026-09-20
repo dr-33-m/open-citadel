@@ -1,4 +1,5 @@
 import { getAccountToken } from '@/services/account';
+import { guestToken } from '@/services/guest-identity';
 
 /**
  * Who Samwell Cloud is talking to.
@@ -9,12 +10,18 @@ import { getAccountToken } from '@/services/account';
  * the kind this codebase has already watched drift, and it was about to change
  * in all five at once. It lives here now and they call it.
  *
- * ## Why there is no device id any more
+ * ## The two identities, and why the old one is not one of them
  *
- * There used to be one: a random string minted on first launch and kept in
- * `app_settings`. It identified a phone, not a person, so a reinstall was a
- * fresh quota and a second device was a second quota. Samwell Cloud now runs
- * on accounts, so a request without one has nobody to bill and is not sent.
+ * There used to be a device id: a random string minted on first launch and
+ * kept in `app_settings`. It identified a phone, not a person, so a reinstall
+ * was a fresh quota and a second device was a second quota. That is gone, and
+ * what replaced it is not the same thing coming back.
+ *
+ * An ACCOUNT is the identity whenever there is one. A GUEST identity exists
+ * only on a device that bought a plan without making an account, is minted at
+ * the moment of purchase rather than at launch, and receives no free credits
+ * at all - so there is still nothing to farm by reinstalling. See
+ * `services/guest-identity`.
  */
 export class NotSignedIn extends Error {
   constructor() {
@@ -44,8 +51,21 @@ export async function cloudHeaders(
   extra?: Record<string, string>,
 ): Promise<Record<string, string>> {
   const token = await getAccountToken();
-  if (!token) throw new NotSignedIn();
-  return { Authorization: `Bearer ${token}`, ...extra };
+  if (token) return { Authorization: `Bearer ${token}`, ...extra };
+
+  /*
+   * No account, but possibly a device that bought a plan on its own.
+   *
+   * Second rather than first: an account is the better identity when there is
+   * one, and a device that has since signed in must be billed as the person,
+   * not as the phone. Reading it here rather than at every call site is the
+   * same argument the rest of this file makes - five places deciding what
+   * "who is this" means is five places for it to drift.
+   */
+  const guest = await guestToken();
+  if (guest) return { Authorization: `Bearer ${guest}`, ...extra };
+
+  throw new NotSignedIn();
 }
 
 /** The same headers, plus the JSON content type every POST here sends. */
