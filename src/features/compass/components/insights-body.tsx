@@ -1,5 +1,9 @@
 import React from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
+// RNGH's ScrollView, not RN's: these rows sit inside a sheet's scroll region,
+// and a plain nested ScrollView loses the horizontal touch stream to the
+// sheet's gesture, so the row renders but never scrolls (see highlight-menu).
+import { ScrollView } from 'react-native-gesture-handler';
 import { Coins, Target } from '@/components/icons';
 import { useCSSVariable } from 'uniwind';
 
