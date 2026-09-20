@@ -7,6 +7,12 @@
     "icon": "./assets/icons/ios-dark.png",
     "scheme": "opencitadel",
     "userInterfaceStyle": "dark",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/5cb454f2-63c2-4422-85c4-61cf5b57a0c5"
+    },
     "ios": {
       "icon": {
         "light": "./assets/icons/ios-light.png",

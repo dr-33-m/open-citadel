@@ -21,6 +21,7 @@
     "preview": {
       "distribution": "internal",
       "environment": "preview",
+      "channel": "preview",
       "env": {
         "APP_VARIANT": "preview"
       },
@@ -42,6 +43,7 @@
     "play-internal": {
       "autoIncrement": true,
       "environment": "production",
+      "channel": "production",
       "env": {
         "APP_VARIANT": "production"
       },
@@ -52,6 +54,7 @@
     "production": {
       "autoIncrement": true,
       "environment": "production",
+      "channel": "production",
       "env": {
         "APP_VARIANT": "production"
       },

@@ -35,6 +35,7 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { ApprovalSheet } from "@/components/approval-sheet";
 import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
+import { useAppUpdates } from "@/hooks/use-app-updates";
 import { MemoryHud } from "@/components/dev/memory-hud";
 import { ToastProvider } from "@/components/toast/toast-provider";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
@@ -116,6 +117,9 @@ export default function RootLayout() {
   // Samwell's journal: what he writes down about them once a conversation
   // goes quiet, for him to recall in later chats.
   useJourneyWriter();
+  // Over-the-air updates: checked on return as well as launch, and offered
+  // with a toast once one is downloaded.
+  useAppUpdates(fontsLoaded && dbReady);
 
   // The app's own theme setting is the single source of truth; Uniwind (and
   // therefore every PanelUI token class in the app) follows the OS color

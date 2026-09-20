@@ -1,0 +1,49 @@
+# Over-the-air update to the production channel: JS, assets and config only.
+#
+# Manual on purpose. Commits land on main all day, server-only ones included,
+# and each would otherwise reach phones within two launches. Run it when a fix
+# is ready:
+#
+#   eas workflow:run send-updates.yml
+#
+# or from the project's Workflows page on expo.dev, which asks for the inputs.
+#
+# It goes to everyone. `rollout_percentage` only takes a literal number here,
+# not an input, so a staged rollout is the CLI's job instead:
+#
+#   eas update --channel production --environment production \
+#     --rollout-percentage 10 --message "..."
+#
+# Native changes cannot ship this way, and do not need guarding against: the
+# runtime version is a fingerprint of the native project (app.json), so an
+# update built from code with different native dependencies or config plugins
+# gets a runtime no installed build has, and reaches nobody. Those still need
+# `eas build` and a store review.
+
+name: Send updates
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: What this update fixes. Shown on expo.dev.
+        required: true
+        type: string
+      platform:
+        description: all, android or ios.
+        type: string
+        default: all
+
+jobs:
+  send_updates:
+    name: Send update to production
+    type: update
+    # The build's EAS environment. app.config.js reads the cloud URL, Logto and
+    # RevenueCat keys from it, and an update carries its own copy of the app
+    # config: published without these, every phone that downloads it would lose
+    # its cloud connection and sign-in.
+    environment: production
+    params:
+      channel: production
+      message: ${{ inputs.message }}
+      platform: ${{ inputs.platform }}
