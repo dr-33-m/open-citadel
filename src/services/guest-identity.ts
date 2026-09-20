@@ -93,8 +93,16 @@ export async function readGuestIdentity(): Promise<GuestIdentity | null> {
   // Half an identity is no identity. Treated as absent so the next purchase
   // mints a whole one rather than carrying a secret with no id to use it.
   const value = guestId && secret ? { guestId, secret } : null;
-  identityCache = { value };
-  return value;
+  /*
+   * Never overwrites, and that is the point. A read that began before the
+   * device became a guest finishes after `ensureGuestIdentity` has already
+   * written the real answer here, and assigning would put its "no" back on
+   * top of an identity that exists - leaving a reader who has just paid with
+   * no credential to spend it. First writer wins, and the explicit writers
+   * are the ones that actually changed the Keychain.
+   */
+  identityCache ??= { value };
+  return identityCache.value;
 }
 
 /**

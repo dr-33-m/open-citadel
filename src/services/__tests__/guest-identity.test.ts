@@ -106,6 +106,34 @@ describe('minting an identity', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('does not let a read that started first bury an identity minted since', async () => {
+    // A read begins while this device is nobody and lands after a purchase
+    // has minted an identity. What it saw is out of date by the time it can
+    // say it, and remembering its "no" would leave a reader who has just paid
+    // with no credential to spend the credits with.
+    fetchMock.mockResolvedValue(jsonResponse({ guestId: GUEST_ID }, 201));
+    let land: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      land = resolve;
+    });
+    // Both keys of the first read, held open and answering as of then.
+    getItem.mockImplementationOnce(async () => {
+      await held;
+      return null;
+    });
+    getItem.mockImplementationOnce(async () => {
+      await held;
+      return null;
+    });
+
+    const earlyRead = readGuestIdentity();
+    const minted = await ensureGuestIdentity();
+    land();
+
+    expect(await earlyRead).toEqual(minted);
+    expect(await readGuestIdentity()).toEqual(minted);
+  });
+
   it('asks the Keychain once and remembers the no', async () => {
     // Every request a signed-out reader makes asks this question, and for
     // almost all of them the answer is the same no.

@@ -104,7 +104,26 @@ export function configurePurchases(appUserID: string | null): void {
   // handler if nobody has called `setLogHandler` yet.
   Purchases.setLogHandler(forwardRevenueCatLog);
   if (__DEV__) void Purchases.setLogLevel(LOG_LEVEL.WARN);
-  Purchases.configure({ apiKey: REVENUECAT_API_KEY, appUserID });
+  Purchases.configure({
+    apiKey: REVENUECAT_API_KEY,
+    appUserID,
+    /*
+     * Signs the SDK's responses, and does nothing else.
+     *
+     * `INFORMATIONAL` rather than off: a forged `CustomerInfo` is reported
+     * and still honoured. It cannot let anybody in here, because nothing in
+     * this app grants access from `CustomerInfo` - the server decides, and it
+     * asks RevenueCat itself. What a tampered response COULD do is draw a
+     * renewal date that is not real, and this is how that becomes visible
+     * rather than silent.
+     *
+     * Not `ENFORCED`, which flips `isActive` to false on a failed signature.
+     * That trades a real reader behind a corporate proxy for a guarantee we
+     * do not rely on, and the one thing worse than a wrong renewal date is
+     * telling somebody who paid that they did not.
+     */
+    entitlementVerificationMode: Purchases.ENTITLEMENT_VERIFICATION_MODE.INFORMATIONAL,
+  });
   configured = true;
 }
 

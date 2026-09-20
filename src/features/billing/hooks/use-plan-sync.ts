@@ -1,7 +1,7 @@
 import React from 'react';
 import { AppState } from 'react-native';
 
-import { useCloudIdentity } from '@/hooks/use-cloud-identity';
+import { useCloudIdentityId } from '@/hooks/use-cloud-identity';
 import { useSubscriptionStore } from '@/stores/subscription';
 
 /**
@@ -34,7 +34,7 @@ const FOREGROUND_RECHECK_MS = 30_000;
  * the person instead of going on answering as the phone.
  */
 export function usePlanSync(): void {
-  const identityId = useCloudIdentity().id;
+  const identityId = useCloudIdentityId();
 
   React.useEffect(() => {
     if (!identityId) return;

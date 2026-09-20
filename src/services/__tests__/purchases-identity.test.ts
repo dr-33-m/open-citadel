@@ -25,6 +25,9 @@ vi.mock('react-native-purchases', () => ({
     configure: vi.fn(),
     logIn,
     logOut,
+    // A static on the class, not a named export of the package, which is the
+    // only way the SDK publishes it.
+    ENTITLEMENT_VERIFICATION_MODE: { DISABLED: 'DISABLED', INFORMATIONAL: 'INFORMATIONAL' },
   },
   LOG_LEVEL: { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 },
   STORE_REPLACEMENT_MODE: {},
