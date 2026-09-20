@@ -34,6 +34,7 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 
 import { ApprovalSheet } from "@/components/approval-sheet";
 import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
+import { useJourneyWriter } from "@/hooks/use-journey-writer";
 import { MemoryHud } from "@/components/dev/memory-hud";
 import { ToastProvider } from "@/components/toast/toast-provider";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
@@ -112,6 +113,9 @@ export default function RootLayout() {
   // The server's plan for this account, kept current here rather than by
   // whichever screen is up, so offline mode is checked as promptly as cloud.
   usePlanSync();
+  // Samwell's journal: what he writes down about them once a conversation
+  // goes quiet, for him to recall in later chats.
+  useJourneyWriter();
 
   // The app's own theme setting is the single source of truth; Uniwind (and
   // therefore every PanelUI token class in the app) follows the OS color

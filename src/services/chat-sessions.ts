@@ -49,6 +49,9 @@ export type ChatMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   createdAt: string;
+  /** Which engine it went through, which decides whether the journal may
+   *  read it. See `chat_messages.via`. */
+  via?: 'cloud' | 'device' | null;
 };
 
 /**
@@ -147,6 +150,7 @@ export function readMessages(sessionId: string): ChatMessage[] {
       role: row.role as ChatMessage['role'],
       content: row.content,
       createdAt: row.createdAt,
+      via: row.via,
     }));
 }
 

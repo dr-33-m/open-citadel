@@ -9,6 +9,7 @@ import { cloudJsonHeaders } from '@/services/cloud-identity';
 import * as Inference from '@/services/inference';
 import { useSettingsStore } from '@/stores/settings';
 import { splitThinking } from '@/utils/think-stream';
+import { formatTranscript } from '@/utils/transcript';
 
 /**
  * AI-generated titles for bookless chat sessions. Works on both Samwell
@@ -95,8 +96,5 @@ export class RetitleError extends Error {}
  * themselves and could have drifted on the labels the prompt reads.
  */
 export function conversationForTitle(messages: { role: string; content: string }[]): string {
-  return messages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => `${m.role === 'user' ? 'User' : 'Samwell'}: ${m.content}`)
-    .join('\n');
+  return formatTranscript(messages);
 }

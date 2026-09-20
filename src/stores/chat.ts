@@ -599,6 +599,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       role: 'user',
       content,
       createdAt: now(),
+      // Which engine hears it decides whether the journal may ever read it:
+      // only cloud turns are sent to be written up (see `chat_messages.via`).
+      via: samwellMode === 'cloud' ? 'cloud' : 'device',
     };
 
     db.insert(chatMessages).values(userMsg).run();
@@ -691,6 +694,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           role: 'assistant',
           content: finalContent,
           createdAt: now(),
+          via: 'cloud',
         };
         db.insert(chatMessages).values(assistantMsg).run();
 

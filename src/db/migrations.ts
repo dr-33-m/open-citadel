@@ -356,6 +356,40 @@ async function ensureCompassSchema(): Promise<void> {
       sql`ALTER TABLE \`chat_sessions\` ADD \`kind\` text NOT NULL DEFAULT 'reading'`,
     );
   }
+  if (!sessionCols.has("journaled_at")) {
+    db.run(sql`ALTER TABLE \`chat_sessions\` ADD \`journaled_at\` text`);
+  }
+
+  /*
+   * Samwell's journal (see services/journey-writer).
+   *
+   * Here and not in `drizzle/`, because nothing in `drizzle/` creates
+   * `chat_messages`: an ALTER there would fail on a first install and roll the
+   * whole chain back, the hole `ensureChatSessionsTable` describes.
+   *
+   * `via` is which engine a message went through. Only `cloud` messages are
+   * ever sent to be journaled, so a conversation held on the device never
+   * leaves it. Existing rows are left null, which counts as "not known to be
+   * cloud" and is never sent, except Compass and onboarding, which have only
+   * ever run in the cloud.
+   *
+   * `journaled_at` is how far into a session the journal has read: the
+   * `created_at` of the last message it covered.
+   *
+   * In this function rather than beside the `chat_messages` DDL above it,
+   * because the backfill reads `chat_sessions.kind`, which on a device where
+   * 0018 half-applied only exists once the lines just above have run.
+   */
+  const messageCols = new Set(
+    (db.all(sql`PRAGMA table_info(chat_messages)`) as { name: string }[]).map((r) => r.name),
+  );
+  if (!messageCols.has("via")) {
+    db.run(sql`ALTER TABLE \`chat_messages\` ADD \`via\` text`);
+    db.run(sql`UPDATE \`chat_messages\` SET \`via\` = 'cloud'
+      WHERE \`session_id\` IN (
+        SELECT \`id\` FROM \`chat_sessions\` WHERE \`kind\` IN ('compass', 'onboarding')
+      )`);
+  }
 }
 
 export async function runMigrations() {

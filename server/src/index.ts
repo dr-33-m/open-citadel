@@ -36,6 +36,7 @@ import { managementConfigured } from './logto-management.js';
 import { PROVIDER_PREFERENCES } from './openrouter.js';
 import { chatTitleRoutes } from './chat-title.js';
 import { gutenbergRoutes } from './gutenberg.js';
+import { journalRoutes } from './journal.js';
 import { onboardingRoutes } from './onboarding.js';
 import { billingRoutes, insiderAdminRoutes } from './billing-routes.js';
 import { billingWebhookRoutes } from './billing-webhook.js';
@@ -742,6 +743,9 @@ app.route('/chat', chatTitleRoutes);
 // The reconciliation of a goal that just ended, beside the Compass routes it
 // belongs to.
 app.route('/compass', takeawayRoutes);
+// What Samwell writes down about someone once a conversation goes quiet.
+// The notes go back to the device; nothing is kept here.
+app.route('/journey', journalRoutes);
 // The free introduction. Authenticated like everything else, granted once per
 // account, and the only route here that never writes to `usage_events`.
 app.route('/onboarding', onboardingRoutes);

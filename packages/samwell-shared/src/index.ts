@@ -6,6 +6,7 @@ export * from './chat-title';
 export * from './compass';
 export * from './compass-prompts';
 export * from './compass-tools';
+export * from './journal';
 export * from './limits';
 export * from './models';
 export * from './onboarding';

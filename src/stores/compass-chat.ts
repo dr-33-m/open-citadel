@@ -265,6 +265,8 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       role: 'user',
       content: trimmed,
       createdAt: new Date().toISOString(),
+      // Compass only runs in the cloud; see `chat_messages.via`.
+      via: 'cloud',
     };
     appendMessage(userMessage);
 
@@ -339,6 +341,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         role: 'assistant',
         content: reply,
         createdAt: new Date().toISOString(),
+        via: 'cloud',
       };
       appendMessage(assistantMessage);
       touchSession(sessionId, assistantMessage.createdAt);

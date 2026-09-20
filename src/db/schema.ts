@@ -184,6 +184,9 @@ export const chatSessions = sqliteTable("chat_sessions", {
   contextLocator: text("context_locator"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+  /** How far Samwell's journal has read: the `created_at` of the last message
+   *  it covered. Null until it has read any. Added by the self-heal. */
+  journaledAt: text("journaled_at"),
 });
 
 export const chatMessages = sqliteTable("chat_messages", {
@@ -194,6 +197,12 @@ export const chatMessages = sqliteTable("chat_messages", {
   role: text("role", { enum: ["system", "user", "assistant", "tool"] }).notNull(),
   content: text("content").notNull(),
   createdAt: text("created_at").notNull(),
+  /**
+   * Which engine the message went through. Only `cloud` messages are ever
+   * sent to be journaled; null (older rows) counts as not cloud. Added by the
+   * self-heal, not a migration: nothing in `drizzle/` creates this table.
+   */
+  via: text("via").$type<"cloud" | "device">(),
 });
 
 /**
@@ -481,12 +490,15 @@ export const goalOutcomes = sqliteTable("goal_outcomes", {
 
 export const journeyNotes = sqliteTable("journey_notes", {
   id: text("id").primaryKey(),
-  /** 'reflection' = distilled from a night check-in; 'book_finished'/'goal_finished' = deterministic */
-  kind: text("kind").$type<"reflection" | "book_finished" | "goal_finished">().notNull(),
+  /** 'reflection' = distilled by Samwell (from a conversation, or an approved
+   *  Compass check-in); the rest are written deterministically. */
+  kind: text("kind")
+    .$type<"reflection" | "book_finished" | "book_removed" | "goal_finished">()
+    .notNull(),
   text: text("text").notNull(),
   /** JSON string[] for keyword retrieval */
   tags: text("tags"),
-  /** originating checkinId / bookId, for provenance */
+  /** Where it came from, for provenance: `chat:<sessionId>`, a book id, a goal id. */
   sourceRef: text("source_ref"),
   createdAt: text("created_at").notNull(),
 });
