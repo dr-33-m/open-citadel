@@ -91,7 +91,14 @@ export function PlanCard({
       leads: true,
       lines: 1,
     },
-    { label: `${modelCount} brains to choose from`, leads: false, lines: 2 },
+    // Left out rather than drawn as "0 brains to choose from" while the count
+    // is still unknown: it is the server's number, so it is missing on a cold
+    // open and on a card being read before anyone has signed in. A promise of
+    // nothing on a card selling something is worse than a line that arrives a
+    // beat late.
+    ...(modelCount > 0
+      ? [{ label: `${modelCount} brains to choose from`, leads: false, lines: 2 }]
+      : []),
     { label: "Unused neurons roll over", leads: false, lines: 2 },
   ];
 

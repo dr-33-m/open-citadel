@@ -11,6 +11,7 @@ import { showToast } from "@/components/toast/toast-provider";
 import { Card } from "@/components/ui/card";
 import { GoldButton } from "@/components/ui/gold-button";
 import { Spinner } from "@/components/ui/spinner";
+import { Touchable } from "@/components/ui/touchable";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
 import {
     PURCHASES_ENABLED,
@@ -18,9 +19,11 @@ import {
 } from "@/constants/revenuecat";
 import { layout } from "@/constants/theme";
 import { CreditMeter } from "@/features/billing/components/credit-meter";
-import { PlanCarousel } from "@/features/billing/components/plan-carousel";
+import { PlanAccountSheet } from "@/features/billing/components/plan-account-sheet";
+import { PlanPicker } from "@/features/billing/components/plan-picker";
 import { SubscriptionManagementSheet } from "@/features/billing/components/subscription-management-sheet";
 import { useBillingLifecycle } from "@/features/billing/hooks/use-billing-lifecycle";
+import { usePlanCheckout } from "@/features/billing/hooks/use-plan-checkout";
 import { CloudModelSheet } from "@/features/settings/components/cloud-model-sheet";
 import { CloudTuneSheet } from "@/features/settings/components/cloud-tune-sheet";
 import { useAccountStore } from "@/stores/account";
@@ -74,6 +77,7 @@ export function CloudPanel({
   const error = useSubscriptionStore((s) => s.error);
   const refresh = useSubscriptionStore((s) => s.refresh);
   const loadOffering = useSubscriptionStore((s) => s.loadOffering);
+  const loadPlanPreview = useSubscriptionStore((s) => s.loadPlanPreview);
   const buy = useSubscriptionStore((s) => s.purchase);
   const restore = useSubscriptionStore((s) => s.restore);
   const manage = useSubscriptionStore((s) => s.manage);
@@ -84,6 +88,9 @@ export function CloudPanel({
   const accountId = useAccountStore((state) =>
     state.status === "signedIn" ? state.sub : null,
   );
+  // The status as well as the id, because "not read yet" and "signed out"
+  // want different behaviour here and both report a null id.
+  const accountStatus = useAccountStore((state) => state.status);
   const signedIn = accountId !== null;
   useBillingLifecycle(focused ? accountId : null);
   const [pickerVisible, setPickerVisible] = React.useState(false);
@@ -110,14 +117,29 @@ export function CloudPanel({
   /*
    * Ask the server what this account holds, and the store what is on sale.
    *
-   * Only once signed in: both answers are about an account, and asking
-   * without one produces a 401 and an anonymous customer for nothing.
+   * What is on sale is asked either way. The plans have to draw for somebody
+   * who has never signed in - App Review reads a price list behind a sign-in
+   * wall as registration required in order to buy - and neither the store's
+   * offering nor `/billing/plans` is about a person. Only the balance is, and
+   * asking for that without an account is a 401 for nothing.
    */
   React.useEffect(() => {
-    if (!signedIn) return;
-    void refresh();
+    /*
+     * Not before the stored session has been read. Two reasons, and the
+     * second is the one that bites: `unknown` is not "signed out", so acting
+     * on it would ask the anonymous route about a reader who has an account;
+     * and the account store is what configures the purchases SDK, so asking
+     * the store for its offering first throws and leaves the cards with no
+     * prices until something else re-runs this.
+     */
+    if (accountStatus === "unknown") return;
     void loadOffering();
-  }, [signedIn, refresh, loadOffering]);
+    if (signedIn) {
+      void refresh();
+      return;
+    }
+    void loadPlanPreview();
+  }, [accountStatus, signedIn, refresh, loadOffering, loadPlanPreview]);
 
   /** The store package behind each plan, keyed exactly. See `planForPackage`. */
   const packages = React.useMemo(() => {
@@ -196,6 +218,26 @@ export function CloudPanel({
     }
   }, [manage]);
 
+  /*
+   * Everything that sells or recovers a plan goes through here rather than
+   * straight to the store, because the carousel above now draws for somebody
+   * who has no account yet. Signed in it is a passthrough.
+   */
+  const checkout = usePlanCheckout({
+    buy: onChoose,
+    restore: onRestore,
+    onAlreadyActive: onAccessActivated,
+  });
+  const { start } = checkout;
+  const startPurchase = React.useCallback(
+    (plan: PlanId, packageToBuy: PurchasesPackage) =>
+      start({ kind: "buy", plan, packageToBuy }),
+    [start],
+  );
+  const startRestore = React.useCallback(() => start({ kind: "restore" }), [start]);
+  /** A sign-in has landed and the purchase it was for is still going. */
+  const checkingOut = checkout.preparing !== null;
+
   // This build cannot reach him, and no amount of signing in changes that.
   if (!cloudBaseUrl || !ACCOUNT_ENABLED) {
     return (
@@ -208,14 +250,32 @@ export function CloudPanel({
   }
 
   /*
-   * Configured, but nobody is signed in.
+   * The stored session has not been read yet.
    *
-   * Unchanged: a plan is bought against an account, so the account comes
-   * first and this stays the single thing worth doing. The button does not
-   * open the browser from here - sign-in lives in one place and this scrolls
-   * to it.
+   * Its own beat, for the reason the account store documents: `unknown` is
+   * not signed out, and drawing the plan carousel on it would offer a plan to
+   * somebody who is already paying for one, at prices the store has not
+   * answered for yet. The same quiet card the subscription check uses below.
    */
-  if (!signedIn) {
+  if (accountStatus === "unknown") {
+    return (
+      <Card className="p-4">
+        <View className="flex-row items-center gap-2">
+          <Spinner size="sm" />
+          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+            Checking subscription
+          </ThemedText>
+        </View>
+      </Card>
+    );
+  }
+
+  /*
+   * Configured, but nobody is signed in, and this build cannot sell anything
+   * anyway. No carousel to draw, so it keeps the plain card and the one thing
+   * left worth doing.
+   */
+  if (!signedIn && !PURCHASES_ENABLED) {
     return (
       <Card className="gap-4 p-4">
         <View className="gap-1">
@@ -233,6 +293,81 @@ export function CloudPanel({
           />
         </View>
       </Card>
+    );
+  }
+
+  /*
+   * Nobody signed in, and plans to sell.
+   *
+   * They are readable here, priced, with their explanation sheets, and
+   * choosing one asks for the account then rather than now. What is being
+   * sold is credits spent on models that run on our servers, so an account is
+   * genuinely where a plan has to live - but that is a reason to give at the
+   * moment somebody decides to buy, not a wall to put in front of the price
+   * list. See `PlanAccountSheet`, and `usePlanCheckout` for the order.
+   *
+   * The same view stays up while a checkout is under way, which is what
+   * `checkingOut` is for. Signing in from the sheet flips this into the
+   * signed-in branches below, and the purchase it was signing in FOR is still
+   * running. Held here, the sheet keeps its close animation, the button keeps
+   * spinning into the store's own sheet, and nothing on screen jumps to
+   * "Checking subscription" and back. The account landing and `preparing`
+   * being set are one React update, since both follow the same awaited
+   * sign-in, so there is no frame in between where this is false.
+   */
+  if (!signedIn || checkingOut) {
+    return (
+      <>
+        {/* Keyed, and the branch below returns the same fragment with the
+            same key, so React reconciles the two as one element instead of
+            tearing this down and building it again. Without it, a checkout
+            ending flips the branch, the carousel remounts, and the card the
+            reader had swiped to springs back to the default. */}
+        <PlanPicker
+          key="plans"
+          subtitle="He thinks on our servers, so a plan is a monthly balance of Neurons. Your books and highlights stay on this device."
+          packages={packages}
+          catalogue={catalogue}
+          modelCounts={modelCounts}
+          busy={checkout.preparing ?? busy}
+          loading={loading}
+          onChoose={startPurchase}
+          onRestore={startRestore}
+          surface="background"
+          bleed={layout.gutter}
+        />
+        {/* The quiet third door, for somebody who wants neither to buy nor to
+            restore: it scrolls to the account card rather than opening the
+            browser from here, so sign-in still happens in one place. */}
+        {!signedIn ? (
+          <View className="items-center">
+            <Touchable
+              className="px-4 py-2"
+              onPress={onRequestAccount}
+              haptic="select"
+              accessibilityRole="button"
+              accessibilityLabel="Sign in to your account"
+            >
+              <ThemedText
+                type="labelSm"
+                color={asColor(mutedForeground)}
+                className="tracking-[1px]"
+              >
+                ALREADY HAVE AN ACCOUNT
+              </ThemedText>
+            </Touchable>
+          </View>
+        ) : null}
+        {/* Outside the `!signedIn` test above on purpose. Taking the sheet
+            away in the same update that signs somebody in would unmount a
+            presented modal mid-animation; here it closes the ordinary way. */}
+        <PlanAccountSheet
+          visible={checkout.pending !== null}
+          kind={checkout.pending?.kind === "restore" ? "restore" : "buy"}
+          onClose={checkout.dismiss}
+          onSignedIn={() => void checkout.onSignedIn()}
+        />
+      </>
     );
   }
 
@@ -286,25 +421,22 @@ export function CloudPanel({
 
   if (status === "none" || (status === "unavailable" && PURCHASES_ENABLED)) {
     return (
-      <View className="gap-4">
-        <View className="gap-1">
-          <ThemedText type="bodyMd">Choose a plan</ThemedText>
-          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            Each one opens up the brains he can think with.
-          </ThemedText>
-        </View>
-        <PlanCarousel
+      /* The fragment and the key are not decoration: see the branch above. */
+      <>
+        <PlanPicker
+          key="plans"
+          subtitle="Each one opens up the brains he can think with."
           packages={packages}
           catalogue={catalogue}
           modelCounts={modelCounts}
           busy={busy}
           loading={loading}
-          onChoose={onChoose}
-          onRestore={onRestore}
+          onChoose={startPurchase}
+          onRestore={startRestore}
           surface="background"
           bleed={layout.gutter}
         />
-      </View>
+      </>
     );
   }
 

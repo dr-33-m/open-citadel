@@ -109,17 +109,45 @@ export function configurePurchases(appUserID: string | null): void {
 }
 
 /**
+ * The join in flight, or the one that has landed, for the account it is for.
+ *
+ * Kept so a second caller waits on the first rather than starting another
+ * `logIn`. See `identify`.
+ */
+let identified: { sub: string; done: Promise<void> } | null = null;
+
+/**
  * Tie the RevenueCat customer to the Logto account.
  *
  * `app_user_id` IS the Logto subject. That equality is what lets the server
  * read a webhook's `app_user_id`, prefix it, and have it be the same
  * `account:<sub>` the credit ledger is keyed on - with no mapping table to
  * drift. Changing it here breaks billing silently.
+ *
+ * Idempotent, and that is what makes it safe to await before a purchase. The
+ * account store fires this on sign-in and does not wait, because a session is
+ * real whether or not a purchases SDK could be reached; a purchase started
+ * moments later must NOT proceed on that basis, or it lands on the anonymous
+ * customer the app was configured with while signed out. Calling it again
+ * returns the same promise, so the checkout waits for the join the sign-in
+ * already began instead of racing a second one against it.
+ *
+ * A failed join is not remembered. Caching a rejection would leave every
+ * later wait resolving against an identity RevenueCat never took.
  */
-export async function identify(sub: string): Promise<void> {
-  if (!PURCHASES_ENABLED) return;
+export function identify(sub: string): Promise<void> {
+  if (!PURCHASES_ENABLED) return Promise.resolve();
   configurePurchases(sub);
-  await Purchases.logIn(sub);
+  if (identified?.sub === sub) return identified.done;
+
+  const done = Purchases.logIn(sub)
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      if (identified?.sub === sub) identified = null;
+      throw error;
+    });
+  identified = { sub, done };
+  return done;
 }
 
 /**
@@ -130,6 +158,10 @@ export async function identify(sub: string): Promise<void> {
  */
 export async function forget(): Promise<void> {
   if (!PURCHASES_ENABLED || !configured) return;
+  // Dropped first: a join remembered across a sign-out would have the next
+  // `identify` for that same account return a promise for a customer this
+  // device is no longer logged in as.
+  identified = null;
   await Purchases.logOut();
 }
 

@@ -29,22 +29,23 @@ import { readIdentity } from './identity.js';
 
 export const billingRoutes = new Hono();
 
-billingRoutes.get('/me', async (c) => {
-  const { id: accountId } = await readIdentity(c);
-  const balance = await billing.readEntitlement(accountId);
-
+/**
+ * The catalogue as the plan cards draw it.
+ *
+ * Shared by `/me` and the public `/plans` below, because the two must agree:
+ * the credits a plan is advertised as buying before somebody signs in are the
+ * same credits they are told about afterwards, and two copies of this
+ * arithmetic would be two chances for those numbers to drift apart.
+ *
+ * `pricingPlan` is whose credit value the estimates are computed against. A
+ * reader without a plan previews the entry band, which is what the carousel
+ * is selling.
+ */
+async function readCatalogue(pricingPlan: PlanId) {
   const models = await listCloudModels();
   const forecast = await getForecastWorkload();
-  /*
-   * A reader without a plan is shown the entry band: what the cheapest plan
-   * buys is exactly the thing the plan carousel is selling, and an empty list
-   * would draw an empty picker on a route whose whole job is to answer "what
-   * can I reach". The app does not draw the model card without a plan, so
-   * this is a preview at worst.
-   */
-  const visible = modelsForPlan(models, balance.plan ?? 'maester');
   const multipliers = forecastMultipliersByBand(models, forecast);
-  const creditValue = creditValueUsd(CREDIT_PLANS[balance.plan ?? 'maester']);
+  const creditValue = creditValueUsd(CREDIT_PLANS[pricingPlan]);
 
   const toPlanModel = (model: CloudModelOption) => {
     const priced =
@@ -62,11 +63,9 @@ billingRoutes.get('/me', async (c) => {
     };
   };
 
-  return c.json({
-    balance,
-    // The top of their own band. A reader without a plan is previewing the
-    // entry tier, so that is the one they are shown.
-    defaultModelId: await getDefaultModelIdForPlan(balance.plan ?? 'maester'),
+  return {
+    models,
+    toPlanModel,
     /*
      * How many models each plan reaches, for the plan cards.
      *
@@ -79,12 +78,11 @@ billingRoutes.get('/me', async (c) => {
     modelsByPlan: Object.fromEntries(
       PLAN_ORDER.map((plan) => [plan, modelsForPlan(models, plan).length]),
     ),
-    models: visible.map(toPlanModel),
     /*
      * The whole catalogue, each model with the tier it belongs to, for the
      * plan carousel's info sheets. A sheet selling a tier the reader does not
-     * hold yet still has to name what that tier opens up - `models` above is
-     * band-filtered and cannot answer for a plan above the reader's own.
+     * hold yet still has to name what that tier opens up - `models` in `/me`
+     * is band-filtered and cannot answer for a plan above the reader's own.
      *
      * This is not a new exposure: `/models` already publishes the catalogue
      * whole, and what is added here is each model's credit estimate against
@@ -92,7 +90,52 @@ billingRoutes.get('/me', async (c) => {
      * stands: models above the reader's plan are not listed THERE.
      */
     catalogue: models.map(toPlanModel),
+  };
+}
+
+billingRoutes.get('/me', async (c) => {
+  const { id: accountId } = await readIdentity(c);
+  const balance = await billing.readEntitlement(accountId);
+
+  const { models, toPlanModel, modelsByPlan, catalogue } = await readCatalogue(
+    balance.plan ?? 'maester',
+  );
+  /*
+   * A reader without a plan is shown the entry band: what the cheapest plan
+   * buys is exactly the thing the plan carousel is selling, and an empty list
+   * would draw an empty picker on a route whose whole job is to answer "what
+   * can I reach". The app does not draw the model card without a plan, so
+   * this is a preview at worst.
+   */
+  const visible = modelsForPlan(models, balance.plan ?? 'maester');
+
+  return c.json({
+    balance,
+    // The top of their own band. A reader without a plan is previewing the
+    // entry tier, so that is the one they are shown.
+    defaultModelId: await getDefaultModelIdForPlan(balance.plan ?? 'maester'),
+    modelsByPlan,
+    models: visible.map(toPlanModel),
+    catalogue,
   });
+});
+
+/**
+ * What is on sale, to anybody who asks.
+ *
+ * The one route here that takes no account, and it is the point: App Review
+ * reads a plan carousel behind a sign-in wall as registration required in
+ * order to buy, so the cards have to be able to draw before there is anybody
+ * to draw them for. Nothing here is about a person - it is the same
+ * catalogue `/models` already publishes, plus the credit estimates the cards
+ * quote - so there is nothing to meter and nobody to identify.
+ *
+ * Priced against the entry band, matching what `/me` shows a reader who has
+ * no plan yet. Signing in must not change the numbers they were just reading.
+ */
+billingRoutes.get('/plans', async (c) => {
+  const { modelsByPlan, catalogue } = await readCatalogue('maester');
+  return c.json({ modelsByPlan, catalogue });
 });
 
 billingRoutes.get('/ledger', async (c) => {
