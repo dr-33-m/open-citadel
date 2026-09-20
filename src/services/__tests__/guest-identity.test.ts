@@ -5,15 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * what happens when the server has never heard of this phone. The Keychain is
  * a map here and the server is a fake; the rules are what is under test.
  */
-const { store, fetchMock, randomBytes } = vi.hoisted(() => ({
+const { store, fetchMock, getItem, randomBytes } = vi.hoisted(() => ({
   store: new Map<string, string>(),
   fetchMock: vi.fn(),
+  /** Counted, because how often the Keychain is asked is part of the design. */
+  getItem: vi.fn(async (key: string) => store.get(key) ?? null),
   randomBytes: new Uint8Array(32).fill(0xab),
 }));
 
 vi.mock('expo-secure-store', () => ({
   WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'when-unlocked-this-device-only',
-  getItemAsync: vi.fn(async (key: string) => store.get(key) ?? null),
+  getItemAsync: getItem,
   setItemAsync: vi.fn(async (key: string, value: string) => {
     store.set(key, value);
   }),
@@ -47,6 +49,8 @@ function calls(): string[] {
 beforeEach(() => {
   store.clear();
   fetchMock.mockReset();
+  getItem.mockClear();
+  // Drops both memory caches, which is what makes each test start over.
   clearGuestToken();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -90,6 +94,23 @@ describe('minting an identity', () => {
   it('treats half an identity as none', async () => {
     store.set('samwell.guest.id', GUEST_ID);
     expect(await readGuestIdentity()).toBeNull();
+  });
+
+  it('does not tell the server again about a device it already minted', async () => {
+    store.set('samwell.guest.id', GUEST_ID);
+    store.set('samwell.guest.secret', SECRET);
+
+    expect(await ensureGuestIdentity()).toEqual({ guestId: GUEST_ID, secret: SECRET });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('asks the Keychain once and remembers the no', async () => {
+    // Every request a signed-out reader makes asks this question, and for
+    // almost all of them the answer is the same no.
+    expect(await readGuestIdentity()).toBeNull();
+    expect(await readGuestIdentity()).toBeNull();
+
+    expect(getItem).toHaveBeenCalledTimes(2); // The two keys, once each.
   });
 });
 
@@ -142,6 +163,39 @@ describe('tokens', () => {
 
     expect([a, b, c]).toEqual(['tok-1', 'tok-1', 'tok-1']);
     expect(calls()).toEqual(['/account/guest/token']);
+  });
+
+  it('keeps a token that arrived after the device stopped being a guest', async () => {
+    // Linking lands mid-exchange. The token is still good for the caller that
+    // asked, but it belongs to an identity that no longer exists, so it must
+    // not be left in memory for the next request to pick up.
+    let deliver: (response: Response) => void = () => undefined;
+    const asked = new Promise<void>((started) => {
+      fetchMock.mockImplementationOnce(() => {
+        started();
+        return new Promise<Response>((resolve) => {
+          deliver = resolve;
+        });
+      });
+    });
+    const pending = guestToken();
+    await asked;
+
+    await forgetGuestIdentity();
+    deliver(jsonResponse({ token: 'tok-1', expiresIn: 3600 }));
+
+    expect(await pending).toBe('tok-1');
+    expect(await guestToken()).toBeNull();
+  });
+
+  it('does not exchange a secret that was deleted while it was being read', async () => {
+    // The Keychain read starts before the link lands and finishes after it.
+    // What comes back is a deleted identity and must not be spent.
+    const pending = guestToken();
+    await forgetGuestIdentity();
+
+    expect(await pending).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('forgets the credential when the plan moves to an account', async () => {

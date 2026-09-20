@@ -52,21 +52,49 @@ export type GuestIdentity = { guestId: string; secret: string };
  *  secret can mint another in one request. */
 let cachedToken: { token: string; expiresAtMs: number } | null = null;
 let tokenInFlight: Promise<string> | null = null;
+/** What the Keychain last said, absence included. See `readGuestIdentity`. */
+let identityCache: { value: GuestIdentity | null } | null = null;
+/**
+ * Bumped by `forgetGuestIdentity`, so work that began while this device was a
+ * guest and finished after it stopped can tell that it is out of date.
+ *
+ * Linking is the only thing that ends a guest identity, and it can land in the
+ * middle of either half of a token fetch: the Keychain read, which would
+ * otherwise answer with a deleted identity and cache it, or the exchange
+ * itself, which would otherwise leave a live credential for that identity
+ * sitting in memory.
+ */
+let generation = 0;
 
 function baseUrl(): string {
   return SAMWELL_CLOUD_BASE_URL.trim().replace(/\/+$/, '');
 }
 
-/** The identity this device already has, or null. Never mints one. */
+/**
+ * The identity this device already has, or null. Never mints one.
+ *
+ * Remembered in memory once read, absence included. `cloudHeaders` asks for a
+ * token on every request a signed-out reader makes, and without this every
+ * one of them would be two Keychain reads to learn the same "no" again.
+ */
 export async function readGuestIdentity(): Promise<GuestIdentity | null> {
+  if (identityCache) return identityCache.value;
+
+  const mine = generation;
   const [guestId, secret] = await Promise.all([
     SecureStore.getItemAsync(ID_KEY, STORE_OPTIONS),
     SecureStore.getItemAsync(SECRET_KEY, STORE_OPTIONS),
   ]);
+  // The read began before the device stopped being a guest and finished
+  // after, so what came back is a deleted identity. Answering with it would
+  // put the stale one back in the cache for everybody behind us.
+  if (generation !== mine) return null;
+
   // Half an identity is no identity. Treated as absent so the next purchase
   // mints a whole one rather than carrying a secret with no id to use it.
-  if (!guestId || !secret) return null;
-  return { guestId, secret };
+  const value = guestId && secret ? { guestId, secret } : null;
+  identityCache = { value };
+  return value;
 }
 
 /**
@@ -77,13 +105,15 @@ export async function readGuestIdentity(): Promise<GuestIdentity | null> {
  * so a purchase made on a bad connection still lands somewhere the webhook
  * can credit; `guestToken` registers again when it finds the server does not
  * know this device yet.
+ *
+ * An identity that already exists is returned as it stands, with no call to
+ * the server. Re-registering on every purchase would be a round trip to learn
+ * a thing we already know, and the repair path above covers the one case
+ * where the server has somehow never heard of it.
  */
 export async function ensureGuestIdentity(): Promise<GuestIdentity> {
   const existing = await readGuestIdentity();
-  if (existing) {
-    await registerGuest(existing).catch(() => undefined);
-    return existing;
-  }
+  if (existing) return existing;
 
   const identity: GuestIdentity = {
     guestId: `guest:${Crypto.randomUUID()}`,
@@ -93,6 +123,7 @@ export async function ensureGuestIdentity(): Promise<GuestIdentity> {
     SecureStore.setItemAsync(ID_KEY, identity.guestId, STORE_OPTIONS),
     SecureStore.setItemAsync(SECRET_KEY, identity.secret, STORE_OPTIONS),
   ]);
+  identityCache = { value: identity };
   await registerGuest(identity);
   return identity;
 }
@@ -106,6 +137,10 @@ export async function ensureGuestIdentity(): Promise<GuestIdentity> {
  * retried rather than quietly downgraded to anonymous.
  */
 export async function guestToken(): Promise<string | null> {
+  // Read before the first await, so a forget that lands while the Keychain is
+  // being read still counts as having happened after this call began.
+  const mine = generation;
+
   const fresh = cachedToken && cachedToken.expiresAtMs > Date.now() ? cachedToken.token : null;
   if (fresh) return fresh;
 
@@ -114,7 +149,7 @@ export async function guestToken(): Promise<string | null> {
 
   // One exchange at a time. Several requests waking together must not each
   // ask for their own token and then race to cache the last one.
-  tokenInFlight ??= exchange(identity).finally(() => {
+  tokenInFlight ??= exchange(identity, mine).finally(() => {
     tokenInFlight = null;
   });
   return tokenInFlight;
@@ -130,19 +165,29 @@ export async function guestToken(): Promise<string | null> {
  * steal.
  */
 export async function forgetGuestIdentity(): Promise<void> {
+  generation += 1;
   cachedToken = null;
+  identityCache = { value: null };
   await Promise.all([
     SecureStore.deleteItemAsync(ID_KEY, STORE_OPTIONS),
     SecureStore.deleteItemAsync(SECRET_KEY, STORE_OPTIONS),
   ]);
 }
 
-/** Drops the cached token without touching the identity, for a sign-out. */
+/**
+ * Drop everything held in memory, keeping everything that is stored.
+ *
+ * Both caches are memoised reads of durable state - the Keychain and the
+ * server - so throwing them away is always safe and never loses anything. For
+ * a sign-out, where an account has taken over as the identity and the token
+ * belonging to the phone should not be sitting in memory behind it.
+ */
 export function clearGuestToken(): void {
   cachedToken = null;
+  identityCache = null;
 }
 
-async function exchange(identity: GuestIdentity): Promise<string> {
+async function exchange(identity: GuestIdentity, mine: number): Promise<string> {
   let response = await postJson('/account/guest/token', identity);
 
   /*
@@ -162,10 +207,15 @@ async function exchange(identity: GuestIdentity): Promise<string> {
   const body = (await response.json()) as { token?: string; expiresIn?: number };
   if (!body.token) throw new Error('Guest token response did not match.');
 
-  cachedToken = {
-    token: body.token,
-    expiresAtMs: Date.now() + Math.max(0, (body.expiresIn ?? 0) * 1000 - EXPIRY_SKEW_MS),
-  };
+  // The device may have stopped being a guest while this was in flight, in
+  // which case the token is still good but belongs to nobody. Return it to the
+  // caller that asked, keep it out of the cache.
+  if (generation === mine) {
+    cachedToken = {
+      token: body.token,
+      expiresAtMs: Date.now() + Math.max(0, (body.expiresIn ?? 0) * 1000 - EXPIRY_SKEW_MS),
+    };
+  }
   return body.token;
 }
 
@@ -177,12 +227,30 @@ async function registerGuest(identity: GuestIdentity): Promise<void> {
   if (!response.ok) throw new Error(`Guest registration refused (${response.status}).`);
 }
 
-function postJson(path: string, body: unknown): Promise<Response> {
-  return fetch(`${baseUrl()}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+/**
+ * A hung request here is worse than a failed one. `cloudHeaders` awaits this
+ * before every metered call, so a server that accepts the connection and then
+ * says nothing would stall the chat turn behind it with no error to show.
+ *
+ * `AbortController` plus a timer rather than `AbortSignal.timeout`, matching
+ * `stores/subscription` and its siblings - Hermes does not ship the static
+ * helper.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+
+async function postJson(path: string, body: unknown): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(`${baseUrl()}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function toHex(bytes: Uint8Array): string {
