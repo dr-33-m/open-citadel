@@ -55,6 +55,10 @@ async function toAccountId(appUserId: string): Promise<string> {
   return appUserId.startsWith(ACCOUNT_PREFIX) ? appUserId : `${ACCOUNT_PREFIX}${appUserId}`;
 }
 
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+}
+
 /** The entitlements an event names, in whatever shape RevenueCat sent them. */
 function readEntitlementIds(event: RevenueCatEvent): string[] {
   const ids: string[] = [];
@@ -111,39 +115,31 @@ export async function routeRevenueCatEvent(
 
   if (type === 'TRANSFER') {
     /*
-     * A transfer moves a subscription between app user ids, which happens
-     * when an anonymous RevenueCat id is merged into a signed-in one. The
-     * anonymous id never held credits with us (we only grant on webhooks
-     * keyed by the Logto subject), so the receiving side is the only one with
-     * anything to do; the sending side is cleared in case one of our rows
-     * somehow sits behind it. The balance stays on the cleared row, for the
-     * record, as with every other loss of plan.
+     * A transfer moves a subscription between app user ids: an anonymous
+     * RevenueCat id merged into a signed-in one, or a restore onto a fresh
+     * guest after a reinstall or a sign-out. The event carries the ids and
+     * nothing else - no entitlement, no expiry - so `transferPlan` takes the
+     * plan from the sender's row and moves it, rather than granting the
+     * receiver a month that was already granted.
      */
-    const fromIds = Array.isArray(event.transferred_from_app_user_ids)
-      ? event.transferred_from_app_user_ids.filter((id): id is string => typeof id === 'string')
-      : [];
-    const toIds = Array.isArray(event.transferred_to_app_user_ids)
-      ? event.transferred_to_app_user_ids.filter((id): id is string => typeof id === 'string')
-      : [];
+    const fromIds = stringList(event.transferred_from);
+    const toIds = stringList(event.transferred_to);
+    const fromAccountIds = await Promise.all(fromIds.map(toAccountId));
+    const eventId = typeof event.id === 'string' ? event.id : null;
 
-    for (const from of fromIds) {
-      await billing.clearPlan(await toAccountId(from));
+    let moved = 0;
+    for (const to of toIds) {
+      const result = await billing.transferPlan({
+        eventId,
+        fromAccountIds,
+        toAccountId: await toAccountId(to),
+      });
+      if (result.action === 'moved') moved += 1;
     }
-    const plan = bestPlanOf(event);
-    if (plan && toIds.length > 0) {
-      const expirationAtMs =
-        typeof event.expiration_at_ms === 'number' ? event.expiration_at_ms : null;
-      for (const to of toIds) {
-        await billing.grantMonthly({
-          accountId: await toAccountId(to),
-          plan,
-          periodEndMs: expirationAtMs,
-          description: 'Entitlement transferred',
-        });
-      }
-      return { action: 'granted', note: `transfer to ${toIds.length} account(s)` };
-    }
-    return { action: 'cleared', note: `transfer from ${fromIds.length} account(s)` };
+    return {
+      action: moved > 0 ? 'granted' : 'reconciled',
+      note: `transfer from ${fromIds.length} to ${toIds.length} id(s)`,
+    };
   }
 
   if (appUserId == null) {
@@ -179,6 +175,21 @@ export async function routeRevenueCatEvent(
     return { action: 'ignored', note: `${type}: RevenueCat state unavailable` };
   }
 
+  if (type === 'TEMPORARY_ENTITLEMENT_GRANT') {
+    /*
+     * An outage grant names no entitlement - the event carries little beyond
+     * `app_user_id` - so the plan is read from RevenueCat, which does know
+     * it. `syncEntitlement` recognises the grant by its length and marks it,
+     * so the INITIAL_PURCHASE that follows confirms it rather than granting
+     * a second month.
+     */
+    const synced = await billing.syncEntitlement(accountId, { clearIfInactive: false });
+    if (synced.status === 'active') {
+      return { action: 'reconciled', note: `${type}: ${synced.plan} for the outage` };
+    }
+    return { action: 'ignored', note: `${type}: RevenueCat state ${synced.status}` };
+  }
+
   if (type === 'PRODUCT_CHANGE' || type === 'UNCANCELLATION') {
     const synced = await billing.syncEntitlement(accountId, { clearIfInactive: false });
     if (synced.status === 'active') {
@@ -192,8 +203,7 @@ export async function routeRevenueCatEvent(
     type === 'INITIAL_PURCHASE' ||
     type === 'RENEWAL' ||
     type === 'PRODUCT_CHANGE' ||
-    type === 'UNCANCELLATION' ||
-    type === 'TEMPORARY_ENTITLEMENT_GRANT'
+    type === 'UNCANCELLATION'
   ) {
     const plan = bestPlanOf(event);
     if (!plan) {
@@ -232,8 +242,9 @@ export interface RevenueCatEvent {
   entitlement_id?: unknown;
   entitlement_ids?: unknown;
   expiration_at_ms?: unknown;
-  transferred_from_app_user_ids?: unknown;
-  transferred_to_app_user_ids?: unknown;
+  /** TRANSFER only. The ids a subscription left, and the ids it went to. */
+  transferred_from?: unknown;
+  transferred_to?: unknown;
 }
 
 /**

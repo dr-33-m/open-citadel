@@ -408,7 +408,10 @@ export type LedgerEntryType =
   | 'AI_USAGE'
   | 'REFUND'
   | 'ADMIN_ADJUSTMENT'
-  | 'EXPIRATION';
+  | 'EXPIRATION'
+  | 'LINK_CARRY'
+  | 'TRANSFER_IN'
+  | 'TRANSFER_OUT';
 
 /**
  * What the app draws, and what `GET /billing/me` answers.

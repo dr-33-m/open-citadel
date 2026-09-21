@@ -237,6 +237,25 @@ describe('linkGuest', () => {
   });
 });
 
+describe('a redelivered purchase after the link', () => {
+  it('grants nothing to the account the guest joined', async () => {
+    await makeGuest();
+    await billing.grantMonthly({ accountId: GUEST, plan: 'grand_maester', periodEndMs: FUTURE });
+    await billing.linkGuest({ guestId: GUEST, accountId: ACCOUNT });
+
+    // The webhook resolves the guest id to the account it linked to, so the
+    // grant id it would write is the account's, not the guest's it had.
+    const result = await billing.grantMonthly({
+      accountId: ACCOUNT,
+      plan: 'grand_maester',
+      periodEndMs: FUTURE,
+    });
+
+    expect(result.granted).toBe(false);
+    expect((await billing.readEntitlement(ACCOUNT)).available).toBe(GRANT);
+  });
+});
+
 describe('syncEntitlement after a link', () => {
   /*
    * The dangerous one. RevenueCat does not move a subscription off an
@@ -295,5 +314,110 @@ describe('syncEntitlement after a link', () => {
 
     expect(await service.syncEntitlement(GUEST)).toEqual({ status: 'active', plan: 'maester' });
     expect(fetchCalls).toEqual([GUEST]);
+  });
+});
+
+describe('transferPlan', () => {
+  async function balanceOf(accountId: string): Promise<{ plan: unknown; balance: number } | null> {
+    const result = await client.execute({
+      sql: 'SELECT plan, balance FROM account_credits WHERE account_id = ?',
+      args: [accountId],
+    });
+    const row = result.rows[0];
+    return row ? { plan: row.plan, balance: Number(row.balance) } : null;
+  }
+
+  async function spendTo(accountId: string, balance: number): Promise<void> {
+    await client.execute({
+      sql: 'UPDATE account_credits SET balance = ? WHERE account_id = ?',
+      args: [balance, accountId],
+    });
+  }
+
+  it('mints nothing across sign-out, Buy and sign-in, however often', async () => {
+    await billing.grantMonthly({ accountId: ACCOUNT, plan: 'grand_maester', periodEndMs: FUTURE });
+
+    for (const round of [1, 2, 3]) {
+      const guest = `guest:round-${round}`;
+      await makeGuest(guest);
+      // Signed out, tapped Buy: the store restores onto the fresh guest.
+      await billing.transferPlan({
+        eventId: `evt-round-${round}`,
+        fromAccountIds: [ACCOUNT],
+        toAccountId: guest,
+      });
+      // Signed back in.
+      expect(await billing.linkGuest({ guestId: guest, accountId: ACCOUNT })).toMatchObject({
+        linked: true,
+      });
+    }
+
+    expect(await balanceOf(ACCOUNT)).toEqual({ plan: 'grand_maester', balance: GRANT });
+  });
+
+  it('moves the plan, the period and what is left, not a fresh grant', async () => {
+    await billing.grantMonthly({ accountId: ACCOUNT, plan: 'grand_maester', periodEndMs: FUTURE });
+    await spendTo(ACCOUNT, 1234);
+
+    const result = await billing.transferPlan({
+      eventId: 'evt-1',
+      fromAccountIds: [ACCOUNT],
+      toAccountId: GUEST,
+    });
+
+    expect(result).toEqual({ action: 'moved', credits: 1234 });
+    expect(await balanceOf(GUEST)).toEqual({ plan: 'grand_maester', balance: 1234 });
+    expect((await billing.readEntitlement(GUEST)).periodEndsAt).toBe(new Date(FUTURE).toISOString());
+    expect(await balanceOf(ACCOUNT)).toEqual({ plan: null, balance: 0 });
+  });
+
+  it('does nothing twice when the webhook is redelivered', async () => {
+    await billing.grantMonthly({ accountId: ACCOUNT, plan: 'grand_maester', periodEndMs: FUTURE });
+    const transfer = { eventId: 'evt-1', fromAccountIds: [ACCOUNT], toAccountId: GUEST };
+
+    await billing.transferPlan(transfer);
+    // The sender has no plan left now, which is exactly what would send a
+    // naive second delivery down the reconcile path.
+    expect(await billing.transferPlan(transfer)).toEqual({ action: 'unchanged' });
+
+    expect(await balanceOf(GUEST)).toEqual({ plan: 'grand_maester', balance: GRANT });
+  });
+
+  it('replaces a grant the receiver was given for the same period before the webhook', async () => {
+    await billing.grantMonthly({ accountId: ACCOUNT, plan: 'grand_maester', periodEndMs: FUTURE });
+    await spendTo(ACCOUNT, 1234);
+    // The app read the new guest's balance first, so it was reconciled from
+    // RevenueCat and granted - with the REST API's second-precision expiry.
+    await billing.grantMonthly({ accountId: GUEST, plan: 'grand_maester', periodEndMs: FUTURE - 500 });
+
+    await billing.transferPlan({ eventId: 'evt-1', fromAccountIds: [ACCOUNT], toAccountId: GUEST });
+
+    expect(await balanceOf(GUEST)).toEqual({ plan: 'grand_maester', balance: 1234 });
+  });
+
+  it('reconciles the receiver when the sender was never granted here', async () => {
+    billing = build(revenueCatServing({ [GUEST]: 'grand_maester' }));
+
+    const result = await billing.transferPlan({
+      eventId: 'evt-1',
+      fromAccountIds: ['account:anon-old'],
+      toAccountId: GUEST,
+    });
+
+    expect(result).toEqual({ action: 'synced' });
+    expect(await balanceOf(GUEST)).toEqual({ plan: 'grand_maester', balance: GRANT });
+  });
+
+  it('leaves a plan alone when it moves to where it already is', async () => {
+    await billing.grantMonthly({ accountId: ACCOUNT, plan: 'grand_maester', periodEndMs: FUTURE });
+
+    const result = await billing.transferPlan({
+      eventId: 'evt-1',
+      fromAccountIds: [ACCOUNT],
+      toAccountId: ACCOUNT,
+    });
+
+    expect(result).toEqual({ action: 'unchanged' });
+    expect(await balanceOf(ACCOUNT)).toEqual({ plan: 'grand_maester', balance: GRANT });
   });
 });

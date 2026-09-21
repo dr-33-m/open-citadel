@@ -355,7 +355,8 @@ describe('grantMonthly', () => {
   });
 
   it('carries rollover under the cap', async () => {
-    await seedPlan({ balance: 1_840 });
+    // The period before this one, which the renewal follows.
+    await seedPlan({ balance: 1_840, periodEndMs: NOW });
     const result = await billing.grantMonthly({ accountId: ACCOUNT, plan: 'grand_maester', periodEndMs: FUTURE });
 
     expect(result).toEqual({ granted: true, balance: 1_840 + GRANT });
@@ -363,7 +364,7 @@ describe('grantMonthly', () => {
   });
 
   it('caps the rollover and writes the write-off', async () => {
-    await seedPlan({ balance: 9_000 });
+    await seedPlan({ balance: 9_000, periodEndMs: NOW });
     const result = await billing.grantMonthly({ accountId: ACCOUNT, plan: 'grand_maester', periodEndMs: FUTURE });
 
     expect(result).toEqual({ granted: true, balance: CAP + GRANT });
@@ -380,7 +381,7 @@ describe('grantMonthly', () => {
     // The hold belongs to a turn that may still be in flight when the webhook
     // lands. Dropping it would let the reader start one more message than
     // they own.
-    await seedPlan({ balance: 1_000, reserved: 400 });
+    await seedPlan({ balance: 1_000, reserved: 400, periodEndMs: NOW });
     await billing.grantMonthly({ accountId: ACCOUNT, plan: 'grand_maester', periodEndMs: FUTURE });
 
     const row = await accountRow();

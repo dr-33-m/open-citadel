@@ -49,7 +49,7 @@
  */
 import { randomBytes } from 'node:crypto';
 
-import type { Client } from '@libsql/client';
+import type { Client, InStatement } from '@libsql/client';
 
 import {
     CREDIT_PLANS,
@@ -158,6 +158,12 @@ export interface BillingService {
   }): Promise<GrantResult>;
   /** Clears the plan, keeps the balance for the record. */
   clearPlan(accountId: string): Promise<void>;
+  /** A subscription RevenueCat moved between ids; see the implementation. */
+  transferPlan(args: {
+    eventId?: string | null;
+    fromAccountIds: string[];
+    toAccountId: string;
+  }): Promise<{ action: 'moved'; credits: number } | { action: 'synced' } | { action: 'unchanged' }>;
   /** Moves a guest's plan onto the account they have just made. */
   linkGuest(args: {
     guestId: string;
@@ -221,6 +227,33 @@ export interface BillingService {
       createdAt: string;
     }[]
   >;
+}
+
+/**
+ * Whether two period ends are one billing period, however each was reported.
+ *
+ * A webhook's `expiration_at_ms` carries milliseconds and Play's expiries
+ * nearly always have some; the REST API's `expires_date` is an ISO string to
+ * the second. Compared exactly, one period reported both ways read as two,
+ * and was granted twice. A minute is far inside the weeks between renewals.
+ */
+const SAME_PERIOD_TOLERANCE_MS = 60_000;
+
+/**
+ * The longest a RevenueCat outage grant runs.
+ *
+ * When RevenueCat cannot validate a purchase with the store it grants the
+ * entitlement for at most 24 hours, then sends INITIAL_PURCHASE once the
+ * store answers, or EXPIRATION if the purchase does not hold up. Read from
+ * the entitlement's own dates, purchase to expiry, because the webhook for it
+ * names no entitlement at all. An hour over, for clock skew; a real period is
+ * weeks.
+ */
+const TEMPORARY_GRANT_MAX_MS = 25 * 60 * 60 * 1000;
+
+function samePeriod(a: number | null, b: number | null): boolean {
+  if (a === b) return true;
+  return a != null && b != null && Math.abs(a - b) <= SAME_PERIOD_TOLERANCE_MS;
 }
 
 export function createBillingService(options: BillingOptions): BillingService {
@@ -422,7 +455,12 @@ export function createBillingService(options: BillingOptions): BillingService {
       // Active means no expiry (a lifetime grant) or an expiry in the future.
       // Of the active ones the best plan wins, for the same reason
       // `bestPlan` exists: an overlap must never read as the lesser tier.
-      let best: { plan: PlanId; expiresAtMs: number | null; key: string } | null = null;
+      let best: {
+        plan: PlanId;
+        expiresAtMs: number | null;
+        key: string;
+        temporary: boolean;
+      } | null = null;
 
       for (const subject of subjects) {
         const response = await doFetch(`${REVENUECAT_API}/${encodeURIComponent(subject)}`, {
@@ -445,7 +483,11 @@ export function createBillingService(options: BillingOptions): BillingService {
           subscriber?: {
             entitlements?: Record<
               string,
-              { expires_date?: string | null; product_identifier?: string | null }
+              {
+                expires_date?: string | null;
+                purchase_date?: string | null;
+                product_identifier?: string | null;
+              }
             >;
           };
         };
@@ -458,8 +500,15 @@ export function createBillingService(options: BillingOptions): BillingService {
             ? Date.parse(entitlement.expires_date)
             : null;
           if (expiresAtMs !== null && expiresAtMs <= atMs) continue;
+          const purchasedAtMs = entitlement.purchase_date
+            ? Date.parse(entitlement.purchase_date)
+            : null;
+          const temporary =
+            expiresAtMs !== null &&
+            purchasedAtMs !== null &&
+            expiresAtMs - purchasedAtMs <= TEMPORARY_GRANT_MAX_MS;
           if (!best || planRank(plan) > planRank(best.plan)) {
-            best = { plan, expiresAtMs, key };
+            best = { plan, expiresAtMs, key, temporary };
           }
         }
       }
@@ -468,6 +517,7 @@ export function createBillingService(options: BillingOptions): BillingService {
         // Insider terms have their own local expiry and regrant lifecycle.
         // An empty store customer must not revoke one of those grants.
         if (syncOptions.clearIfInactive !== false && current?.source !== 'insider') {
+          await voidTemporaryGrant(accountId, current);
           await clearPlan(accountId);
         }
         return { status: 'inactive' };
@@ -478,7 +528,7 @@ export function createBillingService(options: BillingOptions): BillingService {
        * transition, not another monthly grant. It also heals a row that an
        * older EXPIRATION handler cleared while another entitlement remained.
        */
-      if (current && current.periodEndMs === best.expiresAtMs) {
+      if (current && samePeriod(current.periodEndMs, best.expiresAtMs)) {
         await client.execute({
           sql: `UPDATE account_credits
                 SET plan = ?, source = ?, period_end_ms = ?, updated_at_ms = ?
@@ -499,7 +549,7 @@ export function createBillingService(options: BillingOptions): BillingService {
         accountId,
         plan: best.plan,
         periodEndMs: best.expiresAtMs,
-        idempotencyKey: `period:${best.expiresAtMs ?? 'lifetime'}`,
+        idempotencyKey: `${best.temporary ? 'temporary:' : ''}period:${best.expiresAtMs ?? 'lifetime'}`,
         source: current?.source === 'insider' ? 'insider' : 'subscription',
         description: 'Reconciled from RevenueCat',
       });
@@ -528,6 +578,49 @@ export function createBillingService(options: BillingOptions): BillingService {
     const grantId = `grant:${args.accountId}:${key}`;
 
     const current = await readAccountRow(args.accountId);
+
+    /*
+     * The row already holds this store period, so it has been granted, even
+     * if not under this id: reported by the webhook to the millisecond and by
+     * the REST API to the second, or granted to a guest before it linked to
+     * this account (the grant row keeps the guest's id in it). Nothing
+     * changes here, not even the plan: a stale redelivery could name the
+     * plan before an upgrade, and a real same-period plan change is learned
+     * by `syncEntitlement`, which reads the current state.
+     *
+     * Store periods only. Insider keys carry their own month and are left to
+     * the id below.
+     */
+    if (
+      key.startsWith('period:') &&
+      current?.plan != null &&
+      current.source !== 'insider' &&
+      samePeriod(current.periodEndMs, args.periodEndMs)
+    ) {
+      return { granted: false, balance: current.balance };
+    }
+
+    /*
+     * The row is on an outage grant, and this is the real period it stood in
+     * for. The month was granted with the outage grant, so this confirms it:
+     * the period and plan move on, and no second month is added.
+     */
+    if (
+      key.startsWith('period:') &&
+      current?.plan != null &&
+      current.source !== 'insider' &&
+      (await temporaryGrantCredits(args.accountId, current.periodEndMs)) != null
+    ) {
+      await client.execute({
+        sql: `UPDATE account_credits
+              SET plan = ?, source = ?, period_end_ms = ?, updated_at_ms = ?
+              WHERE account_id = ?`,
+        args: [args.plan, source, args.periodEndMs, atMs, args.accountId],
+      });
+      invalidate(args.accountId);
+      return { granted: false, balance: current.balance };
+    }
+
     const applied = applyMonthlyGrant(current?.balance ?? 0, plan);
 
     /*
@@ -612,6 +705,70 @@ export function createBillingService(options: BillingOptions): BillingService {
     return { granted: true, balance: applied.balance };
   }
 
+  /**
+   * What an outage grant for this period gave, or null if the period was not
+   * one.
+   *
+   * By the ledger row's id rather than by account id in it: a guest that
+   * linked keeps its grant rows, under ids that still name the guest.
+   */
+  async function temporaryGrantCredits(
+    accountId: string,
+    periodEndMs: number | null,
+  ): Promise<number | null> {
+    if (periodEndMs == null) return null;
+    const result = await client.execute({
+      sql: `SELECT credits FROM credit_ledger
+            WHERE account_id = ? AND type = 'MONTHLY_GRANT' AND id LIKE ?`,
+      args: [accountId, `grant:%:temporary:period:${periodEndMs}`],
+    });
+    const row = result.rows[0];
+    return row ? Number(row.credits) : null;
+  }
+
+  /**
+   * An outage grant whose purchase did not hold up is undone, as if it had
+   * never been granted: the whole grant comes back off the balance, so
+   * anything spent during the outage is paid from credits the reader already
+   * had. Never below zero - a reader who spent more than they had keeps that,
+   * rather than starting in debt.
+   */
+  async function voidTemporaryGrant(
+    accountId: string,
+    current: Awaited<ReturnType<typeof readAccountRow>>,
+  ): Promise<void> {
+    if (!current?.plan) return;
+    const granted = await temporaryGrantCredits(accountId, current.periodEndMs);
+    if (granted == null) return;
+    const written = Math.min(granted, Math.max(0, current.balance));
+    if (written === 0) return;
+    const atMs = now();
+    // The ledger row first, and the balance only if it landed: a second
+    // EXPIRATION finds the row and takes nothing. A crash between the two is
+    // healed by `reconcileBalance`, as for a grant.
+    const inserted = await client.execute({
+      sql: `INSERT INTO credit_ledger (
+              id, account_id, type, credits, balance_after, description, created_at_ms
+            )
+            VALUES (?, ?, 'EXPIRATION', ?, ?, ?, ?)
+            ON CONFLICT(id) DO NOTHING`,
+      args: [
+        `temporary-void:${accountId}:${current.periodEndMs}`,
+        accountId,
+        -written,
+        current.balance - written,
+        'Outage grant withdrawn: the store did not confirm the purchase',
+        atMs,
+      ],
+    });
+    if (inserted.rowsAffected === 0) return;
+    await client.execute({
+      sql: 'UPDATE account_credits SET balance = balance - ?, updated_at_ms = ? WHERE account_id = ?',
+      args: [written, atMs, accountId],
+    });
+    invalidate(accountId);
+  }
+
   async function clearPlan(accountId: string): Promise<void> {
     /*
      * No ledger row, because nothing moved: the balance stays for the record
@@ -625,6 +782,141 @@ export function createBillingService(options: BillingOptions): BillingService {
       args: [now(), accountId],
     });
     invalidate(accountId);
+  }
+
+  /**
+   * A subscription RevenueCat moved from one id to another.
+   *
+   * A period is paid for once and granted once, to whoever held it. When the
+   * sender has a store plan here, its row moves with the subscription: the
+   * plan, the period and what is left of the balance. Granting the receiver
+   * instead was how signing out, tapping Buy (which the store answers with a
+   * restore onto a new guest) and signing back in minted a month of credits
+   * every round.
+   *
+   * The event names ids and nothing else - no entitlement, no expiry - so the
+   * plan and period come from the sender's row. A sender with no store plan
+   * here (an anonymous RevenueCat id, a guest whose purchase never reached
+   * us) has nothing to move, and the receiver is reconciled from RevenueCat
+   * instead, which grants what it is owed.
+   *
+   * The receiver may have been granted this same period already: the app
+   * reads its balance right after the restore, a new id with no row is
+   * reconciled on that read, and the webhook can land after it. That grant
+   * was for the period being moved, so it is withdrawn rather than stacked.
+   *
+   * Idempotent: keyed on the event, checked first, because after the first
+   * delivery the sender has no plan left to move.
+   */
+  async function transferPlan(args: {
+    eventId?: string | null;
+    fromAccountIds: string[];
+    toAccountId: string;
+  }): Promise<{ action: 'moved'; credits: number } | { action: 'synced' } | { action: 'unchanged' }> {
+    // A guest already linked resolves to its account, so RevenueCat moving a
+    // subscription from the guest to that account is a move to itself.
+    const senders = [...new Set(args.fromAccountIds)].filter((id) => id !== args.toAccountId);
+    if (senders.length === 0) return { action: 'unchanged' };
+
+    const inId = `transfer:${args.eventId ?? senders.join(',')}:${args.toAccountId}`;
+    const done = await client.execute({
+      sql: 'SELECT 1 FROM credit_ledger WHERE id = ?',
+      args: [inId],
+    });
+    if (done.rows.length > 0) return { action: 'unchanged' };
+
+    const rows = await Promise.all(senders.map(async (id) => ({ id, row: await readAccountRow(id) })));
+    const paying = rows.flatMap(({ id, row }) =>
+      row != null && row.plan != null && row.source !== 'insider' ? [{ id, row, plan: row.plan }] : [],
+    );
+
+    if (paying.length === 0) {
+      await syncEntitlement(args.toAccountId);
+      return { action: 'synced' };
+    }
+
+    const atMs = now();
+    const best = paying.reduce((a, b) => (planRank(b.plan) > planRank(a.plan) ? b : a));
+    const moved = paying.reduce((sum, { row }) => sum + row.balance, 0);
+    const receiver = await readAccountRow(args.toAccountId);
+    const duplicate = await duplicateGrant(args.toAccountId, receiver, best.row.periodEndMs);
+    const receiverBefore = receiver?.balance ?? 0;
+    const balanceAfter = Math.max(0, receiverBefore - duplicate) + moved;
+
+    const statements: InStatement[] = paying.flatMap(({ id, row }) => [
+      {
+        sql: `UPDATE account_credits
+              SET plan = NULL, source = NULL, balance = 0, updated_at_ms = ?
+              WHERE account_id = ?`,
+        args: [atMs, id],
+      },
+      {
+        sql: `INSERT INTO credit_ledger (
+                id, account_id, type, credits, balance_after, description, created_at_ms
+              )
+              VALUES (?, ?, 'TRANSFER_OUT', ?, 0, ?, ?)
+              ON CONFLICT(id) DO NOTHING`,
+        args: [`${inId}:out:${id}`, id, -row.balance, 'Plan moved with its subscription', atMs],
+      },
+    ]);
+    statements.push(
+      {
+        // `reserved` untouched, as in `grantMonthly`: a hold belongs to a
+        // turn that may still be in flight.
+        sql: `INSERT INTO account_credits (
+                account_id, plan, source, balance, reserved, period_start_ms, period_end_ms, updated_at_ms
+              )
+              VALUES (?, ?, 'subscription', ?, 0, ?, ?, ?)
+              ON CONFLICT(account_id) DO UPDATE SET
+                plan = excluded.plan,
+                source = excluded.source,
+                balance = excluded.balance,
+                period_end_ms = excluded.period_end_ms,
+                updated_at_ms = excluded.updated_at_ms`,
+        args: [args.toAccountId, best.plan, balanceAfter, atMs, best.row.periodEndMs, atMs],
+      },
+      {
+        sql: `INSERT INTO credit_ledger (
+                id, account_id, type, credits, balance_after, description, created_at_ms
+              )
+              VALUES (?, ?, 'TRANSFER_IN', ?, ?, ?, ?)`,
+        args: [
+          inId,
+          args.toAccountId,
+          balanceAfter - receiverBefore,
+          balanceAfter,
+          duplicate > 0
+            ? 'Plan arrived with its subscription, replacing a grant for the same period'
+            : 'Plan arrived with its subscription',
+          atMs,
+        ],
+      },
+    );
+    await client.batch(statements, 'write');
+    for (const { id } of paying) invalidate(id);
+    invalidate(args.toAccountId);
+    return { action: 'moved', credits: moved };
+  }
+
+  /**
+   * What the receiver was already granted for the period arriving with a
+   * transfer, or 0.
+   *
+   * Compared with `samePeriod`: the webhook's expiry and the REST API's for
+   * one period do not agree on the milliseconds.
+   */
+  async function duplicateGrant(
+    accountId: string,
+    receiver: Awaited<ReturnType<typeof readAccountRow>>,
+    periodEndMs: number | null,
+  ): Promise<number> {
+    if (!receiver?.plan || receiver.source === 'insider') return 0;
+    if (!samePeriod(receiver.periodEndMs, periodEndMs)) return 0;
+    const grant = await client.execute({
+      sql: 'SELECT credits FROM credit_ledger WHERE id = ?',
+      args: [`grant:${accountId}:period:${receiver.periodEndMs ?? 'lifetime'}`],
+    });
+    return Number(grant.rows[0]?.credits ?? 0);
   }
 
   // -- Guests ------------------------------------------------------------------
@@ -1282,6 +1574,7 @@ export function createBillingService(options: BillingOptions): BillingService {
     syncEntitlement,
     grantMonthly,
     clearPlan,
+    transferPlan,
     linkGuest,
     peekCredits,
     reserveCredits,

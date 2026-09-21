@@ -103,7 +103,9 @@ describe('routeRevenueCatEvent', () => {
   });
 
   it('maps each entitlement event type to the same grant path', async () => {
-    for (const type of ['PRODUCT_CHANGE', 'UNCANCELLATION', 'TEMPORARY_ENTITLEMENT_GRANT']) {
+    // Not TEMPORARY_ENTITLEMENT_GRANT: its payload names no entitlement, so it
+    // is read from RevenueCat instead. See 'an outage grant'.
+    for (const type of ['PRODUCT_CHANGE', 'UNCANCELLATION']) {
       const fresh = mkdtempSync(join(tmpdir(), 'samwell-webhook-type-'));
       const typeClient = createClient({ url: `file:${join(fresh, 'test.db')}` });
       try {
@@ -243,20 +245,217 @@ describe('routeRevenueCatEvent', () => {
     expect((await accountRow())?.plan).toBeNull();
   });
 
-  it('moves a transfer to the receiving account', async () => {
+  it('moves a granted plan with its subscription, reading the fields RevenueCat sends', async () => {
+    const OTHER = 'account:sub-reader-2';
+    const periodEndMs = NOW + 30 * 86_400_000;
+    await billing.grantMonthly({ accountId: ACCOUNT, plan: 'grand_maester', periodEndMs });
+
+    // The shape RevenueCat documents: ids only, no entitlement, no expiry.
     const outcome = await routeRevenueCatEvent(
-      event({
+      {
+        id: 'evt-transfer',
         type: 'TRANSFER',
-        transferred_from_app_user_ids: ['anon-old'],
-        transferred_to_app_user_ids: [SUB],
-        entitlement_id: 'grand_maester',
-        expiration_at_ms: NOW + 30 * 86_400_000,
-      }),
+        transferred_from: [SUB],
+        transferred_to: ['sub-reader-2'],
+      },
       billing,
     );
 
     expect(outcome.action).toBe('granted');
+    expect(await grantCount(OTHER)).toBe(0);
+    expect(String((await accountRow(OTHER))?.plan)).toBe('grand_maester');
+    expect(Number((await accountRow(OTHER))?.balance)).toBe(
+      CREDIT_PLANS.grand_maester.monthlyCredits,
+    );
+    expect((await accountRow())?.plan).toBeNull();
+  });
+
+  it('reconciles the receiver of a transfer from an id it never granted', async () => {
+    const reconciled = createBillingService({
+      client,
+      now: () => nowMs,
+      revenueCatApiKey: 'sk_test',
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          subscriber: {
+            entitlements: {
+              grand_maester: { expires_date: new Date(NOW + 30 * 86_400_000).toISOString() },
+            },
+          },
+        }),
+      })) as unknown as typeof fetch,
+    });
+
+    const outcome = await routeRevenueCatEvent(
+      { id: 'evt-transfer', type: 'TRANSFER', transferred_from: ['anon-old'], transferred_to: [SUB] },
+      reconciled,
+    );
+
+    expect(outcome.action).toBe('reconciled');
     expect(String((await accountRow())?.plan)).toBe('grand_maester');
+  });
+
+  describe('one period reported two ways', () => {
+    // A Play expiry, milliseconds and all, and the REST API's view of the
+    // same instant, which stops at the second.
+    const playExpiryMs = NOW + 30 * 86_400_000 + 123;
+    const restExpiry = new Date(playExpiryMs).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+    function reconcilingWith(expiresDate: string): BillingService {
+      return createBillingService({
+        client,
+        now: () => nowMs,
+        revenueCatApiKey: 'sk_test',
+        fetchImpl: (async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            subscriber: { entitlements: { maester: { expires_date: expiresDate } } },
+          }),
+        })) as unknown as typeof fetch,
+      });
+    }
+
+    it('does not grant again when a cancellation reconciles a Play period', async () => {
+      const reconciled = reconcilingWith(restExpiry);
+      await routeRevenueCatEvent(
+        event({ type: 'INITIAL_PURCHASE', entitlement_ids: ['maester'], expiration_at_ms: playExpiryMs }),
+        reconciled,
+      );
+
+      await routeRevenueCatEvent(event({ id: 'evt-2', type: 'CANCELLATION' }), reconciled);
+
+      expect(await grantCount()).toBe(1);
+    });
+
+    it('does not grant again when a late renewal follows the reconcile that saw it first', async () => {
+      const reconciled = reconcilingWith(restExpiry);
+      await reconciled.grantMonthly({ accountId: ACCOUNT, plan: 'maester', periodEndMs: NOW + 1_000 });
+      nowMs = NOW + 5_000;
+      await reconciled.readEntitlement(ACCOUNT);
+
+      await routeRevenueCatEvent(
+        event({ id: 'evt-2', type: 'RENEWAL', entitlement_ids: ['maester'], expiration_at_ms: playExpiryMs }),
+        reconciled,
+      );
+
+      expect(await grantCount()).toBe(2);
+    });
+  });
+
+  describe('an outage grant', () => {
+    const HOUR = 3_600_000;
+    const GRANT = CREDIT_PLANS.maester.monthlyCredits;
+    const REAL_END = NOW + 30 * 86_400_000;
+    // What RevenueCat answers, changed as the story moves on.
+    let entitlement: { purchase_date: string; expires_date: string } | null;
+
+    function outageBilling(): BillingService {
+      return createBillingService({
+        client,
+        now: () => nowMs,
+        revenueCatApiKey: 'sk_test',
+        fetchImpl: (async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            subscriber: { entitlements: entitlement ? { maester: entitlement } : {} },
+          }),
+        })) as unknown as typeof fetch,
+      });
+    }
+
+    function answer(purchasedAtMs: number, expiresAtMs: number) {
+      entitlement = {
+        purchase_date: new Date(purchasedAtMs).toISOString(),
+        expires_date: new Date(expiresAtMs).toISOString(),
+      };
+    }
+
+    async function balance(): Promise<number> {
+      return Number((await accountRow())?.balance);
+    }
+
+    beforeEach(() => {
+      entitlement = null;
+    });
+
+    it('grants the month at once, and the purchase that follows confirms it', async () => {
+      const outage = outageBilling();
+      answer(NOW, NOW + 24 * HOUR);
+
+      // The event itself names no entitlement; RevenueCat is asked instead.
+      const first = await routeRevenueCatEvent(
+        { id: 'evt-outage', type: 'TEMPORARY_ENTITLEMENT_GRANT', app_user_id: SUB },
+        outage,
+      );
+      expect(first.action).toBe('reconciled');
+      expect(await balance()).toBe(GRANT);
+
+      answer(NOW, REAL_END);
+      await routeRevenueCatEvent(
+        event({ type: 'INITIAL_PURCHASE', entitlement_ids: ['maester'], expiration_at_ms: REAL_END }),
+        outage,
+      );
+
+      expect(await grantCount()).toBe(1);
+      expect(await balance()).toBe(GRANT);
+      expect(Number((await accountRow())?.period_end_ms)).toBe(REAL_END);
+    });
+
+    it('is confirmed by a lookup too, when the webhook is late', async () => {
+      const outage = outageBilling();
+      answer(NOW, NOW + 24 * HOUR);
+      await outage.readEntitlement(ACCOUNT);
+
+      nowMs = NOW + 25 * HOUR;
+      answer(NOW, REAL_END);
+      const read = await outage.readEntitlement(ACCOUNT);
+
+      expect(read.plan).toBe('maester');
+      expect(await grantCount()).toBe(1);
+      expect(await balance()).toBe(GRANT);
+    });
+
+    it('gives back what is left when the store does not confirm it, once', async () => {
+      const outage = outageBilling();
+      // Credits from an earlier plan, which are theirs whatever happens.
+      await client.execute({
+        sql: `INSERT INTO account_credits (account_id, plan, source, balance, reserved, updated_at_ms)
+              VALUES (?, NULL, NULL, 500, 0, ?)`,
+        args: [ACCOUNT, NOW],
+      });
+      answer(NOW, NOW + 24 * HOUR);
+      await outage.readEntitlement(ACCOUNT);
+      await client.execute({
+        sql: 'UPDATE account_credits SET balance = balance - 100 WHERE account_id = ?',
+        args: [ACCOUNT],
+      });
+
+      entitlement = null;
+      await routeRevenueCatEvent(event({ type: 'EXPIRATION' }), outage);
+      await routeRevenueCatEvent(event({ type: 'EXPIRATION' }), outage);
+
+      expect((await accountRow())?.plan).toBeNull();
+      // As if the outage grant had never happened: the whole grant goes, so
+      // the 100 they spent comes out of the 500 that were theirs.
+      expect(await balance()).toBe(400);
+    });
+
+    it('is not mistaken for a real month looked up near its end', async () => {
+      const outage = outageBilling();
+      answer(NOW - 29 * 86_400_000, NOW + 12 * HOUR);
+      await outage.readEntitlement(ACCOUNT);
+
+      await routeRevenueCatEvent(
+        event({ type: 'RENEWAL', entitlement_ids: ['maester'], expiration_at_ms: REAL_END }),
+        outage,
+      );
+
+      expect(await grantCount()).toBe(2);
+    });
   });
 
   it('answers 200-equivalent outcomes for what it does not know', async () => {
