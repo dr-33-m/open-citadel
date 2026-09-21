@@ -10,6 +10,7 @@ import { ThemedText } from "@/components/themed-text";
 import { showToast } from "@/components/toast/toast-provider";
 import { Card } from "@/components/ui/card";
 import { GoldButton } from "@/components/ui/gold-button";
+import { PrefixIcon } from "@/components/ui/prefix-icon";
 import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
@@ -22,6 +23,7 @@ import { CreditMeter } from "@/features/billing/components/credit-meter";
 import { PlanPicker } from "@/features/billing/components/plan-picker";
 import { SubscriptionManagementSheet } from "@/features/billing/components/subscription-management-sheet";
 import { useBillingLifecycle } from "@/features/billing/hooks/use-billing-lifecycle";
+import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
 import { usePlanCheckout } from "@/features/billing/hooks/use-plan-checkout";
 import { CloudModelSheet } from "@/features/settings/components/cloud-model-sheet";
 import { CloudTuneSheet } from "@/features/settings/components/cloud-tune-sheet";
@@ -499,9 +501,12 @@ export function CloudPanel({
               <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                 CURRENT PLAN
               </ThemedText>
-              <ThemedText type="bodyMd" numberOfLines={2}>
-                {CREDIT_PLANS[plan].label}
-              </ThemedText>
+              <View className="flex-row items-center gap-3 pt-1">
+                <PrefixIcon icon={PLAN_ICON[plan]} size={36} />
+                <ThemedText type="bodyMd" numberOfLines={2} className="shrink">
+                  {CREDIT_PLANS[plan].label}
+                </ThemedText>
+              </View>
             </View>
             <ActionButton
               icon={Settings}

@@ -15,11 +15,13 @@ import {
 import { PageFade } from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
 import { Badge } from "@/components/ui/badge";
+import { PrefixIcon } from "@/components/ui/prefix-icon";
 import { GoldButton } from "@/components/ui/gold-button";
 import { Sheet } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
 import { PlanChangeView } from "@/features/billing/components/plan-change-view";
+import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
 import { formatSubscriptionDate } from "@/features/billing/utils/subscription-lifecycle";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import type { SubscriptionLifecycle } from "@/services/purchase-lifecycle";
@@ -232,7 +234,12 @@ export function SubscriptionManagementSheet({
                   </ThemedText>
                   <Badge variant={statusVariant}>{statusLabel}</Badge>
                 </View>
-                <ThemedText type="headlineSm">{planDetails.label}</ThemedText>
+                <View className="flex-row items-center gap-3">
+                  <PrefixIcon icon={PLAN_ICON[plan]} size={36} />
+                  <ThemedText type="headlineSm" className="shrink">
+                    {planDetails.label}
+                  </ThemedText>
+                </View>
                 <ThemedText type="bodySm" color={asColor(mutedForeground)}>
                   {statusDetail}
                 </ThemedText>

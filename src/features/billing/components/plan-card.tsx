@@ -1,39 +1,20 @@
 import { View, type TextStyle } from "react-native";
 import { useCSSVariable } from "uniwind";
 
-import {
-    Check,
-    ChessPawn,
-    ChessRook,
-    Crown,
-    Info,
-    type LucideIcon,
-} from "@/components/icons";
+import { Check, Info } from "@/components/icons";
 import { ThemedText } from "@/components/themed-text";
 import { Card } from "@/components/ui/card";
 import { PrefixIcon } from "@/components/ui/prefix-icon";
+import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
 import { Shimmer } from "@/components/ui/shimmer";
 import { Touchable } from "@/components/ui/touchable";
 import { cn } from "@/lib/cn";
 import { asColor } from "@/utils/colors";
-import type { CreditPlan, PlanId } from "samwell-shared";
+import type { CreditPlan } from "samwell-shared";
 
-/**
- * The mark each plan goes by.
- *
- * A pawn, a rook, a crown: an order of rank rather than three sizes of the
- * same badge, because the plans differ in what Samwell can think with and not
- * in how much of the same thing you get.
- */
 /** Hoisted: a fresh object per render, times three cards, for a value that
  * never changes. */
 const TABULAR: TextStyle = { fontVariant: ["tabular-nums"] };
-
-const PLAN_ICON: Record<PlanId, LucideIcon> = {
-  maester: ChessPawn,
-  grand_maester: ChessRook,
-  archmaester: Crown,
-};
 
 export type PlanCardProps = {
   plan: CreditPlan;
