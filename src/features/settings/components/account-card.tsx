@@ -105,9 +105,27 @@ export function AccountCard() {
   }
 
   const leave = async () => {
+    /*
+     * Read before signing out, because signing out resets the plan it would
+     * be asking about.
+     *
+     * A plan bought while signed in belongs to the account, so it leaves with
+     * them, and without a word that looks exactly like losing something they
+     * paid for. It also invites the worst next move: tapping Buy on a phone
+     * whose Apple ID already holds the subscription, which moves it off the
+     * account onto a fresh device identity until they sign in again. Saying
+     * where the plan went points them at the door that is actually right.
+     */
+    const planStaysWithAccount =
+      useSubscriptionStore.getState().status === "active";
     await signOut();
     if (useAccountStore.getState().status === "signedOut") {
-      showToast({ message: "Signed out.", key: "account" });
+      showToast({
+        message: planStaysWithAccount
+          ? "Signed out. Your plan stays with your account. Sign in to use it here again."
+          : "Signed out.",
+        key: "account",
+      });
     }
   };
 
