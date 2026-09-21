@@ -21,6 +21,7 @@ import {
     type SubscriptionLifecycle,
 } from '@/services/purchase-lifecycle';
 import {
+    AlreadyPurchased,
     PurchaseCancelled,
     purchase as buyPackage,
     getOffering,
@@ -218,6 +219,30 @@ function healSelectedModel(
     ? defaultModelId
     : models[0]?.id;
   if (healed && healed !== current) void settings.setCloudModelId(healed);
+}
+
+/**
+ * Restore from the store, then ask the server what that means.
+ *
+ * Shared by the Restore button and by a Buy the store answered with "you
+ * already own this", so the two cannot disagree about what "restored" means.
+ * Leaves `busy` to the caller: a Buy that became a restore keeps its own card
+ * spinning rather than handing the spinner to the Restore button mid-flight.
+ * Returns null when the account changed underneath it.
+ */
+async function restoreAndConfirm(
+  get: () => SubscriptionState,
+  set: (partial: Partial<SubscriptionState>) => void,
+  generation: number,
+): Promise<boolean | null> {
+  const customerInfo = await restorePurchases();
+  if (generation !== accountGeneration) return null;
+  get().applyCustomerInfo(customerInfo);
+  await get().refresh();
+  if (generation !== accountGeneration) return null;
+  const restored = Boolean(get().plan);
+  if (!restored) set({ error: 'No previous subscription found for this account.' });
+  return restored;
 }
 
 export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
@@ -471,6 +496,22 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
       return 'pending';
     } catch (error) {
       if (error instanceof PurchaseCancelled) return false;
+      /*
+       * They already own it, most often after an Android reinstall wiped the
+       * guest identity. Restoring is what they meant: RevenueCat transfers
+       * the entitlement to the current id and the server follows.
+       */
+      if (error instanceof AlreadyPurchased) {
+        if (generation !== accountGeneration) return false;
+        try {
+          return (await restoreAndConfirm(get, set, generation)) ? 'active' : false;
+        } catch (restoreError) {
+          if (generation === accountGeneration) {
+            set({ error: message(restoreError, 'Could not restore your purchases.') });
+          }
+          return false;
+        }
+      }
       if (generation === accountGeneration) {
         set({ error: message(error, 'Could not complete the purchase.') });
       }
@@ -484,14 +525,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
     const generation = accountGeneration;
     set({ busy: 'restore', error: null });
     try {
-      const customerInfo = await restorePurchases();
-      if (generation !== accountGeneration) return false;
-      get().applyCustomerInfo(customerInfo);
-      await get().refresh();
-      if (generation !== accountGeneration) return false;
-      const restored = Boolean(get().plan);
-      if (!restored) set({ error: 'No previous subscription found for this account.' });
-      return restored;
+      return (await restoreAndConfirm(get, set, generation)) ?? false;
     } catch (error) {
       if (generation === accountGeneration) {
         set({ error: message(error, 'Could not restore your purchases.') });

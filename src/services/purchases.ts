@@ -47,6 +47,21 @@ export class PurchaseCancelled extends Error {
   }
 }
 
+/**
+ * The store says this account already owns the product.
+ *
+ * On Android a reinstall wipes the guest identity, so a reader who paid
+ * arrives as nobody, sees the plans and taps Buy. Play answers
+ * `ITEM_ALREADY_OWNED`. What they meant was restore, so the caller does that
+ * instead of showing a message that sounds like a failure.
+ */
+export class AlreadyPurchased extends Error {
+  constructor() {
+    super('You already own this plan.');
+    this.name = 'AlreadyPurchased';
+  }
+}
+
 /** This build has no RevenueCat key, so there is nothing to buy. */
 export class PurchasesUnavailable extends Error {
   constructor() {
@@ -240,7 +255,9 @@ export function subscribeToCustomerInfo(
  * Buy one package.
  *
  * Throws `PurchaseCancelled` when the reader closed the sheet, so the caller
- * can say nothing at all. Every other failure carries its own message.
+ * can say nothing at all, and `AlreadyPurchased` when the store says they
+ * own it, so the caller can restore. Every other failure carries its own
+ * message.
  */
 export async function purchase(
   pkg: PurchasesPackage,
@@ -270,6 +287,21 @@ export async function purchase(
     return result.customerInfo;
   } catch (error) {
     if (isCancellation(error)) throw new PurchaseCancelled();
+    if (isAlreadyPurchased(error)) {
+      // Kept until the shape has been read off a real Android device; see
+      // TODO-ANDROID.md.
+      // Fields picked out by hand: `message` is not enumerable on an Error,
+      // so stringifying the whole thing would drop it.
+      if (__DEV__) {
+        const { code, message, userInfo } = error as {
+          code?: unknown;
+          message?: unknown;
+          userInfo?: unknown;
+        };
+        console.log('[Purchases] Already purchased:', JSON.stringify({ code, message, userInfo }));
+      }
+      throw new AlreadyPurchased();
+    }
     throw error;
   }
 }
@@ -278,6 +310,34 @@ export async function purchase(
 export async function restore(): Promise<CustomerInfo> {
   if (!PURCHASES_ENABLED) throw new PurchasesUnavailable();
   return Purchases.restorePurchases();
+}
+
+/** The guest this session already asked Play about. See `reclaimStorePurchases`. */
+let reclaimedFor: string | null = null;
+
+/**
+ * Before selling to a guest on Android, bring back anything this Google
+ * account already pays for.
+ *
+ * A reinstall wipes the guest identity, and a fresh id has no history at
+ * RevenueCat, so nothing but the Play account remembers the plan. Play only
+ * refuses a second purchase of the SAME product; tapping a different plan
+ * would start a second subscription beside the first, because a Play plan
+ * change has to name the product it replaces and nothing here knows it yet.
+ * Restoring first moves the old plan onto this id, and the checkout then
+ * sees an active plan instead of selling one.
+ *
+ * Returns whether an entitlement came back. Once per guest per session,
+ * never for an account (a restore there could move a plan off a different
+ * account sharing this Google account), and never on iOS, where
+ * subscription groups already turn a second purchase into a plan change.
+ */
+export async function reclaimStorePurchases(guestId: string): Promise<boolean> {
+  if (!PURCHASES_ENABLED || !configured || REVENUECAT_TEST_STORE) return false;
+  if (Platform.OS !== 'android' || reclaimedFor === guestId) return false;
+  const customerInfo = await Purchases.restorePurchases();
+  reclaimedFor = guestId;
+  return Object.keys(customerInfo.entitlements.active).length > 0;
 }
 
 /**
@@ -317,4 +377,30 @@ function isCancellation(error: unknown): boolean {
   const candidate = error as { userCancelled?: unknown; code?: unknown };
   if (candidate.userCancelled === true) return true;
   return candidate.code === '1' || candidate.code === 1 || candidate.code === 'PURCHASE_CANCELLED';
+}
+
+const ALREADY_PURCHASED_NAMES = new Set([
+  'PRODUCT_ALREADY_PURCHASED',
+  'PRODUCT_ALREADY_PURCHASED_ERROR',
+  'ProductAlreadyPurchasedError',
+]);
+
+/**
+ * Does the store say the reader already owns this?
+ *
+ * The Android bridge rejects with the numeric code as a string ("6"), and
+ * the readable name has lived both on the error and in `userInfo`. As with
+ * `isCancellation`, every shape is accepted, because missing this one tells
+ * a paying reader something that sounds like a failure.
+ */
+export function isAlreadyPurchased(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as {
+    code?: unknown;
+    readableErrorCode?: unknown;
+    userInfo?: { readableErrorCode?: unknown } | null;
+  };
+  if (candidate.code === '6' || candidate.code === 6) return true;
+  const names = [candidate.code, candidate.readableErrorCode, candidate.userInfo?.readableErrorCode];
+  return names.some((name) => typeof name === 'string' && ALREADY_PURCHASED_NAMES.has(name));
 }

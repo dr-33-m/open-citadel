@@ -3,7 +3,7 @@ import type { PurchasesPackage } from 'react-native-purchases';
 import type { PlanId } from 'samwell-shared';
 
 import { showToast } from '@/components/toast/toast-provider';
-import { identify } from '@/services/purchases';
+import { identify, reclaimStorePurchases } from '@/services/purchases';
 import { useAccountStore } from '@/stores/account';
 import { useGuestStore } from '@/stores/guest';
 import { useSubscriptionStore } from '@/stores/subscription';
@@ -51,10 +51,25 @@ export type CheckoutIntent =
  * never buys anything should not be registering itself with a server, and a
  * guest receives no free credits, so there is nothing to farm by reinstalling.
  */
-async function checkoutSubject(): Promise<string | null> {
+async function checkoutSubject(): Promise<{ id: string; guest: boolean } | null> {
   const account = useAccountStore.getState();
-  if (account.status === 'signedIn' && account.sub) return account.sub;
-  return useGuestStore.getState().adopt();
+  if (account.status === 'signedIn' && account.sub) return { id: account.sub, guest: false };
+  const guestId = await useGuestStore.getState().adopt();
+  return guestId ? { id: guestId, guest: true } : null;
+}
+
+/**
+ * Ask Play what this guest already owns, without letting the answer block a
+ * sale. A failure here is no worse than not asking: the store still refuses
+ * the same product twice, and the purchase turns that into a restore.
+ */
+async function reclaimQuietly(guestId: string): Promise<boolean> {
+  try {
+    return await reclaimStorePurchases(guestId);
+  } catch (error) {
+    if (__DEV__) console.warn('[Checkout] Could not check Play for an earlier plan:', error);
+    return false;
+  }
 }
 
 /**
@@ -69,7 +84,7 @@ export async function completeCheckout(
   carryOut: (intent: CheckoutIntent) => Promise<void>,
   onAlreadyActive?: () => void,
 ): Promise<void> {
-  let subject: string | null;
+  let subject: { id: string; guest: boolean } | null;
   try {
     subject = await checkoutSubject();
   } catch (error) {
@@ -87,7 +102,7 @@ export async function completeCheckout(
   }
 
   try {
-    await identify(subject);
+    await identify(subject.id);
   } catch (error) {
     if (__DEV__) console.warn('[Checkout] Could not identify with RevenueCat:', error);
     showToast({
@@ -110,7 +125,16 @@ export async function completeCheckout(
    * restore door.
    */
   if (intent.kind === 'buy') {
-    await useSubscriptionStore.getState().refresh();
+    /*
+     * Side by side, so a reader who never paid waits for one round trip, not
+     * two. Only when Play did hand something back does the server get asked
+     * again, since the first read may have landed before the transfer.
+     */
+    const [reclaimed] = await Promise.all([
+      subject.guest ? reclaimQuietly(subject.id) : false,
+      useSubscriptionStore.getState().refresh(),
+    ]);
+    if (reclaimed) await useSubscriptionStore.getState().refresh();
     if (useSubscriptionStore.getState().status === 'active') {
       showToast({
         message: 'You already have an active plan.',

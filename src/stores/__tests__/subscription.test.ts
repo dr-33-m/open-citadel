@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PurchasesPackage } from 'react-native-purchases';
+
+import { AlreadyPurchased, purchase, restore } from '@/services/purchases';
 import { useSubscriptionStore } from '../subscription';
 
 vi.mock('@/constants/revenuecat', () => ({ PURCHASES_ENABLED: true }));
@@ -14,7 +17,9 @@ vi.mock('@/services/cloud-identity', () => ({
 }));
 vi.mock('@/services/purchases', () => {
   class PurchaseCancelled extends Error {}
+  class AlreadyPurchased extends Error {}
   return {
+    AlreadyPurchased,
     PurchaseCancelled,
     getOffering: vi.fn(),
     manageSubscription: vi.fn(),
@@ -97,5 +102,61 @@ describe('subscription refresh lifecycle', () => {
     expect(state.plan).toBeNull();
     expect(state.balance.available).toBe(0);
     expect(state.loading).toBe(false);
+  });
+});
+
+describe('buying a plan the reader already owns', () => {
+  beforeEach(() => {
+    useSubscriptionStore.getState().reset();
+    vi.mocked(purchase).mockReset();
+    vi.mocked(restore).mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('restores instead of reporting a failure', async () => {
+    vi.mocked(purchase).mockRejectedValue(new AlreadyPurchased());
+    vi.mocked(restore).mockResolvedValue({} as never);
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json(ACTIVE_RESPONSE)));
+
+    const outcome = await useSubscriptionStore
+      .getState()
+      .purchase({} as PurchasesPackage, 'maester');
+
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(outcome).toBe('active');
+    const state = useSubscriptionStore.getState();
+    expect(state.plan).toBe('maester');
+    expect(state.error).toBeNull();
+    expect(state.busy).toBeNull();
+  });
+
+  it('keeps the tapped plan busy through the restore', async () => {
+    vi.mocked(purchase).mockRejectedValue(new AlreadyPurchased());
+    const seen: unknown[] = [];
+    vi.mocked(restore).mockImplementation(async () => {
+      seen.push(useSubscriptionStore.getState().busy);
+      return {} as never;
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json(ACTIVE_RESPONSE)));
+
+    await useSubscriptionStore.getState().purchase({} as PurchasesPackage, 'maester');
+
+    expect(seen).toEqual(['maester']);
+  });
+
+  it('reports a restore that fails, rather than throwing', async () => {
+    vi.mocked(purchase).mockRejectedValue(new AlreadyPurchased());
+    vi.mocked(restore).mockRejectedValue(new Error('Store unavailable.'));
+
+    const outcome = await useSubscriptionStore
+      .getState()
+      .purchase({} as PurchasesPackage, 'maester');
+
+    expect(outcome).toBe(false);
+    expect(useSubscriptionStore.getState().error).toBe('Store unavailable.');
+    expect(useSubscriptionStore.getState().busy).toBeNull();
   });
 });

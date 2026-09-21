@@ -6,8 +6,10 @@ import { completeCheckout, type CheckoutIntent } from '../use-plan-checkout';
  * Hoisted by vitest above the imports, which is why they are declared here
  * rather than beside the mocks that use them.
  */
-const { identify, refresh, showToast, adopt, account, subscription } = vi.hoisted(() => ({
+const { identify, reclaimStorePurchases, refresh, showToast, adopt, account, subscription } =
+  vi.hoisted(() => ({
   identify: vi.fn(async () => undefined),
+  reclaimStorePurchases: vi.fn(async (_guestId: string) => false),
   refresh: vi.fn(async () => undefined),
   showToast: vi.fn(),
   adopt: vi.fn(async () => 'guest:0f5f1d3a-9b1c-4e2a-8f6d-2b7c9e4a1d55'),
@@ -15,7 +17,7 @@ const { identify, refresh, showToast, adopt, account, subscription } = vi.hoiste
   subscription: { status: 'none' as string },
 }));
 
-vi.mock('@/services/purchases', () => ({ identify }));
+vi.mock('@/services/purchases', () => ({ identify, reclaimStorePurchases }));
 vi.mock('@/components/toast/toast-provider', () => ({ showToast }));
 vi.mock('@/stores/account', () => ({
   useAccountStore: { getState: () => account },
@@ -39,6 +41,7 @@ beforeEach(() => {
   // of these writes to shared state, so they are put back by hand.
   vi.clearAllMocks();
   identify.mockImplementation(async () => undefined);
+  reclaimStorePurchases.mockImplementation(async () => false);
   refresh.mockImplementation(async () => undefined);
   account.status = 'signedIn';
   account.sub = 'logto-sub-1';
@@ -178,5 +181,60 @@ describe('completeCheckout, with no account', () => {
     await completeCheckout(BUY, carryOut);
 
     expect(carryOut).not.toHaveBeenCalled();
+  });
+});
+
+describe('completeCheckout, reclaiming a plan Play already holds', () => {
+  it('asks Play for a guest before selling, and stops if a plan comes back', async () => {
+    signedOut();
+    reclaimStorePurchases.mockResolvedValue(true);
+    // The first read races the transfer and misses it; the second sees it.
+    refresh
+      .mockImplementationOnce(async () => undefined)
+      .mockImplementationOnce(async () => {
+        subscription.status = 'active';
+      });
+    const carryOut = vi.fn(async () => undefined);
+    const onAlreadyActive = vi.fn();
+
+    await completeCheckout(BUY, carryOut, onAlreadyActive);
+
+    expect(reclaimStorePurchases).toHaveBeenCalledWith('guest:0f5f1d3a-9b1c-4e2a-8f6d-2b7c9e4a1d55');
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(carryOut).not.toHaveBeenCalled();
+    expect(onAlreadyActive).toHaveBeenCalled();
+  });
+
+  it('costs a guest who never paid no extra read', async () => {
+    signedOut();
+    const carryOut = vi.fn(async () => undefined);
+
+    await completeCheckout(BUY, carryOut);
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(carryOut).toHaveBeenCalled();
+  });
+
+  it('still sells when Play could not be asked', async () => {
+    signedOut();
+    reclaimStorePurchases.mockRejectedValue(new Error('offline'));
+    const carryOut = vi.fn(async () => undefined);
+
+    await completeCheckout(BUY, carryOut);
+
+    expect(carryOut).toHaveBeenCalled();
+  });
+
+  it('never restores on behalf of an account', async () => {
+    await completeCheckout(BUY, vi.fn(async () => undefined));
+
+    expect(reclaimStorePurchases).not.toHaveBeenCalled();
+  });
+
+  it('leaves the restore door to its own restore', async () => {
+    signedOut();
+    await completeCheckout(RESTORE, vi.fn(async () => undefined));
+
+    expect(reclaimStorePurchases).not.toHaveBeenCalled();
   });
 });
