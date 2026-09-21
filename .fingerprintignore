@@ -1,0 +1,7 @@
+# A local Android build runs Gradle, and Gradle rewrites library manifests in
+# place inside node_modules (it strips the `package` attribute). The iOS
+# fingerprint hashes whole package directories for autolinking, so one Android
+# build was enough to stop the next iOS build matching. A library's manifest
+# only changes with its version or a patch, and both are hashed elsewhere.
+# See TODO-ANDROID.md.
+node_modules/**/android/src/main/AndroidManifest.xml
