@@ -1,7 +1,7 @@
 # Waiting on the Android machine
 
-Two jobs that need a real Android device or an Android build, which is why
-they are not done. Both are written so you can pick them up cold.
+Two jobs that needed a real Android device or an Android build. Both now
+have code; the second still needs its device check.
 
 ---
 
@@ -29,20 +29,22 @@ it. It was diagnosed by cloning the repo to /tmp, installing fresh,
 reproducing the build's hash exactly, then diffing the two fingerprint source
 lists down to that single entry.
 
-**The fix, and the trap in it.**
+**Fixed, 2026-09-21.** `.fingerprintignore` leaves library Android manifests
+under `node_modules` out of the hash. Checked by generating the iOS and
+Android fingerprints with the manifest stripped and with it restored: same
+hash both ways, on both platforms. A library's manifest only changes with its
+version or a patch, and both are hashed elsewhere. Adding the ignore changed
+the hash once, so the first build after it is a new runtime version.
 
-```bash
-rm -rf node_modules && pnpm install
-```
-
-`pnpm install --frozen-lockfile` does NOT repair it. The file is already
-present and the right version, so pnpm has no reason to touch it; only a full
-removal makes it rewrite the file from the tarball.
+If a different file ever does the same thing, the old workaround still holds:
+`rm -rf node_modules && pnpm install`. `pnpm install --frozen-lockfile` does
+NOT repair it, because the file is already present at the right version and
+pnpm has no reason to touch it.
 
 **How to check before you burn a build:**
 
 ```bash
-pnpm exec expo-updates fingerprint:generate --platform ios
+pnpm exec fingerprint fingerprint:generate --platform ios
 # compare against the build you are trying to match
 pnpm exec eas fingerprint:compare
 ```
@@ -81,9 +83,19 @@ deletion, so the guest identity is usually still there.
 **What to build.** Catch that error code and fall back to a restore, which is
 what the reader meant. Restoring mints a fresh guest identity, RevenueCat
 transfers the entitlement to it (the project is on "Transfer to new App User
-ID", confirmed in the dashboard), and the existing `TRANSFER` webhook moves
-the plan server-side. Every piece of that already exists and is tested; the
-only new thing is the branch.
+ID", confirmed in the dashboard), and the `TRANSFER` webhook moves the plan
+server-side.
+
+**Correction, 2026-09-21: that webhook had never worked.** It read
+`transferred_from_app_user_ids` / `transferred_to_app_user_ids` and an
+entitlement; RevenueCat sends `transferred_from` / `transferred_to` and
+nothing else. Every transfer was a no-op, so the account kept its plan, the
+new guest was granted a fresh month when first read, and signing back in was
+refused as "paid twice". Now `transferPlan` in `server/src/billing.ts` moves
+the sender's row (plan, period, what is left) and withdraws a grant the
+receiver was given for the same period before the webhook landed. Needs a
+server deploy. Worth checking one real TRANSFER in the RevenueCat dashboard's
+webhook log against the fields above during the device pass.
 
 **Where:**
 
@@ -95,14 +107,31 @@ only new thing is the branch.
 - `src/stores/subscription.ts` — `purchase()` catches it and delegates to
   `get().restore()`, so the reader gets their plan rather than a message.
 
-**Why it is not done.** The exact error shape needs reading off a real device.
-Do not guess it from the docs; `isCancellation` in that same file exists
-because the documented shape and the shipped shape disagreed.
+**Built, 2026-09-21, not yet seen on a device.** `AlreadyPurchased` and
+`isAlreadyPurchased` are in `services/purchases.ts`, and `purchase()` in
+`stores/subscription.ts` hands off to `restore()`. The match accepts code `"6"`
+(the Android bridge rejects with `errorContainer.getCode() + ""`), numeric `6`,
+and the readable name on the error or in `userInfo`. That came from reading the
+bridge source, not from a device. In dev, Metro logs
+`[Purchases] Already purchased: {...}` with the raw error. Read it during the
+test below, then drop the log if the shape matched.
 
 **How to test it.** Buy on an Android device, uninstall, reinstall, then tap
 Buy rather than Restore. The reader should end up with their plan and no
 error.
 
+
+**The other plan, too.** Play only refuses the *same* product twice. Tapping a
+different plan after a reinstall would sell a second subscription beside the
+first, since a Play plan change must name the product it replaces and a fresh
+guest knows none. So `completeCheckout` asks Play first
+(`reclaimStorePurchases`): Android, guests only, once per guest per session,
+side by side with the pre-buy server read so a reader who never paid waits
+for one round trip, not two. Test: buy plan A, uninstall, reinstall, tap Buy
+on plan B. Expect "You already have an active plan", with A restored and no
+second subscription in Play. Worth timing the tap-to-sheet gap on a fresh
+guest while you are there; the estimate is under a second, all of it
+overlapping the read that was already there.
 ---
 
 ## Then: the device pass
