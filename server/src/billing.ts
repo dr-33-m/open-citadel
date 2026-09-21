@@ -680,37 +680,90 @@ export function createBillingService(options: BillingOptions): BillingService {
     }
 
     const target = await readAccountRow(args.accountId);
-    if (target && (target.plan != null || target.balance > 0 || target.reserved > 0)) {
+    /*
+     * The refusal is for an account with a plan of its OWN running: two live
+     * subscriptions, one reader, and no arithmetic anybody asked us to do.
+     * Or a turn in flight, which a re-key under it would break.
+     *
+     * NOT for credits left over from a plan that has ended. `clearPlan` keeps
+     * the balance when a subscription lapses, deliberately, so a reader who
+     * once subscribed and stopped still has a row with money in it and no
+     * plan. That used to read as "this account already has its own plan" and
+     * refuse, which told a reader with no plan at all that they had one, and
+     * left the plan they had just bought stranded on the phone.
+     */
+    if (target && (target.plan != null || target.reserved > 0)) {
       return { linked: false, reason: 'account_has_plan' };
     }
 
+    const source = await readAccountRow(args.guestId);
+    /**
+     * What the account already held, which comes along rather than being
+     * deleted. The target row is removed below to make room for the guest's,
+     * and without this that removal would quietly take their leftover credits
+     * with it.
+     */
+    const carried = target?.balance ?? 0;
+
     const atMs = now();
     const statements = [];
-    // An empty row would collide with the one being re-keyed onto it, and it
-    // holds nothing worth keeping - that is what the guard above established.
-    if (target) {
-      statements.push({
-        sql: 'DELETE FROM account_credits WHERE account_id = ?',
-        args: [args.accountId],
-      });
+    /*
+     * Only when the guest has a row to move. A guest whose purchase has not
+     * reached the webhook yet has nothing here, and the old code would still
+     * have deleted the account's row to make room for a row that never came.
+     * The link itself is still recorded, so the webhook, when it lands,
+     * resolves through it to the account.
+     */
+    if (source) {
+      if (target) {
+        if (carried > 0) {
+          statements.push({
+            sql: 'UPDATE account_credits SET balance = balance + ? WHERE account_id = ?',
+            args: [carried, args.guestId],
+          });
+        }
+        statements.push({
+          sql: 'DELETE FROM account_credits WHERE account_id = ?',
+          args: [args.accountId],
+        });
+      }
+      statements.push(
+        {
+          sql: `UPDATE account_credits SET account_id = ?, updated_at_ms = ?
+                WHERE account_id = ?`,
+          args: [args.accountId, atMs, args.guestId],
+        },
+        {
+          sql: 'UPDATE credit_ledger SET account_id = ? WHERE account_id = ?',
+          args: [args.accountId, args.guestId],
+        },
+      );
+      if (carried > 0) {
+        // One row, so the ledger still adds up to the balance: the credits
+        // did not appear from nowhere, they were already this reader's.
+        statements.push({
+          sql: `INSERT INTO credit_ledger (
+                  id, account_id, type, credits, balance_after, description, created_at_ms
+                )
+                VALUES (?, ?, 'LINK_CARRY', ?, ?, ?, ?)
+                ON CONFLICT(id) DO NOTHING`,
+          args: [
+            `link:${args.guestId}`,
+            args.accountId,
+            carried,
+            source.balance + carried,
+            'Credits already on this account, kept when a device plan joined it',
+            atMs,
+          ],
+        });
+      }
     }
-    statements.push(
-      {
-        sql: `UPDATE account_credits SET account_id = ?, updated_at_ms = ?
-              WHERE account_id = ?`,
-        args: [args.accountId, atMs, args.guestId],
-      },
-      {
-        sql: 'UPDATE credit_ledger SET account_id = ? WHERE account_id = ?',
-        args: [args.accountId, args.guestId],
-      },
-      {
-        sql: `UPDATE guest_identities
-              SET linked_account_id = ?, linked_at_ms = ?
-              WHERE guest_id = ?`,
-        args: [args.accountId, atMs, args.guestId],
-      },
-    );
+    statements.push({
+      sql: `UPDATE guest_identities
+            SET linked_account_id = ?, linked_at_ms = ?
+            WHERE guest_id = ?`,
+      args: [args.accountId, atMs, args.guestId],
+    });
     await client.batch(statements, 'write');
 
     invalidate(args.guestId);

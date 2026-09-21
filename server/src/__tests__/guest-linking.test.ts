@@ -147,6 +147,26 @@ describe('linkGuest', () => {
     });
   });
 
+  it('does not delete the account row for a guest with nothing to move yet', async () => {
+    // A purchase whose webhook has not landed: the guest has no credit row.
+    // The account's row must survive, and the link is still recorded for the
+    // webhook to resolve through when it arrives.
+    const LEFTOVER = 75;
+    await makeGuest();
+    await client.execute({
+      sql: `INSERT INTO account_credits (account_id, plan, source, balance, reserved, updated_at_ms)
+            VALUES (?, NULL, NULL, ?, 0, ?)`,
+      args: [ACCOUNT, LEFTOVER, NOW],
+    });
+
+    expect(await billing.linkGuest({ guestId: GUEST, accountId: ACCOUNT })).toMatchObject({
+      linked: true,
+    });
+    // `balance`, not `available`: with no plan the display figure is zero by
+    // design, and what matters here is that the credits are still on the row.
+    expect((await billing.readEntitlement(ACCOUNT)).balance).toBe(LEFTOVER);
+  });
+
   it('records the link, so a later renewal can be resolved', async () => {
     await makeGuest();
     await billing.linkGuest({ guestId: GUEST, accountId: ACCOUNT });
@@ -170,16 +190,35 @@ describe('linkGuest', () => {
     expect((await billing.readEntitlement(GUEST)).plan).toBe('maester');
   });
 
-  it('refuses when the account has credits left from a lapsed plan', async () => {
+  it('links an account whose own plan has ended, and keeps its leftover credits', async () => {
+    /*
+     * This used to be refused, and this test used to insist on it: deleting
+     * the account's row to make room would have thrown away credits they
+     * paid for. The link carries them now instead, so the reason is gone -
+     * and refusing had a cost of its own. A reader who subscribed once and
+     * stopped was told their account "already has its own plan" when it had
+     * none, and the plan they had just bought stayed stranded on the phone.
+     */
     await makeGuest();
-    await billing.grantMonthly({ accountId: GUEST, plan: 'maester', periodEndMs: FUTURE });
+    await billing.grantMonthly({ accountId: GUEST, plan: 'grand_maester', periodEndMs: FUTURE });
     await billing.grantMonthly({ accountId: ACCOUNT, plan: 'maester', periodEndMs: FUTURE });
     await billing.clearPlan(ACCOUNT);
+    const leftover = (await billing.readEntitlement(ACCOUNT)).balance;
+    expect(leftover).toBeGreaterThan(0);
 
-    // The plan is gone but the credits are not, and deleting that row to make
-    // room would be throwing away something they paid for.
     const result = await billing.linkGuest({ guestId: GUEST, accountId: ACCOUNT });
-    expect(result).toEqual({ linked: false, reason: 'account_has_plan' });
+
+    expect(result).toMatchObject({ linked: true });
+    const balance = await billing.readEntitlement(ACCOUNT);
+    expect(balance.plan).toBe('grand_maester');
+    // Both: the plan they bought, and the credits that were already theirs.
+    expect(balance.balance).toBe(GRANT + leftover);
+
+    // And the ledger says where the extra came from, so it still adds up.
+    const ledger = await billing.readLedger(ACCOUNT, 10);
+    expect(ledger.some((row) => row.type === 'LINK_CARRY' && row.credits === leftover)).toBe(
+      true,
+    );
   });
 
   it('links onto an account that has only ever been signed into', async () => {

@@ -50,10 +50,23 @@ and the next reconcile finds a paying reader with nothing. The account card
 now has copy for the state that reads as a contradiction, signed out with an
 active plan, which is just somebody who bought without registering.
 
+**Settled on a device, 2026-09-21: `logIn` from a guest to an account
+SWITCHES, it does not alias.** Signing in logged `new customer: false` for the
+account, and afterwards RevenueCat showed the account customer with no active
+entitlement while `guest:9402a474…` still held the plan. So the entitlement
+stays on the guest customer until something moves it, which is what the
+server link and the restore after it are for. No `logOut` is needed first:
+nothing is lost by switching, and the server link does not depend on it.
+
+**Found the same day: leftover credits blocked the link.** `clearPlan` keeps
+the balance when a subscription lapses, and the link refused any account with
+a balance, so a reader who had once subscribed was told their account
+"already has its own plan" when it had none. The refusal is now only for a
+live plan or a turn in flight; leftover credits are carried onto the linked
+row with a `LINK_CARRY` ledger entry.
+
 **Next:** step 6, the device pass, and the two Android jobs in
-`TODO-ANDROID.md`. Still open: whether `logIn` from `guest:<uuid>` to a Logto
-sub aliases or switches, which decides whether the app should `logOut` first.
-Settle it on a device.
+`TODO-ANDROID.md`.
 
 ## Why
 

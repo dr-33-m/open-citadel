@@ -113,12 +113,11 @@ Step 6 of `GUEST-ACCESS-PLAN.md`, which wants both platforms anyway.
 2. Register. Confirm the plan follows onto the account and the toast says so.
 3. Sign in on a second device. Confirm the plan is there.
 4. Sign out on the first. Confirm it does not claim the plan back.
-5. The one question the plan leaves open: does `Purchases.logIn` from
-   `guest:<uuid>` to a Logto sub **alias** the two or **switch** between them?
-   The sources disagree and the server link is correct either way, but the
-   answer decides whether the app should `logOut` first. `identify` now logs
-   `[Purchases] Joined <sub> (new customer: true|false)` in dev, so read it
-   off Metro during step 2 rather than off the dashboard afterwards.
+5. ~~Does `Purchases.logIn` from `guest:<uuid>` to a Logto sub alias or
+   switch?~~ **Settled on iOS, 2026-09-21: it switches.** Worth one glance on
+   Android to confirm the same: sign in after buying as a guest, and Metro
+   should log `[Purchases] Joined <sub> (new customer: false)` while the
+   plan arrives through the server link, not through RevenueCat.
 
 ---
 
