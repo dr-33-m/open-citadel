@@ -36,6 +36,7 @@ const {
   clearGuestToken,
   ensureGuestIdentity,
   guestToken,
+  onGuestRetired,
   readGuestIdentity,
   readLinkedGuest,
   retireGuestIdentity,
@@ -276,9 +277,14 @@ describe('tokens', () => {
   it('remembers the link when the server is the one to report it', async () => {
     // The link landed and its answer never came home; the next token
     // exchange is where the device finds out.
+    const retired = vi.fn();
+    const stop = onGuestRetired(retired);
     fetchMock.mockResolvedValue(jsonResponse({ error: 'guest_linked' }, 409));
     await expect(guestToken()).rejects.toBeInstanceOf(GuestLinked);
+    stop();
 
+    // Told, so the store stops drawing a guest before the next launch.
+    expect(retired).toHaveBeenCalledTimes(1);
     expect(await readLinkedGuest()).toBe(GUEST_ID);
     await expect(ensureGuestIdentity()).rejects.toBeInstanceOf(GuestLinked);
   });

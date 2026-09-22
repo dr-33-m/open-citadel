@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import {
     ensureGuestIdentity,
     GuestLinked,
+    onGuestRetired,
     readGuestIdentity,
     readLinkedGuest,
     retireGuestIdentity,
@@ -75,8 +76,15 @@ export const useGuestStore = create<GuestState>((set) => ({
     }
   },
 
-  retire: async () => {
-    await retireGuestIdentity();
-    set({ status: 'linked', guestId: null });
-  },
+  // The status follows from the listener below, whoever retired the guest.
+  retire: () => retireGuestIdentity(),
 }));
+
+/*
+ * Module scope, once: the store lives for the whole app, so there is nothing
+ * to unsubscribe from. Covers the retirement the store did not start - the
+ * server refusing a token for a guest that has already joined an account -
+ * which would otherwise leave a signed-out device drawn as a guest until the
+ * next launch.
+ */
+onGuestRetired(() => useGuestStore.setState({ status: 'linked', guestId: null }));

@@ -217,6 +217,25 @@ export async function guestToken(): Promise<string | null> {
   return tokenInFlight;
 }
 
+/** Told when this device's guest retires. See `onGuestRetired`. */
+const retiredListeners = new Set<() => void>();
+
+/**
+ * Hear about a retirement however it happened.
+ *
+ * The link hook retires the guest itself, but a device can also learn of the
+ * link from the server refusing its token - the link landed, its reply never
+ * came home, and the reader signed out before the retry. That happens deep in
+ * a token fetch, below anything that draws, so this is how the guest store
+ * finds out without the service reaching up into it.
+ */
+export function onGuestRetired(listener: () => void): () => void {
+  retiredListeners.add(listener);
+  return () => {
+    retiredListeners.delete(listener);
+  };
+}
+
 /**
  * The guest id this device retired when it joined an account, or null if it
  * never has. See `LINKED_KEY`.
@@ -248,6 +267,7 @@ export async function retireGuestIdentity(): Promise<void> {
     SecureStore.deleteItemAsync(ID_KEY, STORE_OPTIONS),
     SecureStore.deleteItemAsync(SECRET_KEY, STORE_OPTIONS),
   ]);
+  for (const listener of retiredListeners) listener();
 }
 
 /**
