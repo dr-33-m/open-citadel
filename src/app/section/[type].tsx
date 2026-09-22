@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
 import { BookActionSheet } from "@/components/library/book-action-sheet";
-import { BookGridCard } from "@/components/library/book-grid-card";
+import { BookMasonryGrid, bookGridItemWidth } from "@/components/library/book-masonry-grid";
 import { CollectionPickerSheet } from "@/components/library/collection-picker-sheet";
 import { DeleteBookSheet } from "@/components/library/delete-book-sheet";
 import { EditTitleSheet } from "@/components/library/edit-title-sheet";
@@ -52,17 +52,6 @@ const SECTION_LABELS: Record<string, string> = {
 
 const NUM_COLUMNS = 2;
 
-const ITEM_GAP = spacing[4];
-const SIDE_PAD = spacing[6];
-// Item widths derive from the live window width (useWindowDimensions in the
-// component, so they track rotation/foldables) and are bounded by what fits
-// two columns inside the content column cap — without the bound, capping the
-// grid containers to `MaxContentWidth` on a wide screen would leave
-// fixed-width items overflowing them. On phones the bound never bites
-// (window < 800), so the values are unchanged.
-
-// Collection grid constants — two columns with a gap
-
 // The content column: centred and capped on wide screens, pixel-identical on
 // phones (the cap never bites below 800).
 const contentColumn: ViewStyle = {
@@ -79,8 +68,6 @@ const GRID_INITIAL_RENDER = 6;
 const GRID_MAX_PER_BATCH = 6;
 const GRID_WINDOW_SIZE = 9;
 const GRID_BATCH_PERIOD = 50;
-
-const keyExtractor = (item: Book) => item.id;
 
 const collectionKeyExtractor = (item: CollectionWithCount) => item.id;
 
@@ -135,11 +122,7 @@ export default function SectionScreen() {
   // by the content column cap (see note above). Memoized so it keeps a stable
   // identity across search keystrokes and feeds `BookGridCard`'s memo cleanly.
   const itemWidth = useMemo(
-    () =>
-      Math.min(
-        (windowWidth - SIDE_PAD * 2 - ITEM_GAP) / 2,
-        (MaxContentWidth - SIDE_PAD * 2 - ITEM_GAP) / 2,
-      ),
+    () => bookGridItemWidth(windowWidth, MaxContentWidth),
     [windowWidth],
   );
   // Collections grid: same shape as the books grid — cells flex to the
@@ -228,24 +211,6 @@ export default function SectionScreen() {
     [allBooks, router],
   );
 
-  // Stable `renderItem` (Expensify pattern): a search keystroke re-renders this
-  // screen, and an inline renderer would make the list treat every visible row
-  // as new. `BookGridCard` is `memo`'d, so only rows whose `book` changed
-  // reflow. `gridExtraData` re-runs the list when the resolved colours change
-  // (a theme flip with the screen already open).
-  const renderBook = useCallback(
-    ({ item }: { item: Book }) => (
-      <BookGridCard
-        book={item}
-        width={itemWidth}
-        mutedForeground={asColor(mutedForeground)}
-        surfaceTertiary={asColor(surfaceTertiary)}
-        onPress={openReader}
-        onLongPress={setActionBook}
-      />
-    ),
-    [itemWidth, mutedForeground, surfaceTertiary, openReader],
-  );
   const gridExtraData = useMemo(
     () => [mutedForeground, surfaceTertiary],
     [mutedForeground, surfaceTertiary],
@@ -464,33 +429,17 @@ export default function SectionScreen() {
           </View>
         }
       >
-        <PageFade>
-          <TransitionFlatList
-            data={filtered}
-            extraData={gridExtraData}
-            keyExtractor={keyExtractor}
-            numColumns={NUM_COLUMNS}
-            className="flex-1"
-            style={contentColumn}
-            contentContainerClassName="px-6"
-            contentContainerStyle={gridContentStyle}
-            columnWrapperClassName="mb-4 gap-4"
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            initialNumToRender={GRID_INITIAL_RENDER}
-            maxToRenderPerBatch={GRID_MAX_PER_BATCH}
-            windowSize={GRID_WINDOW_SIZE}
-            updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
-            ListEmptyComponent={
-              <View className="w-full items-center pt-16">
-                <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-                  {query ? "No results." : "Nothing here yet."}
-                </ThemedText>
-              </View>
-            }
-            renderItem={renderBook}
-          />
-        </PageFade>
+        <BookMasonryGrid
+          books={filtered}
+          itemWidth={itemWidth}
+          mutedForeground={asColor(mutedForeground)}
+          surfaceTertiary={asColor(surfaceTertiary)}
+          bottomInset={insets.bottom}
+          emptyText={query ? "No results." : "Nothing here yet."}
+          style={contentColumn}
+          onPress={openReader}
+          onLongPress={setActionBook}
+        />
       </Handover>
 
       {/* Sheets mount after the drawer has settled — four BottomSheetModals is

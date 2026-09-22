@@ -3,8 +3,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronDown, Plus, Search, Trash2, X } from "@/components/icons";
 import React, { useCallback, useMemo, useState } from "react";
 import { TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
-import { TransitionFlatList } from "@/components/navigation/transition-scroll";
-import { PageFade } from "@/components/scroll-fades";
 import { Handover } from "@/components/navigation/handover";
 import { BookGridSkeleton } from "@/components/skeletons/book-grid-skeleton";
 import { useScreenSettled } from "@/navigation/use-screen-settled";
@@ -16,12 +14,12 @@ import { useCSSVariable } from "uniwind";
 
 import { AddBooksSheet } from "@/components/library/add-books-sheet";
 import { BookActionSheet } from "@/components/library/book-action-sheet";
-import { BookGridCard } from "@/components/library/book-grid-card";
+import { BookMasonryGrid, bookGridItemWidth } from "@/components/library/book-masonry-grid";
 import { DeleteBookSheet } from "@/components/library/delete-book-sheet";
 import { EditTitleSheet } from "@/components/library/edit-title-sheet";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { fontFamily, spacing, MaxContentWidth } from "@/constants/theme";
+import { fontFamily, MaxContentWidth } from "@/constants/theme";
 import type { books as booksTable } from "@/db/schema";
 import { asColor } from "@/utils/colors";
 import { useAllBooks, useBooksStore } from "@/stores/books";
@@ -30,14 +28,6 @@ import { useCollectionsStore } from "@/stores/collections";
 type Book = typeof booksTable.$inferSelect;
 
 const COLUMNS = 2;
-const ITEM_GAP = spacing[4];
-const SIDE_PAD = spacing[6];
-// Item width derives from the live window width (useWindowDimensions in the
-// component, so it tracks rotation/foldables) and is bounded by what fits two
-// columns inside the content column cap — without the bound, capping the grid
-// container to `MaxContentWidth` on a wide screen would leave fixed-width
-// items overflowing it. On phones the bound never bites (window < 800), so
-// the value is unchanged.
 
 // The content column: centred and capped on wide screens, pixel-identical on
 // phones (the cap never bites below 800).
@@ -46,15 +36,6 @@ const contentColumn: ViewStyle = {
   width: "100%",
   alignSelf: "center",
 };
-
-// See the section screen — same explicit list render budget so the grid's
-// first commit doesn't fight the drawer transition for the JS thread.
-const GRID_INITIAL_RENDER = 6;
-const GRID_MAX_PER_BATCH = 6;
-const GRID_WINDOW_SIZE = 9;
-const GRID_BATCH_PERIOD = 50;
-
-const keyExtractor = (item: Book) => item.id;
 
 export default function CollectionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -66,11 +47,7 @@ export default function CollectionScreen() {
   // content column cap (see note above). Memoized to feed `BookGridCard`'s
   // memo a stable value across search keystrokes.
   const itemWidth = useMemo(
-    () =>
-      Math.min(
-        (windowWidth - SIDE_PAD * 2 - ITEM_GAP) / 2,
-        (MaxContentWidth - SIDE_PAD * 2 - ITEM_GAP) / 2,
-      ),
+    () => bookGridItemWidth(windowWidth, MaxContentWidth),
     [windowWidth],
   );
 
@@ -136,30 +113,6 @@ export default function CollectionScreen() {
       router.push(`/reader/${bookId}` as any);
     },
     [router],
-  );
-
-  // Stable, memoized row (Expensify list pattern). `numColumns` handles the
-  // ragged last row itself, so the old manual `padded` null-cell array is gone.
-  const renderBook = useCallback(
-    ({ item }: { item: Book }) => (
-      <BookGridCard
-        book={item}
-        width={itemWidth}
-        mutedForeground={asColor(mutedForeground)}
-        surfaceTertiary={asColor(surfaceTertiary)}
-        onPress={openReader}
-        onLongPress={setActionBook}
-      />
-    ),
-    [itemWidth, mutedForeground, surfaceTertiary, openReader],
-  );
-  const gridExtraData = useMemo(
-    () => [mutedForeground, surfaceTertiary],
-    [mutedForeground, surfaceTertiary],
-  );
-  const gridContentStyle = useMemo(
-    () => ({ paddingBottom: insets.bottom + spacing[8] }),
-    [insets.bottom],
   );
 
   const handleDeleteCollection = async () => {
@@ -250,33 +203,17 @@ export default function CollectionScreen() {
           </View>
         }
       >
-        <PageFade>
-          <TransitionFlatList
-            data={filtered}
-            extraData={gridExtraData}
-            keyExtractor={keyExtractor}
-            numColumns={COLUMNS}
-            className="flex-1"
-            style={contentColumn}
-            contentContainerClassName="px-6"
-            contentContainerStyle={gridContentStyle}
-            columnWrapperClassName="mb-4 gap-4"
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            initialNumToRender={GRID_INITIAL_RENDER}
-            maxToRenderPerBatch={GRID_MAX_PER_BATCH}
-            windowSize={GRID_WINDOW_SIZE}
-            updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
-            ListEmptyComponent={
-              <View className="w-full items-center pt-16">
-                <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-                  {query ? "No results." : "No books in this collection yet."}
-                </ThemedText>
-              </View>
-            }
-            renderItem={renderBook}
-          />
-        </PageFade>
+        <BookMasonryGrid
+          books={filtered}
+          itemWidth={itemWidth}
+          mutedForeground={asColor(mutedForeground)}
+          surfaceTertiary={asColor(surfaceTertiary)}
+          bottomInset={insets.bottom}
+          emptyText={query ? "No results." : "No books in this collection yet."}
+          style={contentColumn}
+          onPress={openReader}
+          onLongPress={setActionBook}
+        />
       </Handover>
 
       {settled && (

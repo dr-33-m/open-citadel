@@ -20,6 +20,7 @@
  * scroll and takes every downward drag, which reads as the screen closing when
  * the user meant to scroll.
  */
+import { FlashList } from '@shopify/flash-list';
 import type { FlatList, ScrollView } from 'react-native';
 import Transition from 'react-native-screen-transitions';
 
@@ -39,3 +40,16 @@ export const TransitionScrollView = Transition.ScrollView as unknown as typeof S
 
 /** `FlatList`, with its offset reported to the navigator. */
 export const TransitionFlatList = Transition.FlatList as unknown as typeof FlatList;
+
+/**
+ * `FlashList`, with its offset reported to the navigator.
+ *
+ * Built with the library's own factory rather than handed a
+ * `renderScrollComponent`: FlashList passes its scroll component a plain JS
+ * `onScroll`, and the transition wrapper only composes worklet handlers, so
+ * the list would stop hearing its own scroll and stop recycling. Wrapping the
+ * list itself keeps FlashList's handler inside FlashList.
+ */
+export const TransitionFlashList = Transition.createTransitionAwareComponent(FlashList, {
+  isScrollable: true,
+}) as unknown as typeof FlashList;
