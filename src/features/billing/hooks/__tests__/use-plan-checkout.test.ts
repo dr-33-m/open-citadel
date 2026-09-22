@@ -225,10 +225,19 @@ describe('completeCheckout, reclaiming a plan Play already holds', () => {
     expect(carryOut).toHaveBeenCalled();
   });
 
-  it('never restores on behalf of an account', async () => {
-    await completeCheckout(BUY, vi.fn(async () => undefined));
+  it('asks Play for an account too, so a plan left on a guest is not sold twice', async () => {
+    reclaimStorePurchases.mockResolvedValue(true);
+    refresh
+      .mockImplementationOnce(async () => undefined)
+      .mockImplementationOnce(async () => {
+        subscription.status = 'active';
+      });
+    const carryOut = vi.fn(async () => undefined);
 
-    expect(reclaimStorePurchases).not.toHaveBeenCalled();
+    await completeCheckout(BUY, carryOut);
+
+    expect(reclaimStorePurchases).toHaveBeenCalledWith('logto-sub-1');
+    expect(carryOut).not.toHaveBeenCalled();
   });
 
   it('leaves the restore door to its own restore', async () => {

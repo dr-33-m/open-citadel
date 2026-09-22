@@ -72,6 +72,9 @@ export class PurchasesUnavailable extends Error {
 
 let configured = false;
 
+/** Play's list of this Google account's subscriptions. */
+const PLAY_SUBSCRIPTIONS_URL = 'https://play.google.com/store/account/subscriptions';
+
 /**
  * Replaces the SDK's default log handler, which sends its own ERROR-level
  * lines straight to `console.error` - including "expected" ones, like the
@@ -312,31 +315,39 @@ export async function restore(): Promise<CustomerInfo> {
   return Purchases.restorePurchases();
 }
 
-/** The guest this session already asked Play about. See `reclaimStorePurchases`. */
+/** The id this session already asked Play about. See `reclaimStorePurchases`. */
 let reclaimedFor: string | null = null;
 
 /**
- * Before selling to a guest on Android, bring back anything this Google
- * account already pays for.
+ * Before selling on Android, bring back anything this Google account already
+ * pays for.
  *
- * A reinstall wipes the guest identity, and a fresh id has no history at
- * RevenueCat, so nothing but the Play account remembers the plan. Play only
- * refuses a second purchase of the SAME product; tapping a different plan
- * would start a second subscription beside the first, because a Play plan
- * change has to name the product it replaces and nothing here knows it yet.
- * Restoring first moves the old plan onto this id, and the checkout then
- * sees an active plan instead of selling one.
+ * On Play the subscription belongs to the Google account, not to whichever
+ * id bought it, and Play only refuses a second purchase of the SAME product.
+ * Tapping a different plan starts a second subscription beside the first,
+ * because a Play plan change has to name the product it replaces, and
+ * nothing here knows it while the plan sits on another id: a guest wiped by
+ * a reinstall, the guest a signed-out session bought as, or the account a
+ * guest session is not signed in to. Restoring first moves the plan onto
+ * this id (the project transfers to the new App User ID), the server follows
+ * the TRANSFER webhook, and the checkout sees an active plan instead of
+ * selling a second one.
  *
- * Returns whether an entitlement came back. Once per guest per session,
- * never for an account (a restore there could move a plan off a different
- * account sharing this Google account), and never on iOS, where
- * subscription groups already turn a second purchase into a plan change.
+ * For accounts too, since the device pass sold one: a guest's plan was left
+ * on the guest, the account bought the other tier, and Play billed both. A
+ * restore can move a plan off a different account sharing this Google
+ * account, and that is the lesser harm: nobody is charged twice, and the
+ * other account restores it back with one tap.
+ *
+ * Returns whether an entitlement came back. Once per id per session, and
+ * never on iOS, where subscription groups already turn a second purchase
+ * into a plan change.
  */
-export async function reclaimStorePurchases(guestId: string): Promise<boolean> {
+export async function reclaimStorePurchases(appUserId: string): Promise<boolean> {
   if (!PURCHASES_ENABLED || !configured || REVENUECAT_TEST_STORE) return false;
-  if (Platform.OS !== 'android' || reclaimedFor === guestId) return false;
+  if (Platform.OS !== 'android' || reclaimedFor === appUserId) return false;
   const customerInfo = await Purchases.restorePurchases();
-  reclaimedFor = guestId;
+  reclaimedFor = appUserId;
   return Object.keys(customerInfo.entitlements.active).length > 0;
 }
 
@@ -356,11 +367,15 @@ export async function manageSubscription(): Promise<'opened' | 'test-store'> {
     return 'opened';
   }
 
+  /*
+   * `managementURL` is null whenever the Play subscription sits on a
+   * different RevenueCat id from this one - most often the guest it was
+   * bought as, after that guest linked to the signed-in account. The plan is
+   * still real and still billed to this Google account, so Play's own list is
+   * the right page either way.
+   */
   const customerInfo = await Purchases.getCustomerInfo();
-  if (!customerInfo.managementURL) {
-    throw new Error('The store could not find a subscription to manage.');
-  }
-  await Linking.openURL(customerInfo.managementURL);
+  await Linking.openURL(customerInfo.managementURL ?? PLAY_SUBSCRIPTIONS_URL);
   return 'opened';
 }
 

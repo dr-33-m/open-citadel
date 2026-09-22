@@ -51,11 +51,10 @@ export type CheckoutIntent =
  * never buys anything should not be registering itself with a server, and a
  * guest receives no free credits, so there is nothing to farm by reinstalling.
  */
-async function checkoutSubject(): Promise<{ id: string; guest: boolean } | null> {
+async function checkoutSubject(): Promise<string | null> {
   const account = useAccountStore.getState();
-  if (account.status === 'signedIn' && account.sub) return { id: account.sub, guest: false };
-  const guestId = await useGuestStore.getState().adopt();
-  return guestId ? { id: guestId, guest: true } : null;
+  if (account.status === 'signedIn' && account.sub) return account.sub;
+  return useGuestStore.getState().adopt();
 }
 
 /**
@@ -63,9 +62,9 @@ async function checkoutSubject(): Promise<{ id: string; guest: boolean } | null>
  * sale. A failure here is no worse than not asking: the store still refuses
  * the same product twice, and the purchase turns that into a restore.
  */
-async function reclaimQuietly(guestId: string): Promise<boolean> {
+async function reclaimQuietly(subject: string): Promise<boolean> {
   try {
-    return await reclaimStorePurchases(guestId);
+    return await reclaimStorePurchases(subject);
   } catch (error) {
     if (__DEV__) console.warn('[Checkout] Could not check Play for an earlier plan:', error);
     return false;
@@ -84,7 +83,7 @@ export async function completeCheckout(
   carryOut: (intent: CheckoutIntent) => Promise<void>,
   onAlreadyActive?: () => void,
 ): Promise<void> {
-  let subject: { id: string; guest: boolean } | null;
+  let subject: string | null;
   try {
     subject = await checkoutSubject();
   } catch (error) {
@@ -102,7 +101,7 @@ export async function completeCheckout(
   }
 
   try {
-    await identify(subject.id);
+    await identify(subject);
   } catch (error) {
     if (__DEV__) console.warn('[Checkout] Could not identify with RevenueCat:', error);
     showToast({
@@ -131,7 +130,7 @@ export async function completeCheckout(
      * again, since the first read may have landed before the transfer.
      */
     const [reclaimed] = await Promise.all([
-      subject.guest ? reclaimQuietly(subject.id) : false,
+      reclaimQuietly(subject),
       useSubscriptionStore.getState().refresh(),
     ]);
     if (reclaimed) await useSubscriptionStore.getState().refresh();
