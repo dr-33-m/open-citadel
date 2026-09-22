@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { GuestLinked } from '@/services/guest-identity';
+
 import { completeCheckout, type CheckoutIntent } from '../use-plan-checkout';
 
 /*
@@ -18,6 +20,9 @@ const { identify, reclaimStorePurchases, refresh, showToast, adopt, account, sub
 }));
 
 vi.mock('@/services/purchases', () => ({ identify, reclaimStorePurchases }));
+vi.mock('@/services/guest-identity', () => ({
+  GuestLinked: class GuestLinked extends Error {},
+}));
 vi.mock('@/components/toast/toast-provider', () => ({ showToast }));
 vi.mock('@/stores/account', () => ({
   useAccountStore: { getState: () => account },
@@ -182,6 +187,27 @@ describe('completeCheckout, with no account', () => {
 
     expect(carryOut).not.toHaveBeenCalled();
   });
+});
+
+describe('completeCheckout on a device whose guest joined an account', () => {
+  for (const intent of [BUY, RESTORE]) {
+    it(`sends a signed-out ${intent.kind} to sign in, and moves nothing`, async () => {
+      signedOut();
+      adopt.mockRejectedValue(new GuestLinked());
+      const carryOut = vi.fn(async () => undefined);
+
+      await completeCheckout(intent, carryOut);
+
+      expect(carryOut).not.toHaveBeenCalled();
+      expect(identify).not.toHaveBeenCalled();
+      expect(reclaimStorePurchases).not.toHaveBeenCalled();
+      expect(showToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'This device is linked to your account. Sign in to buy or restore a plan.',
+        }),
+      );
+    });
+  }
 });
 
 describe('completeCheckout, reclaiming a plan Play already holds', () => {

@@ -2,12 +2,16 @@ import { create } from 'zustand';
 
 import {
     ensureGuestIdentity,
-    forgetGuestIdentity,
+    GuestLinked,
     readGuestIdentity,
+    readLinkedGuest,
+    retireGuestIdentity,
 } from '@/services/guest-identity';
 
 /**
- * Whether this device is somebody who paid without making an account.
+ * Whether this device is somebody who paid without making an account, or
+ * was, until that guest joined an account (`linked`: it never becomes one
+ * again, and a signed-out reader is sent to sign in instead).
  *
  * A thin store over `services/guest-identity`, and it exists for one reason:
  * the answer lives in the Keychain, which is a promise, and three things that
@@ -18,7 +22,7 @@ import {
  * The service stays the authority. Nothing here decides anything - it
  * remembers what the service said so the UI can ask without waiting.
  */
-export type GuestStatus = 'unknown' | 'none' | 'guest';
+export type GuestStatus = 'unknown' | 'none' | 'guest' | 'linked';
 
 type GuestState = {
   status: GuestStatus;
@@ -27,11 +31,12 @@ type GuestState = {
   restore: () => Promise<void>;
   /**
    * Become a guest, or confirm we already are, and answer with the id to buy
-   * against. Called at the moment of purchase and nowhere else.
+   * against. Called at the moment of purchase and nowhere else. Throws
+   * `GuestLinked` on a device whose guest has joined an account.
    */
   adopt: () => Promise<string>;
-  /** Stop being one, once the plan has moved onto an account. */
-  release: () => Promise<void>;
+  /** Stop being one for good, once the guest has joined an account. */
+  retire: () => Promise<void>;
 };
 
 export const useGuestStore = create<GuestState>((set) => ({
@@ -48,7 +53,11 @@ export const useGuestStore = create<GuestState>((set) => ({
   restore: async () => {
     try {
       const identity = await readGuestIdentity();
-      set(identity ? { status: 'guest', guestId: identity.guestId } : { status: 'none', guestId: null });
+      if (identity) {
+        set({ status: 'guest', guestId: identity.guestId });
+        return;
+      }
+      set({ status: (await readLinkedGuest()) ? 'linked' : 'none', guestId: null });
     } catch (error) {
       if (__DEV__) console.warn('[Guest] Could not read the device identity:', error);
       set({ status: 'none', guestId: null });
@@ -56,13 +65,18 @@ export const useGuestStore = create<GuestState>((set) => ({
   },
 
   adopt: async () => {
-    const identity = await ensureGuestIdentity();
-    set({ status: 'guest', guestId: identity.guestId });
-    return identity.guestId;
+    try {
+      const identity = await ensureGuestIdentity();
+      set({ status: 'guest', guestId: identity.guestId });
+      return identity.guestId;
+    } catch (error) {
+      if (error instanceof GuestLinked) set({ status: 'linked', guestId: null });
+      throw error;
+    }
   },
 
-  release: async () => {
-    await forgetGuestIdentity();
-    set({ status: 'none', guestId: null });
+  retire: async () => {
+    await retireGuestIdentity();
+    set({ status: 'linked', guestId: null });
   },
 }));

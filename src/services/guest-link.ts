@@ -82,7 +82,11 @@ export async function linkGuestToAccount(): Promise<LinkOutcome> {
     clearTimeout(timer);
   }
 
-  if (response.status === 409) return 'accountHasPlan';
+  if (response.status === 409) {
+    // The guest joined a different account first. It is finished here too.
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    return body?.error === 'guest_linked_elsewhere' ? 'alreadyLinked' : 'accountHasPlan';
+  }
   if (!response.ok) throw new Error(`Linking refused (${response.status}).`);
   return 'linked';
 }

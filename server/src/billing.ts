@@ -178,7 +178,7 @@ export interface BillingService {
     accountId: string;
   }): Promise<
     | { linked: true; balance: CreditBalance }
-    | { linked: false; reason: 'account_has_plan' }
+    | { linked: false; reason: 'account_has_plan' | 'guest_linked_elsewhere' }
   >;
   /**
    * Fresh available credits, read straight from the row.
@@ -995,7 +995,7 @@ export function createBillingService(options: BillingOptions): BillingService {
     accountId: string;
   }): Promise<
     | { linked: true; balance: CreditBalance }
-    | { linked: false; reason: 'account_has_plan' }
+    | { linked: false; reason: 'account_has_plan' | 'guest_linked_elsewhere' }
   > {
     /*
      * This exact pair, already joined. Answered as a success, because it is
@@ -1016,6 +1016,13 @@ export function createBillingService(options: BillingOptions): BillingService {
     if (linkedTo === args.accountId) {
       return { linked: true, balance: await readEntitlement(args.accountId) };
     }
+    /*
+     * A guest joins one account, once. A token minted before the link is
+     * good for an hour, and without this it could link the same guest to a
+     * second account, which would send the first account's renewals - still
+     * arriving under the guest id - to somebody else.
+     */
+    if (linkedTo != null) return { linked: false, reason: 'guest_linked_elsewhere' };
 
     const target = await readAccountRow(args.accountId);
     /*

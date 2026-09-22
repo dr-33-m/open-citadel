@@ -30,6 +30,16 @@ import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 
 const ID_KEY = 'samwell.guest.id';
 const SECRET_KEY = 'samwell.guest.secret';
+/**
+ * Set once this device's guest has joined an account, and never cleared.
+ *
+ * Holds the retired guest id. Its whole job is to stop the device minting a
+ * second guest: a linked device that buys or restores signed out would
+ * otherwise become a new RevenueCat customer, the store would move the
+ * account's subscription onto it, and signing back in would move it home
+ * again. The account is where a plan lives once somebody has made one.
+ */
+const LINKED_KEY = 'samwell.guest.linked';
 
 /**
  * Stays on this device and out of any backup.
@@ -49,12 +59,13 @@ const EXPIRY_SKEW_MS = 60_000;
 export type GuestIdentity = { guestId: string; secret: string };
 
 /**
- * This device's plan has moved onto an account, so its own credential is
- * finished.
+ * This device's guest has joined an account, so its own credential is
+ * finished and it may not become a guest again.
  *
  * Its own type because it is the one refusal that is not a failure, and the
- * one the caller can act on: there is nothing to retry and nothing to repair,
- * the identity should simply be let go. Told apart from a flat refusal for
+ * one the caller can act on: there is nothing to retry and nothing to repair.
+ * The link hook lets the credential go; the checkout sends the reader to
+ * sign in. Told apart from a flat refusal for
  * the same reason `PurchaseCancelled` is told apart from a failed purchase.
  */
 export class GuestLinked extends Error {
@@ -82,7 +93,7 @@ let identityCache: { value: GuestIdentity | null } | null = null;
  */
 let mintInFlight: Promise<GuestIdentity> | null = null;
 /**
- * Bumped by `forgetGuestIdentity`, so work that began while this device was a
+ * Bumped by `retireGuestIdentity`, so work that began while this device was a
  * guest and finished after it stopped can tell that it is out of date.
  *
  * Linking is the only thing that ends a guest identity, and it can land in the
@@ -152,6 +163,8 @@ export async function readGuestIdentity(): Promise<GuestIdentity | null> {
 export async function ensureGuestIdentity(): Promise<GuestIdentity> {
   const existing = await readGuestIdentity();
   if (existing) return existing;
+  // One guest per device. Once it has joined an account, the account buys.
+  if (await readLinkedGuest()) throw new GuestLinked();
 
   mintInFlight ??= mint().finally(() => {
     mintInFlight = null;
@@ -205,18 +218,32 @@ export async function guestToken(): Promise<string | null> {
 }
 
 /**
- * Stop being a guest.
- *
- * Called once the device's plan has been moved onto an account. The secret is
- * the only thing that has to go - the server refuses to mint against a linked
- * guest anyway, so this is belt and braces - but leaving a live credential in
- * the Keychain for a subscription somebody else now owns is one more thing to
- * steal.
+ * The guest id this device retired when it joined an account, or null if it
+ * never has. See `LINKED_KEY`.
  */
-export async function forgetGuestIdentity(): Promise<void> {
+export async function readLinkedGuest(): Promise<string | null> {
+  return SecureStore.getItemAsync(LINKED_KEY, STORE_OPTIONS);
+}
+
+/**
+ * Stop being a guest, for good.
+ *
+ * Called once the device's guest has joined an account. The secret goes -
+ * the server refuses to mint against a linked guest anyway, and a live
+ * credential for a plan the account now owns is one more thing to steal -
+ * but the fact of the link stays, so `ensureGuestIdentity` never mints this
+ * device a second guest. Written before the deletes: a crash between them
+ * leaves a device that is linked and still holds a secret the server
+ * refuses, never one that has forgotten it was linked.
+ */
+export async function retireGuestIdentity(): Promise<void> {
+  // Before the first await, so a token fetch already reading the Keychain
+  // finds out it is out of date. See `generation`.
   generation += 1;
   cachedToken = null;
   identityCache = { value: null };
+  const guestId = await SecureStore.getItemAsync(ID_KEY, STORE_OPTIONS);
+  if (guestId) await SecureStore.setItemAsync(LINKED_KEY, guestId, STORE_OPTIONS);
   await Promise.all([
     SecureStore.deleteItemAsync(ID_KEY, STORE_OPTIONS),
     SecureStore.deleteItemAsync(SECRET_KEY, STORE_OPTIONS),
@@ -264,8 +291,15 @@ async function exchange(identity: GuestIdentity, mine: number): Promise<string> 
         `[Guest] Token refused (${response.status}) for ${identity.guestId}.`,
       );
     }
-    // The one refusal with somewhere to go. See `GuestLinked`.
-    if (response.status === 409) throw new GuestLinked();
+    /*
+     * The one refusal with somewhere to go. See `GuestLinked`. Remembered
+     * here as well as by the link hook, because a device can learn it while
+     * signed out: the link landed and its answer never came home.
+     */
+    if (response.status === 409) {
+      await retireGuestIdentity();
+      throw new GuestLinked();
+    }
     throw new Error(`Guest token refused (${response.status}).`);
   }
   const body = (await response.json()) as { token?: string; expiresIn?: number };

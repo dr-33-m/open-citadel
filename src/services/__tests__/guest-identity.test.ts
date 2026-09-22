@@ -35,9 +35,10 @@ const {
   GuestLinked,
   clearGuestToken,
   ensureGuestIdentity,
-  forgetGuestIdentity,
   guestToken,
   readGuestIdentity,
+  readLinkedGuest,
+  retireGuestIdentity,
 } = await import('../guest-identity');
 
 const GUEST_ID = 'guest:0f5f1d3a-9b1c-4e2a-8f6d-2b7c9e4a1d55';
@@ -232,7 +233,7 @@ describe('tokens', () => {
     const pending = guestToken();
     await asked;
 
-    await forgetGuestIdentity();
+    await retireGuestIdentity();
     deliver(jsonResponse({ token: 'tok-1', expiresIn: 3600 }));
 
     expect(await pending).toBe('tok-1');
@@ -243,19 +244,42 @@ describe('tokens', () => {
     // The Keychain read starts before the link lands and finishes after it.
     // What comes back is a deleted identity and must not be spent.
     const pending = guestToken();
-    await forgetGuestIdentity();
+    await retireGuestIdentity();
 
     expect(await pending).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('forgets the credential when the plan moves to an account', async () => {
+  it('drops the credential when the guest joins an account', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ token: 'tok-1', expiresIn: 3600 }));
     await guestToken();
 
-    await forgetGuestIdentity();
+    await retireGuestIdentity();
 
     expect(await readGuestIdentity()).toBeNull();
     expect(await guestToken()).toBeNull();
+  });
+
+  it('never mints a second guest once the first has joined an account', async () => {
+    // A second guest is how a signed-out Buy or Restore used to pull the
+    // account's subscription onto the phone. One guest per device.
+    fetchMock.mockResolvedValue(jsonResponse({ guestId: GUEST_ID }, 201));
+    await ensureGuestIdentity();
+    await retireGuestIdentity();
+    fetchMock.mockClear();
+
+    await expect(ensureGuestIdentity()).rejects.toBeInstanceOf(GuestLinked);
+    expect(await readLinkedGuest()).toBe(GUEST_ID);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('remembers the link when the server is the one to report it', async () => {
+    // The link landed and its answer never came home; the next token
+    // exchange is where the device finds out.
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'guest_linked' }, 409));
+    await expect(guestToken()).rejects.toBeInstanceOf(GuestLinked);
+
+    expect(await readLinkedGuest()).toBe(GUEST_ID);
+    await expect(ensureGuestIdentity()).rejects.toBeInstanceOf(GuestLinked);
   });
 });

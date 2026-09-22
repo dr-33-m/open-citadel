@@ -46,6 +46,7 @@ function resolve(
    * throws instead.
    */
   if (accountStatus === 'unknown') return { kind: 'unknown', id: null };
+  // A `linked` device is nobody while signed out: its plan is on the account.
   if (guestStatus === 'guest' && guestId) return { kind: 'guest', id: guestId };
   if (guestStatus === 'unknown') return { kind: 'unknown', id: null };
   return { kind: 'none', id: null };

@@ -136,6 +136,21 @@ describe('linkGuest', () => {
     expect(balance.available).toBe(GRANT);
   });
 
+  it('never links a guest to a second account', async () => {
+    // A guest token minted before the link is good for an hour. Without the
+    // guard it could hand the guest, and the renewals still arriving under
+    // its id, to somebody else.
+    await makeGuest();
+    await billing.grantMonthly({ accountId: GUEST, plan: 'grand_maester', periodEndMs: FUTURE });
+    await billing.linkGuest({ guestId: GUEST, accountId: ACCOUNT });
+
+    const other = await billing.linkGuest({ guestId: GUEST, accountId: 'account:someone-else' });
+
+    expect(other).toEqual({ linked: false, reason: 'guest_linked_elsewhere' });
+    expect(await billing.ledgerKeyFor(GUEST)).toBe(ACCOUNT);
+    expect((await billing.readEntitlement(ACCOUNT)).plan).toBe('grand_maester');
+  });
+
   it('still refuses a DIFFERENT account that already holds a plan', async () => {
     await makeGuest();
     await billing.grantMonthly({ accountId: GUEST, plan: 'maester', periodEndMs: FUTURE });

@@ -65,6 +65,23 @@ a balance, so a reader who had once subscribed was told their account
 live plan or a turn in flight; leftover credits are carried onto the linked
 row with a `LINK_CARRY` ledger entry.
 
+**Android sandbox pass, 2026-09-22: the account is where a plan ends up.**
+Two findings. First, TRANSFER lists every id of a customer, the SDK's
+`$RCAnonymousID:` alias included, and the webhook treated each as a ledger:
+plans moved onto `account:$RCAnonymousID:…`, a row nobody can sign in as.
+Anonymous ids are now no ledger at all (`ledgerKeyFor`). Second, the device
+minted a new guest after every link, so each signed-out Buy or Restore made a
+fresh RevenueCat customer and the store moved the account's subscription onto
+it, then back again on sign-in. Now one guest per device, kept for good:
+linking retires its secret but remembers the link (`samwell.guest.linked`), a
+linked device never mints another, and a signed-out Buy or Restore on it asks
+the reader to sign in instead of moving anything. The server also refuses to
+link one guest to a second account. A fresh device that never linked still
+buys with no account, which is what App Review asked for. The one remaining
+path to a new guest is an Android reinstall (the store is wiped), where the
+Play check before buying moves the plan to the new guest and signing in links
+it home.
+
 **Next:** step 6, the device pass, and the two Android jobs in
 `TODO-ANDROID.md`.
 

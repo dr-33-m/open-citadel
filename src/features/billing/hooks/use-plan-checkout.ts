@@ -3,6 +3,7 @@ import type { PurchasesPackage } from 'react-native-purchases';
 import type { PlanId } from 'samwell-shared';
 
 import { showToast } from '@/components/toast/toast-provider';
+import { GuestLinked } from '@/services/guest-identity';
 import { identify, reclaimStorePurchases } from '@/services/purchases';
 import { useAccountStore } from '@/stores/account';
 import { useGuestStore } from '@/stores/guest';
@@ -45,6 +46,7 @@ export type CheckoutIntent =
 
 /**
  * Who this purchase belongs to, minting a guest identity if there is nobody.
+ * Throws `GuestLinked` when this device's guest has already joined an account.
  *
  * The account wins when there is one, the same order `cloudHeaders` uses. The
  * guest is minted here rather than at launch on purpose: an install that
@@ -87,6 +89,19 @@ export async function completeCheckout(
   try {
     subject = await checkoutSubject();
   } catch (error) {
+    /*
+     * This device's guest has joined an account, so the account is where a
+     * plan lives now. Buying or restoring here would make a second guest,
+     * and the store would move the account's subscription onto it. Nothing
+     * is sold and nothing moves; signing in is the way to the plan.
+     */
+    if (error instanceof GuestLinked) {
+      showToast({
+        message: 'This device is linked to your account. Sign in to buy or restore a plan.',
+        key: 'billing',
+      });
+      return;
+    }
     if (__DEV__) console.warn('[Checkout] Could not mint a device identity:', error);
     subject = null;
   }

@@ -74,6 +74,14 @@ describe('linkGuestToAccount', () => {
     expect(await linkGuestToAccount()).toBe('accountHasPlan');
   });
 
+  it('reads a guest linked to a different account as finished, not as two plans', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: 'guest_linked_elsewhere' }), { status: 409 }),
+    );
+
+    expect(await linkGuestToAccount()).toBe('alreadyLinked');
+  });
+
   it('reads a linked device as the success the last attempt could not report', async () => {
     // The previous attempt worked and its answer never arrived. The server
     // will not mint for a linked guest, so this is where the app finds out -

@@ -69,11 +69,11 @@ export function useGuestLink(): void {
       /*
        * The last attempt worked and its answer never arrived. There is
        * nothing to move and nothing to announce - they were told the first
-       * time - so this only lets go of a credential for a plan that has
-       * already moved on, which is what stops the retry happening forever.
+       * time - so this only retires a credential for a plan that has already
+       * moved on, which is what stops the retry happening forever.
        */
       if (outcome === 'alreadyLinked') {
-        await useGuestStore.getState().release();
+        await useGuestStore.getState().retire();
         return;
       }
 
@@ -96,7 +96,7 @@ export function useGuestLink(): void {
         if (__DEV__) console.warn('[Guest] Linked, but the store did not follow:', error);
       }
 
-      // Before letting the identity go, so the reader hears about it from a
+      // Before retiring the identity, so the reader hears about it from a
       // component that is still mounted. `refresh` asks as the account, which
       // is where the plan now is.
       await useSubscriptionStore.getState().refresh();
@@ -106,9 +106,10 @@ export function useGuestLink(): void {
         key: 'billing',
       });
 
-      // Last. The guest token is refused from here on anyway, and dropping
-      // the credential earlier would leave nothing to retry with.
-      await useGuestStore.getState().release();
+      // Last. The guest token is refused from here on anyway, and retiring
+      // the credential earlier would leave nothing to retry with. Retired,
+      // not forgotten: this device never becomes a second guest.
+      await useGuestStore.getState().retire();
     })();
 
     return () => {
