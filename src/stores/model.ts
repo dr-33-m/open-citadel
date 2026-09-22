@@ -16,7 +16,7 @@ import { db } from "@/db/client";
 import { appSettings, localModels } from "@/db/schema";
 import { createLLM, type Backend } from "@dr33m/react-native-litert-lm";
 import * as Inference from "@/services/inference";
-import { verifyModelFile } from "@/services/model-file";
+import { deleteModelFiles, verifyModelFile } from "@/services/model-file";
 import {
   detectCapabilities,
   repoIdFromUrl,
@@ -250,7 +250,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
         continue;
       }
       if (check.ok || check.reason === 'unreadable') continue;
-      try { await deleteAsync(row.filePath, { idempotent: true }); } catch { /* already gone */ }
+      await deleteModelFiles(row.filePath);
       db.update(localModels)
         .set({ isDownloaded: 0, filePath: null, downloadedAt: null })
         .where(eq(localModels.id, row.id))
@@ -539,16 +539,13 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     const model = get().models.find((m) => m.id === id);
     if (!model) return;
 
-    if (model.filePath) {
-      try {
-        await deleteAsync(model.filePath, { idempotent: true });
-      } catch {}
-    }
-
+    // Unload first: the engine holds the model and its cache open while loaded.
     if (Inference.isModelLoaded() && get().activeModelId === id) {
       await Inference.unloadModel();
       set({ isLoaded: false });
     }
+
+    if (model.filePath) await deleteModelFiles(model.filePath);
 
     db.delete(localModels).where(eq(localModels.id, id)).run();
 

@@ -11,7 +11,14 @@
  * So every download is checked here before it counts as a model.
  */
 
-import { getInfoAsync, readAsStringAsync, EncodingType } from 'expo-file-system/legacy';
+import {
+  cacheDirectory,
+  deleteAsync,
+  EncodingType,
+  getInfoAsync,
+  readAsStringAsync,
+  readDirectoryAsync,
+} from 'expo-file-system/legacy';
 
 /** base64 of the 8-byte ASCII magic every `.litertlm` file opens with. */
 const LITERTLM_MAGIC_B64 = 'TElURVJUTE0=';
@@ -88,4 +95,43 @@ async function readServerMessage(filePath: string, sizeBytes: number): Promise<s
   } catch {
     return null;
   }
+}
+
+/**
+ * Everything a model left on disk: the file, and the caches the engine built
+ * from it.
+ *
+ * The engine names each cache after the model it came from, as
+ * `<filename>_<mtime>_<size>.xnnpack_cache` and the like. iOS writes them
+ * beside the model; Android writes them to the app's cache directory. Deleting
+ * only the model left up to 2.2 GB behind per model, and a cache half written
+ * when the OS killed a load was read back on every load after it.
+ *
+ * A sibling that is itself a `.litertlm` is another model, never a cache, so it
+ * is kept even when its name happens to start with this one's.
+ */
+export async function deleteModelFiles(filePath: string): Promise<void> {
+  const slash = filePath.lastIndexOf('/');
+  const dir = filePath.slice(0, slash + 1);
+  const prefix = filePath.slice(slash + 1) + '_';
+
+  await deleteAsync(filePath, { idempotent: true }).catch(() => {});
+
+  const dirs = new Set([dir, cacheDirectory].filter((d): d is string => !!d));
+  await Promise.all(
+    [...dirs].map(async (d) => {
+      let names: string[];
+      try {
+        names = await readDirectoryAsync(d);
+      } catch {
+        return;
+      }
+      const caches = names.filter((n) => isCacheOf(n, prefix));
+      await Promise.all(caches.map((n) => deleteAsync(d + n, { idempotent: true }).catch(() => {})));
+    }),
+  );
+}
+
+function isCacheOf(name: string, prefix: string): boolean {
+  return name.startsWith(prefix) && !name.endsWith('.litertlm');
 }
