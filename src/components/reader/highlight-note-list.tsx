@@ -1,5 +1,5 @@
 import { Pencil, StickyNote, Trash2 } from "@/components/icons";
-import React, { useRef } from "react";
+import React from "react";
 import { View } from "react-native";
 import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
 import { useCSSVariable } from "uniwind";
@@ -8,6 +8,7 @@ import { BoxFade } from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
 import { spacing } from "@/constants/theme";
 import { Touchable } from "@/components/ui/touchable";
+import { useScrollToNewNote } from "@/components/reader/use-scroll-to-new-note";
 import { cn } from "@/lib/cn";
 import { asColor } from "@/utils/colors";
 
@@ -56,25 +57,18 @@ export function HighlightNoteList({
     "--color-muted-foreground",
   ]);
 
-  /*
-   * Oldest first, the order they were written in, so a note just added lands
-   * at the bottom of the box, out of sight under the first ones. The box
-   * follows it down. Only on a new note: an edit or a delete leaves the reader
-   * where they were, and so does opening the sheet.
-   */
-  const scrollRef = useRef<GestureScrollView>(null);
-  const shownCount = useRef(notes.length);
-  const followNewNote = () => {
-    const added = notes.length > shownCount.current;
-    shownCount.current = notes.length;
-    if (added) scrollRef.current?.scrollToEnd({ animated: true });
-  };
+  // Oldest first, the order they were written in, so a new note lands under
+  // the others and the box brings it up. See `useScrollToNewNote`.
+  const { scrollRef, onScroll, onLayout, onNoteLayout } = useScrollToNewNote(
+    notes.map((note) => note.id),
+  );
 
   return (
     <BoxFade surface="popover">
       <GestureScrollView
         ref={scrollRef}
-        onContentSizeChange={followNewNote}
+        onScroll={onScroll}
+        onLayout={onLayout}
         style={{ maxHeight: NOTES_MAX_HEIGHT }}
         contentContainerStyle={{ gap: spacing[2] }}
         showsVerticalScrollIndicator={false}
@@ -84,6 +78,7 @@ export function HighlightNoteList({
         {notes.map((note) => (
           <View
             key={note.id}
+            onLayout={onNoteLayout(note.id)}
             className={cn(
               "flex-row items-start gap-3 bg-muted p-3",
               editingId === note.id && "border border-primary",
