@@ -2,7 +2,6 @@ import { create } from 'zustand';
 
 import {
     ensureGuestIdentity,
-    forgetGuestLink,
     GuestLinked,
     onGuestRetired,
     readGuestIdentity,
@@ -39,8 +38,6 @@ type GuestState = {
   adopt: () => Promise<string>;
   /** Stop being one for good, once the guest has joined an account. */
   retire: () => Promise<void>;
-  /** Testing only: forget a link so this device may buy as a guest again. */
-  forgetLink: () => Promise<boolean>;
 };
 
 export const useGuestStore = create<GuestState>((set) => ({
@@ -81,12 +78,6 @@ export const useGuestStore = create<GuestState>((set) => ({
 
   // The status follows from the listener below, whoever retired the guest.
   retire: () => retireGuestIdentity(),
-
-  forgetLink: async () => {
-    const forgot = await forgetGuestLink();
-    if (forgot) set({ status: 'none', guestId: null });
-    return forgot;
-  },
 }));
 
 /*
