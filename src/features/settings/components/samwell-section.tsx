@@ -1,6 +1,6 @@
 import { Cloud, Info, Smartphone, type LucideIcon } from "@/components/icons";
 import React from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
 import { SamwellText } from "@/components/samwell-text";
@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { PrefixIcon } from "@/components/ui/prefix-icon";
 import { Touchable } from "@/components/ui/touchable";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
+import { useForgetDeviceLink } from "@/features/billing/hooks/use-forget-device-link";
 import { getCloudBlocker } from "@/features/chat/utils/cloud-access";
 import { PURCHASES_ENABLED } from "@/constants/revenuecat";
 import { useCloudIdentity } from "@/hooks/use-cloud-identity";
@@ -24,6 +25,9 @@ import { isNativeAvailable } from "@/services/inference";
 import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
+
+/** Long enough that nobody resting a thumb on the heading trips it. */
+const FORGET_LINK_HOLD_MS = 3_000;
 
 /**
  * The Samwell group: which engine answers, and its controls. Each panel
@@ -53,6 +57,7 @@ export const SamwellSection = React.memo(function SamwellSection({
     initialMode && initialMode !== samwellMode ? initialMode : null,
   );
   const nativeAvailable = React.useMemo(() => isNativeAvailable(), []);
+  const forgetDeviceLink = useForgetDeviceLink();
   const displayedMode = previewMode ?? samwellMode;
   const cloudBlocker = getCloudBlocker({
     configured: cloudBaseUrl.length > 0 && ACCOUNT_ENABLED,
@@ -85,7 +90,13 @@ export const SamwellSection = React.memo(function SamwellSection({
 
   return (
     <SettingsSection>
-      <View className="gap-1">
+      {/* A long hold on the heading is a tester's reset. See the hook. */}
+      <Pressable
+        className="gap-1"
+        onLongPress={forgetDeviceLink}
+        delayLongPress={FORGET_LINK_HOLD_MS}
+        accessible={false}
+      >
         <ThemedText
           type="labelMd"
           color={asColor(primary)}
@@ -98,7 +109,7 @@ export const SamwellSection = React.memo(function SamwellSection({
             ? "Puts your knowledge to work."
             : "Your reading companion"}
         </ThemedText>
-      </View>
+      </Pressable>
 
       {/* Mode cards */}
       <View className="flex-row gap-3">

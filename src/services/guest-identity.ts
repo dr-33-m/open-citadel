@@ -271,6 +271,27 @@ export async function retireGuestIdentity(): Promise<void> {
 }
 
 /**
+ * Undo a retirement, so this device may become a guest again.
+ *
+ * A tester's escape hatch, reached from a hidden long-press. The link marker
+ * is permanent by design and an Android device only loses it by clearing
+ * storage, which takes the reader's books with it. Only a LINKED device is
+ * touched: its plan already lives on the account, so nothing is stranded.
+ * A live guest is never forgotten here, because a guest can hold a plan no
+ * account has, and forgetting it would orphan what somebody paid for.
+ *
+ * Answers whether there was a link to forget.
+ */
+export async function forgetGuestLink(): Promise<boolean> {
+  if (!(await readLinkedGuest())) return false;
+  generation += 1;
+  cachedToken = null;
+  identityCache = { value: null };
+  await SecureStore.deleteItemAsync(LINKED_KEY, STORE_OPTIONS);
+  return true;
+}
+
+/**
  * Drop everything held in memory, keeping everything that is stored.
  *
  * Both caches are memoised reads of durable state - the Keychain and the

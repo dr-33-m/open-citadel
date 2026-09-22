@@ -35,6 +35,7 @@ const {
   GuestLinked,
   clearGuestToken,
   ensureGuestIdentity,
+  forgetGuestLink,
   guestToken,
   onGuestRetired,
   readGuestIdentity,
@@ -287,5 +288,27 @@ describe('tokens', () => {
     expect(retired).toHaveBeenCalledTimes(1);
     expect(await readLinkedGuest()).toBe(GUEST_ID);
     await expect(ensureGuestIdentity()).rejects.toBeInstanceOf(GuestLinked);
+  });
+});
+
+describe("a tester's reset", () => {
+  it('forgets a link, so the device can buy as a new guest', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ guestId: GUEST_ID }, 201));
+    await ensureGuestIdentity();
+    await retireGuestIdentity();
+
+    expect(await forgetGuestLink()).toBe(true);
+
+    expect(await readLinkedGuest()).toBeNull();
+    await expect(ensureGuestIdentity()).resolves.toEqual({ guestId: GUEST_ID, secret: SECRET });
+  });
+
+  it('never touches a live guest, which may hold a plan no account has', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ guestId: GUEST_ID }, 201));
+    await ensureGuestIdentity();
+
+    expect(await forgetGuestLink()).toBe(false);
+
+    expect(await readGuestIdentity()).toEqual({ guestId: GUEST_ID, secret: SECRET });
   });
 });
