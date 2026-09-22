@@ -330,7 +330,7 @@ export function CloudPanel({
             reader had swiped to springs back to the default. */}
         <PlanPicker
           key="plans"
-          subtitle="He thinks on our servers, so a plan is a monthly balance of Neurons. Your books and highlights stay on this device."
+          subtitle="Monthly Neurons for Samwell's cloud brains. No account needed."
           packages={packages}
           catalogue={catalogue}
           modelCounts={modelCounts}

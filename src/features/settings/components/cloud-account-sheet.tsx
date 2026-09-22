@@ -12,8 +12,11 @@ import { asColor } from "@/utils/colors";
  * The question behind that tap is almost never "what does it unlock" — the
  * card above already says that. It is "what are you taking from me". So the
  * answer leads with what stays put, and only then says what the account is
- * actually for. Two short lines: anything longer reads as a policy, and a
- * policy is what people are afraid of here.
+ * actually for.
+ *
+ * Which is no longer reaching the cloud: a plan can be bought on this device
+ * without one (App Review 5.1.1(v)). What an account adds is a home for that
+ * plan beyond this phone, so that is all it claims.
  */
 export function CloudAccountSheet({
   visible,
@@ -35,15 +38,15 @@ export function CloudAccountSheet({
         </SamwellText>
 
         <SamwellText type="bodyMd" color={asColor(mutedForeground)}>
-          It is for reaching the cloud brains securely, and keeping your
-          subscription active.
+          You can buy a plan without one. An account puts your plan in your
+          name, so it works on any device you sign in on.
         </SamwellText>
 
         {/* Its own paragraph, and last. The way out matters most to the person
             who has just read the two above and decided the answer is no. */}
         <SamwellText type="bodyMd" color={asColor(mutedForeground)}>
-          Alternatively you can use Samwell on your device without an account
-          via offline mode.
+          Without an account, Samwell still works on this device, offline or
+          with a plan bought here.
         </SamwellText>
       </View>
     </Sheet>

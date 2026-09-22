@@ -29,8 +29,8 @@ import { CREDIT_PLANS } from "samwell-shared";
  *
  * Optional by design. A reader who never signs in loses nothing local — the
  * books, the highlights, the notes and the on-device Samwell all work exactly
- * as they did. What an account buys is Grand Maester Samwell, who runs on a
- * server and needs somebody to answer for the work.
+ * as they did — and can buy a plan for Samwell Cloud on this device too. What
+ * an account adds is that plan in their name, on every device they sign in on.
  *
  * Sign in and create account are one flow with two front doors, so the two
  * buttons differ only in which screen Logto opens on. Someone who tapped the
@@ -101,7 +101,7 @@ export function AccountCard() {
   } else if (isGuest && planActive && planName) {
     planSummary = `${planName} is on this device. Sign in to use it anywhere else.`;
   } else {
-    planSummary = "Sign in or create account to use Samwell Cloud.";
+    planSummary = "Sign in to keep your plan with you on any device.";
   }
 
   const leave = async () => {
