@@ -168,7 +168,7 @@ function formatValue(
 }
 
 /**
- * Determinate or indeterminate progress bar. The fill width (determinate) and
+ * Determinate or indeterminate progress bar. The fill scale (determinate) and
  * the sliding bar (indeterminate) are both driven on the UI thread, so updates
  * never re-render past the value change itself.
  *
@@ -260,31 +260,47 @@ export const Progress = forwardRef<View, ProgressProps>(
     };
 
     /*
+     * LOCAL EDIT (Open Citadel): the fill scales, it no longer changes width.
+     *
+     * Upstream animated `width`, a layout prop. On Android a layout update
+     * made from the UI thread can be dropped by the next React commit, and it
+     * was: upgrading a plan left the neurons bar half full under a balance
+     * that said it was full, until an unrelated re-render put it right. A
+     * transform never goes through layout, so there is nothing to drop, and
+     * it is the house rule besides. The track is square, so scaling the fill
+     * distorts nothing.
+     *
      * Both styles set every property either of them sets. The two are swapped
      * on the same view when a bar stops being indeterminate, and an animated
      * property that one style drops is not reset by the other — it is simply
      * left at whatever it was last given, which would strand a half-faded bar
      * at that opacity for the rest of its life.
      */
+    // The fill grows from the edge the text starts at.
+    const origin = sign === 1 ? 'left' : 'right';
+
     const determinateStyle = useAnimatedStyle(() => ({
-      width: trackWidth.value * progress.value,
+      width: '100%',
       opacity: 1,
-      transform: [{ translateX: 0 }],
+      transformOrigin: origin,
+      transform: [{ translateX: 0 }, { scaleX: progress.value }],
     }));
 
     const indeterminateStyle = useAnimatedStyle(() => {
       if (reducedMotion) {
         // Nothing travels: the whole track carries the bar and the bar breathes.
         return {
-          width: trackWidth.value,
+          width: '100%',
           opacity: interpolate(slide.value, [0, 1], [1, PULSE_FLOOR]),
-          transform: [{ translateX: 0 }],
+          transformOrigin: origin,
+          transform: [{ translateX: 0 }, { scaleX: 1 }],
         };
       }
       const barWidth = trackWidth.value * INDETERMINATE_WIDTH;
       return {
-        width: barWidth,
+        width: `${INDETERMINATE_WIDTH * 100}%`,
         opacity: 1,
+        transformOrigin: origin,
         transform: [
           {
             // The loop travels the way the text does. Yoga mirrors the track
@@ -297,6 +313,7 @@ export const Progress = forwardRef<View, ProgressProps>(
                 : [trackWidth.value, -barWidth]
             ),
           },
+          { scaleX: 1 },
         ],
       };
     });
