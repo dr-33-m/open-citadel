@@ -100,11 +100,19 @@ export function useGuestLink(): void {
       // component that is still mounted. `refresh` asks as the account, which
       // is where the plan now is.
       await useSubscriptionStore.getState().refresh();
-      showToast({
-        message: 'Your plan is on your account now. Sign in anywhere to use it.',
-        tone: 'success',
-        key: 'billing',
-      });
+      /*
+       * Only when a plan actually arrived. A guest is minted at the moment of
+       * purchase, so one whose purchase was cancelled - or one the server has
+       * forgotten - links with nothing to move, and telling that reader
+       * their plan has moved would be telling them they have one.
+       */
+      if (useSubscriptionStore.getState().status === 'active') {
+        showToast({
+          message: 'Your plan is on your account now. Sign in anywhere to use it.',
+          tone: 'success',
+          key: 'billing',
+        });
+      }
 
       // Last. The guest token is refused from here on anyway, and retiring
       // the credential earlier would leave nothing to retry with. Retired,
