@@ -62,3 +62,8 @@ build-*.apk
 .vscode/
 # Local build artifacts. `eas build --local` drops these in the repo root.
 build-*.tar.gz
+# Local store builds (eas build --local --output). Also keeps them out of the
+# next local build's project archive, which is packed from this folder.
+*.ipa
+*.aab
+*.apk
