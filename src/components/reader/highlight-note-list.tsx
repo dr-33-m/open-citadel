@@ -1,5 +1,5 @@
 import { Pencil, StickyNote, Trash2 } from "@/components/icons";
-import React from "react";
+import React, { useRef } from "react";
 import { View } from "react-native";
 import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
 import { useCSSVariable } from "uniwind";
@@ -56,9 +56,25 @@ export function HighlightNoteList({
     "--color-muted-foreground",
   ]);
 
+  /*
+   * Oldest first, the order they were written in, so a note just added lands
+   * at the bottom of the box, out of sight under the first ones. The box
+   * follows it down. Only on a new note: an edit or a delete leaves the reader
+   * where they were, and so does opening the sheet.
+   */
+  const scrollRef = useRef<GestureScrollView>(null);
+  const shownCount = useRef(notes.length);
+  const followNewNote = () => {
+    const added = notes.length > shownCount.current;
+    shownCount.current = notes.length;
+    if (added) scrollRef.current?.scrollToEnd({ animated: true });
+  };
+
   return (
     <BoxFade surface="popover">
       <GestureScrollView
+        ref={scrollRef}
+        onContentSizeChange={followNewNote}
         style={{ maxHeight: NOTES_MAX_HEIGHT }}
         contentContainerStyle={{ gap: spacing[2] }}
         showsVerticalScrollIndicator={false}
