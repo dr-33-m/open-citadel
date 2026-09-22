@@ -121,6 +121,29 @@ export function PageFade({
 }
 
 /**
+ * A capped box that scrolls inside a larger scroll, like the notes on a
+ * highlight inside its sheet.
+ *
+ * Both edges, at page depth: the box is short, so either end can be the one
+ * hiding something. No `flex-1`, unlike `PageFade`: the box sizes itself from
+ * the scrollable's own `maxHeight`, and flex would stretch it to its parent.
+ */
+export function BoxFade({
+  surface = 'background',
+  children,
+}: {
+  surface?: FadeSurface;
+  children: React.ReactNode;
+}) {
+  const color = useFadeColor(surface);
+  return (
+    <ScrollFade size={PAGE_FADE} edges="both" color={color}>
+      {children}
+    </ScrollFade>
+  );
+}
+
+/**
  * `PageFade` for a transcript — the same depth and the same colours, reading
  * the scroll from `MessageScroller` instead of from the child.
  *
