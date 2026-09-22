@@ -77,6 +77,9 @@ export const ENTITLEMENT_CACHE_TTL_MS = 60_000;
 
 const REVENUECAT_API = 'https://api.revenuecat.com/v1/subscribers';
 const ACCOUNT_PREFIX = 'account:';
+const GUEST_PREFIX = 'guest:';
+/** The id the RevenueCat SDK gives an install before anybody logs in. */
+const ANONYMOUS_PREFIX = '$RCAnonymousID:';
 
 /** How long an insider code may grant for, per the plan: up to a year. */
 export const INSIDER_MAX_DURATION_DAYS = 365;
@@ -156,6 +159,11 @@ export interface BillingService {
     source?: CreditSource;
     description?: string;
   }): Promise<GrantResult>;
+  /**
+   * The ledger a RevenueCat app user id belongs to, or null for an id that
+   * is never one (the SDK's anonymous ids); see the implementation.
+   */
+  ledgerKeyFor(appUserId: string): Promise<string | null>;
   /** Clears the plan, keeps the balance for the record. */
   clearPlan(accountId: string): Promise<void>;
   /** A subscription RevenueCat moved between ids; see the implementation. */
@@ -432,6 +440,9 @@ export function createBillingService(options: BillingOptions): BillingService {
    */
   async function revenueCatSubjectsFor(accountId: string): Promise<string[]> {
     if (!accountId.startsWith(ACCOUNT_PREFIX)) return [accountId];
+    // A row the old TRANSFER handler made under an anonymous alias. Nobody
+    // can sign in as it, so it is never reconciled into a grant of its own.
+    if (accountId.startsWith(`${ACCOUNT_PREFIX}${ANONYMOUS_PREFIX}`)) return [];
 
     const subjects = [accountId.slice(ACCOUNT_PREFIX.length)];
     const linked = await client.execute({
@@ -920,6 +931,41 @@ export function createBillingService(options: BillingOptions): BillingService {
   }
 
   // -- Guests ------------------------------------------------------------------
+
+  /**
+   * The ledger an app user id belongs to.
+   *
+   * Four cases, and the last two are the ones with teeth:
+   *
+   *  - a bare id is a Logto subject, because that is what the app passes to
+   *    `Purchases.logIn`, and the column stores the prefixed form;
+   *  - a `guest:` id is a device that bought without an account, and it is
+   *    already its own ledger key;
+   *  - a `guest:` id that has since been LINKED belongs to the account it was
+   *    linked to. RevenueCat will not move a subscription off an identified
+   *    id, so renewals keep arriving under the guest id for as long as the
+   *    subscription lives. Without this lookup they would credit an identity
+   *    nobody can sign in as;
+   *  - an anonymous id (`$RCAnonymousID:…`) is no ledger at all. The SDK
+   *    starts every install on one and keeps it as an alias after `logIn`, so
+   *    RevenueCat lists it beside the real id, in a TRANSFER's
+   *    `transferred_from` and `transferred_to` above all. Read as a Logto
+   *    subject it became `account:$RCAnonymousID:…`: a row nobody can sign in
+   *    as, which a transfer moved a reader's whole plan onto, and which the
+   *    reconcile then granted a fresh month of its own.
+   */
+  async function ledgerKeyFor(appUserId: string): Promise<string | null> {
+    if (appUserId.startsWith(ANONYMOUS_PREFIX)) return null;
+    if (appUserId.startsWith(GUEST_PREFIX)) {
+      const linked = await client.execute({
+        sql: 'SELECT linked_account_id FROM guest_identities WHERE guest_id = ?',
+        args: [appUserId],
+      });
+      const linkedTo = linked.rows[0]?.linked_account_id;
+      return linkedTo == null ? appUserId : String(linkedTo);
+    }
+    return appUserId.startsWith(ACCOUNT_PREFIX) ? appUserId : `${ACCOUNT_PREFIX}${appUserId}`;
+  }
 
   /**
    * Move a guest's plan and history onto the account they have just made.
@@ -1573,6 +1619,7 @@ export function createBillingService(options: BillingOptions): BillingService {
     readEntitlement,
     syncEntitlement,
     grantMonthly,
+    ledgerKeyFor,
     clearPlan,
     transferPlan,
     linkGuest,

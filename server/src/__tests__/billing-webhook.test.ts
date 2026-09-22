@@ -270,6 +270,126 @@ describe('routeRevenueCatEvent', () => {
     expect((await accountRow())?.plan).toBeNull();
   });
 
+  describe('the anonymous ids RevenueCat lists beside the real ones', () => {
+    const GUEST = 'guest:0f0e4c1a-6c8e-4f7a-9d1b-2a3b4c5d6e7f';
+
+    async function ghostRows(): Promise<number> {
+      const result = await client.execute(
+        "SELECT COUNT(*) AS n FROM account_credits WHERE account_id LIKE 'account:$RCAnonymousID:%'",
+      );
+      return Number(result.rows[0]?.n);
+    }
+
+    async function linkGuestTo(accountId: string): Promise<void> {
+      await client.execute({
+        sql: `INSERT INTO guest_identities (guest_id, secret_sha256, created_at_ms, linked_account_id, linked_at_ms)
+              VALUES (?, 'x', ?, ?, ?)`,
+        args: [GUEST, NOW, accountId, NOW],
+      });
+    }
+
+    it('moves a plan to the receiving customer, not onto its anonymous alias', async () => {
+      const OTHER = 'account:sub-reader-2';
+      await billing.grantMonthly({
+        accountId: ACCOUNT,
+        plan: 'grand_maester',
+        periodEndMs: NOW + 30 * 86_400_000,
+      });
+
+      await routeRevenueCatEvent(
+        {
+          id: 'evt-transfer',
+          type: 'TRANSFER',
+          transferred_from: [SUB, '$RCAnonymousID:aaa'],
+          transferred_to: ['sub-reader-2', '$RCAnonymousID:bbb'],
+        },
+        billing,
+      );
+
+      expect(String((await accountRow(OTHER))?.plan)).toBe('grand_maester');
+      expect(Number((await accountRow(OTHER))?.balance)).toBe(
+        CREDIT_PLANS.grand_maester.monthlyCredits,
+      );
+      expect(await ghostRows()).toBe(0);
+    });
+
+    it('leaves a plan where it is when it moves from a linked guest to that account', async () => {
+      // The device pass: bought as a guest, signed in, linked, and the link's
+      // restore moved the Play subscription onto the account in RevenueCat.
+      await linkGuestTo(ACCOUNT);
+      await billing.grantMonthly({
+        accountId: ACCOUNT,
+        plan: 'grand_maester',
+        periodEndMs: NOW + 30 * 86_400_000,
+      });
+
+      const outcome = await routeRevenueCatEvent(
+        {
+          id: 'evt-transfer',
+          type: 'TRANSFER',
+          transferred_from: [GUEST, '$RCAnonymousID:aaa'],
+          transferred_to: [SUB, '$RCAnonymousID:bbb'],
+        },
+        billing,
+      );
+
+      expect(outcome.action).toBe('reconciled');
+      expect(String((await accountRow())?.plan)).toBe('grand_maester');
+      expect(Number((await accountRow())?.balance)).toBe(
+        CREDIT_PLANS.grand_maester.monthlyCredits,
+      );
+      expect(await ghostRows()).toBe(0);
+    });
+
+    it('credits a renewal to the account when app_user_id is the anonymous alias', async () => {
+      await routeRevenueCatEvent(
+        event({
+          type: 'RENEWAL',
+          app_user_id: '$RCAnonymousID:aaa',
+          aliases: ['$RCAnonymousID:aaa', SUB],
+          entitlement_ids: ['grand_maester'],
+          expiration_at_ms: NOW + 30 * 86_400_000,
+        }),
+        billing,
+      );
+
+      expect(String((await accountRow())?.plan)).toBe('grand_maester');
+      expect(await ghostRows()).toBe(0);
+    });
+
+    it('credits a renewal under a linked guest to its account', async () => {
+      await linkGuestTo(ACCOUNT);
+
+      await routeRevenueCatEvent(
+        event({
+          type: 'RENEWAL',
+          app_user_id: GUEST,
+          entitlement_ids: ['grand_maester'],
+          expiration_at_ms: NOW + 30 * 86_400_000,
+        }),
+        billing,
+      );
+
+      expect(String((await accountRow())?.plan)).toBe('grand_maester');
+      expect(await accountRow(GUEST)).toBeUndefined();
+    });
+
+    it('ignores an event that names nobody but an anonymous id', async () => {
+      const outcome = await routeRevenueCatEvent(
+        event({
+          type: 'INITIAL_PURCHASE',
+          app_user_id: '$RCAnonymousID:aaa',
+          entitlement_ids: ['grand_maester'],
+          expiration_at_ms: NOW + 30 * 86_400_000,
+        }),
+        billing,
+      );
+
+      expect(outcome.action).toBe('ignored');
+      expect(await ghostRows()).toBe(0);
+    });
+  });
+
   it('reconciles the receiver of a transfer from an id it never granted', async () => {
     const reconciled = createBillingService({
       client,
@@ -474,7 +594,7 @@ describe('routeRevenueCatEvent', () => {
     ).toMatchObject({ action: 'ignored' });
     expect(
       await routeRevenueCatEvent({ type: 'RENEWAL', entitlement_id: 'maester' }, billing),
-    ).toMatchObject({ action: 'ignored', note: 'no app_user_id' });
+    ).toMatchObject({ action: 'ignored', note: 'no ledger for this customer' });
 
     // None of the above touched money.
     expect(await grantCount()).toBe(0);

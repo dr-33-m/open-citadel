@@ -21,42 +21,15 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { planForEntitlement, planRank, type PlanId } from 'samwell-shared';
 
 import { billing, type BillingService } from './billing.js';
-import { db } from './db.js';
-
-const ACCOUNT_PREFIX = 'account:';
-
-const GUEST_PREFIX = 'guest:';
-
-/**
- * The ledger an event belongs to.
- *
- * Three cases, and the third is the one with teeth:
- *
- *  - a bare id is a Logto subject, because that is what the app passes to
- *    `Purchases.logIn`, and the column stores the prefixed form;
- *  - a `guest:` id is a device that bought without an account, and it is
- *    already its own ledger key;
- *  - a `guest:` id that has since been LINKED belongs to the account it was
- *    linked to. RevenueCat will not move a subscription off an identified id,
- *    so renewals keep arriving under the guest id for as long as the
- *    subscription lives. Without this lookup they would credit an identity
- *    nobody can sign in as, and the reader would watch their plan lapse while
- *    being charged for it.
- */
-async function toAccountId(appUserId: string): Promise<string> {
-  if (appUserId.startsWith(GUEST_PREFIX)) {
-    const linked = await db.execute({
-      sql: 'SELECT linked_account_id FROM guest_identities WHERE guest_id = ?',
-      args: [appUserId],
-    });
-    const linkedTo = linked.rows[0]?.linked_account_id;
-    return linkedTo == null ? appUserId : String(linkedTo);
-  }
-  return appUserId.startsWith(ACCOUNT_PREFIX) ? appUserId : `${ACCOUNT_PREFIX}${appUserId}`;
-}
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+}
+
+/** The distinct ledgers a list of one customer's ids resolves to, in order. */
+async function ledgerKeysOf(ids: string[], billing: BillingService): Promise<string[]> {
+  const keys = await Promise.all(ids.map((id) => billing.ledgerKeyFor(id)));
+  return [...new Set(keys.filter((key): key is string => key != null))];
 }
 
 /** The entitlements an event names, in whatever shape RevenueCat sent them. */
@@ -124,30 +97,44 @@ export async function routeRevenueCatEvent(
      */
     const fromIds = stringList(event.transferred_from);
     const toIds = stringList(event.transferred_to);
-    const fromAccountIds = await Promise.all(fromIds.map(toAccountId));
     const eventId = typeof event.id === 'string' ? event.id : null;
+    const note = `transfer from ${fromIds.length} to ${toIds.length} id(s)`;
+    /*
+     * Each side lists every id of one RevenueCat customer: the id the app
+     * logged in with, and the anonymous id the SDK started on, kept as an
+     * alias. One customer is one ledger, so the lists are resolved and the
+     * anonymous ids dropped (see `ledgerKeyFor`). Treating each listed id as
+     * a receiver moved a reader's plan onto their own anonymous alias.
+     */
+    const fromAccountIds = await ledgerKeysOf(fromIds, billing);
+    const [toAccountId] = await ledgerKeysOf(toIds, billing);
 
-    let moved = 0;
-    for (const to of toIds) {
-      const result = await billing.transferPlan({
-        eventId,
-        fromAccountIds,
-        toAccountId: await toAccountId(to),
-      });
-      if (result.action === 'moved') moved += 1;
+    if (toAccountId == null) {
+      /*
+       * Gone to a customer we never key a ledger on. The app identifies
+       * before every purchase and restore, so this should not happen; if it
+       * does, each sender is asked what it still holds rather than guessed.
+       */
+      for (const sender of fromAccountIds) await billing.syncEntitlement(sender);
+      return { action: 'reconciled', note: `${note}, to no ledger` };
     }
-    return {
-      action: moved > 0 ? 'granted' : 'reconciled',
-      note: `transfer from ${fromIds.length} to ${toIds.length} id(s)`,
-    };
+
+    const result = await billing.transferPlan({ eventId, fromAccountIds, toAccountId });
+    return { action: result.action === 'moved' ? 'granted' : 'reconciled', note };
   }
 
-  if (appUserId == null) {
+  const named = [
+    ...(appUserId == null ? [] : [appUserId]),
+    ...stringList(event.aliases),
+    ...(typeof event.original_app_user_id === 'string' ? [event.original_app_user_id] : []),
+  ];
+  const [accountId] = await ledgerKeysOf(named, billing);
+
+  if (accountId == null) {
     // An event we cannot attribute is worth knowing about but not worth
     // retrying for: no account means nothing to act on, whoever resends it.
-    return { action: 'ignored', note: 'no app_user_id' };
+    return { action: 'ignored', note: 'no ledger for this customer' };
   }
-  const accountId = await toAccountId(appUserId);
 
   if (type === 'CANCELLATION') {
     /*
@@ -242,6 +229,9 @@ export interface RevenueCatEvent {
   entitlement_id?: unknown;
   entitlement_ids?: unknown;
   expiration_at_ms?: unknown;
+  /** Every id of the customer, the anonymous one included. */
+  aliases?: unknown;
+  original_app_user_id?: unknown;
   /** TRANSFER only. The ids a subscription left, and the ids it went to. */
   transferred_from?: unknown;
   transferred_to?: unknown;
