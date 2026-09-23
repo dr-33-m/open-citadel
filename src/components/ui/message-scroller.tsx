@@ -26,7 +26,9 @@
  * The rule behind every part of it: **the reader's position is theirs**. New
  * content follows the bottom only while they are already at the bottom, and
  * scrolling away hands control back to them until they ask for it again.
- * Content added above them never moves what they are looking at.
+ * Sending a message is asking: a new turn of theirs at the bottom takes them
+ * there and follows the reply. Content added above them never moves what they
+ * are looking at.
  *
  * Needs a bounded height — from `flex-1` in a column, or an explicit one.
  * Given an unbounded parent it grows to fit its content and never scrolls.
@@ -108,6 +110,8 @@ interface MessageScrollerContextValue {
   anchors: React.RefObject<string[]>;
   /** Whether new content should pull the viewport down with it. */
   following: React.RefObject<boolean>;
+  /** Set once the viewport has opened; rows laid out before that are history. */
+  openedRef: React.RefObject<boolean>;
   registerItem: (id: string, y: number, anchor: boolean) => void;
   unregisterItem: (id: string) => void;
   scrollToEnd: (animated?: boolean) => void;
@@ -210,21 +214,10 @@ function MessageScrollerRoot({
   const itemY = useRef(new Map<string, number>());
   const anchors = useRef<string[]>([]);
   const following = useRef(autoScroll);
+  const openedRef = useRef(false);
   const driver = useRef<MessageScrollerDriver | null>(null);
   const registerDriver = useCallback((next: MessageScrollerDriver | null) => {
     driver.current = next;
-  }, []);
-
-  const registerItem = useCallback((id: string, y: number, anchor: boolean) => {
-    itemY.current.set(id, y);
-    const list = anchors.current;
-    if (anchor && !list.includes(id)) list.push(id);
-    if (!anchor && list.includes(id)) anchors.current = list.filter((a) => a !== id);
-  }, []);
-
-  const unregisterItem = useCallback((id: string) => {
-    itemY.current.delete(id);
-    anchors.current = anchors.current.filter((a) => a !== id);
   }, []);
 
   const scrollToEnd = useCallback(
@@ -235,6 +228,37 @@ function MessageScrollerRoot({
     },
     [scrollRef]
   );
+
+  const registerItem = useCallback(
+    (id: string, y: number, anchor: boolean) => {
+      const list = anchors.current;
+      const isNewAnchor = anchor && !list.includes(id);
+      /*
+       * LOCAL EDIT: re-apply after `panelui-cli update`.
+       *
+       * A new turn of the reader's, laid out below everything already there,
+       * is a message they just sent. Following used to wait for them to be at
+       * the bottom, so a message sent from a little way up streamed its reply
+       * below the fold until they scrolled down to find it. Sending is the
+       * reader asking for the live edge, so it takes them there and follows.
+       * Checked before this row joins `itemY`, so it is compared only with the
+       * rows that were already there; a turn loaded above them is history and
+       * moves nothing.
+       */
+      if (isNewAnchor && autoScroll && openedRef.current && isBelowAll(y, itemY.current)) {
+        scrollToEnd(true);
+      }
+      itemY.current.set(id, y);
+      if (isNewAnchor) list.push(id);
+      if (!anchor && list.includes(id)) anchors.current = list.filter((a) => a !== id);
+    },
+    [autoScroll, scrollToEnd]
+  );
+
+  const unregisterItem = useCallback((id: string) => {
+    itemY.current.delete(id);
+    anchors.current = anchors.current.filter((a) => a !== id);
+  }, []);
 
   const scrollToStart = useCallback(
     (animated = true) => {
@@ -275,6 +299,7 @@ function MessageScrollerRoot({
       itemY,
       anchors,
       following,
+      openedRef,
       registerItem,
       unregisterItem,
       scrollToEnd,
@@ -348,6 +373,7 @@ function MessageScrollerViewport({
     itemY,
     anchors,
     following,
+    openedRef,
     scrollToEnd,
     scrollToMessage,
     setCurrentAnchorId,
@@ -355,7 +381,6 @@ function MessageScrollerViewport({
 
   const contentHeight = useRef(0);
   const previousY = useRef(new Map<string, number>());
-  const opened = useRef(false);
   /*
    * The live scroll offset, written on the UI thread and read straight from JS
    * when the prepend correction needs it. A shared value rather than a ref
@@ -460,8 +485,8 @@ function MessageScrollerViewport({
     contentHeight.current = height;
 
     // The very first measurement is the transcript opening, not new content.
-    if (!opened.current) {
-      opened.current = true;
+    if (!openedRef.current) {
+      openedRef.current = true;
       previousY.current = new Map(itemY.current);
       openAt(defaultScrollPosition);
       return;
@@ -600,13 +625,14 @@ function MessageScrollerList<T extends MessageScrollerListItem>({
     preserveScrollOnPrepend,
     defaultScrollPosition,
     following,
+    openedRef,
     registerDriver,
+    scrollToEnd,
     setCurrentAnchorId,
   } = useScroller('MessageScroller.List');
   const listRef = useRef<FlatList<T>>(null);
   const items = useRef(data);
   items.current = data;
-  const opened = useRef(false);
   const firstVisibleIndex = useRef<number | null>(null);
 
   /*
@@ -706,9 +732,26 @@ function MessageScrollerList<T extends MessageScrollerListItem>({
     following.current = autoScroll && atEnd.value === 1;
   }, [atEnd, autoScroll, following]);
 
+  /*
+   * LOCAL EDIT: re-apply after `panelui-cli update`.
+   *
+   * The list's half of the send rule in `registerItem`: a new last row that is
+   * the reader's own turn is a message they just sent, so it takes them to the
+   * live edge and follows the reply. History loaded above leaves the last row
+   * as it was, so it moves nothing.
+   */
+  const last = data[data.length - 1];
+  const lastSentId = last?.scrollAnchor ? last.messageId : null;
+  const previousSentId = useRef(lastSentId);
+  useEffect(() => {
+    if (lastSentId === previousSentId.current) return;
+    previousSentId.current = lastSentId;
+    if (lastSentId !== null && autoScroll && openedRef.current) scrollToEnd(true);
+  }, [autoScroll, lastSentId, openedRef, scrollToEnd]);
+
   const onContentSizeChange = () => {
-    if (!opened.current) {
-      opened.current = true;
+    if (!openedRef.current) {
+      openedRef.current = true;
       const index = initialMessageScrollerIndex(data, defaultScrollPosition);
       const target = index ?? data.length - 1;
       if (index === undefined) listRef.current?.scrollToEnd({ animated: false });
@@ -768,6 +811,14 @@ function MessageScrollerList<T extends MessageScrollerListItem>({
   );
 }
 MessageScrollerList.displayName = 'MessageScroller.List';
+
+/** Whether a row at `y` sits below every row already laid out. */
+function isBelowAll(y: number, rows: Map<string, number>): boolean {
+  for (const other of rows.values()) {
+    if (other > y) return false;
+  }
+  return true;
+}
 
 /**
  * How far the transcript shifted, measured on the message closest to the top
