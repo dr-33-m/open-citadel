@@ -21,7 +21,8 @@
  * the user meant to scroll.
  */
 import { FlashList } from '@shopify/flash-list';
-import type { FlatList, ScrollView } from 'react-native';
+import React, { forwardRef } from 'react';
+import { ScrollView, type FlatList, type ScrollViewProps } from 'react-native';
 import Transition from 'react-native-screen-transitions';
 
 /*
@@ -41,15 +42,48 @@ export const TransitionScrollView = Transition.ScrollView as unknown as typeof S
 /** `FlatList`, with its offset reported to the navigator. */
 export const TransitionFlatList = Transition.FlatList as unknown as typeof FlatList;
 
+type ListScrollProps = ScrollViewProps & { onListScroll?: ScrollViewProps['onScroll'] };
+
+/*
+ * The ScrollView inside a FlashList. FlashList's own `onScroll` is a plain JS
+ * function (it is how the list recycles cells), and the transition wrapper
+ * composes only worklet handlers, so handed over as `onScroll` it would be
+ * dropped. It travels as `onListScroll` instead, past the wrapper, and joins
+ * the ScrollView's `onScroll` here.
+ */
+const ListScrollView = forwardRef<ScrollView, ListScrollProps>(function ListScrollView(
+  { onListScroll, onScroll, ...props },
+  ref,
+) {
+  const handleScroll: ScrollViewProps['onScroll'] = (event) => {
+    onScroll?.(event);
+    onListScroll?.(event);
+  };
+  return <ScrollView {...props} ref={ref} onScroll={handleScroll} />;
+});
+
+const TransitionListScrollView = Transition.createTransitionAwareComponent(ListScrollView, {
+  isScrollable: true,
+}) as unknown as typeof ListScrollView;
+
+const FlashListScroller = forwardRef<ScrollView, ScrollViewProps>(function FlashListScroller(
+  { onScroll, ...props },
+  ref,
+) {
+  return <TransitionListScrollView {...props} ref={ref} onListScroll={onScroll} />;
+});
+
 /**
  * `FlashList`, with its offset reported to the navigator.
  *
- * Built with the library's own factory rather than handed a
- * `renderScrollComponent`: FlashList passes its scroll component a plain JS
- * `onScroll`, and the transition wrapper only composes worklet handlers, so
- * the list would stop hearing its own scroll and stop recycling. Wrapping the
- * list itself keeps FlashList's handler inside FlashList.
+ * The transition wrapper goes on FlashList's ScrollView, not on the list.
+ * Wrapping the list put the navigator's scroll gesture on the plain View that
+ * FlashList draws around its ScrollView, so the drawer's drag and the scroll
+ * were never coordinated and the list would not scroll at all.
  */
-export const TransitionFlashList = Transition.createTransitionAwareComponent(FlashList, {
-  isScrollable: true,
+export const TransitionFlashList = forwardRef(function TransitionFlashList(
+  props: React.ComponentProps<typeof FlashList>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof FlashList>>,
+) {
+  return <FlashList {...props} ref={ref} renderScrollComponent={FlashListScroller} />;
 }) as unknown as typeof FlashList;
