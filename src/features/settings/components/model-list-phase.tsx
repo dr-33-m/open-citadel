@@ -1,35 +1,28 @@
-import type { TextStyle } from 'react-native';
-import { View } from 'react-native';
+import React from 'react';
 import { useCSSVariable } from 'uniwind';
 
-import { Trash2 } from '@/components/icons';
 import { PageFade } from '@/components/scroll-fades';
 import { ModelListSkeleton } from '@/components/skeletons/model-list-skeleton';
-import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
-import { Swipe } from '@/components/ui/swipe';
-import { Touchable } from '@/components/ui/touchable';
+import { Swipe, useSwipeGroup } from '@/components/ui/swipe';
 import { ModelPickerHeader } from '@/features/settings/components/model-picker-header';
+import { ModelRow } from '@/features/settings/components/model-row';
 import type { useModelSheet } from '@/features/settings/hooks/use-model-sheet';
 import type { LocalModel } from '@/stores/model';
 import { asColor } from '@/utils/colors';
-import { formatBytes } from '@/utils/format';
 
 type SheetState = ReturnType<typeof useModelSheet>;
 
-const TABULAR: TextStyle = { fontVariant: ['tabular-nums'] };
+const FILL: { flex: 1 } = { flex: 1 };
 
-function modelDetail(model: LocalModel): string {
-  return [
-    formatBytes(model.sizeBytes),
-    model.isDownloaded ? 'Downloaded' : null,
-    model.recommended ? 'Recommended' : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-}
-
-/** Every brain Samwell offers that this phone could run. */
+/**
+ * Every brain Samwell offers that this phone could run.
+ *
+ * The sheet is fixed height and the list scrolls inside it, the way the chat
+ * history does: fifteen brains are taller than the screen, and a sheet sized
+ * to its content capped its own height but not the list's, which then ran off
+ * the bottom and would not scroll. The title stays put above the list.
+ */
 export function ModelListPhase({
   sheet,
   mutedForeground,
@@ -42,57 +35,82 @@ export function ModelListPhase({
   /** A full swipe or the tile deletes the download at once: the swipe's reach point is the confirmation. */
   onDelete: (id: string) => void;
 }) {
-  const foreground = useCSSVariable('--color-foreground');
+  const skeleton = <ModelListSkeleton count={6} />;
 
-  /*
-   * The title rides inside the scroll content, the way `cloud-model-sheet` does
-   * it: this sheet measures its content to set its height, and a header beside
-   * the scroll region would sit outside that measurement. For the same reason
-   * there is no `Sheet.Deferred` here; its placeholder would set the height and
-   * the real list would then jump it.
-   */
   return (
-    <PageFade edges="both" surface="popover">
-      <Sheet.ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <ModelPickerHeader title="Choose Brain" />
+    <>
+      <ModelPickerHeader title="Choose Brain" />
+      {/* Every row is a `Swipe`, a gesture and animated styles apiece, so the
+          rows mount once the sheet has settled rather than during its rise. */}
+      <Sheet.Deferred skeleton={skeleton}>
         {sheet.modelsHydrated ? (
-          <Swipe.Group>
-            {sheet.models.map((model) => (
-              // Only a download can be deleted. The brain itself stays listed,
-              // ready to download again, so the row does not leave.
-              <Swipe key={model.id} haptics disabled={!model.isDownloaded}>
-                <Swipe.End>
-                  <Swipe.Action
-                    icon={<Trash2 color={asColor(foreground)} />}
-                    label="Delete"
-                    color="destructive"
-                    labelClassName="text-foreground"
-                    onPress={() => onDelete(model.id)}
-                  />
-                </Swipe.End>
-                <Touchable
-                  className="flex-row items-center gap-3 border-b border-border bg-popover px-6 py-3"
-                  onPress={() => sheet.chooseModel(model.id)}
-                >
-                  <View className="flex-1 gap-1">
-                    <ThemedText type="bodyMd">{model.name}</ThemedText>
-                    <ThemedText type="labelSm" color={mutedForeground} style={TABULAR}>
-                      {modelDetail(model)}
-                    </ThemedText>
-                  </View>
-                  {model.id === sheet.activeModelId && (
-                    <ThemedText type="bodyMd" color={primary}>
-                      ✓
-                    </ThemedText>
-                  )}
-                </Touchable>
-              </Swipe>
-            ))}
+          // `flex-1` on the group: the list inside has nothing to grow into
+          // under an auto-height parent.
+          <Swipe.Group className="flex-1">
+            <ModelList
+              models={sheet.models}
+              activeModelId={sheet.activeModelId}
+              onChoose={sheet.chooseModel}
+              onDelete={onDelete}
+              mutedForeground={mutedForeground}
+              primary={primary}
+            />
           </Swipe.Group>
         ) : (
-          <ModelListSkeleton count={3} />
+          skeleton
         )}
-      </Sheet.ScrollView>
+      </Sheet.Deferred>
+    </>
+  );
+}
+
+/** The list itself, below `Swipe.Group` so it can close rows as a scroll starts. */
+function ModelList({
+  models,
+  activeModelId,
+  onChoose,
+  onDelete,
+  mutedForeground,
+  primary,
+}: {
+  models: LocalModel[];
+  activeModelId: string | null;
+  onChoose: (id: string) => void;
+  onDelete: (id: string) => void;
+  mutedForeground?: string;
+  primary?: string;
+}) {
+  const { closeAll } = useSwipeGroup();
+  const foreground = asColor(useCSSVariable('--color-foreground'));
+
+  const renderItem = React.useCallback(
+    ({ item }: { item: LocalModel }) => (
+      <ModelRow
+        model={item}
+        active={item.id === activeModelId}
+        onChoose={onChoose}
+        onDelete={onDelete}
+        mutedForeground={mutedForeground}
+        primary={primary}
+        foreground={foreground}
+      />
+    ),
+    [activeModelId, onChoose, onDelete, mutedForeground, primary, foreground],
+  );
+
+  return (
+    // `popover`, so the fade resolves to the sheet's own ground.
+    <PageFade edges="both" surface="popover">
+      <Sheet.FlatList
+        style={FILL}
+        data={models}
+        keyExtractor={(item) => item.id}
+        extraData={activeModelId}
+        // A row dragged open is put back the moment a scroll begins, so it
+        // never rides along into a recycled cell.
+        onScrollBeginDrag={closeAll}
+        renderItem={renderItem}
+      />
     </PageFade>
   );
 }

@@ -3,6 +3,7 @@ import React from 'react';
 import { TextInput, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { NewChatButton } from '@/components/samwell/new-chat-button';
 import { SamwellPlaceholder } from '@/components/samwell-placeholder';
 import { ToggleButton } from '@/components/ui/toggle-button';
 import { Spinner } from '@/components/ui/spinner';
@@ -55,6 +56,10 @@ type SamwellControlCenterProps = {
    * and the cursor lands here, instead of the card being dismissed.
    */
   inputRef?: React.RefObject<TextInput | null>;
+  /** What the new-conversation button says it does: "New chat", or "New conversation" in Compass. */
+  newChatLabel: string;
+  /** Starts a fresh conversation in this mode. Absent while that would cut a turn off. */
+  onNewChat?: () => void;
 };
 
 /**
@@ -88,6 +93,8 @@ export function SamwellControlCenter({
   showStop = false,
   onStop,
   inputRef,
+  newChatLabel,
+  onNewChat,
 }: SamwellControlCenterProps) {
   // Literal colours for consumers a className can't reach: lucide icon props
   // and TextInput's placeholderTextColor.
@@ -216,6 +223,13 @@ export function SamwellControlCenter({
             />
           </Touchable>
         </View>
+
+        {/* A fresh conversation, between the mode it would be in and that
+            mode's tools. Gone with the mode's other controls when the mode
+            has nothing to talk to. */}
+        {!unavailable && (
+          <NewChatButton label={newChatLabel} color={asColor(mutedForeground)} onPress={onNewChat} />
+        )}
 
         {/* The drawer handle, next to the switch: the mode, then the mode's
             own tools. The arrow points the way the surfaces move — up to pull

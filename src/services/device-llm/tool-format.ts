@@ -15,6 +15,11 @@ export interface ToolFormat {
   /** Stops generation once a call is complete, so the model does not run on past it. */
   stopRegex: RegExp;
   /**
+   * Special tokens a call is written in. Kept in the generated text, where
+   * every other special token is dropped, so the call can still be read.
+   */
+  keepTokens: readonly string[];
+  /**
    * The part of a generation still streaming that is safe to show. A call is
    * streamed token by token like prose, and its markup must never reach the
    * chat bubble on its way to being parsed.
@@ -155,6 +160,8 @@ export const GEMMA_TOOL_FORMAT: ToolFormat = {
   },
 
   stopRegex: /<tool_call\|>/,
+
+  keepTokens: [GEMMA_CALL_OPEN, '<tool_call|>', GEMMA_QUOTE],
 
   visible(text) {
     const cut = text.indexOf(GEMMA_CALL_OPEN);

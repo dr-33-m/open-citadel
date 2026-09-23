@@ -7,7 +7,7 @@ type SheetState = ReturnType<typeof useModelSheet>;
 /**
  * The offline brain picker.
  *
- * As tall as the list and no taller, up to most of the screen: every brain
+ * Fixed at most of the screen, with the list scrolling inside: every brain
  * Samwell offers is in it, so it is the whole of the choice.
  */
 export function ModelPickerSheet({
@@ -23,7 +23,7 @@ export function ModelPickerSheet({
   onDelete: (id: string) => void;
 }) {
   return (
-    <Sheet visible={sheet.visible} onClose={sheet.close} maxHeightRatio={0.8} scrollable>
+    <Sheet visible={sheet.visible} onClose={sheet.close} fixedHeightRatio={0.8}>
       <ModelListPhase
         sheet={sheet}
         mutedForeground={mutedForeground}

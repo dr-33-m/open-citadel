@@ -23,7 +23,13 @@ function clamp(value: string, max: number): string {
   return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
 }
 
-export async function suggestChatTitle(conversation: string): Promise<string> {
+export async function suggestChatTitle(
+  conversation: string,
+  options: {
+    /** Calls a title on the device off, so a message the reader sends is not kept waiting behind it. */
+    signal?: AbortSignal;
+  } = {},
+): Promise<string> {
   const payload = { conversation: clamp(conversation, 6000) };
 
   const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
@@ -62,14 +68,12 @@ export async function suggestChatTitle(conversation: string): Promise<string> {
     throw new Error('No local model loaded to title this chat.');
   }
 
-  const frame = `${SUGGEST_CHAT_TITLE_PROMPT}\n\n\n\n${SUGGEST_CHAT_TITLE_LOCAL_FORMAT}`;
+  const instructions = `${SUGGEST_CHAT_TITLE_PROMPT}\n\n${SUGGEST_CHAT_TITLE_LOCAL_FORMAT}`;
   // A small device window cannot take a long chat whole. The opening is what a
   // title is usually drawn from, so it is the end that is cut.
-  const room = Math.max(0, oneShotBudgetChars() - frame.length - 32);
-  const local = { conversation: clamp(payload.conversation, room) };
-  const answer = await oneShot(
-    `${SUGGEST_CHAT_TITLE_PROMPT}\n\n${JSON.stringify(local)}\n\n${SUGGEST_CHAT_TITLE_LOCAL_FORMAT}`,
-  );
+  const room = Math.max(0, oneShotBudgetChars() - instructions.length - 32);
+  const input = JSON.stringify({ conversation: clamp(payload.conversation, room) });
+  const answer = await oneShot({ instructions, input }, { signal: options.signal });
   // A reasoning model answers a one-shot prompt with its reasoning attached,
   // and naming a chat "<think>the user asked..." is the visible result.
   const title = normalizeChatTitle(splitThinking(answer).visible);

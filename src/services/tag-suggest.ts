@@ -100,18 +100,18 @@ export async function suggestTags(input: SuggestTagsInput): Promise<string[]> {
     throw new Error('Load a local model in Settings, or switch to Grand Maester Samwell, to suggest tags.');
   }
 
-  const localPrompt = (p: typeof payload) =>
-    `${SUGGEST_TAGS_PROMPT}\n\n${JSON.stringify(p)}\n\n${SUGGEST_TAGS_LOCAL_FORMAT}`;
+  const instructions = `${SUGGEST_TAGS_PROMPT}\n\n${SUGGEST_TAGS_LOCAL_FORMAT}`;
   // The surrounding text is the first thing to go when the device's window is
   // small: the passage itself is what is being tagged.
-  const prompt =
-    localPrompt(payload).length > oneShotBudgetChars()
-      ? localPrompt({ ...payload, surrounding: undefined })
-      : localPrompt(payload);
+  const whole = JSON.stringify(payload);
+  const message =
+    instructions.length + whole.length > oneShotBudgetChars()
+      ? JSON.stringify({ ...payload, surrounding: undefined })
+      : whole;
 
   // Reasoning arrives inline on this path too, and a `<think>` block parses
   // into a list of nonsense tags rather than failing loudly.
-  const tags = normalizeTags(splitThinking(await oneShot(prompt)).visible);
+  const tags = normalizeTags(splitThinking(await oneShot({ instructions, input: message })).visible);
   if (tags.length === 0) {
     throw new Error("Couldn't suggest tags for this passage.");
   }

@@ -18,7 +18,9 @@ const TOOL_BRAINS = DEVICE_CATALOGUE.filter((m) => m.toolFormat)
   .join(", ");
 
 /**
- * The switches the active brain supports. Applies from the next message.
+ * The switches the active brain supports: tools, and thinking where the brain
+ * can reason (Qwen 3 and Gemma 4, each by its own switch). Applies from the
+ * next message.
  *
  * There is no backend or context window to choose any more: under ExecuTorch
  * both are fixed when a brain is exported, so they come with the brain.
@@ -30,7 +32,7 @@ export function TuneSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  activeModel: { supportsToolCalling: boolean };
+  activeModel: { supportsToolCalling: boolean; supportsThinking: boolean };
 }) {
   const [mutedForeground, primary] = useCSSVariable([
     "--color-muted-foreground",
@@ -39,7 +41,8 @@ export function TuneSheet({
   const inference = useModelStore((s) => s.inference);
   const setInference = useModelStore((s) => s.setInference);
   const isLoaded = useModelStore((s) => s.isLoaded);
-  const showApplyNote = isLoaded && activeModel.supportsToolCalling;
+  const showApplyNote =
+    isLoaded && (activeModel.supportsToolCalling || activeModel.supportsThinking);
 
   return (
     // `maxHeightRatio` is the cap and the only cap — the sheet measures this
@@ -68,6 +71,15 @@ export function TuneSheet({
             This brain talks but cannot use Samwell&apos;s tools. {TOOL_BRAINS} can.
           </ThemedText>
         )}
+
+        {activeModel.supportsThinking ? (
+          <ToggleRow
+            title="Thinking"
+            note="He thinks before he answers. Slower, and on smaller brains a long thought can leave no room for the answer."
+            value={inference.enableThinking}
+            onValueChange={(val) => setInference({ enableThinking: val })}
+          />
+        ) : null}
 
         {showApplyNote ? (
           <View className="flex-row items-center gap-1">

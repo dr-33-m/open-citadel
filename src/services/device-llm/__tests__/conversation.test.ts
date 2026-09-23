@@ -16,7 +16,8 @@ const tokens = (text: string) => Math.ceil(text.length / 4);
 class FakeRunner {
   pos = 0;
   log: string[] = [];
-  replies: string[] = [];
+  /** A reply is text, streamed three characters a token, or its exact tokens. */
+  replies: (string | string[])[] = [];
   onGenerate: (() => void) | null = null;
   stopped = false;
   constructor(public max: number) {}
@@ -36,16 +37,24 @@ class FakeRunner {
     this.stopped = false;
     this.onGenerate?.();
     const reply = this.replies.shift() ?? '';
-    for (const ch of reply.match(/.{1,3}/gs) ?? []) {
+    const pieces = Array.isArray(reply) ? reply : (reply.match(/.{1,3}/gs) ?? []);
+    // As the native runner does: every token is handed back, but the last one
+    // sampled is never fed to the model, so it is not in the cache.
+    let unfed = '';
+    for (const ch of pieces) {
       if (this.stopped) break;
+      this.pos += tokens(unfed);
       onToken?.(ch);
-      this.pos += tokens(ch);
+      unfed = ch;
     }
     return {};
   };
 
+  resets: number[] = [];
+
   reset = (target = 0) => {
     if (target > this.pos) throw new Error('reset out of range');
+    this.resets.push(target);
     this.pos = target;
   };
 
@@ -99,7 +108,16 @@ const nextRunners: FakeRunner[] = [];
 vi.mock('react-native-worklets', () => ({
   scheduleOnRN: (fn: (...a: unknown[]) => void, ...args: unknown[]) => fn(...args),
 }));
-vi.mock('react-native-blob-util', () => ({ default: { fs: { readFile: async () => '{}' } } }));
+/** The toy tokenizer's special tokens: an end of turn, an end of text, and a tool-call opener. */
+const TOKENIZER_CONFIG = JSON.stringify({
+  eos_token: '<eos>',
+  added_tokens_decoder: {
+    '1': { content: '<eos>', special: true },
+    '106': { content: '<turn|>', special: true },
+    '48': { content: '<|tool_call>', special: true },
+  },
+});
+vi.mock('react-native-blob-util', () => ({ default: { fs: { readFile: async () => TOKENIZER_CONFIG } } }));
 vi.mock('@/lib/executorch', () => ({
   getExecuTorch: () => ({
     wrapAsync:
@@ -136,6 +154,7 @@ const toyFormat = {
     return { toolCalls: [{ type: 'function', function: { name: m[1], arguments: JSON.parse(m[2]) } }] };
   },
   stopRegex: /\}$/,
+  keepTokens: [] as string[],
   visible: (text: string) => text.split('CALL')[0],
 };
 
@@ -354,7 +373,7 @@ describe('createConversation', () => {
       },
     });
     expect(turn.finishReason).toBe('stopped');
-    expect(replyOf(turn).content).toBe('Let me look. ');
+    expect(replyOf(turn).content).toBe('Let me look.');
   });
 
   it('never stops a generation that belongs to another conversation', async () => {
@@ -363,6 +382,43 @@ describe('createConversation', () => {
     runner.replies.push('the whole of b');
     const turn = await b.sendMessage('to b', { onText: () => a.stop() });
     expect(replyOf(turn).content).toBe('the whole of b');
+  });
+
+  it('never echoes the prompt back as the start of the reply', async () => {
+    runner.replies.push('Hello.');
+    await createConversation().sendMessage('Hi');
+    expect(runner.configs[0]).toMatchObject({ echo: false });
+  });
+
+  it('leaves every end token out of the reply, not only the eos token', async () => {
+    runner.replies.push(['Hello', '.', '<turn|>'], ['Bye', '<eos>']);
+    const convo = createConversation();
+    const seen: string[] = [];
+    const first = await convo.sendMessage('Hi', { onText: (t) => seen.push(t) });
+    expect(replyOf(first).content).toBe('Hello.');
+    expect(seen.join('')).not.toContain('<turn|>');
+    expect(replyOf(await convo.sendMessage('Go')).content).toBe('Bye');
+  });
+
+  it('keeps the special tokens a tool call is written in', async () => {
+    const format = { ...toyFormat, keepTokens: ['<|tool_call>'], parse: vi.fn(() => undefined) };
+    const convo = createConversation({
+      tools: [{ type: 'function', function: { name: 'search' }, execute: async () => 'r' }],
+      toolFormat: format,
+    });
+    runner.replies.push(['<|tool_call>', 'call', '<turn|>']);
+    await convo.sendMessage('go');
+    expect(format.parse).toHaveBeenCalledWith('<|tool_call>call');
+  });
+
+  it('shows reasoning as it streams, and keeps it out of the history', async () => {
+    runner.replies.push('<think>weighing it</think>Hello.');
+    const convo = createConversation();
+    const seen: string[] = [];
+    const turn = await convo.sendMessage('Hi', { onText: (t) => seen.push(t) });
+    expect(seen[seen.length - 1]).toBe('<think>weighing it</think>Hello.');
+    expect(replyOf(turn).content).toBe('Hello.');
+    expect(convo.getHistory().map((m) => m.content)).toEqual(['Hi', 'Hello.']);
   });
 
   it('caps a reply at the reserve, and lower when asked', async () => {
@@ -414,5 +470,161 @@ describe('engine', () => {
     nextRunners.push(loaded);
     await Promise.all([loadEngine(ENTRY, FILES), unloadEngine()]);
     expect(loaded.disposed).toBe(true);
+  });
+});
+
+describe('a cache that cannot be rewound', () => {
+  const STICKY = { ...ENTRY, rewindableCache: false } as const;
+
+  async function stickyEngine() {
+    runner = new FakeRunner(4096);
+    await loadEngine(STICKY, FILES);
+  }
+
+  it('reloads the decoder, not a reset, when another conversation takes the cache', async () => {
+    await stickyEngine();
+    const first = runner;
+    const a = createConversation({ systemPrompt: 'A' });
+    const b = createConversation({ systemPrompt: 'B' });
+    first.replies.push('a1');
+    await a.sendMessage('to a');
+
+    const second = new FakeRunner(4096);
+    second.replies.push('b1');
+    nextRunners.push(second);
+    const turn = await b.sendMessage('to b');
+
+    expect(first.disposed).toBe(true);
+    expect(getEngine()?.runner).toBe(second);
+    expect(replyOf(turn).content).toBe('b1');
+    expect(first.resets.filter((p) => p > 0)).toEqual([]);
+  });
+
+  it('does not reload a model it has only just loaded', async () => {
+    await stickyEngine();
+    const loaded = runner;
+    loaded.replies.push('hello');
+    await createConversation({ systemPrompt: 'S' }).sendMessage('hi');
+    expect(loaded.disposed).toBe(false);
+    expect(getEngine()?.runner).toBe(loaded);
+  });
+
+  it('runs a tool round without taking a token back', async () => {
+    await stickyEngine();
+    const convo = createConversation({
+      tools: [{ type: 'function', function: { name: 'search' }, execute: async () => 'r' }],
+      toolFormat: toyFormat,
+    });
+    runner.replies.push('CALL search {}', 'Found it.');
+    const turn = await convo.sendMessage('go');
+    expect(replyOf(turn).content).toBe('Found it.');
+    expect(runner.resets.filter((p) => p > 0)).toEqual([]);
+  });
+
+  it('starts clean after a reply is stopped, rather than rewinding', async () => {
+    await stickyEngine();
+    const convo = createConversation({ systemPrompt: 'S' });
+    runner.replies.push('first answer');
+    await convo.sendMessage('one');
+
+    const pending = convo.sendMessage('two');
+    convo.stop();
+    await pending;
+
+    const clean = new FakeRunner(4096);
+    clean.replies.push('fresh');
+    nextRunners.push(clean);
+    const turn = await convo.sendMessage('three');
+    expect(getEngine()?.runner).toBe(clean);
+    expect(replyOf(turn).content).toBe('fresh');
+    expect(convo.getHistory().map((m) => m.content)).toEqual(['S', 'one', 'first answer', 'three', 'fresh']);
+  });
+
+  it('keeps text written before a call, and goes on without a rebuild', async () => {
+    await stickyEngine();
+    const loaded = runner;
+    const convo = createConversation({
+      systemPrompt: 'S',
+      tools: [{ type: 'function', function: { name: 'search' }, execute: async () => 'r' }],
+      toolFormat: toyFormat,
+    });
+    // The history keeps none of the text before the call, as Gemma's template does not.
+    loaded.replies.push(['Let me look. ', 'CALL search {', '}'], ['Found it', '.'], ['Sure', '.']);
+    await convo.sendMessage('go');
+    await convo.sendMessage('thanks');
+
+    expect(loaded.disposed).toBe(false);
+    expect(loaded.resets.filter((p) => p > 0)).toEqual([]);
+    expect(loaded.log.filter((l) => l.includes('<system>'))).toHaveLength(1);
+    // The results go on from the call's last token, and a reply closes with the template's closer.
+    expect(loaded.log).toContain('prefill:}]</assistant>\n<tool>r</tool>\n<assistant>');
+    expect(loaded.log).toContain('prefill:.</assistant>\n');
+  });
+
+  it('closes a reply with reasoning in it without a rebuild', async () => {
+    await stickyEngine();
+    const loaded = runner;
+    const convo = createConversation({ systemPrompt: 'S' });
+    loaded.replies.push(['<think>', 'hmm', '</think>', 'Answer'], ['Next']);
+    await convo.sendMessage('q');
+    await convo.sendMessage('again');
+
+    expect(loaded.disposed).toBe(false);
+    expect(loaded.log.filter((l) => l.includes('<system>'))).toHaveLength(1);
+    expect(loaded.log).toContain('prefill:Answer</assistant>\n');
+    expect(convo.getHistory().map((m) => m.content)).toEqual(['S', 'q', 'Answer', 'again', 'Next']);
+  });
+});
+
+describe('a turn that the template agrees with', () => {
+  it('appends what the template adds and never rewinds', async () => {
+    await freshEngine();
+    const convo = createConversation({ systemPrompt: 'S' });
+    runner.replies.push('one', 'two');
+    await convo.sendMessage('first');
+    await convo.sendMessage('second');
+    expect(runner.resets.filter((p) => p > 0)).toEqual([]);
+  });
+
+  it('takes the cache back when the model wrote what the history leaves out', async () => {
+    await freshEngine();
+    const convo = createConversation({ systemPrompt: 'S' });
+    runner.replies.push('<think>hmm</think>Answer');
+    await convo.sendMessage('q');
+    // The reasoning is not in the history, so the cache is rewound to the end
+    // of the question and the answer written as the template writes it.
+    expect(runner.resets.some((p) => p > 0)).toBe(true);
+    expect(runner.log[runner.log.length - 1]).toBe('prefill:<assistant>Answer</assistant>\n');
+  });
+});
+
+describe('thinking', () => {
+  const QWEN = { ...ENTRY, family: 'QWEN3_1_7B', variant: 'XNNPACK_8DA4W', thinking: 'switch' } as const;
+
+  it("tells a brain that reasons by default not to, unless asked, in its instructions", async () => {
+    runner = new FakeRunner(4096);
+    await loadEngine(QWEN, FILES);
+    runner.replies.push('a', 'b');
+    await createConversation({ systemPrompt: 'S' }).sendMessage('x');
+    expect(runner.log[0]).toBe('prefill:<system>S\n\n/no_think</system>\n');
+
+    runner.log = [];
+    await createConversation({ systemPrompt: 'S', thinking: true }).sendMessage('y');
+    expect(runner.log[0]).toBe('prefill:<system>S\n\n/think</system>\n');
+  });
+
+});
+
+describe('oneShot', () => {
+  it('stops when its signal fires, and says so', async () => {
+    await freshEngine();
+    const { oneShot, OneShotAborted } = await import('../one-shot');
+    const controller = new AbortController();
+    runner.replies.push('a long answer that never gets to finish');
+    runner.onGenerate = () => controller.abort();
+    await expect(oneShot({ instructions: 'Title it.', input: 'text' }, { signal: controller.signal })).rejects.toBeInstanceOf(
+      OneShotAborted,
+    );
+    runner.onGenerate = null;
   });
 });

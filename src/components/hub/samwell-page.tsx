@@ -206,12 +206,13 @@ export function SamwellPage() {
   );
 
   const { newChat } = chat;
+  const startNewChat = React.useCallback(() => void newChat(), [newChat]);
   const status = useSamwellStatus({
     readiness,
     onOpenSettings: openSamwellSettings,
     onOpenPlans: openCloudPlans,
     onOpenAccount: openAccountSettings,
-    onNewChat: React.useCallback(() => void newChat(), [newChat]),
+    onNewChat: startNewChat,
   });
 
   const allBooks = useAllBooks();
@@ -483,6 +484,23 @@ export function SamwellPage() {
     () => openSheet(setShowAboutCompass),
     [openSheet],
   );
+
+  // The composer's own New chat, the same action the history sheets offer.
+  // Held back mid-turn, as History is: leaving would cut the reply off.
+  const { newSession: newCompassSession } = compass;
+  const startNewCompassSession = React.useCallback(
+    () => void newCompassSession(),
+    [newCompassSession],
+  );
+  const onComposerNewChat =
+    mode === "chat"
+      ? isGenerating || chat.switching
+        ? undefined
+        : startNewChat
+      : compass.submitting || compass.switching
+        ? undefined
+        : startNewCompassSession;
+  const composerNewChatLabel = mode === "chat" ? "New chat" : "New conversation";
 
   const chatSessionCount = sessions.length;
   const compassSessionCount = compass.sessions.length;
@@ -792,6 +810,8 @@ export function SamwellPage() {
                       would take a message nothing can answer. Its tools go
                       away with it — see `toolboxItems`. */
                   unavailable={mode === "compass" && !cloudReady}
+                  newChatLabel={composerNewChatLabel}
+                  onNewChat={onComposerNewChat}
                 />
 
                 {/* Under the card, sharing its bottom edge. The stack is

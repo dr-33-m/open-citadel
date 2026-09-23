@@ -12,7 +12,7 @@
  */
 import React from 'react';
 
-import { NEW_CHAT_TITLE, useChatStore, uuid } from '@/stores/chat';
+import { NEW_CHAT_TITLE, scheduleBackgroundTitles, useChatStore, uuid } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 
 /** `'new'` for a fresh chat, otherwise the id of the session being opened. */
@@ -82,6 +82,8 @@ export function useChatSessions() {
         lastStreamedMessageId: null,
         deviceLimit: null,
       });
+      // The chat just left may still be called "New chat" on device.
+      scheduleBackgroundTitles();
       setSession({ pendingBook: null, mode: 'chat' });
     } finally {
       setSwitching(null);

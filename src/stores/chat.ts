@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
 import { db } from '@/db/client';
@@ -42,6 +42,7 @@ import {
     type TurnResult,
 } from '@/services/device-llm/conversation';
 import { engineGeneration, getEngine, isEngineLoaded } from '@/services/device-llm/engine';
+import { type KnownRef, refsInToolResults, repairRefMarkers } from '@/services/ref-markers';
 import { splitThinking } from '@/utils/think-stream';
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useAccountStore } from '@/stores/account';
@@ -233,10 +234,10 @@ function realMessageCount(messages: ChatMessage[]): number {
   return messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
 }
 
-// Base identity for sessions started without a book. The conversation's system
-// prompt (`promptAndToolsFor`) doesn't reliably steer the small on-device model on its
-// own, so we persist + prime this as a conversation turn — the same mechanism
-// that makes book-context sessions work.
+// Base identity for sessions started without a book, stored as the session's
+// system message. Cloud sends it; on device it is left out, because Samwell's
+// own system prompt (`promptAndToolsFor`) already says all of it
+// (`deviceSessionContext`).
 const BASE_SYSTEM_PROMPT =
   'Your name is Samwell. You are a curious, widely-read AI reading companion. ' +
   'Help the user think through ideas, discuss books and concepts, and connect ' +
@@ -291,7 +292,7 @@ const MAX_DEVICE_STEPS = 4;
 /**
  * The on-device conversation for the open chat.
  *
- * Rebuilt when the chat changes, when tools are switched on or off, or when a
+ * Rebuilt when the chat changes, when tools or thinking are switched, or when a
  * different model is woken, since a conversation renders through the chat
  * template of the model it was made with. Everything else (another chat's turn, a title, a tag suggestion using
  * the engine in between) it recovers from by itself: it rebuilds its history
@@ -302,6 +303,7 @@ let device: {
   sessionId: string;
   generation: number;
   toolsOn: boolean;
+  thinkingOn: boolean;
 } | null = null;
 
 /** What the tools of the on-device turn in flight need to know. Null between turns. */
@@ -316,14 +318,106 @@ let deviceTurn: {
   committedTokens: number;
 } | null = null;
 
+/** Every entry this chat's tool results have shown Samwell, so the cards he names can be mended. */
+function refsShownIn(sessionId: string): KnownRef[] {
+  const rows = db
+    .select({ content: chatMessages.content })
+    .from(chatMessages)
+    .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.role, 'tool')))
+    .all();
+  return refsInToolResults(rows.map((r) => r.content));
+}
+
 function dropDeviceConversation(): void {
   device?.conversation.dispose();
   device = null;
 }
 
 /**
- * The session's history as a conversation to rebuild into the model: its
- * context first, then as much recent history as fits `tokenBudget`.
+ * On device, a new chat is named once the reader has left it, not straight
+ * after its first reply.
+ *
+ * Naming it is a generation of its own, and it takes the model's cache: the
+ * chat's next message then had to rebuild Samwell's instructions, tools and
+ * history into it before a word came back, and on Gemma reload the decoder
+ * first (see `device-llm/engine.ts`). Leaving a chat costs that rebuild
+ * anyway, so the title rides on it.
+ *
+ * It never gets in the reader's way: it starts once a switch has settled, it
+ * does not wake Samwell to run, one chat at a time, and a message sent while
+ * it runs stops it (`yieldBackgroundTitle`); that chat is tried again on the
+ * next switch. Which chats need a name is read from the sessions themselves,
+ * so none is lost to the app closing first.
+ */
+let backgroundTitle: AbortController | null = null;
+let backgroundTitleTimer: ReturnType<typeof setTimeout> | null = null;
+/** Chats whose title failed this run, so a switch does not retry them forever. */
+const titleFailed = new Set<string>();
+/** Long enough for a chat switch or a sheet to finish moving first. */
+const BACKGROUND_TITLE_DELAY_MS = 1500;
+
+export function scheduleBackgroundTitles(): void {
+  if (backgroundTitleTimer) clearTimeout(backgroundTitleTimer);
+  backgroundTitleTimer = setTimeout(() => {
+    backgroundTitleTimer = null;
+    void titleLeftChats();
+  }, BACKGROUND_TITLE_DELAY_MS);
+}
+
+/** Stops a background title so the reader's own message goes first. */
+function yieldBackgroundTitle(): void {
+  if (backgroundTitleTimer) {
+    clearTimeout(backgroundTitleTimer);
+    backgroundTitleTimer = null;
+  }
+  backgroundTitle?.abort();
+}
+
+async function titleLeftChats(): Promise<void> {
+  if (backgroundTitle) return;
+  if (useSettingsStore.getState().samwellMode === 'cloud' || !isEngineLoaded()) return;
+
+  const { sessions, activeSession } = useChatStore.getState();
+  const waiting = sessions.filter(
+    (s) => s.title === NEW_CHAT_TITLE && !s.bookId && s.id !== activeSession?.id && !titleFailed.has(s.id),
+  );
+
+  for (const session of waiting) {
+    // The reader has started something since: it goes first.
+    if (useChatStore.getState().isGenerating || !isEngineLoaded()) return;
+    const conversation = conversationForTitle(readMessages(session.id));
+    if (!conversation) continue;
+
+    const controller = new AbortController();
+    backgroundTitle = controller;
+    try {
+      const title = await suggestChatTitle(conversation, { signal: controller.signal });
+      const stillThere = useChatStore.getState().sessions.some((s) => s.id === session.id);
+      if (title && stillThere) await useChatStore.getState().updateSessionTitle(session.id, title);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      titleFailed.add(session.id);
+      console.warn('[Chat] Could not title a chat in the background:', err);
+    } finally {
+      backgroundTitle = null;
+    }
+  }
+}
+
+/**
+ * What this session tells the on-device model before anything is said: the
+ * book or passage it is about. Null for a chat without a book, whose base
+ * persona line only repeats what Samwell's own system prompt already says.
+ */
+function deviceSessionContext(): string | null {
+  const content = useChatStore.getState().messages.find((m) => m.role === 'system')?.content;
+  return content && content !== BASE_SYSTEM_PROMPT ? content : null;
+}
+
+/**
+ * The session's history as a conversation to rebuild into the model: as much
+ * recent history as fits `tokenBudget`. Its context is not part of it; that
+ * rides in the system turn (`deviceConversationFor`).
  *
  * Serves both jobs a conversation has, because they are the same operation:
  * starting one the model has never seen (a session reopened after a restart,
@@ -341,7 +435,6 @@ function dropDeviceConversation(): void {
 function replaySeed(tokenBudget: number, excludeMessageId?: string): { role: 'user' | 'assistant'; content: string }[] {
   const { messages } = useChatStore.getState();
 
-  const systemContext = messages.find((m) => m.role === 'system')?.content;
   const history = messages
     .filter(
       (m) =>
@@ -353,12 +446,9 @@ function replaySeed(tokenBudget: number, excludeMessageId?: string): { role: 'us
     )
     .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-  const plan = planReplay(history, tokenBudget, systemContext);
+  const plan = planReplay(history, tokenBudget);
   console.log(`[Chat] Seeded conversation: replayed ${plan.messages.length} turn(s), dropped ${plan.dropped}`);
-
-  // Kept as the opening user turn, as sessions have always been primed: the
-  // system prompt alone does not reliably steer the small models.
-  return systemContext ? [{ role: 'user', content: systemContext }, ...plan.messages] : plan.messages;
+  return plan.messages;
 }
 
 /**
@@ -450,32 +540,49 @@ function deviceConversationFor(sessionId: string, excludeMessageId?: string): Co
   // The loaded model's own format, not the chosen one's: the two differ for
   // as long as a newly chosen brain has not been woken.
   const { toolFormat } = engine.entry;
-  const toolsOn = useModelStore.getState().inference.enableToolCalling && !!toolFormat;
+  const { inference } = useModelStore.getState();
+  const toolsOn = inference.enableToolCalling && !!toolFormat;
+  const thinkingOn = inference.enableThinking && !!engine.entry.thinking;
   if (
     device &&
     device.sessionId === sessionId &&
     device.generation === generation &&
-    device.toolsOn === toolsOn
+    device.toolsOn === toolsOn &&
+    device.thinkingOn === thinkingOn
   ) {
     return device.conversation;
   }
   dropDeviceConversation();
 
   // Chosen together, so the prompt never describes a tool the model lacks,
-  // and a window too small for the schemas does not load them.
-  const { systemPrompt, tools } = promptAndToolsFor(engine.contextTokens, toolsOn);
+  // and a window too small for the schemas does not load them. The session's
+  // context is counted in, since it shares the system turn with them.
+  const context = deviceSessionContext();
+  const { systemPrompt: persona, tools } = promptAndToolsFor(
+    engine.contextTokens,
+    toolsOn,
+    context ? estimateTokens(context) : 0,
+  );
+  /*
+   * The context goes in the system turn, where every catalogue template puts
+   * instructions. It used to open the conversation as a user message, so the
+   * reader's first message arrived as a second user turn in a row, and the
+   * model answered the instructions instead: "Hi" got back a recital of them.
+   */
+  const systemPrompt = context ? `${persona}\n\n${context}` : persona;
   const conversation = createConversation({
     systemPrompt,
     tools: tools.map(deviceTool),
     toolFormat,
     maxToolTurns: MAX_DEVICE_STEPS,
+    thinking: thinkingOn,
   });
 
   const baseline = baselineTokens(systemPrompt, tools);
   conversation.reseed(
     replaySeed(replayTokenBudget({ used: baseline, max: engine.contextTokens, baseline }), excludeMessageId),
   );
-  device = { conversation, sessionId, generation, toolsOn };
+  device = { conversation, sessionId, generation, toolsOn, thinkingOn };
   return conversation;
 }
 
@@ -634,9 +741,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           .run();
       }
     } else {
-      // No book context — seed the assistant's identity so the model knows who
-      // it is. Persisted + primed as a conversation turn (see openSession),
-      // since the engine-level system prompt alone doesn't reliably steer it.
+      // No book context: the assistant's identity, for the cloud. See
+      // BASE_SYSTEM_PROMPT.
       db.insert(chatMessages)
         .values({
           id: uuid(),
@@ -713,6 +819,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // The chat being left gives up its conversation; the one opened makes its
     // own on its first turn, rebuilt from the transcript loaded above.
     dropDeviceConversation();
+    scheduleBackgroundTitles();
   },
 
   async sendMessage(content, id) {
@@ -868,6 +975,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
 
+    // A background title goes second to anything the reader asks for.
+    yieldBackgroundTitle();
     // A rename from the history sheet may be using the model. The engine
     // queues the two anyway; waiting here keeps the composer's state honest.
     await get().waitForRetitle();
@@ -924,7 +1033,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Whatever the stream showed, the bubble gets only the answer.
       const split = splitThinking(format ? format.visible(reply) : reply);
       if (split.thinking) set({ thinkingContent: split.thinking.trim() });
-      finalContent = ensureBookMarkers(split.visible.trim(), suggestedBooks);
+      finalContent = repairRefMarkers(
+        ensureBookMarkers(split.visible.trim(), suggestedBooks),
+        refsShownIn(activeSession.id),
+      );
       // Out of steps while the model was still calling tools, not answering:
       // there is no reply, which would otherwise silently show nothing at all.
       if (!finalContent && turn.finishReason === 'maxToolTurns') {
@@ -977,17 +1089,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         toolCallStatus: null, toolCallName: null,
       }));
 
-      if (isFirstRealMessage) {
-        // Offline shares one model: keep isGenerating true (so the input
-        // stays blocked) until this one-shot title is done, since a second
-        // message would only queue behind it on the engine.
-        set({ titleRefreshing: true });
-        try {
-          await get().maybeTitleFirstMessage(activeSession.id, content, finalContent);
-        } finally {
-          set({ titleRefreshing: false });
-        }
-      }
+      // No title here: on device the chat is named once it is left
+      // (`scheduleBackgroundTitles`), so the next message is not held up.
       set({ isGenerating: false });
     } else {
       set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, toolCallName: null, isGenerating: false });
@@ -1115,3 +1218,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 }));
+
+/*
+ * A reply on device cannot outlive the model answering it.
+ *
+ * When the model goes to sleep mid-reply (put to sleep from Settings, another
+ * brain chosen, released for memory), the wake banner comes back at once,
+ * but the turn's own state only cleared when its generation came back, and
+ * one cut off by the model going away may never come back. The reader then
+ * saw "Processing…" under a banner saying Samwell was asleep. So the turn is
+ * stopped and its status cleared the moment the model is no longer loaded;
+ * if the generation does come back later, it only saves what it had.
+ */
+useModelStore.subscribe((state, previous) => {
+  if (!previous.isLoaded || state.isLoaded) return;
+  const chat = useChatStore.getState();
+  if (!chat.isGenerating || useSettingsStore.getState().samwellMode === 'cloud') return;
+  chat.stopGeneration();
+  useChatStore.setState({
+    isGenerating: false,
+    isThinking: false,
+    isToolCalling: false,
+    toolCallStatus: null,
+    toolCallName: null,
+    titleRefreshing: false,
+  });
+});

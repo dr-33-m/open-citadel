@@ -28,7 +28,18 @@
 import type { LLMModel } from 'react-native-executorch';
 
 import { getExecuTorch } from '@/lib/executorch';
+import { GEMMA_THOUGHT_MARKERS, type ReasoningMarkers } from '@/services/device-llm/reply-format';
 import { GEMMA_TOOL_FORMAT, type ToolFormat } from '@/services/device-llm/tool-format';
+
+/**
+ * How a brain's reasoning is turned on and off, where it can reason:
+ *
+ * - `switch`: Qwen 3 reads `/think` or `/no_think` in its instructions, and
+ *   reasons unless told not to. Its shipped template knows nothing of either.
+ * - `template`: Gemma 4's chat template writes its thinking token into the
+ *   system turn when `enable_thinking` is set, and it does not reason otherwise.
+ */
+export type ThinkingControl = 'switch' | 'template';
 
 type LLMRegistry = NonNullable<ReturnType<typeof getExecuTorch>>['models']['llm'];
 
@@ -49,8 +60,21 @@ export type CatalogueModel = RegistryRef & {
   name: string;
   /** Present when we can read this family's tool calls. */
   toolFormat?: ToolFormat;
-  /** Reasons in `<think>` blocks before it answers. */
-  reasons?: boolean;
+  /** Set when it can reason before it answers; how that is switched. */
+  thinking?: ThinkingControl;
+  /** How it marks reasoning, when not with `<think>`. */
+  reasoning?: ReasoningMarkers;
+  /**
+   * False when moving its cache's position back does not clean it, so starting
+   * a different conversation needs a reload. See `engine.ts`.
+   */
+  rewindableCache?: boolean;
+  /**
+   * Its maker's sampling temperature for chat, where the runtime can honour it
+   * (it samples by temperature alone: no top-p, min-p or repetition penalty).
+   * Small models ramble and repeat themselves at the 0.7 used otherwise.
+   */
+  temperature?: number;
   /** The brain the app points readers to first. */
   recommended?: boolean;
 };
@@ -62,19 +86,28 @@ export const DEVICE_CATALOGUE: readonly CatalogueModel[] = [
     family: 'GEMMA4_E2B',
     variant: 'XNNPACK_8DA4W',
     toolFormat: GEMMA_TOOL_FORMAT,
+    thinking: 'template',
+    // Thinking is off, but Gemma 4 opens an empty thought channel now and then.
+    reasoning: GEMMA_THOUGHT_MARKERS,
+    // A shared, windowed cache: a reset leaves what was written past it.
+    rewindableCache: false,
     recommended: true,
   },
-  { id: 'qwen-3-0.6b', name: 'Qwen 3 0.6B', family: 'QWEN3_0_6B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4', reasons: true },
-  { id: 'qwen-3-1.7b', name: 'Qwen 3 1.7B', family: 'QWEN3_1_7B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4', reasons: true },
-  { id: 'qwen-3-4b', name: 'Qwen 3 4B', family: 'QWEN3_4B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4', reasons: true },
+  // Temperatures, where set: Qwen 3's thinking mode (Qwen), SmolLM2's model
+  // card, and for LFM 2.5 what Software Mansion's gallery runs this export at
+  // (Liquid's own 0.1 assumes a repetition penalty this runtime does not have).
+  { id: 'qwen-3-0.6b', name: 'Qwen 3 0.6B', family: 'QWEN3_0_6B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4', thinking: 'switch', temperature: 0.6 },
+  { id: 'qwen-3-1.7b', name: 'Qwen 3 1.7B', family: 'QWEN3_1_7B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4', thinking: 'switch', temperature: 0.6 },
+  { id: 'qwen-3-4b', name: 'Qwen 3 4B', family: 'QWEN3_4B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4', thinking: 'switch', temperature: 0.6 },
   { id: 'qwen-2.5-0.5b', name: 'Qwen 2.5 0.5B', family: 'QWEN2_5_0_5B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4' },
   { id: 'qwen-2.5-1.5b', name: 'Qwen 2.5 1.5B', family: 'QWEN2_5_1_5B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4' },
   { id: 'qwen-2.5-3b', name: 'Qwen 2.5 3B', family: 'QWEN2_5_3B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4' },
-  { id: 'lfm-2.5-350m', name: 'LFM 2.5 350M', family: 'LFM2_5_350M', variant: 'XNNPACK_8DA4W' },
-  { id: 'lfm-2.5-1.2b', name: 'LFM 2.5 1.2B', family: 'LFM2_5_1_2B', variant: 'XNNPACK_8DA4W' },
-  { id: 'smollm2-135m', name: 'SmolLM2 135M', family: 'SMOLLM2_135M', variant: 'XNNPACK_8DA8W', metal: 'MLX_INT8' },
-  { id: 'smollm2-360m', name: 'SmolLM2 360M', family: 'SMOLLM2_360M', variant: 'XNNPACK_8DA8W', metal: 'MLX_INT8' },
-  { id: 'smollm2-1.7b', name: 'SmolLM2 1.7B', family: 'SMOLLM2_1_7B', variant: 'XNNPACK_8DA8W', metal: 'MLX_INT8' },
+  // Convolution layers carry state a reset of the position cannot take back.
+  { id: 'lfm-2.5-350m', name: 'LFM 2.5 350M', family: 'LFM2_5_350M', variant: 'XNNPACK_8DA4W', rewindableCache: false, temperature: 0.2 },
+  { id: 'lfm-2.5-1.2b', name: 'LFM 2.5 1.2B', family: 'LFM2_5_1_2B', variant: 'XNNPACK_8DA4W', rewindableCache: false, temperature: 0.2 },
+  { id: 'smollm2-135m', name: 'SmolLM2 135M', family: 'SMOLLM2_135M', variant: 'XNNPACK_8DA8W', metal: 'MLX_INT8', temperature: 0.2 },
+  { id: 'smollm2-360m', name: 'SmolLM2 360M', family: 'SMOLLM2_360M', variant: 'XNNPACK_8DA8W', metal: 'MLX_INT8', temperature: 0.2 },
+  { id: 'smollm2-1.7b', name: 'SmolLM2 1.7B', family: 'SMOLLM2_1_7B', variant: 'XNNPACK_8DA8W', metal: 'MLX_INT8', temperature: 0.2 },
   { id: 'hammer-2.1-0.5b', name: 'Hammer 2.1 0.5B', family: 'HAMMER2_1_0_5B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4' },
   { id: 'hammer-2.1-1.5b', name: 'Hammer 2.1 1.5B', family: 'HAMMER2_1_1_5B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4' },
   { id: 'hammer-2.1-3b', name: 'Hammer 2.1 3B', family: 'HAMMER2_1_3B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4' },

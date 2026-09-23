@@ -30,20 +30,43 @@ export function oneShotBudgetChars(): number {
  */
 const ONE_SHOT_MAX_TOKENS = 96;
 
-/**
- * Qwen 3's switch for answering without reasoning first. ExecuTorch's template
- * rendering never passes `enable_thinking`, so the in-message switch the model
- * was trained on is the only way to ask. Reasoning about a three-word title
- * costs more than the title, and it can run past the cap before any answer.
- */
-const NO_THINK = '\n/no_think';
+export interface OneShotPrompt {
+  /** The task: what to do and how to answer. */
+  instructions: string;
+  /** What to do it to. */
+  input: string;
+}
 
-/** The model's whole answer to `prompt`, reasoning included. */
-export async function oneShot(prompt: string): Promise<string> {
-  const reasons = getEngine()?.entry.reasons ?? false;
-  const conversation = createConversation({ temperature: 0.3, maxNewTokens: ONE_SHOT_MAX_TOKENS });
+/**
+ * The model's answer to one task, its reasoning left out.
+ *
+ * The task goes in the system turn and its input in the user turn, which is
+ * how the prompts are written ("the user message is JSON…") and how the cloud
+ * sends them. Sent together as one user message, Gemma 4 read the instructions
+ * as something to reply to, and ended its turn at once without a word.
+ */
+export async function oneShot(
+  { instructions, input }: OneShotPrompt,
+  options: {
+    /** Stops the answer where it is. The promise then rejects with `OneShotAborted`. */
+    signal?: AbortSignal;
+  } = {},
+): Promise<string> {
+  const { signal } = options;
+  if (signal?.aborted) throw new OneShotAborted();
+  const conversation = createConversation({
+    systemPrompt: instructions,
+    temperature: 0.3,
+    maxNewTokens: ONE_SHOT_MAX_TOKENS,
+    // Reasoning about a three-word title costs more than the title, and can
+    // run past the cap before any answer at all.
+    thinking: false,
+  });
+  const stop = () => conversation.stop();
+  signal?.addEventListener('abort', stop);
   try {
-    const turn = await conversation.sendMessage(reasons ? prompt + NO_THINK : prompt);
+    const turn = await conversation.sendMessage(input);
+    if (signal?.aborted) throw new OneShotAborted();
     const last = turn.messages[turn.messages.length - 1];
     return last?.role === 'assistant' && typeof last.content === 'string' ? last.content : '';
   } catch (err) {
@@ -52,6 +75,15 @@ export async function oneShot(prompt: string): Promise<string> {
     }
     throw err;
   } finally {
+    signal?.removeEventListener('abort', stop);
     conversation.dispose();
+  }
+}
+
+/** Thrown when a one-shot was called off through its signal. */
+export class OneShotAborted extends Error {
+  constructor() {
+    super('Stopped');
+    this.name = 'OneShotAborted';
   }
 }

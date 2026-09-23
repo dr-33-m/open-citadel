@@ -585,6 +585,8 @@ export interface PromptAndTools {
 export function promptAndToolsFor(
   maxContextTokens: number,
   enableToolCalling: boolean,
+  /** Anything else the system turn carries, such as a book's context. */
+  extraTokens = 0,
 ): PromptAndTools {
   const choices: PromptAndTools[] = enableToolCalling
     ? [
@@ -592,7 +594,7 @@ export function promptAndToolsFor(
         { systemPrompt: SAMWELL_SYSTEM_PROMPT_COMPACT, tools: SAMWELL_DEVICE_TOOLS },
       ]
     : [];
-  const room = usableTokens(maxContextTokens) - MIN_CONVERSATION_TOKENS;
+  const room = usableTokens(maxContextTokens) - MIN_CONVERSATION_TOKENS - extraTokens;
   return (
     choices.find((c) => baselineTokens(c.systemPrompt, c.tools) <= room) ?? {
       systemPrompt: SAMWELL_SYSTEM_PROMPT_NO_TOOLS,

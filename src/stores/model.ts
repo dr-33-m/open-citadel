@@ -27,6 +27,8 @@ import { checkModelMemory, type MemoryEstimate } from "@/utils/memory-estimator"
 
 export interface InferenceSettings {
   enableToolCalling: boolean;
+  /** Whether a brain that can reason does so before it answers. */
+  enableThinking: boolean;
 }
 
 /** A catalogue brain and what this device holds of it. */
@@ -40,12 +42,17 @@ export interface LocalModel {
   downloadedAt: string | null;
   /** Whether we can read its tool calls. */
   supportsToolCalling: boolean;
+  /** Whether it can reason before it answers, and be told to or not. */
+  supportsThinking: boolean;
   /** The brain the app points readers to first. */
   recommended: boolean;
 }
 
 const DEFAULT_INFERENCE: InferenceSettings = {
   enableToolCalling: true,
+  // Off: on the small windows most brains have, reasoning can use up the
+  // room a reply has and leave no answer at all.
+  enableThinking: false,
 };
 
 interface ModelStore {
@@ -85,12 +92,14 @@ const WAKE_TOAST_KEY = 'samwell-wake';
 /** Marks the one-time clear-out of the LiteRT runtime's files as done. */
 const LITERT_CLEARED_KEY = 'device.litertCleared';
 
-/** Settings only the LiteRT runtime understood. */
+/**
+ * Settings only the LiteRT runtime understood. `inference.enableThinking` is
+ * not among them: it meant the same then as it does now, so it carries over.
+ */
 const RETIRED_SETTINGS = [
   'inference.contextSize',
   'inference.backend',
   'inference.enableSpeculativeDecoding',
-  'inference.enableThinking',
   'inference.cpuThreads',
   'inference.gpuLayers',
   'device.unavailableBackends',
@@ -174,6 +183,7 @@ function rowsToModels(): LocalModel[] {
       isActive: row?.isActive === 1,
       downloadedAt: row?.downloadedAt ?? null,
       supportsToolCalling: !!entry.toolFormat,
+      supportsThinking: !!entry.thinking,
       recommended: !!entry.recommended,
     };
   });
@@ -230,6 +240,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     const settingsMap = Object.fromEntries(settingsRows.map((r) => [r.key, r.value]));
     const inference: InferenceSettings = {
       enableToolCalling: settingsMap['inference.enableToolCalling'] !== 'false', // default true
+      enableThinking: settingsMap['inference.enableThinking'] === 'true', // default false
     };
 
     set({
