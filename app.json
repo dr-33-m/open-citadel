@@ -80,8 +80,8 @@
       "./plugins/withCleartextTraffic",
       ["./plugins/withGradleVersion", "8.13"],
       "./plugins/withAbiFilters",
+      "./plugins/withExecuTorchPackaging",
       "./plugins/withReadiumPodfile",
-      "@dr33m/react-native-litert-lm",
       [
         "expo-build-properties",
         {
@@ -93,7 +93,7 @@
             "usesCleartextTraffic": true
           },
           "ios": {
-            "deploymentTarget": "16.4"
+            "deploymentTarget": "17.0"
           }
         }
       ],

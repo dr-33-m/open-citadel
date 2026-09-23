@@ -1,57 +1,50 @@
-import * as Device from "expo-device";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
-  createDownloadResumable,
+  cacheDirectory,
   deleteAsync,
   documentDirectory,
   getFreeDiskStorageAsync,
-  getInfoAsync,
-  makeDirectoryAsync,
-  type DownloadProgressData,
-  type DownloadResumable,
+  readDirectoryAsync,
 } from "expo-file-system/legacy";
+import type { RnExecuTorchError } from "react-native-executorch";
 import { create } from "zustand";
 
-import { db } from "@/db/client";
-import { appSettings, localModels } from "@/db/schema";
-import { createLLM, type Backend } from "@dr33m/react-native-litert-lm";
-import * as Inference from "@/services/inference";
-import { deleteModelFiles, verifyModelFile } from "@/services/model-file";
-import {
-  detectCapabilities,
-  repoIdFromUrl,
-  UNKNOWN_CAPABILITIES,
-} from "@/services/model-capabilities";
 import { showToast } from "@/components/toast/toast-provider";
+import { db } from "@/db/client";
+import { appSettings, deviceModels } from "@/db/schema";
+import { getExecuTorch, isExecuTorchAvailable } from "@/lib/executorch";
+import { catalogueModel, DEVICE_CATALOGUE } from "@/services/device-llm/catalogue";
+import { isEngineLoaded, loadEngine, unloadEngine } from "@/services/device-llm/engine";
+import {
+  deleteModelFiles,
+  downloadModelFiles,
+  localModelFiles,
+  remoteUrls,
+} from "@/services/device-llm/files";
+import { totalSizeBytes } from "@/services/huggingface";
 import { formatBytes } from "@/utils/format";
 import { checkModelMemory, type MemoryEstimate } from "@/utils/memory-estimator";
 
 export interface InferenceSettings {
-  contextSize: number;
-  backend: Backend;
-  enableSpeculativeDecoding: boolean;
   enableToolCalling: boolean;
 }
 
+/** A catalogue brain and what this device holds of it. */
 export interface LocalModel {
   id: string;
   name: string;
-  filename: string;
-  filePath: string | null;
-  downloadUrl: string;
+  /** Every file it needs, in bytes. Null until Hugging Face has been asked. */
   sizeBytes: number | null;
   isDownloaded: boolean;
   isActive: boolean;
   downloadedAt: string | null;
-  supportsSpeculativeDecoding: boolean;
-  supportsThinking: boolean;
+  /** Whether we can read its tool calls. */
   supportsToolCalling: boolean;
+  /** The brain the app points readers to first. */
+  recommended: boolean;
 }
 
 const DEFAULT_INFERENCE: InferenceSettings = {
-  contextSize: 4096,
-  backend: 'cpu',
-  enableSpeculativeDecoding: false,
   enableToolCalling: true,
 };
 
@@ -66,89 +59,21 @@ interface ModelStore {
   isLoading: boolean;
   loadError: string | null;
   downloadProgress: Record<string, number>; // modelId → 0–1
-  downloadResumables: Record<string, DownloadResumable>;
   inference: InferenceSettings;
-  deviceTotalMemory: number | null;
   memoryEstimate: MemoryEstimate | null;
-  activeBackend: Backend | null; // actual backend after model loads (detects GPU→CPU fallback)
-  unavailableBackends: Set<Backend>; // backends that fell back — disable in UI
 
   loadModels(): Promise<void>;
+  /** Fills in what each brain weighs, for any not yet measured. Needs the network. */
+  measureModels(): Promise<void>;
   setActiveModel(id: string): Promise<void>;
-  addCustomModel(name: string, downloadUrl: string, sizeBytes?: number | null): Promise<void>;
   downloadModel(id: string): Promise<void>;
   cancelDownload(id: string): void;
+  /** Removes a brain's files. It stays in the list, ready to download again. */
   deleteModel(id: string): Promise<void>;
   initContext(): Promise<void>;
   releaseContext(): Promise<void>;
   setInference(settings: Partial<InferenceSettings>): Promise<void>;
   checkMemory(modelId: string): Promise<void>;
-}
-
-/**
- * The brains offered before the reader has browsed for one.
- *
- * Kept to what has actually been run on a device. The list used to carry three
- * more, chosen by reputation: one of them (`litert-community/Gemma3-1B-IT`) is
- * a gated repo, so every download of it wrote a 401 page to disk and failed
- * much later inside the native loader. Anything untested belongs in the
- * catalogue, where a reader chooses it knowingly, not in the seed list, where
- * the app is vouching for it.
- */
-const SEED_MODELS: Omit<
-  LocalModel,
-  "isDownloaded" | "isActive" | "filePath" | "downloadedAt"
->[] = [
-  {
-    id: "gemma-4-e2b-it",
-    name: "Gemma 4 E2B",
-    filename: "gemma-4-E2B-it.litertlm",
-    downloadUrl:
-      "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-    sizeBytes: 2588 * 1024 * 1024,
-    supportsSpeculativeDecoding: true,
-    supportsThinking: true,
-    supportsToolCalling: true,
-  },
-];
-
-/** Seeded models that turned out to be undownloadable, removed on upgrade. */
-const RETIRED_SEED_IDS = [
-  "gemma3-1b-it",
-  "qwen2.5-1.5b-instruct",
-  "deepseek-r1-distill-qwen-1.5b",
-];
-
-/**
- * A download that finished but did not produce a model.
- *
- * Worth its own type because the reader needs to hear something different in
- * each case, and only this layer still knows which case it was: a gated repo
- * answers 401 with a sentence explaining itself, a missing file answers 404,
- * and a proxy or captive portal answers 200 with a login page.
- */
-class DownloadRejected extends Error {
-  constructor(
-    readonly status: number,
-    /** The server's own explanation, when it sent a short readable one. */
-    readonly serverMessage: string | null = null,
-  ) {
-    super(`Download rejected (${status})`);
-    this.name = "DownloadRejected";
-  }
-
-  readerMessage(): string {
-    if (this.status === 401 || this.status === 403) {
-      return "This model is restricted and cannot be downloaded here. Pick another one.";
-    }
-    if (this.status === 404) {
-      return "This model is no longer available at that address.";
-    }
-    if (this.serverMessage) {
-      return `The download did not return a model. The server said: ${this.serverMessage}`;
-    }
-    return "The download did not return a model file. Check your connection and try again.";
-  }
 }
 
 /** How long a wake may take before it is worth explaining. */
@@ -157,18 +82,111 @@ const SLOW_WAKE_NOTICE_MS = 3000;
 /** Keyed so a second wake replaces the first notice rather than stacking. */
 const WAKE_TOAST_KEY = 'samwell-wake';
 
-function modelsDir(): string {
-  return (documentDirectory ?? "") + "litert-models/";
+/** Marks the one-time clear-out of the LiteRT runtime's files as done. */
+const LITERT_CLEARED_KEY = 'device.litertCleared';
+
+/** Settings only the LiteRT runtime understood. */
+const RETIRED_SETTINGS = [
+  'inference.contextSize',
+  'inference.backend',
+  'inference.enableSpeculativeDecoding',
+  'inference.enableThinking',
+  'inference.cpuThreads',
+  'inference.gpuLayers',
+  'device.unavailableBackends',
+  'device.attemptingBackend',
+];
+
+/** In-flight downloads, so one can be called off. Not state: nothing renders off it. */
+const downloads = new Map<string, AbortController>();
+
+/**
+ * The wake in flight. Every wake button, the chat banner and the wake dialog
+ * can all be pressed at once, and each used to start its own multi-second
+ * model load; now they share one.
+ */
+let waking: Promise<void> | null = null;
+
+/**
+ * Frees what the LiteRT runtime left on the device, once.
+ *
+ * Its models lived in `litert-models/` (2.5 GB for the one most readers had),
+ * and its engine wrote caches named after them into the cache directory, up to
+ * 2.2 GB more per model. ExecuTorch cannot read either, so both go.
+ */
+async function clearLiteRtFiles(): Promise<void> {
+  const done = db.select().from(appSettings).where(eq(appSettings.key, LITERT_CLEARED_KEY)).get();
+  if (done) return;
+
+  const docs = documentDirectory ?? "";
+  await deleteAsync(`${docs}litert-models/`, { idempotent: true }).catch(() => {});
+  await deleteAsync(`${docs}llama-models/`, { idempotent: true }).catch(() => {});
+  if (cacheDirectory) {
+    const names = await readDirectoryAsync(cacheDirectory).catch(() => [] as string[]);
+    await Promise.all(
+      names
+        .filter((n) => n.includes(".litertlm"))
+        .map((n) => deleteAsync(cacheDirectory + n, { idempotent: true }).catch(() => {})),
+    );
+  }
+  for (const key of RETIRED_SETTINGS) {
+    db.delete(appSettings).where(eq(appSettings.key, key)).run();
+  }
+
+  db.insert(appSettings)
+    .values({ key: LITERT_CLEARED_KEY, value: "1" })
+    .onConflictDoUpdate({ target: appSettings.key, set: { value: "1" } })
+    .run();
 }
 
-function modelFilePath(filename: string): string {
-  return modelsDir() + filename;
+/** The runtime's own error code, when it was the runtime that failed. */
+function runtimeError(err: unknown): RnExecuTorchError | null {
+  const et = getExecuTorch();
+  return et?.isRnExecuTorchError(err) ? err : null;
 }
 
-async function ensureModelsDir() {
-  const dir = modelsDir();
-  const info = await getInfoAsync(dir);
-  if (!info.exists) await makeDirectoryAsync(dir, { intermediates: true });
+/** What a failed wake means, in words for the reader. */
+function wakeErrorMessage(err: unknown): string {
+  const msg = err instanceof Error ? err.message : "Failed to load model";
+  const code = runtimeError(err)?.etRuntimeErrorCode;
+  const lower = msg.toLowerCase();
+  // ExecuTorch's MemoryAllocationFailed (0x21), or an allocator's own words.
+  if (code === 0x21 || lower.includes("out of memory") || lower.includes("alloc")) {
+    return "This brain is too large for this device. Try a smaller one.";
+  }
+  // InvalidProgram (0x23): not a program this runtime can read, whether
+  // damaged or exported for a different version of it.
+  if (code === 0x23) {
+    return "This brain's files can't be read. Delete it and download it again.";
+  }
+  return `Failed to load model: ${msg}`;
+}
+
+function rowsToModels(): LocalModel[] {
+  const rows = new Map(db.select().from(deviceModels).all().map((r) => [r.id, r]));
+  return DEVICE_CATALOGUE.map((entry) => {
+    const row = rows.get(entry.id);
+    return {
+      id: entry.id,
+      name: entry.name,
+      sizeBytes: row?.sizeBytes ?? null,
+      isDownloaded: row?.isDownloaded === 1,
+      isActive: row?.isActive === 1,
+      downloadedAt: row?.downloadedAt ?? null,
+      supportsToolCalling: !!entry.toolFormat,
+      recommended: !!entry.recommended,
+    };
+  });
+}
+
+function patchModel(id: string, patch: Partial<LocalModel>) {
+  return (s: ModelStore) => ({
+    models: s.models.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+  });
+}
+
+function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
 }
 
 export const useModelStore = create<ModelStore>((set, get) => ({
@@ -179,510 +197,186 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   isLoading: false,
   loadError: null,
   downloadProgress: {},
-  downloadResumables: {},
   inference: { ...DEFAULT_INFERENCE },
-  deviceTotalMemory: Device.totalMemory,
   memoryEstimate: null,
-  activeBackend: null,
-  unavailableBackends: new Set<Backend>(),
 
   async loadModels() {
-    // Clean up old GGUF models from llama.rn era (upgrade path)
-    const OLD_GGUF_IDS = [
-      'llama-3.2-1b-q4',
-      'qwen2.5-1.5b-q4',
-      'DeepSeek-R1-Distill-Qwen-1.5B-Q2_K_L',
-      'gemma-4-E2B-it-UD-IQ2_M',
-    ];
-    for (const oldId of OLD_GGUF_IDS) {
-      const rows = db.select().from(localModels).where(eq(localModels.id, oldId)).all();
-      for (const row of rows) {
-        if (row.filePath) {
-          try { await deleteAsync(row.filePath, { idempotent: true }); } catch { /* file may not exist */ }
-        }
-      }
-      db.delete(localModels).where(eq(localModels.id, oldId)).run();
+    // Off the path to the list: the old runtime's gigabytes can take a while
+    // to delete, and nothing here needs them gone first.
+    void clearLiteRtFiles().catch((err) => console.warn('[Models] Could not clear LiteRT files:', err));
+
+    // Every brain in the catalogue has a row, so the picker lists them all
+    // from the first launch. A row for a brain the catalogue has since
+    // dropped goes, since there is nothing left to show it by.
+    const known = new Set(DEVICE_CATALOGUE.map((m) => m.id));
+    for (const row of db.select().from(deviceModels).all()) {
+      if (!known.has(row.id)) db.delete(deviceModels).where(eq(deviceModels.id, row.id)).run();
     }
-    // Remove the old llama-models directory entirely
-    try { await deleteAsync((documentDirectory ?? '') + 'llama-models/', { idempotent: true }); } catch { /* ok */ }
-
-    // Remove obsolete inference settings from llama.rn
-    db.delete(appSettings).where(eq(appSettings.key, 'inference.cpuThreads')).run();
-    db.delete(appSettings).where(eq(appSettings.key, 'inference.gpuLayers')).run();
-    // Thinking is no longer a setting. The switch never controlled whether a
-    // model reasoned, only whether the app admitted it, so the stored value is
-    // dropped rather than left to be read by mistake.
-    db.delete(appSettings).where(eq(appSettings.key, 'inference.enableThinking')).run();
-
-    // Seed default models if table is empty (first launch or after cleanup)
-    const existing = db.select().from(localModels).all();
-    if (existing.length === 0) {
-      for (const m of SEED_MODELS) {
-        db.insert(localModels)
-          .values({
-            id: m.id,
-            name: m.name,
-            filename: m.filename,
-            filePath: null,
-            downloadUrl: m.downloadUrl,
-            sizeBytes: m.sizeBytes,
-            isDownloaded: 0,
-            isActive: m.id === SEED_MODELS[0].id ? 1 : 0,
-            downloadedAt: null,
-          })
-          .run();
-      }
+    for (const entry of DEVICE_CATALOGUE) {
+      db.insert(deviceModels).values({ id: entry.id }).onConflictDoNothing().run();
     }
 
-    // Repair pass: a download that returned an error page instead of a model
-    // was still recorded as downloaded, and a file can also be truncated by a
-    // crash or cleared by the OS. Verifying what is actually on disk is the
-    // only way to tell, and it is cheap: a stat and eight bytes per model.
-    for (const row of db.select().from(localModels).all()) {
-      if (row.isDownloaded !== 1 || !row.filePath) continue;
-      // Only a file shown to be missing or wrong is cleared. A check that could
-      // not run, or could not read the file, keeps it: deleting a working model
-      // on a passing IO error costs the reader gigabytes to get back.
-      let check: Awaited<ReturnType<typeof verifyModelFile>>;
-      try {
-        check = await verifyModelFile(row.filePath);
-      } catch {
-        continue;
-      }
-      if (check.ok || check.reason === 'unreadable') continue;
-      await deleteModelFiles(row.filePath);
-      db.update(localModels)
-        .set({ isDownloaded: 0, filePath: null, downloadedAt: null })
-        .where(eq(localModels.id, row.id))
-        .run();
+    // Nothing selected, on a first launch or after the active brain was
+    // dropped: the recommended one, rather than the chat tab's "Set up
+    // Samwell" empty state.
+    const rows = db.select().from(deviceModels).all();
+    if (!rows.some((r) => r.isActive === 1)) {
+      const fallback = DEVICE_CATALOGUE.find((m) => m.recommended) ?? DEVICE_CATALOGUE[0];
+      db.update(deviceModels).set({ isActive: 1 }).where(eq(deviceModels.id, fallback.id)).run();
     }
 
-    // Retired seeds go once they hold nothing: a reader who did get one of
-    // these working keeps it, and the rest stop advertising a download that
-    // cannot succeed.
-    for (const retiredId of RETIRED_SEED_IDS) {
-      db.delete(localModels)
-        .where(and(eq(localModels.id, retiredId), eq(localModels.isDownloaded, 0)))
-        .run();
-    }
-
-    // Deleting the active model leaves nothing selected; fall back to the first
-    // row rather than to the chat tab's "Set up Samwell" empty state.
-    const remaining = db.select().from(localModels).all();
-    if (remaining.length > 0 && !remaining.some((r) => r.isActive === 1)) {
-      db.update(localModels).set({ isActive: 1 }).where(eq(localModels.id, remaining[0].id)).run();
-    }
-
-    const rows = db.select().from(localModels).all();
-    const models: LocalModel[] = rows.map((r) => {
-      return {
-        id: r.id,
-        name: r.name,
-        filename: r.filename,
-        filePath: r.filePath ?? null,
-        downloadUrl: r.downloadUrl,
-        sizeBytes: r.sizeBytes ?? null,
-        isDownloaded: r.isDownloaded === 1,
-        isActive: r.isActive === 1,
-        downloadedAt: r.downloadedAt ?? null,
-        supportsSpeculativeDecoding: r.supportsSpeculativeDecoding === 1,
-        supportsThinking: r.supportsThinking === 1,
-        supportsToolCalling: r.supportsToolCalling === 1,
-      };
-    });
-
-    const active = models.find((m) => m.isActive);
-
-    // Load persisted inference settings
+    const models = rowsToModels();
     const settingsRows = db.select().from(appSettings).all();
     const settingsMap = Object.fromEntries(settingsRows.map((r) => [r.key, r.value]));
     const inference: InferenceSettings = {
-      contextSize: parseInt(settingsMap['inference.contextSize'] ?? String(DEFAULT_INFERENCE.contextSize), 10),
-      backend: (settingsMap['inference.backend'] as Backend) ?? DEFAULT_INFERENCE.backend,
-      enableSpeculativeDecoding: settingsMap['inference.enableSpeculativeDecoding'] === 'true',
       enableToolCalling: settingsMap['inference.enableToolCalling'] !== 'false', // default true
     };
 
-    // Load persisted unavailable backends (hardware doesn't change between sessions)
-    const unavailableRaw = settingsMap['device.unavailableBackends'];
-    const unavailableBackends = new Set<Backend>(
-      unavailableRaw ? (unavailableRaw.split(',').filter(Boolean) as Backend[]) : []
-    );
-
-    // Crash barrier: if the app crashed while attempting a backend (SIGSEGV from
-    // GPU/NPU Engine()), the flag is still set. Mark that backend as unavailable.
-    const crashedBackend = settingsMap['device.attemptingBackend'] as Backend | undefined;
-    if (crashedBackend && crashedBackend !== 'cpu') {
-      unavailableBackends.add(crashedBackend);
-      db.insert(appSettings)
-        .values({ key: 'device.unavailableBackends', value: [...unavailableBackends].join(',') })
-        .onConflictDoUpdate({ target: appSettings.key, set: { value: [...unavailableBackends].join(',') } })
-        .run();
-      // Clear the flag and reset backend to cpu
-      db.delete(appSettings).where(eq(appSettings.key, 'device.attemptingBackend')).run();
-      db.insert(appSettings)
-        .values({ key: 'inference.backend', value: 'cpu' })
-        .onConflictDoUpdate({ target: appSettings.key, set: { value: 'cpu' } })
-        .run();
-      inference.backend = 'cpu';
-    }
-
-    set({ models, activeModelId: active?.id ?? null, inference, unavailableBackends, modelsHydrated: true });
+    set({
+      models,
+      activeModelId: models.find((m) => m.isActive)?.id ?? null,
+      inference,
+      modelsHydrated: true,
+    });
   },
 
-  async addCustomModel(name, downloadUrl, knownSizeBytes = null) {
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
-    const filename =
-      downloadUrl.split("/").pop()?.split("?")[0] ?? "model.litertlm";
-
-    // The catalogue already carries the exact blob size; only fall back to a
-    // HEAD probe for a model that arrived some other way.
-    let sizeBytes: number | null = knownSizeBytes;
-    if (sizeBytes == null) {
-      try {
-        const res = await fetch(downloadUrl, { method: "HEAD" });
-        const cl = res.headers.get("content-length");
-        if (cl) sizeBytes = parseInt(cl, 10);
-      } catch {}
-    }
-
-    db.insert(localModels)
-      .values({
-        id,
-        name,
-        filename,
-        filePath: null,
-        downloadUrl,
-        sizeBytes,
-        isDownloaded: 0,
-        isActive: 0,
-        downloadedAt: null,
-      })
-      .run();
-    await get().loadModels();
+  async measureModels() {
+    const unmeasured = get().models.filter((m) => m.sizeBytes == null);
+    await Promise.all(
+      unmeasured.map(async (m) => {
+        const entry = catalogueModel(m.id);
+        if (!entry) return;
+        const sizeBytes = await totalSizeBytes(remoteUrls(entry)).catch(() => null);
+        if (sizeBytes == null) return;
+        db.update(deviceModels).set({ sizeBytes }).where(eq(deviceModels.id, m.id)).run();
+        set(patchModel(m.id, { sizeBytes }));
+      }),
+    );
   },
 
   async setActiveModel(id) {
-    db.update(localModels).set({ isActive: 0 }).run();
-    db.update(localModels)
-      .set({ isActive: 1 })
-      .where(eq(localModels.id, id))
-      .run();
+    db.update(deviceModels).set({ isActive: 0 }).run();
+    db.update(deviceModels).set({ isActive: 1 }).where(eq(deviceModels.id, id)).run();
     set((s) => ({
       activeModelId: id,
       models: s.models.map((m) => ({ ...m, isActive: m.id === id })),
     }));
 
-    if (Inference.isModelLoaded()) {
-      await Inference.unloadModel();
+    if (get().isLoaded) {
+      await unloadEngine();
       set({ isLoaded: false });
     }
   },
 
   async downloadModel(id) {
-    const model = get().models.find((m) => m.id === id);
-    if (!model) return;
+    const entry = catalogueModel(id);
+    if (!entry || downloads.has(id)) return;
 
-    // Check free disk space first
+    // The storage check needs the size, which a brain never browsed may not
+    // have yet.
+    let required = get().models.find((m) => m.id === id)?.sizeBytes ?? null;
+    if (required == null) {
+      required = await totalSizeBytes(remoteUrls(entry)).catch(() => null);
+      if (required != null) {
+        db.update(deviceModels).set({ sizeBytes: required }).where(eq(deviceModels.id, id)).run();
+        set(patchModel(id, { sizeBytes: required }));
+      }
+    }
     const freeSpace = await getFreeDiskStorageAsync();
-    const required = model.sizeBytes ?? 0;
-    if (required > 0 && freeSpace < required * 1.1) {
+    if (required && freeSpace < required * 1.1) {
       set({
         loadError: `Not enough storage. ${formatBytes(required)} required, ${formatBytes(freeSpace)} free.`,
       });
       return;
     }
 
-    await ensureModelsDir();
-    const destPath = modelFilePath(model.filename);
-
-    const resumable = createDownloadResumable(
-      model.downloadUrl,
-      destPath,
-      {},
-      (progress: DownloadProgressData) => {
-        const ratio =
-          progress.totalBytesExpectedToWrite > 0
-            ? progress.totalBytesWritten / progress.totalBytesExpectedToWrite
-            : 0;
-        set((s) => ({
-          downloadProgress: { ...s.downloadProgress, [id]: ratio },
-        }));
-      },
-    );
-
-    set((s) => ({
-      downloadResumables: { ...s.downloadResumables, [id]: resumable },
-      downloadProgress: { ...s.downloadProgress, [id]: 0 },
-      loadError: null,
-    }));
+    const controller = new AbortController();
+    downloads.set(id, controller);
+    set((s) => ({ downloadProgress: { ...s.downloadProgress, [id]: 0 }, loadError: null }));
 
     try {
-      const result = await resumable.downloadAsync();
-      if (!result) throw new Error("Download cancelled");
-
-      // `downloadAsync` resolves on any response it managed to write, including
-      // a 401 from a gated repo, whose body then sits on disk wearing the
-      // model's filename. The status is the first thing that catches that.
-      if (result.status < 200 || result.status >= 300) {
-        throw new DownloadRejected(result.status);
-      }
-
-      // And the second: a file that is not a model, whatever the status said.
-      const check = await verifyModelFile(destPath);
-      if (!check.ok) throw new DownloadRejected(result.status, check.serverMessage);
-
-      // Always the size that actually landed. Trusting the catalogue's figure
-      // is how a 137-byte error page displayed as "584 MB, downloaded".
-      const resolvedSize = check.sizeBytes;
-
-      // Probe model capabilities from the downloaded file
-      let supportsSpec = false;
-      try {
-        const probe = createLLM();
-        const caps = probe.checkModelCapabilities(destPath);
-        supportsSpec = caps.supportsSpeculativeDecoding;
-      } catch { /* non-critical — default to false */ }
-
-      // Capabilities from the model's own chat template, not its filename.
-      //
-      // The filename guess this replaces matched "gemma-4" and treated
-      // everything else as incapable, which was wrong for most of the
-      // catalogue: Qwen3 reasons and calls tools, Qwen2.5 calls tools,
-      // DeepSeek-R1 reasons. Reading the template asks the thing that actually
-      // decides. Undetectable is not fatal — the flags fall back to off and the
-      // reasoning stripper on the display side covers what they miss.
-      const repoId = repoIdFromUrl(model.downloadUrl);
-      const caps = repoId ? await detectCapabilities(repoId) : UNKNOWN_CAPABILITIES;
-      const { supportsThinking, supportsToolCalling } = caps;
+      await downloadModelFiles(entry, {
+        signal: controller.signal,
+        onProgress: (fraction) =>
+          set((s) => ({ downloadProgress: { ...s.downloadProgress, [id]: fraction } })),
+      });
 
       const now = new Date().toISOString();
-      db.update(localModels)
-        .set({
-          isDownloaded: 1,
-          filePath: destPath,
-          downloadedAt: now,
-          sizeBytes: resolvedSize,
-          supportsSpeculativeDecoding: supportsSpec ? 1 : 0,
-          supportsThinking: supportsThinking ? 1 : 0,
-          supportsToolCalling: supportsToolCalling ? 1 : 0,
-        })
-        .where(eq(localModels.id, id))
+      db.update(deviceModels)
+        .set({ isDownloaded: 1, downloadedAt: now })
+        .where(eq(deviceModels.id, id))
         .run();
-
-      set((s) => ({
-        models: s.models.map((m) =>
-          m.id === id
-            ? {
-                ...m,
-                isDownloaded: true,
-                filePath: destPath,
-                downloadedAt: now,
-                sizeBytes: resolvedSize,
-                supportsSpeculativeDecoding: supportsSpec,
-                supportsThinking,
-                supportsToolCalling,
-              }
-            : m,
-        ),
-        downloadProgress: Object.fromEntries(
-          Object.entries(s.downloadProgress).filter(([k]) => k !== id),
-        ),
-        downloadResumables: Object.fromEntries(
-          Object.entries(s.downloadResumables).filter(([k]) => k !== id),
-        ),
-      }));
+      set(patchModel(id, { isDownloaded: true, downloadedAt: now }));
     } catch (err: unknown) {
-      try {
-        await deleteAsync(destPath, { idempotent: true });
-      } catch {}
+      // A cancel is the reader's own choice, not a failure worth a message.
+      if (runtimeError(err)?.code === 'DOWNLOAD_ABORTED') return;
 
       const msg = err instanceof Error ? err.message : "Download failed";
       const isStorageError =
-        msg.includes("ERR_FILE_SYSTEM_WRITE") ||
-        msg.includes("No space left") ||
-        msg.includes("storage");
-
-      set((s) => ({
-        loadError:
-          err instanceof DownloadRejected
-            ? err.readerMessage()
-            : isStorageError
-              ? "Not enough storage to complete the download."
-              : `Download failed: ${msg}`,
-        downloadProgress: Object.fromEntries(
-          Object.entries(s.downloadProgress).filter(([k]) => k !== id),
-        ),
-        downloadResumables: Object.fromEntries(
-          Object.entries(s.downloadResumables).filter(([k]) => k !== id),
-        ),
-      }));
+        msg.includes("No space left") || msg.toLowerCase().includes("storage");
+      set({
+        loadError: isStorageError
+          ? "Not enough storage to complete the download."
+          : `Download failed: ${msg}`,
+      });
+    } finally {
+      downloads.delete(id);
+      set((s) => ({ downloadProgress: withoutKey(s.downloadProgress, id) }));
     }
   },
 
   cancelDownload(id) {
-    const resumable = get().downloadResumables[id];
-    if (resumable) {
-      resumable.cancelAsync();
-      set((s) => ({
-        downloadProgress: Object.fromEntries(
-          Object.entries(s.downloadProgress).filter(([k]) => k !== id),
-        ),
-        downloadResumables: Object.fromEntries(
-          Object.entries(s.downloadResumables).filter(([k]) => k !== id),
-        ),
-      }));
-    }
+    // What arrived so far is kept, so downloading it again carries on from
+    // there rather than starting over.
+    downloads.get(id)?.abort();
   },
 
   async deleteModel(id) {
+    const entry = catalogueModel(id);
     const model = get().models.find((m) => m.id === id);
-    if (!model) return;
+    if (!entry || !model?.isDownloaded) return;
 
-    // Unload first: the engine holds the model and its cache open while loaded.
-    if (Inference.isModelLoaded() && get().activeModelId === id) {
-      await Inference.unloadModel();
+    // Unloaded first: the engine holds the model's files open while it runs.
+    if (get().isLoaded && get().activeModelId === id) {
+      await unloadEngine();
       set({ isLoaded: false });
     }
 
-    if (model.filePath) await deleteModelFiles(model.filePath);
+    const keep = new Set(
+      get()
+        .models.filter((m) => m.isDownloaded && m.id !== id)
+        .flatMap((m) => {
+          const other = catalogueModel(m.id);
+          return other ? remoteUrls(other) : [];
+        }),
+    );
+    await deleteModelFiles(entry, keep);
 
-    db.delete(localModels).where(eq(localModels.id, id)).run();
-
-    set((s) => ({
-      models: s.models.filter((m) => m.id !== id),
-      activeModelId: s.activeModelId === id ? null : s.activeModelId,
-    }));
+    db.update(deviceModels)
+      .set({ isDownloaded: 0, downloadedAt: null })
+      .where(eq(deviceModels.id, id))
+      .run();
+    set(patchModel(id, { isDownloaded: false, downloadedAt: null }));
   },
 
-  async initContext() {
-    const { models, activeModelId } = get();
-    const model = models.find((m) => m.id === activeModelId);
-    if (!model?.filePath || !model.isDownloaded) {
-      set({ loadError: "No downloaded model selected." });
-      return;
-    }
-
-    if (!Inference.isNativeAvailable()) {
-      set({ loadError: "AI chat isn't supported on this device." });
-      return;
-    }
-
-    set({ isLoading: true, loadError: null, activeBackend: null });
-
-    /*
-     * Waking is measured in tens of seconds on a mid-range phone, and the
-     * engine reports no progress while it does it, so the indicator has
-     * nothing to count towards. Left alone that reads as a stall rather than
-     * as work.
-     *
-     * The notice is delayed rather than raised immediately: a wake that
-     * finishes quickly should say nothing at all, and three seconds is long
-     * enough to tell the two apart. Cleared on every exit below, so a fast
-     * wake never leaves it queued behind itself.
-     */
-    const slowWakeNotice = setTimeout(() => {
-      showToast({
-        key: WAKE_TOAST_KEY,
-        message: 'Samwell is waking up. Hang tight, this can take a few moments.',
-      });
-    }, SLOW_WAKE_NOTICE_MS);
-
-    try {
-      const { inference } = get();
-      // Clamp inference settings to what the model actually supports
-      const effectiveInference: Inference.ModelSettings = {
-        ...inference,
-        enableSpeculativeDecoding: inference.enableSpeculativeDecoding && model.supportsSpeculativeDecoding,
-        // Off, which is how Gemma was tested. Gemma honours this flag: turned on,
-        // its reasoning pushed time to first token past two minutes on a 5.3 GB
-        // phone and spent the context budget, so a tool result no longer fitted
-        // and the turn stopped at the device-limit banner. A model that reasons
-        // regardless still has its `<think>` blocks split out for display.
-        enableThinking: false,
-        enableToolCalling: inference.enableToolCalling && model.supportsToolCalling,
-      };
-
-      // Crash barrier: set flag BEFORE attempting non-CPU backend.
-      // If Engine() causes SIGSEGV, next startup detects the flag and
-      // permanently disables this backend.
-      if (inference.backend !== 'cpu') {
-        db.insert(appSettings)
-          .values({ key: 'device.attemptingBackend', value: inference.backend })
-          .onConflictDoUpdate({ target: appSettings.key, set: { value: inference.backend } })
-          .run();
-      }
-
-      await Inference.loadModel(model.filePath, effectiveInference);
-
-      // Engine loaded successfully — clear the crash barrier flag
-      db.delete(appSettings).where(eq(appSettings.key, 'device.attemptingBackend')).run();
-
-      const activeBackend = Inference.getActiveBackend() ?? inference.backend;
-
-      // If the engine fell back to a different backend, mark the requested one
-      // as unavailable permanently (hardware won't change) and switch the
-      // setting to what's actually running.
-      const { unavailableBackends } = get();
-      if (activeBackend !== inference.backend) {
-        const updated = new Set(unavailableBackends);
-        updated.add(inference.backend);
-        // Persist to DB so it survives app restarts
-        db.insert(appSettings)
-          .values({ key: 'device.unavailableBackends', value: [...updated].join(',') })
-          .onConflictDoUpdate({ target: appSettings.key, set: { value: [...updated].join(',') } })
-          .run();
-        set({ unavailableBackends: updated, inference: { ...inference, backend: activeBackend } });
-      }
-
-      // No warmup turn here, deliberately.
-      //
-      // There used to be one: send "hi", await the whole reply, then
-      // `resetConversation()`. On a mid-range device that cost two to three
-      // minutes of a pulsing, unusable Samwell, and it bought nothing —
-      // `resetConversation()` builds a fresh conversation with a fresh KV
-      // cache, so the very thing the turn was meant to pre-allocate was
-      // thrown away on the next line. What genuinely survives (weights paged
-      // in, kernels compiled into `cacheDir`) is paid for by the first real
-      // message anyway, and at least that one is a message the reader asked
-      // for.
-      clearTimeout(slowWakeNotice);
-      set({ isLoaded: true, isLoading: false, activeBackend });
-    } catch (err: unknown) {
-      clearTimeout(slowWakeNotice);
-      const msg = err instanceof Error ? err.message : "Failed to load model";
-      const lower = msg.toLowerCase();
-      const isOom =
-        lower.includes("out of memory") ||
-        lower.includes("oom") ||
-        lower.includes("alloc");
-      // The engine's own words for "this is not a model file". The repair pass
-      // in loadModels clears the bad file, so the fix really is to download
-      // again rather than to try a different setting.
-      const isCorrupt =
-        lower.includes("invalid magic number") || lower.includes("failed to open litert-lm file");
-      set({
-        isLoading: false,
-        isLoaded: false,
-        loadError: isOom
-          ? "Model is too large for this device. Try a smaller model."
-          : isCorrupt
-            ? "This model file is damaged. Delete it and download it again."
-            : `Failed to load model: ${msg}`,
+  initContext() {
+    if (!waking) {
+      waking = wake().finally(() => {
+        waking = null;
       });
     }
+    return waking;
   },
 
   async releaseContext() {
-    await Inference.unloadModel();
-    set({ isLoaded: false, loadError: null, activeBackend: null });
+    await unloadEngine();
+    set({ isLoaded: false, loadError: null });
   },
 
   async setInference(partial) {
     const merged = { ...get().inference, ...partial };
     set({ inference: merged });
 
-    // Persist each setting
     for (const [key, value] of Object.entries(partial)) {
       db.insert(appSettings)
         .values({ key: `inference.${key}`, value: String(value) })
@@ -698,10 +392,89 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       return;
     }
     try {
-      const estimate = checkModelMemory(model.sizeBytes);
-      set({ memoryEstimate: estimate });
+      set({ memoryEstimate: checkModelMemory(model.sizeBytes) });
     } catch {
       set({ memoryEstimate: null });
     }
   },
 }));
+
+/** Loads the active brain. Only through `initContext`, which keeps it to one at a time. */
+async function wake(): Promise<void> {
+  const get = useModelStore.getState;
+  const set = useModelStore.setState;
+  const { models, activeModelId } = get();
+  const model = models.find((m) => m.id === activeModelId);
+  const entry = catalogueModel(activeModelId);
+  if (!model?.isDownloaded || !entry) {
+    set({ loadError: "No downloaded model selected." });
+    return;
+  }
+
+  if (!isExecuTorchAvailable()) {
+    set({ loadError: "AI chat isn't supported on this device." });
+    return;
+  }
+
+  set({ isLoading: true, loadError: null });
+
+  /*
+   * Waking is measured in seconds on a mid-range phone, and the engine
+   * reports no progress while it does it, so the indicator has nothing to
+   * count towards. Left alone that reads as a stall rather than as work.
+   *
+   * The notice is delayed rather than raised immediately: a wake that
+   * finishes quickly should say nothing at all, and three seconds is long
+   * enough to tell the two apart. Cleared on every exit below, so a fast
+   * wake never leaves it queued behind itself.
+   */
+  const slowWakeNotice = setTimeout(() => {
+    showToast({
+      key: WAKE_TOAST_KEY,
+      message: 'Samwell is waking up. Hang tight, this can take a few moments.',
+    });
+  }, SLOW_WAKE_NOTICE_MS);
+
+  try {
+    const files = await localModelFiles(entry);
+    if (!files) {
+      // Recorded as downloaded, and not on the device: cleared by the OS or
+      // by hand. Saying so is better than a load error about a path.
+      clearTimeout(slowWakeNotice);
+      db.update(deviceModels)
+        .set({ isDownloaded: 0, downloadedAt: null })
+        .where(eq(deviceModels.id, entry.id))
+        .run();
+      set({
+        ...patchModel(entry.id, { isDownloaded: false, downloadedAt: null })(get()),
+        isLoading: false,
+        loadError: "This brain's files are missing. Download it again.",
+      });
+      return;
+    }
+
+    await loadEngine(entry, files);
+    clearTimeout(slowWakeNotice);
+
+    // Released while it loaded (the app went to the background), or another
+    // brain was chosen: the reader no longer wants this one, and holding it
+    // would answer as the wrong model.
+    if (!isEngineLoaded() || get().activeModelId !== entry.id) {
+      await unloadEngine();
+      set({ isLoading: false, isLoaded: false });
+      return;
+    }
+
+    // No warmup turn here, deliberately. What it would buy (weights paged
+    // in) is paid for by the first real message anyway, and at least that
+    // one is a message the reader asked for.
+    set({ isLoaded: true, isLoading: false });
+  } catch (err: unknown) {
+    clearTimeout(slowWakeNotice);
+    set({
+      isLoading: false,
+      isLoaded: false,
+      loadError: wakeErrorMessage(err),
+    });
+  }
+}

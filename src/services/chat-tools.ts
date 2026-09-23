@@ -1,5 +1,4 @@
 import { and, desc, eq, like, or } from 'drizzle-orm';
-import type { ToolDefinition } from '@dr33m/react-native-litert-lm';
 import {
   OPEN_CITADEL_GUIDE,
   SAMWELL_SYSTEM_PROMPT,
@@ -11,7 +10,7 @@ import { db } from '@/db/client';
 import { books, chatSuggestions, collections, highlights, notes, readingProgress, thoughts } from '@/db/schema';
 import { extractReadSections } from '@/services/book-context';
 import { formatJourneyNotes, searchJourneyNotes } from '@/services/journey';
-import { CHARS_PER_TOKEN, estimateTokens } from '@/services/context-budget';
+import { CHARS_PER_TOKEN, estimateTokens, usableTokens } from '@/services/context-budget';
 import {
   READING_LIMITS,
   SEARCH_LIMITS,
@@ -26,13 +25,14 @@ import { useTimelineStore } from '@/stores/timeline';
 // ── Tool definitions ────────────────────────────────────────────────────────
 
 /*
- * The tool catalogue in the on-device engine's format.
+ * The on-device tool catalogue, in the OpenAI function shape ExecuTorch takes
+ * and renders into the model's chat template.
  *
  * `search_journey` is deliberately absent, and absent from here rather than
  * merely absent from `DEVICE_TOOL_NAMES`: this array is what a device with a
  * large enough window loads in full, so leaving it out of the allowlist alone
- * would still hand the journey to any on-device model past
- * `FULL_TOOLSET_MIN_CONTEXT_TOKENS`. Journey memory is cloud-only, so it is
+ * would still hand the journey to any on-device model with a window large
+ * enough for the full set (see `promptAndToolsFor`). Journey memory is cloud-only, so it is
  * defined once, in the cloud tool definitions, and there is no path from here
  * to the engine.
  */
@@ -493,7 +493,7 @@ export const APPROVAL_REQUIRED_TOOLS = new Set([
   'remove_book_from_collection',
 ]);
 
-// ── Tool definitions in litert-lm format ────────────────────────────────────
+// ── The on-device toolset ───────────────────────────────────────────────────
 
 /**
  * The tools Samwell carries when running on-device.
@@ -543,41 +543,28 @@ export const DEVICE_TOOL_NAMES: ReadonlySet<string> = new Set([
   'delete_thought',
 ]);
 
-const toLiteRT = (t: (typeof SAMWELL_TOOLS)[number]): ToolDefinition => ({
-  name: t.function.name,
-  description: t.function.description,
-  parametersJson: JSON.stringify(t.function.parameters),
-});
-
-/** Every tool, for windows large enough to afford the full catalogue. */
-export const SAMWELL_TOOLS_LITERT: ToolDefinition[] = SAMWELL_TOOLS.map(toLiteRT);
+/** One tool's schema, without the code that runs it. */
+export type SamwellToolSchema = (typeof SAMWELL_TOOLS)[number];
 
 /** The on-device subset. See {@link DEVICE_TOOL_NAMES}. */
-export const SAMWELL_TOOLS_LITERT_DEVICE: ToolDefinition[] = SAMWELL_TOOLS.filter((t) =>
+export const SAMWELL_DEVICE_TOOLS: readonly SamwellToolSchema[] = SAMWELL_TOOLS.filter((t) =>
   DEVICE_TOOL_NAMES.has(t.function.name),
-).map(toLiteRT);
+);
 
 /**
- * Context window at which the full catalogue stops crowding out the
- * conversation. At 8192 the schemas cost roughly a third of the usable window
- * instead of overrunning it outright.
+ * Room a conversation needs past its baseline to be worth having: a few
+ * exchanges before the first compaction.
  */
-const FULL_TOOLSET_MIN_CONTEXT_TOKENS = 8192;
+const MIN_CONVERSATION_TOKENS = 384;
 
-/**
- * Smallest window that can hold the device toolset and still leave room to
- * talk.
- *
- * Measured, not guessed: at 2048 the compact prompt estimates at 1113 tokens
- * and the device schemas at 1167, against 1280 usable once the reply reserve is
- * held back. That is 2280 in a window of 1280, so every first message was
- * refused as a full conversation. At 4096 the same pair is 2280 of 3328.
- */
-export const DEVICE_TOOLSET_MIN_CONTEXT_TOKENS = 4096;
+/** What a prompt and its tool schemas cost before a word is exchanged. */
+export function baselineTokens(systemPrompt: string, tools: readonly SamwellToolSchema[]): number {
+  return tools.reduce((n, t) => n + estimateTokens(JSON.stringify(t.function)), estimateTokens(systemPrompt));
+}
 
 export interface PromptAndTools {
   systemPrompt: string;
-  tools: ToolDefinition[];
+  tools: readonly SamwellToolSchema[];
 }
 
 /**
@@ -589,18 +576,29 @@ export interface PromptAndTools {
  * was still told it had them, and a window too small for the schemas was given
  * them anyway. Both are settled here from the same inputs, so the prompt can
  * never promise a tool the engine was not handed.
+ *
+ * The richest set that still leaves room to talk wins. Measured against the
+ * window rather than keyed to fixed sizes, because exports come in whatever
+ * window they were built with: Gemma 4 E2B's is 4048, just short of the 4096
+ * the toolset used to be gated on.
  */
 export function promptAndToolsFor(
   maxContextTokens: number,
   enableToolCalling: boolean,
 ): PromptAndTools {
-  if (enableToolCalling && maxContextTokens >= FULL_TOOLSET_MIN_CONTEXT_TOKENS) {
-    return { systemPrompt: SAMWELL_SYSTEM_PROMPT, tools: SAMWELL_TOOLS_LITERT };
-  }
-  if (enableToolCalling && maxContextTokens >= DEVICE_TOOLSET_MIN_CONTEXT_TOKENS) {
-    return { systemPrompt: SAMWELL_SYSTEM_PROMPT_COMPACT, tools: SAMWELL_TOOLS_LITERT_DEVICE };
-  }
-  return { systemPrompt: SAMWELL_SYSTEM_PROMPT_NO_TOOLS, tools: [] };
+  const choices: PromptAndTools[] = enableToolCalling
+    ? [
+        { systemPrompt: SAMWELL_SYSTEM_PROMPT, tools: SAMWELL_TOOLS },
+        { systemPrompt: SAMWELL_SYSTEM_PROMPT_COMPACT, tools: SAMWELL_DEVICE_TOOLS },
+      ]
+    : [];
+  const room = usableTokens(maxContextTokens) - MIN_CONVERSATION_TOKENS;
+  return (
+    choices.find((c) => baselineTokens(c.systemPrompt, c.tools) <= room) ?? {
+      systemPrompt: SAMWELL_SYSTEM_PROMPT_NO_TOOLS,
+      tools: [],
+    }
+  );
 }
 
 // ── Tool result types ───────────────────────────────────────────────────────

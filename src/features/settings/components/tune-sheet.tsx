@@ -3,24 +3,25 @@ import { View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
 import { ThemedText } from "@/components/themed-text";
-import { Card } from "@/components/ui/card";
 import { Sheet } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Touchable } from "@/components/ui/touchable";
 import { spacing } from "@/constants/theme";
 import { cn } from "@/lib/cn";
-import { DEVICE_TOOLSET_MIN_CONTEXT_TOKENS } from "@/services/chat-tools";
+import { DEVICE_CATALOGUE } from "@/services/device-llm/catalogue";
 import { useModelStore } from "@/stores/model";
 import { asColor } from "@/utils/colors";
 
-type ModelCapabilities = {
-  supportsSpeculativeDecoding?: boolean;
-  supportsToolCalling?: boolean;
-};
+/** The brains whose tool calls can be read, named for the reader whose brain cannot. */
+const TOOL_BRAINS = DEVICE_CATALOGUE.filter((m) => m.toolFormat)
+  .map((m) => m.name)
+  .join(", ");
 
 /**
- * Inference tuning: backend, context window, and the capability switches
- * the active model supports. Applies live; waking Samwell commits it.
+ * The switches the active brain supports. Applies from the next message.
+ *
+ * There is no backend or context window to choose any more: under ExecuTorch
+ * both are fixed when a brain is exported, so they come with the brain.
  */
 export function TuneSheet({
   visible,
@@ -29,28 +30,16 @@ export function TuneSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  activeModel: ModelCapabilities;
+  activeModel: { supportsToolCalling: boolean };
 }) {
-  const [mutedForeground, primary, primaryForeground] = useCSSVariable([
+  const [mutedForeground, primary] = useCSSVariable([
     "--color-muted-foreground",
     "--color-primary",
-    "--color-primary-foreground",
   ]);
   const inference = useModelStore((s) => s.inference);
   const setInference = useModelStore((s) => s.setInference);
-  const activeBackend = useModelStore((s) => s.activeBackend);
-  const unavailableBackends = useModelStore((s) => s.unavailableBackends);
   const isLoaded = useModelStore((s) => s.isLoaded);
-
-  // A window below this cannot hold the tool schemas and still leave room to
-  // talk, so tools are off there and the switch says so by being disabled.
-  const toolsFit = inference.contextSize >= DEVICE_TOOLSET_MIN_CONTEXT_TOKENS;
-  const chooseContextSize = (size: number) =>
-    setInference(
-      size >= DEVICE_TOOLSET_MIN_CONTEXT_TOKENS
-        ? { contextSize: size }
-        : { contextSize: size, enableToolCalling: false },
-    );
+  const showApplyNote = isLoaded && activeModel.supportsToolCalling;
 
   return (
     // `maxHeightRatio` is the cap and the only cap — the sheet measures this
@@ -64,126 +53,23 @@ export function TuneSheet({
         }}
       >
         <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          PERFORMANCE
+          CAPABILITIES
         </ThemedText>
 
-        <View className="gap-1">
-          <View className="flex-row items-center gap-2">
-            <ThemedText type="bodySm">Backend</ThemedText>
-            {activeBackend && (
-              <ThemedText
-                type="bodySm"
-                color="#4caf50"
-                style={{ fontSize: 11 }}
-              >
-                Running on {activeBackend.toUpperCase()}
-              </ThemedText>
-            )}
-          </View>
-          <View className="flex-row flex-wrap gap-2">
-            {(["cpu", "gpu", "npu"] as const).map((backend) => {
-              const active = inference.backend === backend;
-              const disabled = unavailableBackends.has(backend);
-              return (
-                <Touchable
-                  key={backend}
-                  style={disabled ? { opacity: 0.35 } : undefined}
-                  onPress={() => {
-                    if (!disabled) setInference({ backend });
-                  }}
-                >
-                  <Card
-                    className={cn(
-                      "px-4 py-2",
-                      active && "border-primary bg-primary",
-                    )}
-                  >
-                    <ThemedText
-                      type="labelSm"
-                      color={active ? asColor(primaryForeground) : undefined}
-                    >
-                      {backend.toUpperCase()}
-                    </ThemedText>
-                  </Card>
-                </Touchable>
-              );
-            })}
-          </View>
-          <ThemedText
-            type="bodySm"
-            color={asColor(mutedForeground)}
-            style={{ fontSize: 11 }}
-          >
-            {unavailableBackends.size > 0
-              ? `${[...unavailableBackends].map((b) => b.toUpperCase()).join(" & ")} not supported on this device.`
-              : "GPU is fastest. NPU requires supported hardware. Falls back to CPU if unavailable."}
-          </ThemedText>
-        </View>
-
-        <View className="gap-1">
-          <ThemedText type="bodySm">Context Window</ThemedText>
-          <View className="flex-row flex-wrap gap-2">
-            {[2048, 4096].map((size) => {
-              const active = inference.contextSize === size;
-              return (
-                <Touchable
-                  key={size}
-                  onPress={() => chooseContextSize(size)}
-                >
-                  <Card
-                    className={cn(
-                      "px-4 py-2",
-                      active && "border-primary bg-primary",
-                    )}
-                  >
-                    <ThemedText
-                      type="labelSm"
-                      color={active ? asColor(primaryForeground) : undefined}
-                    >
-                      {`${size / 1024}K`}
-                    </ThemedText>
-                  </Card>
-                </Touchable>
-              );
-            })}
-          </View>
-          <ThemedText
-            type="bodySm"
-            color={asColor(mutedForeground)}
-            style={{ fontSize: 11 }}
-          >
-            Lower = faster & less RAM. Raise for longer conversations.
-          </ThemedText>
-        </View>
-
-        {activeModel?.supportsSpeculativeDecoding && (
-          <ToggleRow
-            title="Multi-Token Prediction"
-            note="Faster generation on supported brains."
-            value={inference.enableSpeculativeDecoding}
-            onValueChange={(val) =>
-              setInference({ enableSpeculativeDecoding: val })
-            }
-          />
-        )}
-
-        {activeModel?.supportsToolCalling && (
-          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            CAPABILITIES
-          </ThemedText>
-        )}
-
-        {activeModel?.supportsToolCalling && (
+        {activeModel.supportsToolCalling ? (
           <ToggleRow
             title="Tool Calling"
             note="Search highlights, tag items, and more."
-            value={inference.enableToolCalling && toolsFit}
-            disabled={!toolsFit}
+            value={inference.enableToolCalling}
             onValueChange={(val) => setInference({ enableToolCalling: val })}
           />
+        ) : (
+          <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+            This brain talks but cannot use Samwell&apos;s tools. {TOOL_BRAINS} can.
+          </ThemedText>
         )}
 
-        {isLoaded && (
+        {showApplyNote ? (
           <View className="flex-row items-center gap-1">
             <Info size={12} color={asColor(primary)} />
             <ThemedText
@@ -191,10 +77,10 @@ export function TuneSheet({
               color={asColor(primary)}
               style={{ fontSize: 11 }}
             >
-              Power down and wake up Samwell to apply changes.
+              Changes apply from your next message.
             </ThemedText>
           </View>
-        )}
+        ) : null}
       </Sheet.ScrollView>
     </Sheet>
   );

@@ -1,57 +1,71 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { filterModels, paramsBillions, smallestPlausibleBytes } from '../huggingface';
+const fetchWithTimeout = vi.fn();
+vi.mock('@/utils/fetch-timeout', () => ({ fetchWithTimeout: (url: string) => fetchWithTimeout(url) }));
 
-const repo = (name: string) => ({ id: `litert-community/${name}`, name, downloads: 0, paramsB: paramsBillions(name) });
+const { parseHFUrl, totalSizeBytes } = await import('../huggingface');
 
-describe('paramsBillions', () => {
-  it('reads a plain parameter count', () => {
-    expect(paramsBillions('Qwen3-14B')).toBe(14);
-    expect(paramsBillions('Qwen3-0.6B')).toBe(0.6);
+const BASE = 'https://huggingface.co/software-mansion/react-native-executorch-gemma-4/resolve/v0.10.0';
+
+function answer(siblings: { rfilename: string; size?: number }[]) {
+  return { ok: true, status: 200, json: async () => ({ siblings }) };
+}
+
+describe('parseHFUrl', () => {
+  it('reads the repo, the revision and the path', () => {
+    expect(parseHFUrl(`${BASE}/e2b/xnnpack/model.pte`)).toEqual({
+      repo: 'software-mansion/react-native-executorch-gemma-4',
+      revision: 'v0.10.0',
+      path: 'e2b/xnnpack/model.pte',
+    });
   });
 
-  it('takes the total, not the active count, for a mixture of experts', () => {
-    // 26B total with 4B active still has to be held in memory in full.
-    expect(paramsBillions('gemma-4-26B-A4B-it-litert-lm')).toBe(26);
+  it('ignores a query string', () => {
+    expect(parseHFUrl(`${BASE}/tokenizer.json?download=true`)?.path).toBe('tokenizer.json');
   });
 
-  it("reads Gemma's effective-parameter naming", () => {
-    // E2B is "effective 2B", so 2 is the right reading and the resulting
-    // floor is low enough that the exact file size still decides.
-    expect(paramsBillions('gemma-4-E2B-it-litert-lm')).toBe(2);
-  });
-
-  it('ignores a version number that is not a parameter count', () => {
-    // The B has to follow the number: LFM2.5 is a version, 1.2B is the size.
-    expect(paramsBillions('LFM2.5-1.2B-Instruct')).toBe(1.2);
-    expect(paramsBillions('Qwen2.5-1.5B-Instruct')).toBe(1.5);
-  });
-
-  it('returns null when the name states no size', () => {
-    expect(paramsBillions('SmolLM2-360M-Instruct')).toBeNull();
-    expect(paramsBillions('Jan-nano')).toBeNull();
+  it('returns null for a URL that is not a Hugging Face file', () => {
+    expect(parseHFUrl('https://example.com/model.pte')).toBeNull();
   });
 });
 
-describe('smallestPlausibleBytes', () => {
-  it('is optimistic, so it only rules out the impossible', () => {
-    // ~0.5 bytes/param is aggressive 4-bit; a real 14B build is far larger.
-    expect(smallestPlausibleBytes(14)).toBe(Math.round(7 * 1024 ** 3));
+describe('totalSizeBytes', () => {
+  beforeEach(() => fetchWithTimeout.mockReset());
+
+  it('adds up every file, asking once per repo and revision', async () => {
+    fetchWithTimeout.mockResolvedValue(
+      answer([
+        { rfilename: 'e2b/xnnpack/model.pte', size: 2_000 },
+        { rfilename: 'e2b/tokenizer.json', size: 30 },
+        { rfilename: 'e2b/tokenizer_config.json', size: 2 },
+      ]),
+    );
+    const total = await totalSizeBytes([
+      `${BASE}/e2b/xnnpack/model.pte`,
+      `${BASE}/e2b/tokenizer.json`,
+      `${BASE}/e2b/tokenizer_config.json`,
+    ]);
+    expect(total).toBe(2_032);
+    expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
+    expect(fetchWithTimeout.mock.calls[0][0]).toContain('/revision/v0.10.0?blobs=true');
   });
 
-  it('passes through an unknown size', () => {
-    expect(smallestPlausibleBytes(null)).toBeNull();
+  it('gives no total when a file cannot be measured', async () => {
+    // A total missing its largest file would pass a storage check it should fail.
+    fetchWithTimeout.mockResolvedValue(answer([{ rfilename: 'other/tokenizer.json', size: 30 }]));
+    expect(
+      await totalSizeBytes([
+        'https://huggingface.co/org/other/resolve/v1/other/model.pte',
+        'https://huggingface.co/org/other/resolve/v1/other/tokenizer.json',
+      ]),
+    ).toBeNull();
   });
-});
 
-describe('filterModels', () => {
-  const repos = [repo('Qwen3-0.6B'), repo('gemma-4-E2B-it-litert-lm'), repo('SmolLM2-360M-Instruct')];
-
-  it('returns everything for an empty query', () => {
-    expect(filterModels(repos, '   ')).toHaveLength(3);
-  });
-
-  it('matches on name, case-insensitively', () => {
-    expect(filterModels(repos, 'qwen').map((r) => r.name)).toEqual(['Qwen3-0.6B']);
+  it('asks again after a failure rather than remembering it', async () => {
+    const url = 'https://huggingface.co/org/retry/resolve/v1/model.pte';
+    fetchWithTimeout.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) });
+    await expect(totalSizeBytes([url])).rejects.toThrow('503');
+    fetchWithTimeout.mockResolvedValueOnce(answer([{ rfilename: 'model.pte', size: 7 }]));
+    expect(await totalSizeBytes([url])).toBe(7);
   });
 });

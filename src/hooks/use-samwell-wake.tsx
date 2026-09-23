@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import * as Inference from '@/services/inference';
+import { isEngineLoaded } from '@/services/device-llm/engine';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -29,7 +29,7 @@ export function useSamwellWake() {
 
   const ensureAwake = React.useCallback(async (): Promise<boolean> => {
     if (useSettingsStore.getState().samwellMode === 'cloud') return true;
-    if (Inference.isModelLoaded()) return true;
+    if (isEngineLoaded()) return true;
 
     return new Promise<boolean>((resolve) => {
       pending.current = resolve;
@@ -54,7 +54,7 @@ export function useSamwellWake() {
       // The store records the reason; all that matters here is whether the
       // engine came up.
     }
-    if (Inference.isModelLoaded()) {
+    if (isEngineLoaded()) {
       settle(true);
       return;
     }

@@ -20,14 +20,14 @@ import {
 } from '@/features/chat/utils/cloud-access';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
-import { isNativeAvailable } from '@/services/inference';
+import { isExecuTorchAvailable } from '@/lib/executorch';
 import { useSubscriptionStore } from '@/stores/subscription';
 
 /**
  * Whether this phone can run on-device Samwell at all. Read once: the answer is
  * the hardware's and does not change while the app runs.
  */
-const NATIVE_SUPPORTED = isNativeAvailable();
+const NATIVE_SUPPORTED = isExecuTorchAvailable();
 
 /**
  * Why the cloud cannot answer.

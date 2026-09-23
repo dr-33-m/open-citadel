@@ -15,18 +15,34 @@ import {
 import { conversationForTitle, RetitleError, suggestChatTitle } from '@/services/chat-title';
 import {
     APPROVAL_REQUIRED_TOOLS,
+    baselineTokens,
     ensureBookMarkers,
     executeToolCall,
     formatToolResultForLLM,
+    promptAndToolsFor,
     toolStatus,
     type BookCandidate,
+    type SamwellToolSchema,
     type ToolCallContext,
 } from '@/services/chat-tools';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
 import { asCloudRefusal, sendCloudChatTurn } from '@/services/cloud-chat';
-import { estimateTokens, planReplay, type ReplayMessage } from '@/services/context-budget';
+import {
+    estimateTokens,
+    planReplay,
+    remainingTokens,
+    replayTokenBudget,
+} from '@/services/context-budget';
+import {
+    ContextPressureError,
+    createConversation,
+    isContextOverflow,
+    type Conversation,
+    type TurnHooks,
+    type TurnResult,
+} from '@/services/device-llm/conversation';
+import { engineGeneration, getEngine, isEngineLoaded } from '@/services/device-llm/engine';
 import { splitThinking } from '@/utils/think-stream';
-import * as Inference from '@/services/inference';
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useAccountStore } from '@/stores/account';
 import { useApprovalStore } from '@/stores/approval';
@@ -63,13 +79,9 @@ interface ChatStore {
    *  streaming bubble, so animating its "arrival" is the flick the reader
    *  sees when a reply finishes. Cleared when the next turn starts. */
   lastStreamedMessageId: string | null;
-  primedGeneration: number | null;
-  /** Why on-device Samwell had to stop, if he did. Set instead of attempting
-   * a native call we know would be unsafe: `context` when the turn no longer
-   * fits the engine's KV cache even after compaction, `memory` when the
-   * device itself is out of headroom. Both would otherwise surface as a hard
-   * native abort that no catch block can intercept, so the UI offers a way
-   * forward from here instead. */
+  /** Why on-device Samwell had to stop, if he did: `context` when the turn no
+   * longer fits the model's window even after compaction. The UI offers a way
+   * forward from here rather than a failed reply. */
   deviceLimit: DeviceLimit | null;
   /** A summary/re-title pass is running and the reader is waiting on it. */
   titleRefreshing: boolean;
@@ -213,35 +225,16 @@ function onDeviceStreamWriter() {
         ...(split.thinking ? { thinkingContent: split.thinking.trim() } : {}),
       });
     },
-    /**
-     * An empty chunk from a model that reasons.
-     *
-     * Gemma's reasoning never reaches this stream as text: the engine routes it
-     * to its own `thought` channel and hands JS an empty chunk for each piece,
-     * with the finished trace only arriving on `thinkingText` at the end. So
-     * for a reasoning model an empty chunk mid-turn is the thinking, and it is
-     * timed and shown as such.
-     */
-    thinkingWithoutText() {
-      if (thinkingStartedAt === null) thinkingStartedAt = Date.now();
-      useChatStore.setState({ isThinking: true });
-    },
     finish: finishThinking,
   };
-}
-
-/** Whether the loaded on-device model is one that reasons before it answers. */
-function activeModelReasons(): boolean {
-  const { models, activeModelId } = useModelStore.getState();
-  return models.find((m) => m.id === activeModelId)?.supportsThinking ?? false;
 }
 
 function realMessageCount(messages: ChatMessage[]): number {
   return messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
 }
 
-// Base identity for sessions started without a book. The engine-level system
-// prompt (inference.ts) doesn't reliably steer the small on-device model on its
+// Base identity for sessions started without a book. The conversation's system
+// prompt (`promptAndToolsFor`) doesn't reliably steer the small on-device model on its
 // own, so we persist + prime this as a conversation turn — the same mechanism
 // that makes book-context sessions work.
 const BASE_SYSTEM_PROMPT =
@@ -287,27 +280,65 @@ function now(): string {
 }
 
 /** Why on-device generation had to stop. See {@link ChatStore.deviceLimit}. */
-export type DeviceLimit = 'context' | 'memory';
+export type DeviceLimit = 'context';
 
 /**
- * Free the engine's KV cache without losing the thread, by rebuilding the
- * conversation around the session's context plus as much recent history as
- * still fits.
+ * Generation steps one on-device turn may take: the first, and up to three
+ * more after rounds of tool results.
+ */
+const MAX_DEVICE_STEPS = 4;
+
+/**
+ * The on-device conversation for the open chat.
  *
- * Serves both jobs the engine has, because they are the same operation:
- * priming a conversation the engine has never seen (a session reopened after
- * a restart, or after Samwell was woken again), and compacting one that has
- * outgrown its KV cache. Priming used to send only the session's system
- * message, so Samwell came back with the book context but no memory of the
- * conversation still on screen — he could not answer a question about a book
- * he had recommended a message earlier. Cloud never had this problem: it
- * sends the whole history with every request.
+ * Rebuilt when the chat changes, when tools are switched on or off, or when a
+ * different model is woken, since a conversation renders through the chat
+ * template of the model it was made with. Everything else (another chat's turn, a title, a tag suggestion using
+ * the engine in between) it recovers from by itself: it rebuilds its history
+ * into the cache on its next turn.
+ */
+let device: {
+  conversation: Conversation;
+  sessionId: string;
+  generation: number;
+  toolsOn: boolean;
+} | null = null;
+
+/** What the tools of the on-device turn in flight need to know. Null between turns. */
+let deviceTurn: {
+  sessionId: string;
+  bookId: string | null;
+  /** Books offered this turn, so a recommendation still renders as a card
+   *  when the model names one without emitting its marker. */
+  suggestedBooks: BookCandidate[];
+  /** Tokens already spoken for by earlier results this turn, so two tools do
+   *  not size themselves against the same room. */
+  committedTokens: number;
+} | null = null;
+
+function dropDeviceConversation(): void {
+  device?.conversation.dispose();
+  device = null;
+}
+
+/**
+ * The session's history as a conversation to rebuild into the model: its
+ * context first, then as much recent history as fits `tokenBudget`.
+ *
+ * Serves both jobs a conversation has, because they are the same operation:
+ * starting one the model has never seen (a session reopened after a restart,
+ * or after Samwell was woken again), and compacting one that has outgrown the
+ * window. Starting used to send only the session's system message, so Samwell
+ * came back with the book context but no memory of the conversation still on
+ * screen — he could not answer a question about a book he had recommended a
+ * message earlier. Cloud never had this problem: it sends the whole history
+ * with every request.
  *
  * Silent by design: the recent exchange survives intact, so announcing it in
  * the transcript would be noise. Only the case compaction cannot fix
  * (`deviceLimit`) is ever surfaced to the reader.
  */
-async function seedEngineWithSession(excludeMessageId?: string): Promise<void> {
+function replaySeed(tokenBudget: number, excludeMessageId?: string): { role: 'user' | 'assistant'; content: string }[] {
   const { messages } = useChatStore.getState();
 
   const systemContext = messages.find((m) => m.role === 'system')?.content;
@@ -320,24 +351,153 @@ async function seedEngineWithSession(excludeMessageId?: string): Promise<void> {
         // here would seed it into the conversation and then send it again.
         m.id !== excludeMessageId,
     )
-    .map((m) => ({ role: m.role === 'assistant' ? ('model' as const) : ('user' as const), content: m.content }));
+    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-  const plan = planReplay(history, Inference.replayTokenBudget(), systemContext);
+  const plan = planReplay(history, tokenBudget, systemContext);
+  console.log(`[Chat] Seeded conversation: replayed ${plan.messages.length} turn(s), dropped ${plan.dropped}`);
 
-  const seed: ReplayMessage[] = [];
-  // Replayed as a user turn to match how this session was primed originally;
-  // the engine-level system prompt is reapplied by the conversation itself.
-  if (systemContext) seed.push({ role: 'user', content: systemContext });
-  seed.push(...plan.messages);
+  // Kept as the opening user turn, as sessions have always been primed: the
+  // system prompt alone does not reliably steer the small models.
+  return systemContext ? [{ role: 'user', content: systemContext }, ...plan.messages] : plan.messages;
+}
 
-  const native = await Inference.compactConversation(seed);
-  console.log(
-    `[Chat] Seeded engine: replayed ${plan.messages.length} turn(s), dropped ${plan.dropped}` +
-      `${native ? '' : ' (fallback replay)'}`,
+/**
+ * Runs one on-device tool call for the turn in flight, with everything the
+ * transcript and the status line need around it.
+ *
+ * Handed to the conversation as each tool's `execute`, so the conversation's
+ * tool loop, the same one ExecuTorch's session runs, drives it.
+ */
+async function runDeviceTool(name: string, args: Record<string, unknown>): Promise<string> {
+  const turn = deviceTurn;
+  if (!turn) return JSON.stringify({ message: 'This turn has ended.' });
+  // A stop that landed while an earlier tool ran must not start new work.
+  if (stopRequested) return JSON.stringify({ message: 'The user stopped this reply.' });
+
+  // Deletes block on the reader's approval before any work starts, which is a
+  // different state from the work itself. Everything else reads from the same
+  // table the executor uses, so the indicator can never name a tool other
+  // than the one running.
+  useChatStore.setState({
+    isToolCalling: true,
+    isThinking: false,
+    streamingContent: '',
+    toolCallStatus: name.startsWith('delete_') ? 'Waiting for delete approval…' : toolStatus(name),
+    toolCallName: name,
+  });
+
+  // The call itself, kept (hidden from the transcript) beside its result.
+  db.insert(chatMessages)
+    .values({
+      id: uuid(),
+      sessionId: turn.sessionId,
+      role: 'assistant',
+      content: TOOL_CALL_PREFIX + JSON.stringify([{ name, arguments: args }]),
+      createdAt: now(),
+    })
+    .run();
+
+  const ctx: ToolCallContext = { sessionId: turn.sessionId, bookId: turn.bookId, runtime: 'device' };
+  let content: string;
+  if (APPROVAL_REQUIRED_TOOLS.has(name)) {
+    const approved = await useApprovalStore
+      .getState()
+      .requestApproval({ sessionId: turn.sessionId, toolName: name, input: args });
+    content = approved
+      ? JSON.stringify((await executeToolCall(name, args, ctx)).result)
+      : JSON.stringify({ approved: false, message: 'User denied this action' });
+  } else {
+    const { result } = await executeToolCall(name, args, ctx);
+    if (name === 'suggest_next_book' && Array.isArray(result)) {
+      turn.suggestedBooks.push(...(result as BookCandidate[]));
+    }
+    // Sized to the room the conversation has left, not only the fixed device
+    // ceiling (see `deviceToolResultBudget`). With no useful room it falls
+    // back to the ceiling, and the window check on the next step stops the
+    // turn. Same prose formatting the cloud path uses: raw JSON costs more
+    // tokens and reads worse.
+    const snapshot = device?.conversation.context();
+    const room = snapshot
+      ? remainingTokens(snapshot) - turn.committedTokens - estimateTokens(JSON.stringify(args))
+      : Number.POSITIVE_INFINITY;
+    const budget = deviceToolResultBudget(room, estimateTokens(name));
+    content = formatToolResultForLLM(name, result, budget ?? TOOL_RESULT_TOKEN_BUDGET.device);
+  }
+
+  db.insert(chatMessages)
+    .values({ id: uuid(), sessionId: turn.sessionId, role: 'tool', content, createdAt: now() })
+    .run();
+  turn.committedTokens += estimateTokens(name + content);
+  return content;
+}
+
+/** Hands the conversation a tool whose work is {@link runDeviceTool}. */
+function deviceTool(schema: SamwellToolSchema) {
+  return { ...schema, execute: (args: Record<string, unknown>) => runDeviceTool(schema.function.name, args) };
+}
+
+/**
+ * The open chat's on-device conversation, made on first use.
+ *
+ * @param excludeMessageId The message being sent right now, which is already
+ * in the transcript and must not also be replayed ahead of itself.
+ */
+function deviceConversationFor(sessionId: string, excludeMessageId?: string): Conversation {
+  const engine = getEngine();
+  if (!engine) throw new Error('No model loaded');
+
+  const generation = engineGeneration();
+  // The loaded model's own format, not the chosen one's: the two differ for
+  // as long as a newly chosen brain has not been woken.
+  const { toolFormat } = engine.entry;
+  const toolsOn = useModelStore.getState().inference.enableToolCalling && !!toolFormat;
+  if (
+    device &&
+    device.sessionId === sessionId &&
+    device.generation === generation &&
+    device.toolsOn === toolsOn
+  ) {
+    return device.conversation;
+  }
+  dropDeviceConversation();
+
+  // Chosen together, so the prompt never describes a tool the model lacks,
+  // and a window too small for the schemas does not load them.
+  const { systemPrompt, tools } = promptAndToolsFor(engine.contextTokens, toolsOn);
+  const conversation = createConversation({
+    systemPrompt,
+    tools: tools.map(deviceTool),
+    toolFormat,
+    maxToolTurns: MAX_DEVICE_STEPS,
+  });
+
+  const baseline = baselineTokens(systemPrompt, tools);
+  conversation.reseed(
+    replaySeed(replayTokenBudget({ used: baseline, max: engine.contextTokens, baseline }), excludeMessageId),
   );
+  device = { conversation, sessionId, generation, toolsOn };
+  return conversation;
+}
 
-  // The seed carries this session's context, so priming is satisfied.
-  useChatStore.setState({ primedGeneration: Inference.getGeneration() });
+/**
+ * One turn, compacting first when the window asks for it.
+ *
+ * The only point where compacting is safe is a turn boundary: reseeding in the
+ * middle of the tool loop would strand a call the model is waiting on.
+ */
+async function sendDeviceTurn(
+  conversation: Conversation,
+  content: string,
+  hooks: TurnHooks,
+  excludeMessageId: string,
+): Promise<TurnResult> {
+  try {
+    return await conversation.sendMessage(content, hooks);
+  } catch (err) {
+    if (!(err instanceof ContextPressureError) || err.pressure !== 'compact') throw err;
+    conversation.reseed(replaySeed(replayTokenBudget(err.snapshot), excludeMessageId));
+    return conversation.sendMessage(content, hooks);
+  }
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -352,7 +512,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   thinkingContent: '',
   thinkingSeconds: null,
   lastStreamedMessageId: null,
-  primedGeneration: null,
   deviceLimit: null,
   titleRefreshing: false,
 
@@ -506,9 +665,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // chat was pushed into a different chat's transcript, and stayed there
     // until that chat was reopened from the database.
     //
-    // The reply was never going to survive this call regardless:
-    // `resetConversation` below throws away the engine state it was being
-    // generated from. So stopping it is not a new policy, only an honest one.
+    // The reply was never going to survive this call regardless: the chat it
+    // belonged to gives up the model below. So stopping it is not a new
+    // policy, only an honest one.
     // It runs before `activeSession` moves because `stopGeneration` cancels
     // the pending approval for whichever session the store currently names,
     // which has to still be the one being left.
@@ -539,40 +698,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       thinkingContent: '',
       thinkingSeconds: null,
       lastStreamedMessageId: null,
-      primedGeneration: null,
       // Cleared with the transcript, not left over from the previous chat.
       isGenerating: false,
       isThinking: false,
       isToolCalling: false,
       toolCallStatus: null,
       toolCallName: null,
-      // The incoming conversation gets its own assessment below. Keeping the
-      // previous chat's context limit here left Switch to chat blocked even
-      // after the native conversation had been reset.
+      // The incoming conversation is assessed on its own first turn. Keeping
+      // the previous chat's context limit here left Switch to chat blocked
+      // even after that chat's conversation was gone.
       deviceLimit: null,
     });
 
-    // Reset stateful conversation in the engine, once no rename is using it.
-    await get().waitForRetitle();
-    Inference.resetConversation();
-
-    // Prime the engine with session-specific context (book passage etc.)
-    // Send the system message as a user turn so the engine incorporates it
-    // into its conversation state. The response is silently discarded.
-    const systemMsg = messages.find((m) => m.role === 'system');
-    const cloudMode = useSettingsStore.getState().samwellMode === 'cloud';
-    if (systemMsg && !cloudMode && Inference.isModelLoaded()) {
-      if (!Inference.checkMemoryHeadroom().ok) {
-        set({ deviceLimit: 'memory' });
-      } else {
-        try {
-          await seedEngineWithSession();
-        } catch (err) {
-          if (Inference.isLowMemoryError(err)) set({ deviceLimit: 'memory' });
-          else console.warn('[Chat] Context priming failed:', err);
-        }
-      }
-    }
+    // The chat being left gives up its conversation; the one opened makes its
+    // own on its first turn, rebuilt from the transcript loaded above.
+    dropDeviceConversation();
   },
 
   async sendMessage(content, id) {
@@ -585,7 +725,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const isFirstRealMessage = !activeSession.bookId && realMessageCount(get().messages) === 0;
 
     const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
-    if (samwellMode === 'offline' && !Inference.isModelLoaded()) return;
+    if (samwellMode === 'offline' && !isEngineLoaded()) return;
     if (samwellMode === 'cloud' && !cloudBaseUrl) return;
     // Grand Maester Samwell runs on accounts, so a turn with nobody behind it
     // has nothing to bill and is not sent. The composer is already disabled
@@ -728,269 +868,85 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
 
-    // A rename from the history sheet may be running on the same engine.
-    // Waited out here, so this turn never shares the engine with it. Its
-    // finish invalidates the priming marker, so the check below rebuilds this
-    // conversation.
+    // A rename from the history sheet may be using the model. The engine
+    // queues the two anyway; waiting here keeps the composer's state honest.
     await get().waitForRetitle();
 
-    // Lazy context priming — if the engine wasn't primed for this session's
-    // current native engine (never primed, or the engine was rebuilt since
-    // e.g. a WAKE UP reload), prime it with book context before the first message
-    if (get().primedGeneration !== Inference.getGeneration()) {
-      try {
-        // Excludes the turn about to be sent — it is already in `messages`.
-        await seedEngineWithSession(userMsg.id);
-      } catch (err) {
-        console.warn('[Chat] Lazy context priming failed:', err);
-        set({ primedGeneration: Inference.getGeneration() });
-      }
-    }
-
-    const MAX_TOOL_ITERATIONS = 3;
     let finalContent = '';
-    // Set instead of attempting a native call we know is unsafe. Left
-    // `finalContent` empty deliberately so this falls through the same
-    // "nothing to save" path below as an aborted generation already does,
-    // rather than needing its own branch.
+    // Left `finalContent` empty deliberately when set, so this falls through
+    // the same "nothing to save" path below as an aborted generation already
+    // does, rather than needing its own branch.
     let limitReached: DeviceLimit | null = null;
-    // Books offered this turn, so a recommendation still renders as a card
-    // when the model names one without emitting its marker.
-    const suggestedBooks: BookCandidate[] = [];
+
+    /*
+     * The stream is split as it arrives rather than trusted to be clean.
+     *
+     * On-device there is one token channel: reasoning and answer come back
+     * interleaved, and a tool call arrives token by token like prose. The
+     * model's own format hides a call on its way to being parsed, and the
+     * `<think>` split is model-agnostic, which is what a catalogue of brains
+     * that reason differently needs.
+     *
+     * The writer keeps the two channels apart the way the cloud path's two
+     * callbacks do, so both surfaces move the same way.
+     */
+    const stream = onDeviceStreamWriter();
+    const format = getEngine()?.entry.toolFormat;
+    let lastShown = { text: '', step: -1 };
+    const hooks: TurnHooks = {
+      onText: (text, step) => {
+        const shown = format ? format.visible(text) : text;
+        // A tool call streams dozens of tokens that are all hidden. Each one
+        // would otherwise re-split the text and write the store unchanged.
+        if (!shown || (shown === lastShown.text && step === lastShown.step)) return;
+        lastShown = { text: shown, step };
+        stream.push(shown);
+      },
+    };
+
+    deviceTurn = {
+      sessionId: activeSession.id,
+      bookId: activeSession.bookId,
+      suggestedBooks: [],
+      committedTokens: 0,
+    };
+    const suggestedBooks = deviceTurn.suggestedBooks;
 
     try {
-      // Turn boundary. The only point where compacting is safe: reseeding the
-      // conversation inside the tool loop below would strand a tool call the
-      // model is still waiting on a response for.
-      if (!Inference.checkMemoryHeadroom().ok) {
-        limitReached = 'memory';
-      } else {
-        const pressure = Inference.assessTurn(content);
-        if (pressure === 'full') {
-          limitReached = 'context';
-        } else if (pressure === 'compact') {
-          try {
-            await seedEngineWithSession(userMsg.id);
-          } catch (err) {
-            // Making room is the only thing standing between this turn and a
-            // native abort, so a failure here stops the turn rather than
-            // pressing on and hoping.
-            if (Inference.isLowMemoryError(err)) {
-              limitReached = 'memory';
-            } else {
-              console.warn('[Chat] Context compaction failed:', err);
-              limitReached = 'context';
-            }
-          }
-        }
-      }
+      const conversation = deviceConversationFor(activeSession.id, userMsg.id);
+      const turn = await sendDeviceTurn(conversation, content, hooks, userMsg.id);
 
-      /*
-       * The stream is split as it arrives rather than trusted to be clean.
-       *
-       * On-device there is one token channel: reasoning and answer come back
-       * interleaved, and the engine only reports them separately at the end,
-       * and then only for models it was told could reason. A model whose
-       * capabilities we read wrong put its whole `<think>` block in the chat
-       * bubble. Splitting here is model-agnostic, which is what a catalogue of
-       * untested brains needs.
-       *
-       * The writer keeps the two channels apart the way the cloud path's two
-       * callbacks do, so both surfaces move the same way.
-       */
-      const stream = onDeviceStreamWriter();
-      // Whether this model reasons, from what it is, not from the engine flag.
-      // Gemma reasons whether the flag is on or off (measured: time to first
-      // token was the same either way), so keying the status on the flag left
-      // a long reasoning wait labelled "Processing…".
-      const reasonsOnDevice = activeModelReasons();
-      let result = limitReached
-        ? null
-        : await Inference.chat(
-            content,
-            ({ content: c, done }) => {
-              /*
-               * Empty means nothing for a model that does not reason, and the
-               * reasoning itself for one that does (see
-               * `thinkingWithoutText`). Either way there is no text to show.
-               *
-               * Except the final callback, which is always empty. Read as
-               * reasoning, a reply that ended without text (the first send
-               * after a stop, for one) flashed "Thinking…" on its way out.
-               */
-              if (!c) {
-                if (reasonsOnDevice && !done) stream.thinkingWithoutText();
-                return;
-              }
-              stream.push(c);
-            },
-          );
-
-      for (let i = 0; result && !limitReached && !stopRequested && i < MAX_TOOL_ITERATIONS && result.toolCalls?.length; i++) {
-        if (!Inference.checkMemoryHeadroom().ok) {
-          limitReached = 'memory';
-          break;
-        }
-        const toolNames = result.toolCalls.map((tc) => tc.name);
-        // What the engine streamed in the same round as the call. Should be
-        // empty once automatic tool calling is off in the native module.
-        if (__DEV__) console.log('[Chat] Tool round text:', JSON.stringify(result.text.slice(0, 300)));
-        // Deletes block on the reader's approval before any work starts,
-        // which is a different state from the work itself. Everything else
-        // reads from the same table the executor uses, so the indicator can
-        // never name a tool other than the one running.
-        const statusMsg = toolNames.some((n) => n.startsWith('delete_'))
-          ? 'Waiting for delete approval…'
-          : toolStatus(toolNames[0]);
-        set({
-          isToolCalling: true,
-          isThinking: false,
-          streamingContent: '',
-          toolCallStatus: statusMsg,
-          toolCallName: toolNames[0] ?? null,
-        });
-
-        // Store the assistant's tool-call message (hidden from UI)
-        const toolCallMsg: ChatMessage = {
-          id: uuid(),
-          sessionId: activeSession.id,
-          role: 'assistant',
-          content: TOOL_CALL_PREFIX + JSON.stringify(result.toolCalls),
-          createdAt: now(),
-        };
-        db.insert(chatMessages).values(toolCallMsg).run();
-
-        // Execute each tool call and collect responses for the engine
-        const toolCallCtx: ToolCallContext = {
-          sessionId: activeSession.id,
-          bookId: activeSession.bookId,
-          runtime: 'device',
-        };
-        const toolResponses: Inference.ToolResponse[] = [];
-        // Tokens already spoken for by earlier results in this round, so a turn
-        // that calls two tools does not size both against the same room.
-        let committedTokens = 0;
-        for (const tc of result.toolCalls) {
-          let args: Record<string, unknown> = {};
-          try {
-            args = JSON.parse(tc.argumentsJson);
-          } catch { /* empty */ }
-
-          let toolContent: string;
-          if (APPROVAL_REQUIRED_TOOLS.has(tc.name)) {
-            const approved = await useApprovalStore
-              .getState()
-              .requestApproval({ sessionId: activeSession.id, toolName: tc.name, input: args });
-
-            if (!approved) {
-              toolContent = JSON.stringify({ approved: false, message: 'User denied this action' });
-            } else {
-              const { result: toolResult } = await executeToolCall(tc.name, args, toolCallCtx);
-              toolContent = JSON.stringify(toolResult);
-            }
-          } else {
-            const { result: toolResult } = await executeToolCall(tc.name, args, toolCallCtx);
-            // Format search results with reference markers for the LLM
-            // Same prose formatting the cloud path already used. Offline was
-            // sending raw JSON, which costs more tokens and reads worse.
-            if (tc.name === 'suggest_next_book' && Array.isArray(toolResult)) {
-              suggestedBooks.push(...(toolResult as BookCandidate[]));
-            }
-            // Sized to the room the conversation has left, not only the fixed
-            // device ceiling (see `deviceToolResultBudget`). With no useful room
-            // it falls back to the ceiling and the fit check below stops the turn.
-            const budget = deviceToolResultBudget(
-              Inference.remainingContextTokens() - committedTokens,
-              estimateTokens(tc.name),
-            );
-            toolContent = formatToolResultForLLM(
-              tc.name,
-              toolResult,
-              budget ?? TOOL_RESULT_TOKEN_BUDGET.device,
-            );
-          }
-
-          const toolMsg: ChatMessage = {
-            id: uuid(),
-            sessionId: activeSession.id,
-            role: 'tool',
-            content: toolContent,
-            createdAt: now(),
-          };
-          db.insert(chatMessages).values(toolMsg).run();
-
-          toolResponses.push({ name: tc.name, responseJson: toolContent });
-          committedTokens += estimateTokens(tc.name + toolContent);
-        }
-
-        // Feeding these back is what actually overflows the KV cache, and by
-        // here compaction is off the table — so stop instead. The tool ran and
-        // its result is saved; the UI explains why Samwell could not summarize it.
-        if (!Inference.fitsInContext(toolResponses.map((r) => r.name + r.responseJson).join(''))) {
-          limitReached = 'context';
-          break;
-        }
-
-        // A stop that landed while the tools ran must not start the engine again.
-        if (stopRequested) break;
-
-        // Send all tool responses back — engine continues the conversation
-        set({ streamingContent: '' });
-        result = await Inference.sendToolResponses(
-          toolResponses,
-          // Same writer as the first turn: a model that reasons does it again
-          // after a tool result, and this is the stream that carries it.
-          ({ content: c, done }) => {
-            if (c) stream.push(c);
-            else if (reasonsOnDevice && !done) stream.thinkingWithoutText();
-          },
-        );
-      }
-
-      if (result && !limitReached) {
-        // A reply that ran out while still reasoning never crossed back, so the
-        // clock is closed here rather than left running into the next turn.
-        stream.finish();
-        // Whatever the engine did or did not separate, the bubble gets only the
-        // answer. `thinkingText` stays authoritative when the engine filled it.
-        const split = splitThinking(result.text);
-        if (!result.thinkingText && split.thinking) {
-          set({ thinkingContent: split.thinking.trim() });
-        }
-        finalContent = ensureBookMarkers(split.visible.trim(), suggestedBooks);
-        // Exhausted MAX_TOOL_ITERATIONS while the model was still mid-tool-call
-        // (not mid-answer) — result.text is typically empty here, which would
-        // otherwise silently show nothing at all.
-        if (!finalContent && result.toolCalls?.length) {
-          finalContent = "Samwell got stuck calling tools repeatedly and couldn't finish. Try rephrasing.";
-        }
-        // Capture thinking text from the final result (available after generation completes)
-        if (result.thinkingText) {
-          // Trimmed like the streamed path: the engine's own field carries the
-          // same newlines the markers were written with.
-          set({ thinkingContent: result.thinkingText.trim() });
-        }
+      // A reply that ran out while still reasoning never crossed back, so the
+      // clock is closed here rather than left running into the next turn.
+      stream.finish();
+      const last = turn.messages[turn.messages.length - 1];
+      const reply = last?.role === 'assistant' && typeof last.content === 'string' ? last.content : '';
+      // Whatever the stream showed, the bubble gets only the answer.
+      const split = splitThinking(format ? format.visible(reply) : reply);
+      if (split.thinking) set({ thinkingContent: split.thinking.trim() });
+      finalContent = ensureBookMarkers(split.visible.trim(), suggestedBooks);
+      // Out of steps while the model was still calling tools, not answering:
+      // there is no reply, which would otherwise silently show nothing at all.
+      if (!finalContent && turn.finishReason === 'maxToolTurns') {
+        finalContent = "Samwell got stuck calling tools repeatedly and couldn't finish. Try rephrasing.";
       }
     } catch (err) {
-      if (Inference.isLowMemoryError(err)) {
-        // The native module's own memory check refused, after ours had passed.
-        // Same wall as the check above, so it gets the same banner.
-        limitReached = 'memory';
+      // `full` before the turn, or the window running out inside it. Either
+      // way compaction could not make room, so the reader is told.
+      if (err instanceof ContextPressureError || isContextOverflow(err)) {
+        limitReached = 'context';
       } else {
         console.error('[Samwell] Generation error:', err);
       }
       // Aborted or error — use whatever streamed so far
       finalContent = get().streamingContent.trim();
+    } finally {
+      deviceTurn = null;
     }
 
     if (limitReached) {
       if (__DEV__) {
-        console.log(
-          '[Chat] Device limit:',
-          limitReached,
-          JSON.stringify(Inference.getContextSnapshot()),
-          JSON.stringify(Inference.checkMemoryHeadroom().usage),
-        );
+        console.log('[Chat] Device limit:', limitReached, JSON.stringify(device?.conversation.context()));
       }
       set({ deviceLimit: limitReached });
     }
@@ -1022,10 +978,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }));
 
       if (isFirstRealMessage) {
-        // Offline shares one local engine instance — keep isGenerating true
-        // (so the input stays blocked) until this one-shot title call is
-        // done, since it also calls resetConversation() and would otherwise
-        // race a second message the user sends in the meantime.
+        // Offline shares one model: keep isGenerating true (so the input
+        // stays blocked) until this one-shot title is done, since a second
+        // message would only queue behind it on the engine.
         set({ titleRefreshing: true });
         try {
           await get().maybeTitleFirstMessage(activeSession.id, content, finalContent);
@@ -1046,17 +1001,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // stop button used to be inert there, so a cloud reply could not be
     // called off at all.
     stopRequested = true;
-    Inference.stopGeneration();
-    /*
-     * A cancel sticks to the native conversation. Measured on device: after a
-     * stop, the next message sent on it was cancelled in 183ms with no output,
-     * and every one after it the same. The SDK has no call that clears the
-     * cancel, so the conversation is replaced rather than reused. Clearing the
-     * priming marker makes the next turn rebuild it from the chat history
-     * (`seedEngineWithSession`), which creates a fresh native conversation and
-     * keeps the context.
-     */
-    set({ primedGeneration: null });
+    // Stops between tool rounds too, not only mid-generation. ExecuTorch
+    // clears a stop when the next generation starts, so unlike LiteRT's it
+    // does not stick to the conversation and nothing has to be rebuilt.
+    device?.conversation.stop();
     cloudAbort?.abort();
     // A pending approval dialog would otherwise keep waiting for a tap that
     // will never come once generation is stopped. No-op if nothing pending
@@ -1073,6 +1021,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   async deleteSession(id) {
     removeSession(id);
+    if (device?.sessionId === id) dropDeviceConversation();
     // Any approval still awaiting a response for this session would otherwise
     // leak an unresolved promise once the session it belongs to is gone.
     useApprovalStore.getState().clearSession(id);
@@ -1132,19 +1081,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const onDevice = useSettingsStore.getState().samwellMode !== 'cloud';
     if (onDevice) {
-      if (!Inference.isModelLoaded()) {
+      if (!isEngineLoaded()) {
         throw new RetitleError('Wake Samwell up to rename chats on your device.');
       }
-      // On device a title is a generation on the one local engine, and
-      // `suggestChatTitle` resets its conversation. Under a reply, that would
-      // wipe the conversation the reply is being written into.
+      // On device a title is a generation on the one local model, and would
+      // wait behind the reply in flight for as long as it takes.
       if (get().isGenerating) {
         throw new RetitleError('Samwell is still replying. Try again when he is done.');
-      }
-      // A device limit means another native generation is the unsafe call it
-      // exists to stop.
-      if (get().deviceLimit) {
-        throw new RetitleError('Samwell cannot rename chats on your device right now.');
       }
     }
 
@@ -1157,14 +1100,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (title !== session.title) await get().updateSessionTitle(id, title);
         return title;
       } finally {
-        /*
-         * `suggestChatTitle` brackets its one-shot prompt with
-         * `resetConversation()`, which clears whatever the engine was holding,
-         * including the chat on screen. Invalidating the priming marker rather
-         * than re-seeding here lets `sendMessage` rebuild that context lazily,
-         * on the turn that actually needs it.
-         */
-        if (onDevice) set({ primedGeneration: null });
         set({ titleRefreshing: false });
         titleRefineInFlight = null;
       }

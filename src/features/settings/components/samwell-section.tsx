@@ -20,7 +20,7 @@ import { CloudPanel } from "@/features/settings/components/cloud-panel";
 import { OfflineModelCard } from "@/features/settings/components/offline-model-card";
 import { SettingsSection } from "@/features/settings/components/settings-section";
 import { cn } from "@/lib/cn";
-import { isNativeAvailable } from "@/services/inference";
+import { isExecuTorchAvailable } from "@/lib/executorch";
 import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
@@ -52,7 +52,7 @@ export const SamwellSection = React.memo(function SamwellSection({
   const [previewMode, setPreviewMode] = React.useState<EngineMode | null>(() =>
     initialMode && initialMode !== samwellMode ? initialMode : null,
   );
-  const nativeAvailable = React.useMemo(() => isNativeAvailable(), []);
+  const nativeAvailable = React.useMemo(() => isExecuTorchAvailable(), []);
   const displayedMode = previewMode ?? samwellMode;
   const cloudBlocker = getCloudBlocker({
     configured: cloudBaseUrl.length > 0 && ACCOUNT_ENABLED,

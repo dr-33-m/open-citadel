@@ -4,9 +4,9 @@
  * iOS stores app files under the Documents directory, whose absolute path
  * includes the app-container UUID (…/Application/<UUID>/Documents/…). That UUID
  * is NOT stable — it changes on restore-from-backup and device migration — so
- * absolute paths persisted in the DB (book files, covers, downloaded models) can
- * point at a container that no longer exists, making books/covers/models fail to
- * load, and (worse) making the sync scanner treat every book as "removed" and
+ * absolute paths persisted in the DB (book files, covers) can point at a
+ * container that no longer exists, making books and covers fail to load, and
+ * (worse) making the sync scanner treat every book as "removed" and
  * delete it.
  *
  * On launch we re-anchor any stored `file://…/Documents/<rest>` path onto the
@@ -19,7 +19,7 @@ import { eq } from "drizzle-orm";
 import { documentDirectory } from "expo-file-system/legacy";
 
 import { db } from "@/db/client";
-import { books, localModels, syncItems } from "@/db/schema";
+import { books, syncItems } from "@/db/schema";
 
 const DOCUMENTS_MARKER = "/Documents/";
 
@@ -82,19 +82,6 @@ export async function reanchorLocalPaths(): Promise<void> {
         .update(syncItems)
         .set({ sourceUri })
         .where(eq(syncItems.id, it.id));
-    }
-  }
-
-  // Downloaded on-device model files.
-  const models = await db.select().from(localModels);
-  for (const m of models) {
-    if (!m.filePath) continue;
-    const filePath = reanchor(m.filePath, docDir);
-    if (filePath && filePath !== m.filePath) {
-      await db
-        .update(localModels)
-        .set({ filePath })
-        .where(eq(localModels.id, m.id));
     }
   }
 }

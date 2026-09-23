@@ -37,7 +37,6 @@ import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
 import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
 import { useAppUpdates } from "@/hooks/use-app-updates";
-import { MemoryHud } from "@/components/dev/memory-hud";
 import { ToastProvider } from "@/components/toast/toast-provider";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
@@ -362,7 +361,6 @@ export default function RootLayout() {
                 />
               </TransitionStack>
               <ApprovalSheet />
-              {__DEV__ && <MemoryHud />}
             </ThemeProvider>
           </BottomSheetModalProvider>
         </ToastProvider>

@@ -33,9 +33,9 @@ Most reading apps stop at reading. Open Citadel treats the reader as a starting 
 - Edit or delete any entry
 
 **Samwell — AI Reading Companion**
-- On-device LLM powered by llama.rn (offline & private)
+- On-device LLM powered by [React Native ExecuTorch](https://github.com/software-mansion/react-native-executorch) (offline & private)
 - Samwell persona injected at the system level — he knows he's a reading companion
-- Download any GGUF model from Hugging Face directly inside the app (search → repo → file → download)
+- Pick from a curated list of on-device brains (Gemma 4 E2B, Qwen, LFM, SmolLM2, Hammer) and download it inside the app
 - Start a chat from any highlight in the reader — context is carried into the conversation
 - Attach a book to a chat session for passage-level context
 - Model lifecycle controls: Wake Up / Power Down, status indicator in the chat header
@@ -43,7 +43,7 @@ Most reading apps stop at reading. Open Citadel treats the reader as a starting 
 **Settings**
 - Choose your EPUB library folder
 - Reader appearance preferences (theme, font, size, margins)
-- Samwell AI section: model picker with HuggingFace search, offline vs cloud mode
+- Samwell AI section: brain picker, offline vs cloud mode
 
 ---
 
@@ -134,9 +134,9 @@ src/
 - [x] Collections and library organisation
 
 ### v2 — AI Companion & Sharing (in progress)
-- [x] On-device LLM via llama.rn — offline and private
+- [x] On-device LLM via React Native ExecuTorch — offline and private
 - [x] Samwell persona — system prompt gives him identity as your reading companion
-- [x] HuggingFace model search — browse, pick a GGUF, download, all in-app
+- [x] Curated on-device brains — pick one, download it, all in-app
 - [x] Highlight-to-chat — start a conversation from any reader selection with full context
 - [x] Book context — attach a book to a session so Samwell can reference it
 - [x] Export as image — share highlights and thoughts as styled PNG cards with book cover, notes, and Open Citadel branding (dark & light theme)

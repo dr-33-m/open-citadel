@@ -30,11 +30,10 @@ import { formatBytes } from "@/utils/format";
  * posture, and the actions. Owns every sheet it opens.
  *
  * The card renders with or without a selected model. An early return on
- * "no active model" once unmounted the whole thing - picker included - the
- * moment its model was deleted, stranding offline mode with no way back to
- * a model list. Deleting the last model is a legal state (the catalogue
- * re-seeds on the next launch), so the card's job here is the way back:
- * name the empty state and hand the reader to the picker.
+ * "no active model" once unmounted the whole thing - picker included -
+ * stranding offline mode with no way back to a model list. So the card's job
+ * there is the way back: name the empty state and hand the reader to the
+ * picker.
  */
 export function OfflineModelCard() {
   const [primary, mutedForeground, foreground, destructive] = useCSSVariable([
@@ -55,7 +54,6 @@ export function OfflineModelCard() {
   const deleteModel = useModelStore((s) => s.deleteModel);
   const memoryEstimate = useModelStore((s) => s.memoryEstimate);
   const checkMemory = useModelStore((s) => s.checkMemory);
-  const inference = useModelStore((s) => s.inference);
   const activeModel = models.find((m) => m.id === activeModelId);
 
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -70,17 +68,12 @@ export function OfflineModelCard() {
   // The power action's heartbeat: pulses only while the engine is loading.
   const powerPulseStyle = usePulse(modelLoading);
 
-  // Run when the active model or context size changes — after the sheet is
-  // up, never in the same pass as its first paint.
+  // Run when the active model changes — after the sheet is up, never in the
+  // same pass as its first paint.
   React.useEffect(() => {
     if (activeModel?.isDownloaded && activeModel.id)
       checkMemory(activeModel.id);
-  }, [
-    activeModel?.id,
-    activeModel?.isDownloaded,
-    inference.contextSize,
-    checkMemory,
-  ]);
+  }, [activeModel?.id, activeModel?.isDownloaded, checkMemory]);
 
   const memoryStatus = memoryEstimate?.status ?? "fits";
   const downloading = activeModel
@@ -249,23 +242,25 @@ export function OfflineModelCard() {
                 />
               </>
             )}
-            <ActionButton
-              icon={Trash2}
-              label="DELETE"
-              tint={asColor(destructive)}
-              disabled={busy}
-              onPress={async () => {
-                if (isLoaded) {
-                  setIsDeleting(true);
-                  try {
-                    await releaseContext();
-                  } finally {
-                    setIsDeleting(false);
+            {activeModel.isDownloaded && (
+              <ActionButton
+                icon={Trash2}
+                label="DELETE"
+                tint={asColor(destructive)}
+                disabled={busy}
+                onPress={async () => {
+                  if (isLoaded) {
+                    setIsDeleting(true);
+                    try {
+                      await releaseContext();
+                    } finally {
+                      setIsDeleting(false);
+                    }
                   }
-                }
-                setConfirmDeleteId(activeModel.id);
-              }}
-            />
+                  setConfirmDeleteId(activeModel.id);
+                }}
+              />
+            )}
           </View>
         )}
       </Card>

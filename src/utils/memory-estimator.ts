@@ -16,7 +16,7 @@ export interface MemoryEstimate {
  *
  * This used to compare against a `minDeviceMemoryGb` written by hand per model.
  * Two problems: it does not scale past the handful of models someone remembered
- * to annotate (the catalogue offers 147 files), and it was wrong where it did
+ * to annotate, and it was wrong where it did
  * exist — Gemma 4 E2B was marked as needing 8 GB, which on a 5.3 GB phone
  * evaluated to "won't fit" for the one model known to work there.
  *
@@ -53,10 +53,4 @@ export function checkModelMemory(modelBytes: number | null): MemoryEstimate {
   );
 
   return { totalBytes, totalGb, modelBytes, status };
-}
-
-/** The largest model worth offering on this device, in bytes. */
-export function maxRunnableBytes(): number {
-  const totalBytes = Device.totalMemory ?? 0;
-  return totalBytes ? Math.floor(totalBytes * TIGHT_FRACTION) : 0;
 }

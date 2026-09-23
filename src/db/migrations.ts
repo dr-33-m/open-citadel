@@ -139,12 +139,11 @@ async function ensureSyncPipelineSchema(): Promise<void> {
 }
 
 async function ensureChatSchema(): Promise<void> {
-  db.run(sql`CREATE TABLE IF NOT EXISTS \`llama_models\` (
+  // The LiteRT-era model table. Its files are cleared by the model store on
+  // the first launch after the move to ExecuTorch (see `loadModels`).
+  db.run(sql`DROP TABLE IF EXISTS \`llama_models\``);
+  db.run(sql`CREATE TABLE IF NOT EXISTS \`device_models\` (
     \`id\` text PRIMARY KEY NOT NULL,
-    \`name\` text NOT NULL,
-    \`filename\` text NOT NULL,
-    \`file_path\` text,
-    \`download_url\` text NOT NULL,
     \`size_bytes\` integer,
     \`is_downloaded\` integer NOT NULL DEFAULT 0,
     \`is_active\` integer NOT NULL DEFAULT 0,
@@ -163,28 +162,6 @@ async function ensureChatSchema(): Promise<void> {
 
   db.run(sql`CREATE INDEX IF NOT EXISTS \`chat_messages_session_idx\`
     ON \`chat_messages\` (\`session_id\`, \`created_at\`)`);
-
-  // Add capability columns to llama_models if missing
-  const modelsInfo: { name: string }[] = db.all(
-    sql`PRAGMA table_info(llama_models)`,
-  ) as { name: string }[];
-  const modelsCols = new Set(modelsInfo.map((r) => r.name));
-
-  if (!modelsCols.has("supports_speculative_decoding")) {
-    db.run(
-      sql`ALTER TABLE \`llama_models\` ADD \`supports_speculative_decoding\` integer NOT NULL DEFAULT 0`,
-    );
-  }
-  if (!modelsCols.has("supports_thinking")) {
-    db.run(
-      sql`ALTER TABLE \`llama_models\` ADD \`supports_thinking\` integer NOT NULL DEFAULT 0`,
-    );
-  }
-  if (!modelsCols.has("supports_tool_calling")) {
-    db.run(
-      sql`ALTER TABLE \`llama_models\` ADD \`supports_tool_calling\` integer NOT NULL DEFAULT 0`,
-    );
-  }
 
   // Add chat_session_id to highlights if missing
   const highlightsInfo: { name: string }[] = db.all(

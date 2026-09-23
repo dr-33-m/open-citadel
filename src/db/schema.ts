@@ -128,22 +128,22 @@ export const appSettings = sqliteTable("app_settings", {
 
 // ── Chat / Local AI tables ────────────────────────────────────────────────────
 
-export const localModels = sqliteTable("llama_models", {
+/**
+ * What this device holds of the on-device brain catalogue
+ * (`services/device-llm/catalogue.ts`), one row per entry.
+ *
+ * No file paths. ExecuTorch keeps the files in its own cache, keyed by URL, and
+ * hands back where they are on request; a path stored here would go stale the
+ * first time iOS moved the app's container on a restore.
+ */
+export const deviceModels = sqliteTable("device_models", {
+  /** The catalogue entry's id. */
   id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  filename: text("filename").notNull(),
-  filePath: text("file_path"),
-  downloadUrl: text("download_url").notNull(),
+  /** Bytes of every file the model needs, from Hugging Face. Null until asked. */
   sizeBytes: integer("size_bytes"),
   isDownloaded: integer("is_downloaded").notNull().default(0),
   isActive: integer("is_active").notNull().default(0),
   downloadedAt: text("downloaded_at"),
-  /** 1 if model binary supports multi-token prediction, 0 otherwise */
-  supportsSpeculativeDecoding: integer("supports_speculative_decoding").notNull().default(0),
-  /** 1 if model supports thinking/reasoning mode */
-  supportsThinking: integer("supports_thinking").notNull().default(0),
-  /** 1 if model supports tool/function calling */
-  supportsToolCalling: integer("supports_tool_calling").notNull().default(0),
 });
 
 export const chatSessions = sqliteTable("chat_sessions", {

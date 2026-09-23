@@ -198,21 +198,6 @@ export function useSamwellStatus({
     };
   }
 
-  if (mode === 'offline' && deviceLimit === 'memory') {
-    const message = [
-      'Your device is low on memory, so Samwell had to stop here.',
-      cloudRequirement,
-    ]
-      .filter(Boolean)
-      .join(' ');
-
-    return {
-      message,
-      actions: cloudEscape ? [cloudEscape] : undefined,
-      isLoading: cloudEscape === null,
-    };
-  }
-
   /*
    * `mode === 'cloud' &&` on both of these, and it is load-bearing.
    *

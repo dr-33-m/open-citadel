@@ -28,9 +28,6 @@ importers:
 
   .:
     dependencies:
-      '@dr33m/react-native-litert-lm':
-        specifier: ^0.6.7
-        version: 0.6.7(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       '@dr33m/react-native-readium':
         specifier: 5.0.0-rc.34
         version: 5.0.0-rc.34(patch_hash=199162820afa0be7ea32159e2c1df4d8b9a00ee3cb1a974e7cca04488ce820fd)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -184,9 +181,15 @@ importers:
       react-native:
         specifier: 0.86.3
         version: 0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
+      react-native-blob-util:
+        specifier: ^0.24.9
+        version: 0.24.11(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       react-native-enriched-markdown:
         specifier: ^1.0.2
         version: 1.0.2(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+      react-native-executorch:
+        specifier: ^0.10.2
+        version: 0.10.2(react-native-blob-util@0.24.11(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native-worklets@0.12.1(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       react-native-gesture-handler:
         specifier: ~2.32.0
         version: 2.32.0(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -989,22 +992,6 @@ packages:
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
 
-  '@dr33m/react-native-litert-lm@0.6.7':
-    resolution: {integrity: sha512-Q6lZVLYhcI1ic4dTdMa17IE25xux6IKPv2roSISc+PwwXMfso2FEEc6WPXY4sq+NA2j90miro+xAhft7rPaEZQ==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      expo: '>=55.0.0'
-      react: '*'
-      react-native: '*'
-      react-native-nitro-modules: ^0.35.9
-    peerDependenciesMeta:
-      expo:
-        optional: true
-      react:
-        optional: true
-      react-native:
-        optional: true
-
   '@dr33m/react-native-readium@5.0.0-rc.34':
     resolution: {integrity: sha512-ZGjb6quOZO899bSBaLXzCFCkbreWAtzCGxrDWrtWycCXB7/adXNdbIYOAdSXHWZk8DQQvGNTriSsqNLZMUU6Eg==}
     engines: {node: '>=20'}
@@ -1758,6 +1745,10 @@ packages:
       react: '>=16.0.0'
       react-native: '>=0.60.0'
       react-native-svg: '>=12.0.0'
+
+  '@huggingface/jinja@0.5.10':
+    resolution: {integrity: sha512-SgS1D1bglQ94ceD4ZCL6eayUDy9uV1xuyk61OjgSxU5GJh7upqZCKII0JoTYMc6wWsg3JUgaPRX0ElQzXPk3Cw==}
+    engines: {node: '>=18'}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -2970,6 +2961,9 @@ packages:
   balanced-match@4.0.4:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
+
+  base-64@1.0.0:
+    resolution: {integrity: sha512-kwDPIFCGx0NZHog36dj+tHiwP4QMzsZ3AgMViUBKI0+V5n4U0ufTCUMhnQ04diaRI8EX/QcPfql7zlhZ7j4zgg==}
 
   base64-arraybuffer@1.0.2:
     resolution: {integrity: sha512-I3yl4r9QB5ZRY3XuJVEPfc2XhZO6YweFPI+UovAzn+8/hb3oJ6lnysaFcjVpkCPfVWFUDvoZ8kmVDP7WyRtYtQ==}
@@ -4412,6 +4406,13 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
+  jsonrepair@3.15.0:
+    resolution: {integrity: sha512-wy8OTjwsJwQRnQJkKnMJJ9vcytRdBPAgIF/Hy6+s1dAj42BHMKiyL8JzEieIl3JY7idt8eyHwBWTO8mh/+mtwA==}
+    hasBin: true
+
+  jsonschema@1.5.0:
+    resolution: {integrity: sha512-K+A9hhqbn0f3pJX17Q/7H6yQfD/5OXgdrR5UE12gMXCiN9D5Xq2o5mddV2QEcX/bjla99ASsAAQUyMCCRWAEhw==}
+
   jsx-ast-utils@3.3.5:
     resolution: {integrity: sha512-ZZow9HBI5O6EPgSJLUb8n2NKgmVWTwCvHGwFuJlMjvLFqlGG6pjirPhtdsseaLZjSibD8eegzmYpUZwoIlj2cQ==}
     engines: {node: '>=4.0'}
@@ -5145,6 +5146,17 @@ packages:
   react-is@19.2.4:
     resolution: {integrity: sha512-W+EWGn2v0ApPKgKKCy/7s7WHXkboGcsrXE+2joLyVxkbyVQfO3MUEaUQDHoSmb8TFFrSKYa9mw64WZHNHSDzYA==}
 
+  react-native-blob-util@0.24.11:
+    resolution: {integrity: sha512-stwl/2Ye4Y7LJI/+u463H1fCu97qM+cwRMzjk2haLp9EgBMhRqUVj2IGdbW8BcxvRtprG8JIHK7dv1U7BcYo5g==}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
+
+  react-native-device-info@15.0.2:
+    resolution: {integrity: sha512-dd71eXG2l3Cwp66IvKNadMTB8fhU3PEjyVddI97sYan+D4bgIAUmgGDhbSOFvHcGavksb2U17kiQYaDiK2WK2g==}
+    peerDependencies:
+      react-native: '*'
+
   react-native-drawer-layout@4.2.10:
     resolution: {integrity: sha512-O6TQdZ5LSm3dqnuR4rX9KPtE+9dVg7jsezEYz1l01rkQTe4fQvYZIoPu2sZFl5X2N70uhRdjnPULySVR3sBUwA==}
     peerDependencies:
@@ -5161,6 +5173,18 @@ packages:
       react-native: '*'
     peerDependenciesMeta:
       katex:
+        optional: true
+
+  react-native-executorch@0.10.2:
+    resolution: {integrity: sha512-0OF/WkNnKpYipClIG3Ev2FBj3e/C1T4LCFjvmp8/cfpeMUxAVzRVkEddR/mxovesXu6AC0xyfMumOhxIXCbJUQ==}
+    peerDependencies:
+      '@kesha-antonov/react-native-background-downloader': '>=4.4.0'
+      react: '*'
+      react-native: '*'
+      react-native-blob-util: ^0.24.0
+      react-native-worklets: '>=0.10.0 <0.13.0'
+    peerDependenciesMeta:
+      '@kesha-antonov/react-native-background-downloader':
         optional: true
 
   react-native-gesture-handler@2.32.0:
@@ -5695,8 +5719,8 @@ packages:
   text-segmentation@1.0.3:
     resolution: {integrity: sha512-iOiPUo/BGnZ6+54OsWxZidGCsdU8YbE4PSpdPinp7DeMtUJNJBoJ/ouUSTJjHkh1KntHaltHl/gDs2FC4i5+Nw==}
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/c215f5c479949792d984f38b3c4f1a2beb13902d:
-    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/c215f5c479949792d984f38b3c4f1a2beb13902d}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/7fb96cda36b38fff1f3d8bcc790d53fbcfeb88ee:
+    resolution: {tarball: https://codeload.github.com/edrlab/thorium-locales/tar.gz/7fb96cda36b38fff1f3d8bcc790d53fbcfeb88ee}
     version: 1.0.0
 
   throat@5.0.0:
@@ -7004,14 +7028,6 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@dr33m/react-native-litert-lm@0.6.7(expo@57.0.18)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
-    dependencies:
-      react-native-nitro-modules: 0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
-    optionalDependencies:
-      expo: 57.0.18(@babel/core@7.29.0)(@expo/dom-webview@57.0.1)(@expo/metro-runtime@57.0.14)(expo-router@57.0.17)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-worklets@0.12.1(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
-      react: 19.2.3
-      react-native: 0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
-
   '@dr33m/react-native-readium@5.0.0-rc.34(patch_hash=199162820afa0be7ea32159e2c1df4d8b9a00ee3cb1a974e7cca04488ce820fd)(react-native-nitro-modules@0.35.10(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
     dependencies:
       '@readium/css': 2.0.0
@@ -7754,6 +7770,8 @@ snapshots:
       react-native: 0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
       react-native-svg: 15.15.4(patch_hash=f3fbeb5b3cb8dee42959bf32a5b943e4d6623e8d7ff28f764f9e272762f7ee0c)(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
 
+  '@huggingface/jinja@0.5.10': {}
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -8305,7 +8323,7 @@ snapshots:
 
   '@readium/shared@2.1.5':
     dependencies:
-      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/c215f5c479949792d984f38b3c4f1a2beb13902d
+      '@edrlab/thorium-locales': thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/7fb96cda36b38fff1f3d8bcc790d53fbcfeb88ee
 
   '@revenuecat/purchases-js-hybrid-mappings@18.33.1':
     dependencies:
@@ -8984,6 +9002,8 @@ snapshots:
   balanced-match@1.0.2: {}
 
   balanced-match@4.0.4: {}
+
+  base-64@1.0.0: {}
 
   base64-arraybuffer@1.0.2: {}
 
@@ -10605,6 +10625,10 @@ snapshots:
 
   json5@2.2.3: {}
 
+  jsonrepair@3.15.0: {}
+
+  jsonschema@1.5.0: {}
+
   jsx-ast-utils@3.3.5:
     dependencies:
       array-includes: 3.1.9
@@ -11350,6 +11374,16 @@ snapshots:
 
   react-is@19.2.4: {}
 
+  react-native-blob-util@0.24.11(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
+    dependencies:
+      base-64: 1.0.0
+      react: 19.2.3
+      react-native: 0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
+
+  react-native-device-info@15.0.2(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)):
+    dependencies:
+      react-native: 0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
+
   react-native-drawer-layout@4.2.10(react-native-gesture-handler@2.32.0(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native-reanimated@4.6.0(react-native-worklets@0.12.1(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
     dependencies:
       color: 4.2.3
@@ -11363,6 +11397,18 @@ snapshots:
     dependencies:
       react: 19.2.3
       react-native: 0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
+
+  react-native-executorch@0.10.2(react-native-blob-util@0.24.11(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native-worklets@0.12.1(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
+    dependencies:
+      '@huggingface/jinja': 0.5.10
+      jsonrepair: 3.15.0
+      jsonschema: 1.5.0
+      react: 19.2.3
+      react-native: 0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
+      react-native-blob-util: 0.24.11(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+      react-native-device-info: 15.0.2(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))
+      react-native-worklets: 0.12.1(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+      zod: 4.4.3
 
   react-native-gesture-handler@2.32.0(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
     dependencies:
@@ -11992,7 +12038,7 @@ snapshots:
     dependencies:
       utrie: 1.0.2
 
-  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/c215f5c479949792d984f38b3c4f1a2beb13902d: {}
+  thorium-locales@https://codeload.github.com/edrlab/thorium-locales/tar.gz/7fb96cda36b38fff1f3d8bcc790d53fbcfeb88ee: {}
 
   throat@5.0.0: {}
 

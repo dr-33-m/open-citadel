@@ -8,8 +8,8 @@ import { useModelStore } from "@/stores/model";
 import { asColor } from "@/utils/colors";
 
 /**
- * The destructive confirm for a model. Files and list entries get different
- * copy — deleting a downloaded file is worth naming as such.
+ * The destructive confirm for a brain's download. The brain stays in the list,
+ * ready to download again, and the copy says so.
  */
 export function ConfirmDeleteSheet({
   modelId,
@@ -18,25 +18,21 @@ export function ConfirmDeleteSheet({
   modelId: string | null;
   onClose: () => void;
 }) {
-  const [mutedForeground, destructive, destructiveForeground] = useCSSVariable([
+  const [mutedForeground, destructiveForeground] = useCSSVariable([
     "--color-muted-foreground",
-    "--color-destructive",
     "--color-destructive-foreground",
   ]);
   const models = useModelStore((s) => s.models);
   const deleteModel = useModelStore((s) => s.deleteModel);
   const model = models.find((m) => m.id === modelId);
+  const body = `${model?.name ?? "The brain"} will be removed from your device. You can download it again later.`;
 
   return (
     <Sheet visible={modelId !== null} onClose={onClose}>
       <View className="gap-6 px-6">
-        <ThemedText type="headlineSm">
-          {model?.isDownloaded ? "Delete brain file?" : "Remove brain?"}
-        </ThemedText>
+        <ThemedText type="headlineSm">Delete brain file?</ThemedText>
         <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          {model?.isDownloaded
-            ? "The brain will be removed from your device. You can re-download it later."
-            : "The brain will be removed from your list. You can add it again later."}
+          {body}
         </ThemedText>
         <View className="flex-row gap-3">
           <Touchable

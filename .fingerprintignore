@@ -6,10 +6,10 @@
 # See TODO-ANDROID.md.
 node_modules/**/android/src/main/AndroidManifest.xml
 
-# react-native-litert-lm's postinstall downloads its prebuilt iOS frameworks
+# react-native-executorch's postinstall downloads its prebuilt iOS frameworks
 # into the package, but only on macOS. EAS builds Android on Linux, so the
-# directory there has no `ios/Frameworks` and hashed differently from a Mac
+# directory there has no `third-party/ios` and would hash differently from a Mac
 # checkout: "Runtime version mismatch" on the Android production build. Which
-# frameworks it fetches is pinned by `litertLm.iosGitTag` in the package's
+# frameworks it fetches is pinned by `nativeLibsVersion` in the package's
 # package.json, and that file is still hashed.
-node_modules/@dr33m/react-native-litert-lm/ios/Frameworks/**
+node_modules/react-native-executorch/third-party/ios/**

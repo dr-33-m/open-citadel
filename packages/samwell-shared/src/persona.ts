@@ -6,7 +6,7 @@ import { SAMWELL_CHARACTER, SAMWELL_CHARACTER_COMPACT } from './character';
  * The character is `SAMWELL_CHARACTER` and is shared with Compass. Only the
  * focus and the mechanics below are chat's own.
  *
- * Shared by the on-device (litert) path and the cloud
+ * Shared by the on-device (ExecuTorch) path and the cloud
  * (OpenRouter) path so the companion behaves identically regardless of where
  * inference runs. The reference-marker protocol ([[ref:highlight:hl-123]]) is
  * relied on by the chat UI to render tappable navigation cards, and the
@@ -80,7 +80,7 @@ You cannot search or change their library in this conversation. Answer from what
  * The app-guide paragraph, appended only on the cloud route.
  *
  * `explain_app` is cloud-only and deliberately so: the guide it returns is a
- * long document, and on a 4096-token device window a single call to it would
+ * long document, and in a 4K on-device window a single call to it would
  * cost most of the conversation. So `SAMWELL_TOOLS` (the device catalogue in
  * `services/chat-tools.ts`) does not carry it, and this paragraph — the only
  * thing that names it — is appended nowhere but the cloud route.

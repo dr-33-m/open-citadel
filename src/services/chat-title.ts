@@ -6,7 +6,8 @@ import {
 } from 'samwell-shared';
 
 import { cloudJsonHeaders } from '@/services/cloud-identity';
-import * as Inference from '@/services/inference';
+import { isEngineLoaded } from '@/services/device-llm/engine';
+import { oneShot, oneShotBudgetChars } from '@/services/device-llm/one-shot';
 import { useSettingsStore } from '@/stores/settings';
 import { splitThinking } from '@/utils/think-stream';
 import { formatTranscript } from '@/utils/transcript';
@@ -14,8 +15,7 @@ import { formatTranscript } from '@/utils/transcript';
 /**
  * AI-generated titles for bookless chat sessions. Works on both Samwell
  * paths: cloud calls the metered /chat/title endpoint; offline runs a
- * one-shot prompt on the loaded local model, bracketed by
- * resetConversation() so it cannot bleed into chat state.
+ * one-shot prompt on the loaded local model, in a conversation of its own.
  */
 
 function clamp(value: string, max: number): string {
@@ -58,27 +58,23 @@ export async function suggestChatTitle(conversation: string): Promise<string> {
     return normalizeChatTitle(parsed.data.title);
   }
 
-  if (!Inference.isModelLoaded()) {
+  if (!isEngineLoaded()) {
     throw new Error('No local model loaded to title this chat.');
   }
 
-  Inference.resetConversation();
-  try {
-    let latest = '';
-    await Inference.chat(
-      `${SUGGEST_CHAT_TITLE_PROMPT}\n\n${JSON.stringify(payload)}\n\n${SUGGEST_CHAT_TITLE_LOCAL_FORMAT}`,
-      (data) => {
-        latest = data.content;
-      },
-    );
-    // A reasoning model answers a one-shot prompt with its reasoning attached,
-    // and naming a chat "<think>the user asked..." is the visible result.
-    const title = normalizeChatTitle(splitThinking(latest).visible);
-    if (!title) throw new Error("Couldn't title this chat.");
-    return title;
-  } finally {
-    Inference.resetConversation();
-  }
+  const frame = `${SUGGEST_CHAT_TITLE_PROMPT}\n\n\n\n${SUGGEST_CHAT_TITLE_LOCAL_FORMAT}`;
+  // A small device window cannot take a long chat whole. The opening is what a
+  // title is usually drawn from, so it is the end that is cut.
+  const room = Math.max(0, oneShotBudgetChars() - frame.length - 32);
+  const local = { conversation: clamp(payload.conversation, room) };
+  const answer = await oneShot(
+    `${SUGGEST_CHAT_TITLE_PROMPT}\n\n${JSON.stringify(local)}\n\n${SUGGEST_CHAT_TITLE_LOCAL_FORMAT}`,
+  );
+  // A reasoning model answers a one-shot prompt with its reasoning attached,
+  // and naming a chat "<think>the user asked..." is the visible result.
+  const title = normalizeChatTitle(splitThinking(answer).visible);
+  if (!title) throw new Error("Couldn't title this chat.");
+  return title;
 }
 
 /**

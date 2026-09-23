@@ -1,9 +1,8 @@
 import type { TextStyle } from 'react-native';
 import { View } from 'react-native';
-import Animated, { Easing, LinearTransition } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
-import { Search, Trash2 } from '@/components/icons';
+import { Trash2 } from '@/components/icons';
 import { PageFade } from '@/components/scroll-fades';
 import { ModelListSkeleton } from '@/components/skeletons/model-list-skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -20,27 +19,17 @@ type SheetState = ReturnType<typeof useModelSheet>;
 
 const TABULAR: TextStyle = { fontVariant: ['tabular-nums'] };
 
-/**
- * The rows below a removed brain move up into its place rather than jumping.
- * Built once at module scope: a builder made in render is rebuilt every render.
- * On-screen movement, so ease-in-out, and under 300ms.
- */
-const ROW_CLOSE = LinearTransition.duration(220).easing(Easing.bezier(0.77, 0, 0.175, 1));
-
-/** The one brain the app vouches for, marked so the reader can find it again. */
-const RECOMMENDED_MODEL_ID = 'gemma-4-e2b-it';
-
 function modelDetail(model: LocalModel): string {
   return [
     formatBytes(model.sizeBytes),
     model.isDownloaded ? 'Downloaded' : null,
-    model.id === RECOMMENDED_MODEL_ID ? 'Recommended' : null,
+    model.recommended ? 'Recommended' : null,
   ]
     .filter(Boolean)
     .join(' · ');
 }
 
-/** The brains already on this phone, with a way into the catalogue. */
+/** Every brain Samwell offers that this phone could run. */
 export function ModelListPhase({
   sheet,
   mutedForeground,
@@ -50,7 +39,7 @@ export function ModelListPhase({
   sheet: SheetState;
   mutedForeground?: string;
   primary?: string;
-  /** A full swipe or the tile deletes at once: the swipe's reach point is the confirmation. */
+  /** A full swipe or the tile deletes the download at once: the swipe's reach point is the confirmation. */
   onDelete: (id: string) => void;
 }) {
   const foreground = useCSSVariable('--color-foreground');
@@ -65,12 +54,13 @@ export function ModelListPhase({
   return (
     <PageFade edges="both" surface="popover">
       <Sheet.ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <ModelPickerHeader title="Choose Brain" primary={primary} />
+        <ModelPickerHeader title="Choose Brain" />
         {sheet.modelsHydrated ? (
           <Swipe.Group>
             {sheet.models.map((model) => (
-              <Animated.View key={model.id} layout={ROW_CLOSE}>
-              <Swipe haptics removeOnCommit>
+              // Only a download can be deleted. The brain itself stays listed,
+              // ready to download again, so the row does not leave.
+              <Swipe key={model.id} haptics disabled={!model.isDownloaded}>
                 <Swipe.End>
                   <Swipe.Action
                     icon={<Trash2 color={asColor(foreground)} />}
@@ -97,18 +87,11 @@ export function ModelListPhase({
                   )}
                 </Touchable>
               </Swipe>
-              </Animated.View>
             ))}
           </Swipe.Group>
         ) : (
           <ModelListSkeleton count={3} />
         )}
-        <Touchable className="flex-row items-center gap-2 px-6 py-4" onPress={sheet.browse}>
-          <Search size={14} color={primary} />
-          <ThemedText type="labelSm" color={primary}>
-            BROWSE BRAINS
-          </ThemedText>
-        </Touchable>
       </Sheet.ScrollView>
     </PageFade>
   );

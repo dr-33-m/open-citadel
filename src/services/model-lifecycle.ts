@@ -1,7 +1,7 @@
 import { AppState, type NativeEventSubscription } from 'react-native';
 import { Image } from 'expo-image';
 
-import * as Inference from '@/services/inference';
+import { isEngineLoaded } from '@/services/device-llm/engine';
 import { useChatStore } from '@/stores/chat';
 import { useModelStore } from '@/stores/model';
 
@@ -9,13 +9,12 @@ import { useModelStore } from '@/stores/model';
  * Frees the on-device engine and decoded image bitmaps when the OS signals
  * memory pressure or the app leaves the foreground.
  *
- * A resident litert model plus its KV cache is by far the largest native
- * allocation the app makes, and litert's own docs are explicit that an
- * allocation failure under pressure bypasses the Kotlin/Swift try/catch and
- * takes the whole process down — which is the "app just goes black after a
- * while" report. Catching after the fact can't help; the only real defence is
- * not to be holding that memory when the system is tight. The engine reloads
- * lazily the next time it's needed (the wake dialog in `use-samwell-wake`).
+ * A resident model plus its KV cache is by far the largest native allocation
+ * the app makes, and a backgrounded app holding gigabytes is the first one the
+ * OS kills. ExecuTorch plans that memory once, at load, so it does not grow
+ * while Samwell talks, but it is all still held until the model is freed. The
+ * engine reloads the next time it's needed (the wake dialog in
+ * `use-samwell-wake`).
  *
  * Wired once from the root layout.
  */
@@ -26,7 +25,7 @@ function release(): void {
   // A generation in flight owns the engine — tearing it down mid-stream would
   // crash the very native call this is meant to protect. Skip; the next
   // background/warning after it finishes will catch it.
-  if (Inference.isModelLoaded() && !useChatStore.getState().isGenerating) {
+  if (isEngineLoaded() && !useChatStore.getState().isGenerating) {
     void useModelStore.getState().releaseContext();
   }
   // Cheap and always safe: drop decoded covers/artwork from the in-memory
@@ -39,8 +38,8 @@ export function startModelLifecycle(): void {
 
   subscriptions.push(
     AppState.addEventListener('change', (state) => {
-      // Not visible: no reason to hold a GPU-resident model, and iOS is
-      // quickest to kill a backgrounded app that does.
+      // Not visible: no reason to hold the model, and iOS is quickest to
+      // kill a backgrounded app that does.
       if (state === 'background') release();
     }),
   );
