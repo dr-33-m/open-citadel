@@ -42,6 +42,7 @@ import {
     type TurnResult,
 } from '@/services/device-llm/conversation';
 import { engineGeneration, getEngine, isEngineLoaded } from '@/services/device-llm/engine';
+import { afterErrand, errandRunning, runErrand } from '@/services/device-llm/errands';
 import { type KnownRef, refsInToolResults, repairRefMarkers } from '@/services/ref-markers';
 import { splitThinking } from '@/utils/think-stream';
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
@@ -86,6 +87,8 @@ interface ChatStore {
   deviceLimit: DeviceLimit | null;
   /** A summary/re-title pass is running and the reader is waiting on it. */
   titleRefreshing: boolean;
+  /** The reader's message waits for the model to finish naming the last chat. */
+  queuedBehindTitle: boolean;
 
   loadSessions(): Promise<void>;
   createSession(opts: {
@@ -344,19 +347,22 @@ function dropDeviceConversation(): void {
  * anyway, so the title rides on it.
  *
  * It never gets in the reader's way: it starts once a switch has settled, it
- * does not wake Samwell to run, one chat at a time, and a message sent while
- * it runs stops it (`yieldBackgroundTitle`); that chat is tried again on the
- * next switch. Which chats need a name is read from the sessions themselves,
- * so none is lost to the app closing first.
+ * does not wake Samwell to run, and one chat at a time. A message sent while
+ * one is being named waits for that one, with a toast saying so, and no other
+ * starts (`finishBackgroundTitle`); the rest are named on the next switch.
+ * Which chats need a name is read from the sessions themselves, so none is
+ * lost to the app closing first.
  */
-let backgroundTitle: AbortController | null = null;
 let backgroundTitleTimer: ReturnType<typeof setTimeout> | null = null;
+/** Set when the reader sends: the chat being named finishes, and no other starts. */
+let backgroundTitlesHeld = false;
 /** Chats whose title failed this run, so a switch does not retry them forever. */
 const titleFailed = new Set<string>();
 /** Long enough for a chat switch or a sheet to finish moving first. */
 const BACKGROUND_TITLE_DELAY_MS = 1500;
 
 export function scheduleBackgroundTitles(): void {
+  backgroundTitlesHeld = false;
   if (backgroundTitleTimer) clearTimeout(backgroundTitleTimer);
   backgroundTitleTimer = setTimeout(() => {
     backgroundTitleTimer = null;
@@ -364,17 +370,21 @@ export function scheduleBackgroundTitles(): void {
   }, BACKGROUND_TITLE_DELAY_MS);
 }
 
-/** Stops a background title so the reader's own message goes first. */
-function yieldBackgroundTitle(): void {
+/**
+ * Lets the chat being named finish, so the reader's own message goes next.
+ * Cutting it off wasted the work, and the chat came back to be named again.
+ */
+async function finishBackgroundTitle(): Promise<void> {
+  backgroundTitlesHeld = true;
   if (backgroundTitleTimer) {
     clearTimeout(backgroundTitleTimer);
     backgroundTitleTimer = null;
   }
-  backgroundTitle?.abort();
+  await afterErrand();
 }
 
 async function titleLeftChats(): Promise<void> {
-  if (backgroundTitle) return;
+  if (errandRunning()) return;
   if (useSettingsStore.getState().samwellMode === 'cloud' || !isEngineLoaded()) return;
 
   const { sessions, activeSession } = useChatStore.getState();
@@ -384,23 +394,20 @@ async function titleLeftChats(): Promise<void> {
 
   for (const session of waiting) {
     // The reader has started something since: it goes first.
-    if (useChatStore.getState().isGenerating || !isEngineLoaded()) return;
+    if (backgroundTitlesHeld || useChatStore.getState().isGenerating || !isEngineLoaded()) return;
     const conversation = conversationForTitle(readMessages(session.id));
     if (!conversation) continue;
 
-    const controller = new AbortController();
-    backgroundTitle = controller;
-    try {
-      const title = await suggestChatTitle(conversation, { signal: controller.signal });
-      const stillThere = useChatStore.getState().sessions.some((s) => s.id === session.id);
-      if (title && stillThere) await useChatStore.getState().updateSessionTitle(session.id, title);
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      titleFailed.add(session.id);
-      console.warn('[Chat] Could not title a chat in the background:', err);
-    } finally {
-      backgroundTitle = null;
-    }
+    await runErrand('Naming your last chat first…', async () => {
+      try {
+        const title = await suggestChatTitle(conversation);
+        const stillThere = useChatStore.getState().sessions.some((s) => s.id === session.id);
+        if (title && stillThere) await useChatStore.getState().updateSessionTitle(session.id, title);
+      } catch (err) {
+        titleFailed.add(session.id);
+        console.warn('[Chat] Could not title a chat in the background:', err);
+      }
+    });
   }
 }
 
@@ -621,6 +628,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   lastStreamedMessageId: null,
   deviceLimit: null,
   titleRefreshing: false,
+  queuedBehindTitle: false,
 
   async loadSessions() {
     // Reading only. Compass conversations live in the same two tables and are
@@ -861,6 +869,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       isGenerating: true,
       isThinking: false, // Start with "Processing…"; SDK empty callback triggers "Thinking…"
       deviceLimit: null,
+      queuedBehindTitle: samwellMode === 'offline' && errandRunning(),
     }));
     stopRequested = false;
 
@@ -975,11 +984,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
 
-    // A background title goes second to anything the reader asks for.
-    yieldBackgroundTitle();
+    // A chat being named in the background finishes first, and nothing else
+    // starts after it: the reader's message goes next.
+    await finishBackgroundTitle();
+    set({ queuedBehindTitle: false });
     // A rename from the history sheet may be using the model. The engine
     // queues the two anyway; waiting here keeps the composer's state honest.
     await get().waitForRetitle();
+
+    // Stopped while it waited. The conversation clears a stop when its turn
+    // starts, so it would otherwise have gone ahead as if never stopped.
+    if (stopRequested) {
+      set({ isThinking: false, isGenerating: false });
+      await get().loadSessions();
+      return;
+    }
 
     let finalContent = '';
     // Left `finalContent` empty deliberately when set, so this falls through
@@ -1049,6 +1068,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         limitReached = 'context';
       } else {
         console.error('[Samwell] Generation error:', err);
+      }
+      // The model went away under the turn (a reload that failed): the store
+      // is told, so the wake banner says so instead of sends doing nothing.
+      if (!isEngineLoaded() && useModelStore.getState().isLoaded) {
+        void useModelStore.getState().releaseContext();
       }
       // Aborted or error — use whatever streamed so far
       finalContent = get().streamingContent.trim();
@@ -1242,5 +1266,6 @@ useModelStore.subscribe((state, previous) => {
     toolCallStatus: null,
     toolCallName: null,
     titleRefreshing: false,
+    queuedBehindTitle: false,
   });
 });

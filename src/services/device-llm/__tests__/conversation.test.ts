@@ -30,6 +30,8 @@ class FakeRunner {
   };
 
   configs: unknown[] = [];
+  /** Whether a reply stops at `maxNewTokens`, as the native one does. Off where a test fills the window instead. */
+  honoursCap = false;
 
   generate = (prompt: string, config: unknown, onToken?: (t: string) => void) => {
     this.configs.push(config);
@@ -41,13 +43,16 @@ class FakeRunner {
     // As the native runner does: every token is handed back, but the last one
     // sampled is never fed to the model, so it is not in the cache.
     let unfed = '';
+    let generated = 0;
+    const cap = this.honoursCap ? ((config as { maxNewTokens?: number }).maxNewTokens ?? Infinity) : Infinity;
     for (const ch of pieces) {
-      if (this.stopped) break;
+      if (this.stopped || generated >= cap) break;
       this.pos += tokens(unfed);
       onToken?.(ch);
       unfed = ch;
+      generated++;
     }
-    return {};
+    return { numGeneratedTokens: generated };
   };
 
   resets: number[] = [];
@@ -102,6 +107,8 @@ const fakePreprocessor = {
 };
 
 let runner = new FakeRunner(4096);
+/** What each conversation handed the chat preprocessor. */
+const preprocessorConfigs: unknown[] = [];
 /** Runners handed out, in order, before falling back to `runner`. */
 const nextRunners: FakeRunner[] = [];
 
@@ -128,12 +135,15 @@ vi.mock('@/lib/executorch', () => ({
     llm: {
       parseTokenizerConfig: () => ({ chatTemplate: 'toy', eosToken: '<eos>' }),
       createLLMRunner: () => nextRunners.shift() ?? runner,
-      createChatPreprocessor: () => fakePreprocessor,
+      createChatPreprocessor: (config: unknown) => {
+        preprocessorConfigs.push(config);
+        return fakePreprocessor;
+      },
     },
   }),
 }));
 
-const { chunkForPrefill, ContextPressureError, createConversation } = await import('../conversation');
+const { chunkForPrefill, ContextPressureError, createConversation, loopedTail } = await import('../conversation');
 const { getEngine, isEngineLoaded, loadEngine, unloadEngine } = await import('../engine');
 
 const FILES = { modelPath: 'm.pte', tokenizerPath: 't.json', tokenizerConfigPath: 'c.json' };
@@ -615,16 +625,73 @@ describe('thinking', () => {
 
 });
 
-describe('oneShot', () => {
-  it('stops when its signal fires, and says so', async () => {
+describe('a reply that falls into a loop', () => {
+  const RUT = 'I can say it once, and then I can say it again if you need it. ';
+
+  it('is caught, and cut to its first time round', () => {
+    const text = `I can help you stay on track. ${RUT.repeat(4)}`;
+    expect(text.slice(0, text.length - loopedTail(text))).toBe(`I can help you stay on track. ${RUT}`);
+  });
+
+  it('is not seen in an answer that only repeats a short refrain, or draws a rule', () => {
+    expect(loopedTail('Yes, yes, yes. That is the whole of it, and then some more words.')).toBe(0);
+    expect(loopedTail(`Totals\n${'='.repeat(300)}`)).toBe(0);
+  });
+
+  it('stops the model, and the history keeps it said once', async () => {
     await freshEngine();
-    const { oneShot, OneShotAborted } = await import('../one-shot');
-    const controller = new AbortController();
-    runner.replies.push('a long answer that never gets to finish');
-    runner.onGenerate = () => controller.abort();
-    await expect(oneShot({ instructions: 'Title it.', input: 'text' }, { signal: controller.signal })).rejects.toBeInstanceOf(
-      OneShotAborted,
-    );
-    runner.onGenerate = null;
+    const convo = createConversation({ systemPrompt: 'S' });
+    runner.replies.push(['Sure. ', ...Array.from({ length: 12 }, () => RUT), 'never reached']);
+    const turn = await convo.sendMessage('help');
+    expect(replyOf(turn).content).toBe(`Sure. ${RUT}`.trim());
+  });
+});
+
+describe('a brain whose thinking is switched', () => {
+  const QWEN = { ...ENTRY, family: 'QWEN3_1_7B', variant: 'XNNPACK_8DA4W', thinking: 'switch' } as const;
+
+  it('starts its reply with the think block closed when thinking is off, as its own template does', async () => {
+    runner = new FakeRunner(4096);
+    await loadEngine(QWEN, FILES);
+    runner.replies.push('Hello', 'Hmm');
+    await createConversation({ systemPrompt: 'S' }).sendMessage('x');
+    expect(runner.log).toContain('prefill:<assistant><think>\n\n</think>\n\n');
+
+    runner.log = [];
+    await createConversation({ systemPrompt: 'S', thinking: true }).sendMessage('y');
+    expect(runner.log.some((l) => l.includes('</think>'))).toBe(false);
+  });
+
+  it('closes a thought that ran out of room, and answers from it', async () => {
+    runner = new FakeRunner(4096);
+    await loadEngine(QWEN, FILES);
+    runner.honoursCap = true;
+    const convo = createConversation({ systemPrompt: 'S', thinking: true, maxNewTokens: 4 });
+    runner.replies.push(['<think>', 'weighing', ' it', ' up', ' still'], ['Five', ' thousand.']);
+    const seen: string[] = [];
+    const turn = await convo.sendMessage('q', { onText: (t) => seen.push(t) });
+
+    expect(replyOf(turn).content).toBe('Five thousand.');
+    expect(runner.log.some((l) => l.startsWith('prefill: up') && l.endsWith('now.\n</think>\n\n'))).toBe(true);
+    expect(seen[seen.length - 1]).toMatch(/^<think>weighing it up[\s\S]*now\.\n<\/think>\n\nFive thousand\.$/);
+  });
+
+  it('keeps the answer, and stops, when he starts thinking again after it', async () => {
+    runner = new FakeRunner(4096);
+    await loadEngine(QWEN, FILES);
+    runner.honoursCap = true;
+    const convo = createConversation({ systemPrompt: 'S', thinking: true, maxNewTokens: 4 });
+    runner.replies.push(['<think>', 'weighing', ' it', ' up'], ['Five', ' thousand.', '<think>', 'but', ' wait']);
+    const turn = await convo.sendMessage('q');
+    expect(replyOf(turn).content).toBe('Five thousand.');
+  });
+});
+
+describe('a conversation without tools', () => {
+  it('gives the template no tools at all, not an empty list', async () => {
+    await freshEngine();
+    preprocessorConfigs.length = 0;
+    createConversation({ systemPrompt: 'S' });
+    expect((preprocessorConfigs[0] as { tools?: unknown }).tools).toBeUndefined();
   });
 });

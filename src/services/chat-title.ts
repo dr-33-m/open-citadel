@@ -23,13 +23,7 @@ function clamp(value: string, max: number): string {
   return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
 }
 
-export async function suggestChatTitle(
-  conversation: string,
-  options: {
-    /** Calls a title on the device off, so a message the reader sends is not kept waiting behind it. */
-    signal?: AbortSignal;
-  } = {},
-): Promise<string> {
+export async function suggestChatTitle(conversation: string): Promise<string> {
   const payload = { conversation: clamp(conversation, 6000) };
 
   const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
@@ -73,7 +67,7 @@ export async function suggestChatTitle(
   // title is usually drawn from, so it is the end that is cut.
   const room = Math.max(0, oneShotBudgetChars() - instructions.length - 32);
   const input = JSON.stringify({ conversation: clamp(payload.conversation, room) });
-  const answer = await oneShot({ instructions, input }, { signal: options.signal });
+  const answer = await oneShot({ instructions, input });
   // A reasoning model answers a one-shot prompt with its reasoning attached,
   // and naming a chat "<think>the user asked..." is the visible result.
   const title = normalizeChatTitle(splitThinking(answer).visible);

@@ -107,7 +107,13 @@ function retire(): void {
   engine = null;
   resident = null;
   dirty = false;
-  held?.runner.stop();
+  try {
+    held?.runner.stop();
+  } catch {
+    // Mid-reload (`reloadRunner`) the runner is already disposed while its
+    // replacement is still being made, and stopping a disposed runner throws.
+    // There is nothing running on it to stop.
+  }
 }
 
 /** The special-token variables Hugging Face hands every chat template. */
@@ -237,7 +243,16 @@ async function reloadRunner(current: Engine): Promise<void> {
   const et = getExecuTorch();
   if (!et) throw new Error('On-device AI is not available in this build.');
   current.runner.dispose();
-  const runner = await et.wrapAsync(et.llm.createLLMRunner)(current.files.modelPath, current.files.tokenizerPath);
+  let runner: llm.LLMRunner;
+  try {
+    runner = await et.wrapAsync(et.llm.createLLMRunner)(current.files.modelPath, current.files.tokenizerPath);
+  } catch (err) {
+    // The old runner is gone and no new one came: no model is loaded any
+    // more, rather than one whose every use throws that it was disposed.
+    if (engine === current) retire();
+    if (held === current) held = null;
+    throw err;
+  }
   current.runner = runner;
   current.prefill = et.wrapAsync(runner.prefill);
   pristine = true;

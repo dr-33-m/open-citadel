@@ -35,9 +35,15 @@ const ToastContext = React.createContext<ToastContextValue | null>(null);
  * `useToast()`.
  */
 let imperativeEnqueue: ((options: ToastOptions) => void) | null = null;
+let imperativeDismiss: ((key: string) => void) | null = null;
 
 export function showToast(options: ToastOptions): void {
   imperativeEnqueue?.(options);
+}
+
+/** Closes the keyed toast on screen, if there is one: how a `busy` toast ends. */
+export function dismissToast(key: string): void {
+  imperativeDismiss?.(key);
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -71,14 +77,22 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const dismissKeyed = React.useCallback((key: string) => {
+    setToasts((current) =>
+      current.map((t) => (t.key === key && !t.exiting ? { ...t, closing: true } : t)),
+    );
+  }, []);
+
   // The one live provider owns the imperative bridge for as long as it is
   // mounted. This provider wraps the whole app, so there is only ever one.
   React.useEffect(() => {
     imperativeEnqueue = enqueue;
+    imperativeDismiss = dismissKeyed;
     return () => {
       if (imperativeEnqueue === enqueue) imperativeEnqueue = null;
+      if (imperativeDismiss === dismissKeyed) imperativeDismiss = null;
     };
-  }, [enqueue]);
+  }, [enqueue, dismissKeyed]);
 
   const handleDismissStart = React.useCallback((id: number) => {
     setToasts((current) => current.map((t) => (t.id === id ? { ...t, exiting: true } : t)));

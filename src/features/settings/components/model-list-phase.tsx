@@ -14,6 +14,7 @@ import { asColor } from '@/utils/colors';
 type SheetState = ReturnType<typeof useModelSheet>;
 
 const FILL: { flex: 1 } = { flex: 1 };
+const keyOf = (model: LocalModel) => model.id;
 
 /**
  * Every brain Samwell offers that this phone could run.
@@ -104,7 +105,7 @@ function ModelList({
       <Sheet.FlatList
         style={FILL}
         data={models}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyOf}
         extraData={activeModelId}
         // A row dragged open is put back the moment a scroll begins, so it
         // never rides along into a recycled cell.

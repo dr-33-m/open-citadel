@@ -34,4 +34,21 @@ describe('turnIndicator', () => {
       }),
     ).toBeNull();
   });
+
+  it('shows no orb while a message waits behind a chat being named, then the usual one', () => {
+    const waiting = {
+      isGenerating: true,
+      isToolCalling: false,
+      toolCallName: null,
+      toolCallStatus: null,
+      isThinking: false,
+      isStreaming: false,
+      trace: '',
+    };
+    expect(turnIndicator({ ...waiting, isQueued: true })).toBeNull();
+    expect(turnIndicator({ ...waiting, isQueued: false })).toEqual({
+      kind: 'activity',
+      activity: { orb: 'working', label: 'Processing…' },
+    });
+  });
 });

@@ -2,6 +2,7 @@ import { AppState, type NativeEventSubscription } from 'react-native';
 import { Image } from 'expo-image';
 
 import { isEngineLoaded } from '@/services/device-llm/engine';
+import { errandRunning } from '@/services/device-llm/errands';
 import { useChatStore } from '@/stores/chat';
 import { useModelStore } from '@/stores/model';
 
@@ -23,9 +24,10 @@ let subscriptions: NativeEventSubscription[] = [];
 
 function release(): void {
   // A generation in flight owns the engine — tearing it down mid-stream would
-  // crash the very native call this is meant to protect. Skip; the next
-  // background/warning after it finishes will catch it.
-  if (isEngineLoaded() && !useChatStore.getState().isGenerating) {
+  // crash the very native call this is meant to protect. So does a chat
+  // being named. Skip; the next background/warning after it finishes will
+  // catch it.
+  if (isEngineLoaded() && !useChatStore.getState().isGenerating && !errandRunning()) {
     void useModelStore.getState().releaseContext();
   }
   // Cheap and always safe: drop decoded covers/artwork from the in-memory

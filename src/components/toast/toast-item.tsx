@@ -137,7 +137,8 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
     [clearTimer, dragY, finishDismiss, onDismissStart, opacity, reduced, toast.id],
   );
 
-  const persistent = toast.persistent === true;
+  // A busy toast waits for its work, however long that takes.
+  const persistent = toast.persistent === true || toast.busy === true;
 
   const restartTimer = React.useCallback(() => {
     if (exiting.current) return;
@@ -147,6 +148,13 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
     if (persistent) return;
     timer.current = setTimeout(() => dismiss('timeout'), AUTO_DISMISS_MS);
   }, [clearTimer, dismiss, persistent]);
+
+  // A busy toast's spinner stands in for every control: there is nothing to
+  // press while the work it reports runs.
+  const hasAction = !toast.busy && toast.actionIcon != null && toast.actionLabel != null;
+  const showPendingAction = hasAction && toast.actionPending === true;
+  const showAction = hasAction && !toast.actionPending;
+  const showClose = !toast.busy && (!hasAction || persistent);
 
   const commitSwipeDismiss = React.useCallback(() => dismiss('swipe'), [dismiss]);
 
@@ -158,6 +166,11 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
     // Arrival happens once, on mount, whatever else changes afterwards.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Closed by its caller (`dismissToast`), the way a press on its close would.
+  React.useEffect(() => {
+    if (toast.closing) dismiss('close');
+  }, [toast.closing, dismiss]);
 
   /*
    * Written over in place: the content changed under a reader who may have
@@ -252,14 +265,19 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
             {/* The action replaces the close rather than joining it: two icons
                 on one line is the busy, uneven row this layout exists to
                 avoid, and a swipe or the timer still dismisses either way. */}
-            {ActionIcon && toast.actionLabel && toast.actionPending && (
+            {toast.busy && (
+              <View style={ACTION_BOX}>
+                <Spinner size="sm" label={toast.message} />
+              </View>
+            )}
+            {showPendingAction && (
               // Same footprint as the icon, so the row does not shift when the
               // press turns into work.
               <View style={ACTION_BOX}>
                 <Spinner size="sm" label={toast.actionLabel} />
               </View>
             )}
-            {ActionIcon && toast.actionLabel && !toast.actionPending && (
+            {ActionIcon && showAction && (
               <Pressable
                 hitSlop={8}
                 accessibilityRole="button"
@@ -277,7 +295,7 @@ export function ToastItem({ toast, index, onDismissStart, onDismissed }: ToastIt
             {/* The close normally steps aside for an action, because a swipe
                 and the timer both still dismiss. A persistent toast has
                 neither, so declining needs its own control. */}
-            {(!ActionIcon || !toast.actionLabel || persistent) && (
+            {showClose && (
               <Pressable
                 hitSlop={8}
                 accessibilityRole="button"

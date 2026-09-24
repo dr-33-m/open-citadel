@@ -75,7 +75,7 @@ export function TuneSheet({
         {activeModel.supportsThinking ? (
           <ToggleRow
             title="Thinking"
-            note="He thinks before he answers. Slower, and on smaller brains a long thought can leave no room for the answer."
+            note="He thinks before he answers. Slower, and on smaller brains it leaves him less room to answer in."
             value={inference.enableThinking}
             onValueChange={(val) => setInference({ enableThinking: val })}
           />

@@ -73,6 +73,8 @@ export type CatalogueModel = RegistryRef & {
    * Its maker's sampling temperature for chat, where the runtime can honour it
    * (it samples by temperature alone: no top-p, min-p or repetition penalty).
    * Small models ramble and repeat themselves at the 0.7 used otherwise.
+   * Hammer's is ours: it is tuned for tool calls, not chat, and lost track of
+   * who was who at 0.7.
    */
   temperature?: number;
   /** The brain the app points readers to first. */
@@ -108,9 +110,9 @@ export const DEVICE_CATALOGUE: readonly CatalogueModel[] = [
   { id: 'smollm2-135m', name: 'SmolLM2 135M', family: 'SMOLLM2_135M', variant: 'XNNPACK_8DA8W', metal: 'MLX_INT8', temperature: 0.2 },
   { id: 'smollm2-360m', name: 'SmolLM2 360M', family: 'SMOLLM2_360M', variant: 'XNNPACK_8DA8W', metal: 'MLX_INT8', temperature: 0.2 },
   { id: 'smollm2-1.7b', name: 'SmolLM2 1.7B', family: 'SMOLLM2_1_7B', variant: 'XNNPACK_8DA8W', metal: 'MLX_INT8', temperature: 0.2 },
-  { id: 'hammer-2.1-0.5b', name: 'Hammer 2.1 0.5B', family: 'HAMMER2_1_0_5B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4' },
-  { id: 'hammer-2.1-1.5b', name: 'Hammer 2.1 1.5B', family: 'HAMMER2_1_1_5B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4' },
-  { id: 'hammer-2.1-3b', name: 'Hammer 2.1 3B', family: 'HAMMER2_1_3B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4' },
+  { id: 'hammer-2.1-0.5b', name: 'Hammer 2.1 0.5B', family: 'HAMMER2_1_0_5B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4', temperature: 0.3 },
+  { id: 'hammer-2.1-1.5b', name: 'Hammer 2.1 1.5B', family: 'HAMMER2_1_1_5B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4', temperature: 0.3 },
+  { id: 'hammer-2.1-3b', name: 'Hammer 2.1 3B', family: 'HAMMER2_1_3B', variant: 'XNNPACK_8DA4W', metal: 'MLX_INT4', temperature: 0.3 },
 ];
 
 export function catalogueModel(id: string | null | undefined): CatalogueModel | undefined {

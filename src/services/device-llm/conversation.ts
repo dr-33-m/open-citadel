@@ -49,6 +49,8 @@ import {
 } from '@/services/device-llm/engine';
 import {
   asThinkMarkers,
+  type ReasoningMarkers,
+  reasoningOpenPattern,
   THINK_MARKERS,
   withoutReasoning,
 } from '@/services/device-llm/reply-format';
@@ -162,6 +164,58 @@ export function chunkForPrefill(text: string, limit = PREFILL_CHUNK_CHARS): stri
   return chunks;
 }
 
+/** Room kept free under the window when a thought is closed for the model. */
+const ANSWER_MARGIN_TOKENS = 8;
+/** Less room than this is not enough for an answer worth closing a thought for. */
+const MIN_FORCED_ANSWER_TOKENS = 48;
+
+/** What closes a thought that ran out of room, before its end marker. */
+const OUT_OF_THINKING_TIME =
+  '\n\nConsidering the limited time, I have to give the answer based on my thinking directly now.';
+
+/** Whether `text` ends inside a reasoning block it never closed. */
+function openReasoning(text: string, markers: ReasoningMarkers): boolean {
+  return text.lastIndexOf(markers.open) > text.lastIndexOf(markers.close);
+}
+
+/** Shortest stretch of text counted as a loop when it repeats back to back. */
+const LOOP_MIN_PERIOD = 16;
+const LOOP_MAX_PERIOD = 240;
+/** How much repeated text it takes, so a short refrain in a real answer is not one. */
+const LOOP_MIN_SPAN = 150;
+/** Different characters a repeating passage needs to be words rather than a rule or a row of dots. */
+const LOOP_MIN_DISTINCT_CHARS = 5;
+/** Visible tokens between loop checks: the check is cheap, but not free per token. */
+const LOOP_CHECK_EVERY = 8;
+
+/**
+ * How many characters of `text`'s end are the same passage said over and
+ * over, beyond its first saying, or 0 when it is not looping.
+ *
+ * A small model at a low temperature can fall into a rut and say one
+ * sentence until it runs out of room (SmolLM2: "I can say it once, and then
+ * I can say it again if you need it." forty times over). The runtime offers
+ * no repetition penalty to steer it out, so the loop is caught as it
+ * happens instead.
+ */
+export function loopedTail(text: string): number {
+  'worklet';
+  for (let period = LOOP_MIN_PERIOD; period <= LOOP_MAX_PERIOD && period * 3 <= text.length; period++) {
+    const unit = text.slice(text.length - period);
+    let repeats = 1;
+    while (
+      (repeats + 1) * period <= text.length &&
+      text.slice(text.length - (repeats + 1) * period, text.length - repeats * period) === unit
+    ) {
+      repeats++;
+    }
+    if (repeats < 3 || repeats * period < LOOP_MIN_SPAN) continue;
+    // A rule or a row of dots repeats by nature. A rut is words.
+    if (new Set(unit).size >= LOOP_MIN_DISTINCT_CHARS) return (repeats - 1) * period;
+  }
+  return 0;
+}
+
 /**
  * One generation step, on the runner's worklet thread.
  *
@@ -177,7 +231,7 @@ function generateStep(
   hidden: Record<string, true>,
   stopRegex: RegExp | undefined,
   onToken: ((token: string) => void) | undefined,
-): { text: string; all: string; last: string; dropped: string[]; stats: llm.LLMGenerationStats } {
+): { text: string; all: string; last: string; dropped: string[]; looped: boolean; stats: llm.LLMGenerationStats } {
   'worklet';
   let response = '';
   // Every token, hidden ones too, and the last: what the cache now holds is
@@ -185,6 +239,8 @@ function generateStep(
   let all = '';
   let last = '';
   const dropped: string[] = [];
+  let shown = 0;
+  let looped = false;
   const stats = runner.generate(prompt, config, (token: string) => {
     all += token;
     last = token;
@@ -195,11 +251,22 @@ function generateStep(
       if (dropped.length < 8) dropped.push(token);
       return;
     }
+    if (looped) return;
     response += token;
     if (onToken) scheduleOnRN(onToken, token);
     if (stopRegex && stopRegex.test(response)) runner.stop();
+    shown++;
+    if (shown % LOOP_CHECK_EVERY === 0) {
+      const repeated = loopedTail(response);
+      if (repeated > 0) {
+        // Said once, it stays. The repeats go, and so does the rest of the rut.
+        looped = true;
+        response = response.slice(0, response.length - repeated);
+        runner.stop();
+      }
+    }
   });
-  return { text: response, all, last, dropped, stats };
+  return { text: response, all, last, dropped, looped, stats };
 }
 
 /**
@@ -270,8 +337,25 @@ export function createConversation(options: ConversationOptions = {}): Conversat
     control === 'switch' ? [instructions, thinking ? '/think' : '/no_think'].filter(Boolean).join('\n\n') : instructions;
   const chatTemplate =
     control === 'template' && thinking ? `{% set enable_thinking = true %}${engine.chatTemplate}` : engine.chatTemplate;
+  // With thinking off, Qwen 3's reply starts with its think block already
+  // closed, as Qwen's own template writes it (`enable_thinking=False`).
+  // `/no_think` alone did not hold: a 2048 window saw it reason through the
+  // whole reply allowance and never answer. Only for the switch brains, which
+  // are trained on this: Gemma, given the same, wrote "thought" into the reply.
+  const closedThinking = control === 'switch' && !thinking ? `${reasoning.open}\n\n${reasoning.close}\n\n` : '';
+  // An answer given after a thought was closed for him stops where he starts
+  // thinking again, keeping what he wrote before it, as a call stops a step.
+  const answerStop = new RegExp(
+    [stopRegex?.source, reasoningOpenPattern(reasoning).source].filter(Boolean).join('|'),
+  );
 
-  const preprocessor = et.llm.createChatPreprocessor({ chatTemplate, tools });
+  // No tools is no `tools` at all, not an empty list. Hammer's template takes
+  // any list, empty or not, as tools on offer: it swapped the conversation
+  // for its tool-calling instructions, and every reply came back `[]`.
+  const preprocessor = et.llm.createChatPreprocessor({
+    chatTemplate,
+    tools: tools.length > 0 ? tools : undefined,
+  });
   const system: ChatMessage[] = systemPrompt ? [{ role: 'system', content: systemPrompt }] : [];
   const generate = et.wrapAsync(generateStep);
 
@@ -468,7 +552,7 @@ export function createConversation(options: ConversationOptions = {}): Conversat
           // Everything but the last piece goes in as prefill, so no single
           // generate call is handed more than the export takes per call.
           const stepStart = Date.now();
-          const prompt = step === 0 ? await continuation(true) : await promptAfterTools();
+          const prompt = (step === 0 ? await continuation(true) : await promptAfterTools()) + closedThinking;
           const pieces = chunkForPrefill(prompt);
           await prefill(pieces.slice(0, -1).join(''));
 
@@ -487,6 +571,35 @@ export function createConversation(options: ConversationOptions = {}): Conversat
             cached += prompt + out.all.slice(0, out.all.length - out.last.length);
             lastToken = out.last;
             if (__DEV__) logStep(out.stats, Date.now() - stepStart, engine.runner.getKVCacheState());
+            if (__DEV__ && out.looped) console.warn('[Samwell] The reply fell into a loop; cut it after its first time round.');
+
+            /*
+             * Out of room while still thinking: the thought is closed for him
+             * and he answers from it, with whatever the window has left. Left
+             * as it was, the reader got a thought cut off mid-sentence and no
+             * reply at all.
+             */
+            const room = engine.contextTokens - engine.runner.getKVCacheState().pos - ANSWER_MARGIN_TOKENS;
+            if (
+              !stopRequested &&
+              !out.looped &&
+              out.stats.numGeneratedTokens >= (genConfig.maxNewTokens ?? Infinity) &&
+              openReasoning(response, reasoning) &&
+              room >= MIN_FORCED_ANSWER_TOKENS
+            ) {
+              // Said in his own voice before the close, as Qwen's guide does
+              // for a thinking budget: a bare close left Qwen 3 opening a
+              // second thought instead of answering.
+              const close = `${OUT_OF_THINKING_TIME}\n${reasoning.close}\n\n`;
+              onToken?.(close);
+              const cue = (hidden[lastToken] === true ? '' : lastToken) + close;
+              const answerConfig = { ...genConfig, maxNewTokens: Math.min(genConfig.maxNewTokens ?? room, room) };
+              const answer = await generate(engine.runner, cue, answerConfig, hidden, answerStop, onToken);
+              response += close + answer.text;
+              cached += cue + answer.all.slice(0, answer.all.length - answer.last.length);
+              lastToken = answer.last;
+              if (__DEV__) logStep(answer.stats, Date.now() - stepStart, engine.runner.getKVCacheState());
+            }
             if (__DEV__ && !withoutReasoning(response, reasoning)) {
               console.warn(
                 `[Samwell] Empty reply. Hidden tokens it emitted: ${out.dropped.join(' ') || 'none'}; raw: ${JSON.stringify(response.slice(0, 200))}`,

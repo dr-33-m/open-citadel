@@ -30,6 +30,11 @@ function escape(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Matches where a family opens its reasoning. */
+export function reasoningOpenPattern(markers: ReasoningMarkers): RegExp {
+  return new RegExp(escape(markers.open));
+}
+
 /** `text` with a family's reasoning markers rewritten as `<think>…</think>`. */
 export function asThinkMarkers(text: string, markers: ReasoningMarkers): string {
   if (markers.open === THINK_MARKERS.open && markers.close === THINK_MARKERS.close) return text;

@@ -96,6 +96,11 @@ export interface AgentActivityInput {
   isThinking: boolean;
   /** Whether the first token has landed — once it has, the bubble speaks. */
   isStreaming: boolean;
+  /**
+   * The message is sent but waits for the model to finish naming the last
+   * chat. A toast says so; an orb as well would say two things at once.
+   */
+  isQueued?: boolean;
 }
 
 /**
@@ -127,8 +132,9 @@ export function agentActivity({
   toolCallStatus,
   isThinking,
   isStreaming,
+  isQueued,
 }: AgentActivityInput): AgentActivity | null {
-  if (!isGenerating) return null;
+  if (!isGenerating || isQueued) return null;
 
   if (isTitling) {
     return { orb: 'shaping', label: 'Naming this chat…' };

@@ -15,6 +15,7 @@ import { appSettings, deviceModels } from "@/db/schema";
 import { getExecuTorch, isExecuTorchAvailable } from "@/lib/executorch";
 import { catalogueModel, DEVICE_CATALOGUE } from "@/services/device-llm/catalogue";
 import { isEngineLoaded, loadEngine, unloadEngine } from "@/services/device-llm/engine";
+import { afterErrand } from "@/services/device-llm/errands";
 import {
   deleteModelFiles,
   downloadModelFiles,
@@ -70,8 +71,8 @@ interface ModelStore {
   memoryEstimate: MemoryEstimate | null;
 
   loadModels(): Promise<void>;
-  /** Fills in what each brain weighs, for any not yet measured. Needs the network. */
-  measureModels(): Promise<void>;
+  /** Fills in what each brain weighs, for any not yet measured, or only `ids`. Needs the network. */
+  measureModels(ids?: readonly string[]): Promise<void>;
   setActiveModel(id: string): Promise<void>;
   downloadModel(id: string): Promise<void>;
   cancelDownload(id: string): void;
@@ -243,16 +244,26 @@ export const useModelStore = create<ModelStore>((set, get) => ({
       enableThinking: settingsMap['inference.enableThinking'] === 'true', // default false
     };
 
+    const activeModelId = models.find((m) => m.isActive)?.id ?? null;
     set({
       models,
-      activeModelId: models.find((m) => m.isActive)?.id ?? null,
+      activeModelId,
       inference,
       modelsHydrated: true,
     });
+
+    // The Samwell card shows the active brain's size before anything is
+    // downloaded, and on a first launch nothing had measured it: the size
+    // only arrived once the picker was opened. The rest wait for the picker.
+    if (activeModelId) {
+      void get()
+        .measureModels([activeModelId])
+        .catch((err) => console.warn('[Models] Could not measure the active brain:', err));
+    }
   },
 
-  async measureModels() {
-    const unmeasured = get().models.filter((m) => m.sizeBytes == null);
+  async measureModels(ids) {
+    const unmeasured = get().models.filter((m) => m.sizeBytes == null && (!ids || ids.includes(m.id)));
     await Promise.all(
       unmeasured.map(async (m) => {
         const entry = catalogueModel(m.id);
@@ -274,6 +285,7 @@ export const useModelStore = create<ModelStore>((set, get) => ({
     }));
 
     if (get().isLoaded) {
+      await afterErrand();
       await unloadEngine();
       set({ isLoaded: false });
     }
@@ -380,6 +392,9 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   },
 
   async releaseContext() {
+    // A chat being named is let finish, with a toast saying so, rather than
+    // torn down halfway through.
+    await afterErrand();
     await unloadEngine();
     set({ isLoaded: false, loadError: null });
   },

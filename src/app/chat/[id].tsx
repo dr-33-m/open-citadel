@@ -62,6 +62,7 @@ export default function ChatSessionScreen() {
   const thinkingContent = useChatStore((s) => s.thinkingContent);
   const thinkingSeconds = useChatStore((s) => s.thinkingSeconds);
   const titleRefreshing = useChatStore((s) => s.titleRefreshing);
+  const queuedBehindTitle = useChatStore((s) => s.queuedBehindTitle);
   const openSession = useChatStore((s) => s.openSession);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
@@ -174,6 +175,7 @@ export default function ChatSessionScreen() {
       turnIndicator({
         isGenerating,
         isTitling: titleRefreshing,
+        isQueued: queuedBehindTitle,
         isToolCalling,
         toolCallName,
         toolCallStatus,
@@ -185,6 +187,7 @@ export default function ChatSessionScreen() {
     [
       isGenerating,
       titleRefreshing,
+      queuedBehindTitle,
       isToolCalling,
       toolCallName,
       toolCallStatus,

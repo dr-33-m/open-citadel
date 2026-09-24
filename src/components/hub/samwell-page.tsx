@@ -145,6 +145,7 @@ export function SamwellPage() {
   const thinkingContent = useChatStore((s) => s.thinkingContent);
   const thinkingSeconds = useChatStore((s) => s.thinkingSeconds);
   const titleRefreshing = useChatStore((s) => s.titleRefreshing);
+  const queuedBehindTitle = useChatStore((s) => s.queuedBehindTitle);
   const lastStreamedMessageId = useChatStore((s) => s.lastStreamedMessageId);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
@@ -359,6 +360,7 @@ export function SamwellPage() {
       turnIndicator({
         isGenerating: hasVisibleActivity,
         isTitling: titleRefreshing,
+        isQueued: queuedBehindTitle,
         isToolCalling,
         toolCallName,
         toolCallStatus,
@@ -370,6 +372,7 @@ export function SamwellPage() {
     [
       hasVisibleActivity,
       titleRefreshing,
+      queuedBehindTitle,
       isToolCalling,
       toolCallName,
       toolCallStatus,

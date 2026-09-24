@@ -81,6 +81,7 @@ export function useChatSessions() {
         thinkingSeconds: null,
         lastStreamedMessageId: null,
         deviceLimit: null,
+        queuedBehindTitle: false,
       });
       // The chat just left may still be called "New chat" on device.
       scheduleBackgroundTitles();

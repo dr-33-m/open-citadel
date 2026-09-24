@@ -45,15 +45,7 @@ export interface OneShotPrompt {
  * sends them. Sent together as one user message, Gemma 4 read the instructions
  * as something to reply to, and ended its turn at once without a word.
  */
-export async function oneShot(
-  { instructions, input }: OneShotPrompt,
-  options: {
-    /** Stops the answer where it is. The promise then rejects with `OneShotAborted`. */
-    signal?: AbortSignal;
-  } = {},
-): Promise<string> {
-  const { signal } = options;
-  if (signal?.aborted) throw new OneShotAborted();
+export async function oneShot({ instructions, input }: OneShotPrompt): Promise<string> {
   const conversation = createConversation({
     systemPrompt: instructions,
     temperature: 0.3,
@@ -62,11 +54,8 @@ export async function oneShot(
     // run past the cap before any answer at all.
     thinking: false,
   });
-  const stop = () => conversation.stop();
-  signal?.addEventListener('abort', stop);
   try {
     const turn = await conversation.sendMessage(input);
-    if (signal?.aborted) throw new OneShotAborted();
     const last = turn.messages[turn.messages.length - 1];
     return last?.role === 'assistant' && typeof last.content === 'string' ? last.content : '';
   } catch (err) {
@@ -75,15 +64,6 @@ export async function oneShot(
     }
     throw err;
   } finally {
-    signal?.removeEventListener('abort', stop);
     conversation.dispose();
-  }
-}
-
-/** Thrown when a one-shot was called off through its signal. */
-export class OneShotAborted extends Error {
-  constructor() {
-    super('Stopped');
-    this.name = 'OneShotAborted';
   }
 }
