@@ -19,20 +19,14 @@
  * open instead and the failure handed to `onFailure`, so the reader can be
  * shown what happened and choose (`use-cloud-voice-failure.ts`).
  */
-import { readCachedPiece, writeCachedPiece } from '@/services/cloud-tts/audio-cache';
+import { readCachedPiece } from '@/services/cloud-tts/audio-cache';
 import { pieceCacheKey } from '@/services/cloud-tts/cache-key';
 import { Lookahead } from '@/services/cloud-tts/lookahead';
-import { PcmDecoder, floatBytes } from '@/services/cloud-tts/pcm';
-import { cutPieces } from '@/services/cloud-tts/pieces';
-import { CloudVoiceError, streamPiece, type CloudVoiceFailure, type PieceFormat } from '@/services/cloud-tts/request';
+import { floatBytes } from '@/services/cloud-tts/pcm';
+import { PieceQueue, type CloudVoiceChoice, type JobEvent } from '@/services/cloud-tts/piece-queue';
+import type { CloudVoiceFailure } from '@/services/cloud-tts/request';
 
-export interface CloudVoiceChoice {
-  modelId: string;
-  voice: string;
-  /** The speed to ask the maker for, or null when it does not take one. */
-  speed: number | null;
-  maxCharacters: number;
-}
+export type { CloudVoiceChoice } from '@/services/cloud-tts/piece-queue';
 
 export interface CloudSessionHooks {
   provide(requestId: string, samples: ArrayBuffer, sampleRate: number, isLast: boolean): void;
@@ -41,31 +35,13 @@ export interface CloudSessionHooks {
   onWaiting(waiting: boolean): void;
 }
 
-const MAX_IN_FLIGHT = 2;
 /** About a fifth of a second: fewer bridge calls, and still no wait worth hearing. */
 const MIN_CHUNK_SECONDS = 0.2;
-/** Finished guesses kept in memory beyond the cache, for the sentence about to be asked for. */
-const KEEP_DONE_JOBS = 6;
-
-type JobEvent = { type: 'audio'; samples: Float32Array } | { type: 'done' } | { type: 'failed'; failure: CloudVoiceFailure };
-
-interface Job {
-  key: string;
-  text: string;
-  choice: CloudVoiceChoice;
-  format: PieceFormat | null;
-  raw: Uint8Array[];
-  samples: Float32Array[];
-  state: 'queued' | 'running' | 'done' | 'failed';
-  failure: CloudVoiceFailure | null;
-  listeners: Set<(event: JobEvent) => void>;
-  controller: AbortController;
-}
+/** What an empty answer is said to be, when a maker sends nothing to read a rate from. */
+const SILENT_RATE = 24_000;
 
 export class CloudVoiceSession {
-  private readonly jobs = new Map<string, Job>();
-  private readonly queue: Job[] = [];
-  private running = 0;
+  private readonly queue = new PieceQueue();
   private readonly lookahead = new Lookahead();
   /** The request being answered now, and how to stop answering it. */
   private answering: { requestId: string; detach: () => void } | null = null;
@@ -88,7 +64,7 @@ export class CloudVoiceSession {
   utterance(after: string | null | undefined, choice: CloudVoiceChoice): void {
     for (const text of this.lookahead.predict(after)) {
       const key = this.keyFor(text, choice);
-      if (!this.jobs.has(key)) void this.prefetch(key, text, choice);
+      if (!this.queue.get(key)) void this.prefetch(key, text, choice);
     }
   }
 
@@ -108,7 +84,7 @@ export class CloudVoiceSession {
     if (!held) return;
     this.held.delete(requestId);
     const next = choice ?? held.choice;
-    this.dropJob(this.keyFor(held.text, next));
+    this.queue.drop(this.keyFor(held.text, next));
     void this.answer(requestId, held.text, next, { retried: true });
   }
 
@@ -116,9 +92,7 @@ export class CloudVoiceSession {
     this.disposed = true;
     this.answering?.detach();
     this.answering = null;
-    for (const job of this.jobs.values()) job.controller.abort();
-    this.jobs.clear();
-    this.queue.length = 0;
+    this.queue.dispose();
     this.held.clear();
   }
 
@@ -129,18 +103,18 @@ export class CloudVoiceSession {
   private async prefetch(key: string, text: string, choice: CloudVoiceChoice): Promise<void> {
     // Reserve the slot in the map before the cache read, so a guess made twice
     // in quick succession is fetched once.
-    const job = this.createJob(key, text, choice);
+    const job = this.queue.create(key, text, choice);
     if (await readCachedPiece(key)) {
-      if (this.jobs.get(key) === job && job.state === 'queued') this.dropJob(key);
+      if (this.queue.get(key) === job && job.state === 'queued') this.queue.drop(key);
       return;
     }
-    this.enqueue(job, false);
+    this.queue.enqueue(job, false);
   }
 
   private async answer(requestId: string, text: string, choice: CloudVoiceChoice, options: { retried: boolean }): Promise<void> {
     this.answering?.detach();
     const key = this.keyFor(text, choice);
-    const cached = this.jobs.has(key) ? null : await readCachedPiece(key);
+    const cached = this.queue.get(key) ? null : await readCachedPiece(key);
     if (this.disposed) return;
     if (cached) {
       this.answering = null;
@@ -149,19 +123,25 @@ export class CloudVoiceSession {
       return;
     }
 
-    let job = this.jobs.get(key);
-    if (!job || job.state === 'failed') {
-      if (job) this.dropJob(key);
-      job = this.createJob(key, text, choice);
+    let found = this.queue.get(key);
+    if (!found || found.state === 'failed') {
+      if (found) this.queue.drop(key);
+      found = this.queue.create(key, text, choice);
     }
-    if (job.state === 'queued') this.enqueue(job, true);
+    const job = found;
+    if (job.state === 'queued') this.queue.enqueue(job, true);
 
     this.hooks.onWaiting(true);
     let sentAny = false;
     let pending: Float32Array[] = [];
     let pendingLength = 0;
     const flush = (isLast: boolean) => {
-      if (!job.format) return;
+      if (!job.format) {
+        // Nothing came at all: still answered, so the native engine is not
+        // left waiting on a sentence for ever.
+        if (isLast) this.hooks.provide(requestId, new ArrayBuffer(0), SILENT_RATE, true);
+        return;
+      }
       const joined = new Float32Array(pendingLength);
       let offset = 0;
       for (const part of pending) {
@@ -184,6 +164,7 @@ export class CloudVoiceSession {
       }
       detach();
       if (this.answering?.requestId === requestId) this.answering = null;
+      this.hooks.onWaiting(false);
       if (event.type === 'done') {
         flush(true);
         return;
@@ -197,11 +178,10 @@ export class CloudVoiceSession {
       }
       if (event.failure === 'maker_failed' && !options.retried) {
         // One retry in silence before anybody is told.
-        this.dropJob(key);
+        this.queue.drop(key);
         void this.answer(requestId, text, choice, { retried: true });
         return;
       }
-      this.hooks.onWaiting(false);
       this.held.set(requestId, { text, choice });
       this.hooks.onFailure(requestId, event.failure);
     };
@@ -213,99 +193,5 @@ export class CloudVoiceSession {
     if (job.state === 'done') listener({ type: 'done' });
     else if (job.state === 'failed' && job.failure) listener({ type: 'failed', failure: job.failure });
     else job.listeners.add(listener);
-  }
-
-  private createJob(key: string, text: string, choice: CloudVoiceChoice): Job {
-    const job: Job = {
-      key,
-      text,
-      choice,
-      format: null,
-      raw: [],
-      samples: [],
-      state: 'queued',
-      failure: null,
-      listeners: new Set(),
-      controller: new AbortController(),
-    };
-    this.jobs.set(key, job);
-    this.forgetOldJobs();
-    return job;
-  }
-
-  /** The sentence being waited for goes to the front; a guess to the back. */
-  private enqueue(job: Job, urgent: boolean): void {
-    const at = this.queue.indexOf(job);
-    if (at >= 0) this.queue.splice(at, 1);
-    if (urgent) this.queue.unshift(job);
-    else this.queue.push(job);
-    this.pump();
-  }
-
-  private pump(): void {
-    while (!this.disposed && this.running < MAX_IN_FLIGHT && this.queue.length > 0) {
-      const job = this.queue.shift() as Job;
-      if (job.state !== 'queued') continue;
-      job.state = 'running';
-      this.running += 1;
-      void this.run(job).finally(() => {
-        this.running -= 1;
-        this.pump();
-      });
-    }
-  }
-
-  private async run(job: Job): Promise<void> {
-    const emit = (event: JobEvent) => {
-      for (const listener of [...job.listeners]) listener(event);
-    };
-    try {
-      for (const piece of cutPieces(job.text, job.choice.maxCharacters)) {
-        let decoder: PcmDecoder | null = null;
-        await streamPiece({
-          modelId: job.choice.modelId,
-          voice: job.choice.voice,
-          text: piece,
-          speed: job.choice.speed ?? undefined,
-          signal: job.controller.signal,
-          onFormat: (format) => {
-            job.format ??= format;
-            decoder = new PcmDecoder(format.channels);
-          },
-          onBytes: (bytes) => {
-            job.raw.push(bytes);
-            const samples = (decoder as PcmDecoder | null)?.push(bytes);
-            if (!samples || samples.length === 0) return;
-            job.samples.push(samples);
-            emit({ type: 'audio', samples });
-          },
-        });
-      }
-      job.state = 'done';
-      emit({ type: 'done' });
-      if (job.format) void writeCachedPiece(job.key, job.raw, job.format);
-    } catch (error) {
-      if (job.controller.signal.aborted) return;
-      job.state = 'failed';
-      job.failure = error instanceof CloudVoiceError ? error.failure : 'maker_failed';
-      emit({ type: 'failed', failure: job.failure });
-    }
-  }
-
-  private dropJob(key: string): void {
-    const job = this.jobs.get(key);
-    if (!job) return;
-    if (job.state === 'queued' || job.state === 'running') job.controller.abort();
-    const at = this.queue.indexOf(job);
-    if (at >= 0) this.queue.splice(at, 1);
-    this.jobs.delete(key);
-  }
-
-  /** Finished jobs live in the cache; memory keeps only the last few. */
-  private forgetOldJobs(): void {
-    const done = [...this.jobs.values()].filter((job) => job.state === 'done' || job.state === 'failed');
-    for (const job of done.slice(0, Math.max(0, done.length - KEEP_DONE_JOBS))) {
-      if (job.listeners.size === 0) this.jobs.delete(job.key);
-    }
   }
 }
