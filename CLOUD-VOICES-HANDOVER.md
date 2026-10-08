@@ -6,8 +6,10 @@ without a device and without an OpenRouter key, so section 5 matters: it says
 what was not seen working and where to look first if it does not.
 
 Order of work for you: deploy the server (2), register the voices and make the
-samples (2), run the listening test with your key (2), then install the build
-and walk the A33 script (3 and 4).
+samples (2), run the listening test with your key (2), then make one new
+development build (3) and walk the A33 script (4). The build is needed: the
+Readium patch changed (lookahead and MP3, Android and iOS), so this is not an
+over-the-air change any more.
 
 ---
 
@@ -42,16 +44,18 @@ and walk the A33 script (3 and 4).
   no metering, capped per caller.
 - `voice-samples.ts`: makes one short mp3 per listed voice and keeps it under
   `VOICE_SAMPLES_DIR` (`/data/voice-samples` in the container).
-- `tts.ts`: `POST /tts/speak` `{ modelId, voice, text, speed? }`. Identity,
+- `tts.ts`: `POST /tts/speak` `{ modelId, voice, text, speed?, format? }`. Identity,
   validation, length limit (413), two in flight and a daily ceiling of 1.5
   million characters per reader (429), plan required (402
   `no_subscription`), plan reaches the voice (403 naming the plan), voice in
   the model's list (400), a usage event of kind `tts`, a one-credit hold (402
-  `insufficient_credits` on an empty balance), then the maker's PCM streamed
+  `insufficient_credits` on an empty balance), then the maker's audio streamed
   straight through with `X-Audio-Format`, `X-Audio-Sample-Rate` and
-  `X-Audio-Channels`, and the charge settled after the stream ends.
+  `X-Audio-Channels`, and the charge settled after the stream ends. `format`
+  is `pcm` unless the app says `mp3`, which it does only when its native
+  player can decode it; an older build never says, and gets PCM.
 - `tts-upstream.ts`: the OpenRouter speech call (`provider: { zdr: true }`,
-  `response_format: pcm`), the content type parser, and the generation cost
+  `response_format` `pcm` or `mp3`), the content type parser, and the generation cost
   lookup (`X-Generation-Id`, then `GET /api/v1/generation`, four tries at 1, 2,
   4 and 8 seconds, off the audio path).
 - `tts-billing.ts`: the running remainder. Each piece adds its real cost in
@@ -89,6 +93,37 @@ and walk the A33 script (3 and 4).
 - `scripts/voice-listening-test.sh`: the listening test with your own key,
   and a probe of what each maker really sends (see section 5).
 
+### Readium patch (`patches/@dr33m__react-native-readium.patch`)
+
+One patch, one build, Android and iOS both. Regenerated with nitrogen 0.35.8,
+the version that made the generated code already shipped in the package, so
+the generated files differ only where the spec did.
+
+- **Lookahead.** A new prop, `onTTSUpcoming({ current, upcoming })`. When
+  Readium moves to an utterance it walks the publication's content
+  iterator ahead of it with the same tokenizer its navigator uses (sentences,
+  the same language settings, the same "has a letter or digit" filter) and
+  sends the next three utterances' text, across paragraph and resource
+  boundaries. Android: `reader/tts/UpcomingUtterances.kt`, driven from
+  `TTSManager.kt` through a conflated channel so a fast skip only computes the
+  latest. iOS: `Reader/TTS/UpcomingUtterances.swift`, driven from
+  `TTSManager.swift` on `.playing`.
+- **MP3.** Two new view methods: `ttsCanDecodeAudio(mimeType)` and
+  `ttsProvideEncodedAudio(requestId, data, mimeType, isLast)`. The native
+  engine decodes as bytes arrive and plays as it decodes, so a cloud sentence
+  starts as fast as with PCM. Android: `Mp3Frames.kt` (splits the stream into
+  whole frames, skips ID3, reads the LAME encoder delay from the Xing/Info
+  frame) and `Mp3StreamDecoder.kt` (MediaCodec, on its own executor in
+  `KokoroTtsEngine.kt`, trimming the encoder delay so there is no click or gap
+  per sentence). iOS: `Mp3StreamDecoder.swift` (`AudioFileStream` for packets
+  and priming frames, `AVAudioConverter` to Float32).
+- **iOS Lite fallback.** `TTSManager.swift`'s `synthesisFailed` now restarts
+  on the system voice from the failed sentence, as Android always has (see
+  5.6).
+- The JS wrapper (`src` and `lib`) exports `TTSUpcomingEvent` and the two
+  methods; `ttsCanDecodeAudio` answers false on a binary without them, so the
+  same JS is safe on an older build.
+
 ### App (`src`)
 
 - `services/cloud-tts/`: the cloud voice behind Readium's own synthesis
@@ -96,22 +131,35 @@ and walk the A33 script (3 and 4).
   Readium's.
   - `request.ts`: `POST /tts/speak` streamed with `expo/fetch`, failures
     turned into four kinds (`out_of_credits`, `plan_lapsed`, `offline`,
-    `maker_failed`).
+    `maker_failed`). Asks for MP3 when the reader can decode it.
+  - `forward.ts`: hands a sentence to the native player as it arrives: PCM
+    gathered into fifth-of-a-second chunks, MP3 passed straight through, and
+    the sentence always ended once.
   - `pcm.ts`: 16-bit PCM to Float32, carrying a half sample across network
     chunks, stereo folded to mono.
   - `pieces.ts`: cuts a sentence over 1,500 characters at clause ends.
-  - `sentences.ts`, `lookahead.ts`: guesses the next one or two sentences from
-    the rest of the paragraph Readium hands over, and stops guessing for the
-    session when fewer than half are asked for.
-  - `cache-key.ts`, `audio-cache.ts`: raw PCM kept on the phone by book, text,
-    model and voice (and speed where the maker applies it), 300 MB, oldest out.
+  - `sentences.ts`, `lookahead.ts`: on a build without the patch above,
+    guesses the next one or two sentences from the rest of the paragraph, and
+    stops guessing for the session when fewer than half are asked for. With
+    the patch, `session.upcoming` fetches Readium's own next two instead and
+    the guessing is switched off.
+  - `cache-key.ts`, `audio-cache.ts`: each piece kept on the phone as it came
+    (PCM, or MP3 on a patched build) by book, text, model and voice (and speed
+    where the maker applies it), 300 MB, oldest out. A build that cannot play
+    MP3 treats an MP3 entry as missing.
   - `piece-queue.ts`, `session.ts`: two fetches at a time, the awaited
     sentence first, audio handed on as it arrives, one silent retry for a
     failing maker, and a failed sentence held open rather than failed back to
     Readium.
 - `features/reader/hooks/use-read-aloud-bridge.ts`: the one answerer Readium
   talks to; reads the setting at each request and hands it to the cloud
-  session or the on-device synthesizer.
+  session or the on-device synthesizer. Routes `onTTSUpcoming` the same way.
+- `services/device-tts/ahead.ts`: an Enhanced voice makes the next sentence
+  while the current one plays, once the engine is free (never queued behind
+  the sentence being answered, which could jam the engine's queue). Only the
+  next one: on a slower phone that is all the gap allows. A sentence cut short
+  by a stop is thrown away, never played as whole; a whole one survives a
+  pause, for the resume.
 - `features/reader/hooks/use-cloud-voice-bridge.ts`: one cloud session per
   book; pauses the book about 1.2 s after a failure on Android (so the
   sentence playing finishes) and holds the failure.
@@ -121,7 +169,8 @@ and walk the A33 script (3 and 4).
   out. Continue on-device resumes at the same sentence (see section 5.6).
 - `features/reader/hooks/use-kokoro-tts-bridge.ts`: now trusts the saved
   Enhanced voice over the native side's idea of it, so coming back from the
-  cloud reads in the chosen Kokoro voice rather than Kokoro's default.
+  cloud reads in the chosen Kokoro voice rather than Kokoro's default; answers
+  from `ahead.ts` when the sentence was made in advance.
 - `app/reader/[id].tsx`: wiring only (the bridge, the lookahead feed, the
   working spinner, the failure and plans sheets).
 - `components/reader/tts-controls.tsx`: the play button shows a spinner until
@@ -222,24 +271,29 @@ generation id, the cost OpenRouter reports for one sentence, and whether
 
 ## 3. The dev build
 
-No native code changed. The cloud voice answers the same JS synthesis bridge
-the Enhanced voices already use, and `expo/fetch`, `expo-audio` and
-`expo-file-system` are all already in the binary. **Your existing development
-client is enough**: start Metro against it and the new JS loads.
-
-```bash
-SAMWELL_CLOUD_URL=https://api.open-citadel.online pnpm start
-```
-
-(Or however you normally start Metro; the server URL must point at the
-deployed server, as `.env.example` describes.) If you prefer a fresh client, the repo's command is unchanged:
+**A new development build is needed.** The Readium patch changed (section 1),
+which is native code on both platforms, and the lockfile's patch hash moved
+with it. One build carries everything on this branch:
 
 ```bash
 eas build --local --platform android --profile development
 ```
 
-It could also go out over the air with `scripts/publish-update.sh` once tested
-(write `release-notes.json` first), since nothing native moved. Not done here.
+Then start Metro against it with the server URL pointing at the deployed
+server, as `.env.example` describes:
+
+```bash
+SAMWELL_CLOUD_URL=https://api.open-citadel.online pnpm start
+```
+
+Over the air: the app's runtime version is the `fingerprint` policy, and the
+patch is part of the fingerprint, so an update from this branch can only ever
+reach builds made from it. Nothing was published here. When it is, write
+`release-notes.json` first and use `scripts/publish-update.sh`.
+
+The JS also runs on an old binary: it asks the native side whether it can
+decode MP3 (no, on an old one) and falls back to PCM and the in-paragraph
+guesses. That is a safety net, not a way to ship it.
 
 ---
 
@@ -268,8 +322,18 @@ paragraphs and one you can find a run-on sentence in.
    samples. The balance has not moved (pull to refresh in Settings).
 6. **Listening.** Choose a cloud voice, start read-aloud. The play button
    spins, then audio starts within about a second on wifi. Highlighting moves
-   sentence by sentence as before. Listen across a paragraph for gaps between
-   sentences (see 5.5 on paragraph starts).
+   sentence by sentence as before. Listen across several paragraphs and a
+   chapter break: there should be no gap between sentences, paragraph starts
+   included (see 5.5).
+6a. **Enhanced gaps.** Choose an Enhanced (Kokoro) voice and read the same
+   pages. The gap before each sentence should be gone or much shorter than on
+   `library-v2`, since the next sentence is made while this one plays. Skip
+   forward and back a few times and pause and resume mid-sentence: no
+   sentence should play cut short, doubled or out of order.
+6b. **MP3 data.** With a cloud voice, read for ten minutes on mobile data and
+   check the app's data use in Android settings: expect about 2 to 3 MB, not
+   about 30. Then play back the same pages in airplane mode: they play from
+   the phone.
 7. **Charged once.** Note the balance, read a chapter, note it again. Go back
    to the start of the chapter and read it again. The second reading must not
    move the balance (it plays from the phone).
@@ -340,35 +404,58 @@ prints the HTTP status for `speed: 1.25` per model, and writes
 200 for another maker that audibly speeds up means it can be turned on the
 same way.
 
-### 5.3 PCM content type and sample rate per maker
+### 5.3 Audio format and sample rate per maker
 
 The server reads the rate from the content type (`rate=`, `sample_rate=`,
 `samplerate=`), assumes 24 kHz mono if none is given, and tells the app in
 `X-Audio-Sample-Rate`. The listening test prints each maker's real content
 type. If a voice plays at the wrong pitch (chipmunk or slowed), the rate is
 being misread: look at `parseAudioFormat` in `server/src/tts-upstream.ts`.
-If a maker answers `audio/mpeg` despite asking for PCM, the app refuses it as
-"That voice is not answering." (it cannot decode mp3 without a native module).
+If a maker answers `audio/mpeg` when PCM was asked for (an older build), the
+app refuses it as "That voice is not answering.".
 
-### 5.4 Cost of PCM
+### 5.4 MP3, decoded natively
 
-PCM is about 173 MB an hour at 24 kHz 16-bit, over the network and in the
-cache. Decoding mp3 instead would need a native decoder and a new build; it is
-listed as an open decision below.
+A patched build asks for MP3, about a tenth of PCM's 173 MB an hour. Neither
+native decoder has decoded a real maker's MP3 yet. What was checked: on
+Android, the TTS sources (with the decoder) compile against Readium 3.1.2,
+AGP 8.7.3 and Kotlin 2.1.20, and the frame splitter's four JVM tests pass (the
+header, whole frames wherever the chunks end, ID3 skipping with the LAME
+delay, and finding its way back after junk). On iOS the
+five changed Swift files pass `swiftc -parse`: syntax only, not type-checked
+against the SDK or Readium (no macOS here), so the first iOS build is the
+first real compile. What to look for:
+
+- A click or a short silence at the start of each sentence: the encoder delay
+  is not being trimmed. Android: `lameEncoderDelay` in `Mp3Frames.kt`. iOS:
+  `kAudioFileStreamProperty_PacketTableInfo` in `Mp3StreamDecoder.swift`.
+- Chipmunk or slowed audio: the decoder's output rate is not the one handed to
+  the player. Both decoders report the stream's own rate per chunk.
+- The last word cut off: the decoder is not flushed at `isLast`
+  (`finish()` on both).
+
+If MP3 misbehaves on one platform, `ttsCanDecodeAudio` returning false there
+puts that platform back on PCM with no other change.
 
 ### 5.5 Lookahead and gaps between sentences
 
-The next one or two sentences are fetched from `locator.text.after`, which
-Readium fills with the rest of the paragraph on both Android and iOS (checked
-in the native converters, `readiumLocatorToNitro`). What cannot be guessed is
-the first sentence of each paragraph, so expect a short gap there (one round
-trip) and none inside a paragraph. If gaps appear inside paragraphs too, the
-guesses are missing: Readium's tokenizer may cut differently from
-`splitSentences` (`src/services/cloud-tts/sentences.ts`), and after eight
-guesses under half right the session stops guessing altogether. The real fix
-for paragraph starts is a native lookahead hint in the Readium patch (fire
-`onTTSSynthesisRequest` for the next utterance early, or hand JS the next
-utterance's text); it is the main follow-up.
+On a patched build Readium says what it will read next (`onTTSUpcoming`): the
+next three utterances, from its own content iterator and tokenizer, across
+paragraphs and chapters. The cloud session fetches the first two and stops
+guessing from the paragraph; an Enhanced voice makes the first while the
+current one plays. Tested here only against fakes. If gaps remain:
+
+- At paragraph or chapter starts only: the native lookahead is not arriving.
+  Check `onTTSUpcoming` fires (a `console.log` in `use-read-aloud-bridge.ts`'s
+  `onUpcoming`). On Android it is sent when the highlight moves to an
+  utterance; on iOS when the state becomes `.playing`.
+- Everywhere: the texts do not match the requests. Both sides trim, so a
+  mismatch means a tokenizer difference; compare `event.upcoming[0]` with the
+  next request's `text`. The rate is matched to the hundredth, because Readium
+  hands it back through a float (1.1 arrives as 1.1000000238).
+- With Enhanced on a slow phone, a sentence that takes longer to make than
+  the one before takes to play still leaves a gap: one sentence ahead is all
+  that is made, by design.
 
 ### 5.6 Continue on-device at the same sentence
 
@@ -377,10 +464,9 @@ either answers that same request with the Enhanced voice last used, or, for a
 Lite voice, fails it back to Readium, which on Android restarts on the phone's
 own voice from that sentence (`TTSManager.synthesisFailed`). Two things to
 watch: the Lite restart uses the system default voice rather than a specific
-phone voice if one was chosen; and iOS has no such fallback in the patch, so
-on iOS `synthesisFailed` only fails that one utterance (`KokoroTTSEngine.swift`),
-so a Lite continue there may skip the sentence or stop rather than resume
-(iOS was out of scope for this test round).
+phone voice if one was chosen; and iOS had no such fallback before this
+branch. The patch now does the same there (`TTSManager.swift`), restarting on
+the system voice from the failed sentence. Not run on an iPhone.
 
 ### 5.7 Switching voice mid-read
 
@@ -409,22 +495,24 @@ the same 15 problems it does on `library-v2`. None are from this branch.
 
 `pnpm install --frozen-lockfile` could not complete here because the sandbox
 blocks `codeload.github.com` (the `thorium-locales` tarball); it was installed
-from a git clone of the same commit, and the lockfile is unchanged.
+from a git clone of the same commit. The only lockfile change on this branch
+is the Readium patch's hash (`pnpm install --frozen-lockfile --offline` accepts
+it). The new patch, applied to the pristine package, reproduces the edited
+copy exactly.
 
 ---
 
 ## 6. Open decisions
 
-1. **Cloud voices on Free Books.** Built as allowed: cloud voices read
-   Project Gutenberg books too, on-device read-aloud stays free, and the copy
-   says Neurons pay for the voice, never the book. Confirm.
-2. **ElevenLabs' listed price.** Whether OpenRouter's listed $20 and $40 per
+1. **ElevenLabs' listed price.** Whether OpenRouter's listed $20 and $40 per
    million characters are before or after its 0.5 discount is unknown. Hours
    are worked out at the listed price (so they can only under-promise), and
    the charge is the real cost whenever the lookup works (5.1).
-3. **PCM data use.** About 173 MB an hour. Worth a native mp3 decoder and a
-   new build to cut it by about ten times?
-4. **Fish Audio later.** Left out: on OpenRouter its voices are made from
+2. **Fish Audio later.** Left out: on OpenRouter its voices are made from
    uploaded reference audio, and cloned voices are not in this version. The
    catalogue is data, so it can be registered with one admin call once a
    fixed voice list exists for it.
+
+Settled since the first handover: cloud voices read Free Books too (the
+makers are reached with zero data retention, so nothing read is kept for
+training), and MP3 is decoded natively (5.4).
