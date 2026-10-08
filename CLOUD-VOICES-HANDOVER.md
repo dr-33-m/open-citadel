@@ -40,10 +40,16 @@ over-the-air change any more.
 - `voice-routes.ts`: `GET/POST/PATCH/DELETE /admin/voices` (mirrors
   `/admin/models`), `POST /admin/voices/samples` (starts the sample run in the
   background) and `GET /admin/voices/samples` (its progress), and the open
-  `GET /tts/samples/<model>/<voice>.mp3` with long cache headers, no sign-in,
-  no metering, capped per caller.
-- `voice-samples.ts`: makes one short mp3 per listed voice and keeps it under
-  `VOICE_SAMPLES_DIR` (`/data/voice-samples` in the container).
+  `GET /tts/samples/<model>/<voice>` with long cache headers, no sign-in,
+  no metering, capped per caller. Any extension on the URL is ignored, and
+  the content type says whether the clip is MP3 or WAV.
+- `voice-samples.ts`: makes one short clip per listed voice and keeps it under
+  `VOICE_SAMPLES_DIR` (`/data/voice-samples` in the container): MP3 where the
+  maker makes it, WAV (the PCM behind a 44-byte header) for Gemini.
+- `voice-catalog.ts`: each model's `audio_formats`, the formats its maker
+  answers in. The column is added on the first boot after this change, and
+  rows the seed knows get the seed's formats (Kokoro and ElevenLabs MP3 and
+  PCM, Gemini PCM alone); anything else defaults to PCM alone.
 - `tts.ts`: `POST /tts/speak` `{ modelId, voice, text, speed?, format? }`. Identity,
   validation, length limit (413), two in flight and a daily ceiling of 1.5
   million characters per reader (429), plan required (402
@@ -53,7 +59,10 @@ over-the-air change any more.
   straight through with `X-Audio-Format`, `X-Audio-Sample-Rate` and
   `X-Audio-Channels`, and the charge settled after the stream ends. `format`
   is `pcm` unless the app says `mp3`, which it does only when its native
-  player can decode it; an older build never says, and gets PCM.
+  player can decode it; an older build never says, and gets PCM. A maker
+  that does not take MP3 is asked for PCM whatever the app said
+  (`speechFormatFor`): Gemini answers `Gemini TTS only supports
+  response_format="pcm"` to anything else. The app plays either.
 - `tts-upstream.ts`: the OpenRouter speech call (`provider: { zdr: true }`,
   `response_format` `pcm` or `mp3`), the content type parser, and the generation cost
   lookup (`X-Generation-Id`, then `GET /api/v1/generation`, four tries at 1, 2,
@@ -237,7 +246,8 @@ and `voicesMissingPrices` to be `[]`.
  ADMIN_API_KEY='...' ./scripts/register-cloud-voices.sh
 ```
 
-It prints `ok` per model and the `/health` counts at the end.
+It prints `ok` per model and the `/health` counts at the end. It also sets
+each model's `formats`, so run it before the samples whenever formats change.
 
 ### Make the free samples
 
@@ -247,14 +257,17 @@ It prints `ok` per model and the `/health` counts at the end.
 
 About 140 short reads, a few minutes, a few cents. It prints how many were
 made and any that failed (a failed voice is simply tried again on the next
-run). Check one:
+run). Voices that already have a clip are skipped, so a rerun after the
+Gemini fix makes only the Gemini ones. Check one of each:
 
 ```bash
 curl -s -o /tmp/sample.mp3 -w '%{http_code} %{content_type}\n' \
-  https://api.open-citadel.online/tts/samples/hexgrad/kokoro-82m/af_heart.mp3
+  https://api.open-citadel.online/tts/samples/hexgrad/kokoro-82m/af_heart
+curl -s -o /tmp/sample.wav -w '%{http_code} %{content_type}\n' \
+  https://api.open-citadel.online/tts/samples/google/gemini-3.8-flash-tts/Kore
 ```
 
-Expect `200 audio/mpeg`.
+Expect `200 audio/mpeg`, then `200 audio/wav`.
 
 ### Listening test, with your own key
 
@@ -332,8 +345,11 @@ paragraphs and one you can find a run-on sentence in.
    sentence should play cut short, doubled or out of order.
 6b. **MP3 data.** With a cloud voice, read for ten minutes on mobile data and
    check the app's data use in Android settings: expect about 2 to 3 MB, not
-   about 30. Then play back the same pages in airplane mode: they play from
-   the phone.
+   about 30, on Kokoro or ElevenLabs. Gemini stays on PCM (about 30 MB), since
+   it answers nothing else. Then play back the same pages in airplane mode:
+   they play from the phone.
+6c. **Gemini samples.** On Grand Maester, play three Gemini samples (they are
+   WAV) and three Kokoro ones (MP3). All six play.
 7. **Charged once.** Note the balance, read a chapter, note it again. Go back
    to the start of the chapter and read it again. The second reading must not
    move the balance (it plays from the phone).
@@ -416,7 +432,9 @@ app refuses it as "That voice is not answering.".
 
 ### 5.4 MP3, decoded natively
 
-A patched build asks for MP3, about a tenth of PCM's 173 MB an hour. Neither
+A patched build asks for MP3, about a tenth of PCM's 173 MB an hour, from
+the makers that take it. Gemini takes PCM alone, so a reader on Gemini always
+gets PCM; the data use there stays at about 173 MB an hour. Neither
 native decoder has decoded a real maker's MP3 yet. What was checked: on
 Android, the TTS sources (with the decoder) compile against Readium 3.1.2,
 AGP 8.7.3 and Kotlin 2.1.20, and the frame splitter's four JVM tests pass (the
