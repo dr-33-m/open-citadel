@@ -36,7 +36,12 @@ export class CloudVoiceError extends Error {
   }
 }
 
+/** What the app can play: raw PCM it decodes itself, or MP3 the native player decodes. */
+export type AudioEncoding = 'pcm' | 'mp3';
+
 export interface PieceFormat {
+  /** What actually came back, which an older server decides: it only speaks PCM. */
+  kind: AudioEncoding;
   sampleRate: number;
   channels: number;
 }
@@ -60,6 +65,8 @@ export async function streamPiece(options: {
   voice: string;
   text: string;
   speed?: number;
+  /** Asked for, not promised: see `PieceFormat.kind`. */
+  format: AudioEncoding;
   signal: AbortSignal;
   onFormat: (format: PieceFormat) => void;
   onBytes: (bytes: Uint8Array) => void;
@@ -85,6 +92,7 @@ export async function streamPiece(options: {
           voice: options.voice,
           text: options.text,
           ...(options.speed != null ? { speed: options.speed } : {}),
+          ...(options.format === 'mp3' ? { format: 'mp3' } : {}),
         }),
         signal: controller.signal,
       });
@@ -98,12 +106,16 @@ export async function streamPiece(options: {
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
       throw new CloudVoiceError(classify(response.status, body?.error), `Answered ${response.status}.`);
     }
-    // The server asked the maker for PCM. Anything else cannot be played by
-    // the native engine, and is the maker failing rather than the reader.
-    if (response.headers.get('x-audio-format') !== 'pcm' || !response.body) {
+    // PCM is always playable; MP3 only when it was asked for, which is only
+    // when the native player can decode it. Anything else is the maker
+    // failing rather than the reader.
+    const kind = response.headers.get('x-audio-format');
+    const playable = kind === 'pcm' || (kind === 'mp3' && options.format === 'mp3');
+    if (!playable || !response.body) {
       throw new CloudVoiceError('maker_failed', 'The voice answered in a format this app cannot play.');
     }
     options.onFormat({
+      kind,
       sampleRate: Number(response.headers.get('x-audio-sample-rate')) || 24_000,
       channels: Number(response.headers.get('x-audio-channels')) || 1,
     });

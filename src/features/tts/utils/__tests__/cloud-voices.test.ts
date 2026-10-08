@@ -54,13 +54,20 @@ describe('cloudChoiceFor', () => {
     expect(cloudChoiceFor(`cloud:${LITE}:Kore`, VIEWS, 1.25)?.speed).toBeNull();
   });
 
+  it('reads a rate that came back through a float as the one that was set', () => {
+    expect(cloudChoiceFor(`cloud:${KOKORO}:af_heart`, VIEWS, Math.fround(1.1))?.speed).toBe(1.1);
+    expect(cloudChoiceFor(`cloud:${KOKORO}:af_heart`, VIEWS, Math.fround(1.0000001))?.speed).toBeNull();
+  });
+
   it('still asks without a catalogue, at the limit every maker takes', () => {
     expect(cloudChoiceFor(`cloud:${LITE}:Kore`, null, 1)).toEqual({
       modelId: LITE,
       voice: 'Kore',
       speed: null,
       maxCharacters: 1_500,
+      format: 'pcm',
     });
+    expect(cloudChoiceFor(`cloud:${LITE}:Kore`, VIEWS, 1, 'mp3')?.format).toBe('mp3');
     expect(cloudChoiceFor('af_heart', VIEWS, 1)).toBeNull();
   });
 });

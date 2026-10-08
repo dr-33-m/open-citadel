@@ -11,7 +11,13 @@
 import { writeCachedPiece } from '@/services/cloud-tts/audio-cache';
 import { PcmDecoder } from '@/services/cloud-tts/pcm';
 import { cutPieces } from '@/services/cloud-tts/pieces';
-import { CloudVoiceError, streamPiece, type CloudVoiceFailure, type PieceFormat } from '@/services/cloud-tts/request';
+import {
+  CloudVoiceError,
+  streamPiece,
+  type AudioEncoding,
+  type CloudVoiceFailure,
+  type PieceFormat,
+} from '@/services/cloud-tts/request';
 
 export interface CloudVoiceChoice {
   modelId: string;
@@ -19,10 +25,15 @@ export interface CloudVoiceChoice {
   /** The speed to ask the maker for, or null when it does not take one. */
   speed: number | null;
   maxCharacters: number;
+  /** MP3 when the native player can decode it, which is a tenth of the bytes; PCM otherwise. */
+  format: AudioEncoding;
 }
 
 export type JobEvent =
+  /** PCM, decoded here, ready for the player. */
   | { type: 'audio'; samples: Float32Array }
+  /** MP3 as it arrived, for the native player to decode. */
+  | { type: 'encoded'; bytes: Uint8Array }
   | { type: 'done' }
   | { type: 'failed'; failure: CloudVoiceFailure };
 
@@ -123,13 +134,18 @@ export class PieceQueue {
           voice: job.choice.voice,
           text: piece,
           speed: job.choice.speed ?? undefined,
+          format: job.choice.format,
           signal: job.controller.signal,
           onFormat: (format) => {
             job.format ??= format;
-            decoder = new PcmDecoder(format.channels);
+            decoder = format.kind === 'pcm' ? new PcmDecoder(format.channels) : null;
           },
           onBytes: (bytes) => {
             job.raw.push(bytes);
+            if (job.format?.kind === 'mp3') {
+              emit({ type: 'encoded', bytes });
+              return;
+            }
             const samples = (decoder as PcmDecoder | null)?.push(bytes);
             if (!samples || samples.length === 0) return;
             job.samples.push(samples);

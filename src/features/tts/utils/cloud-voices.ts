@@ -69,15 +69,21 @@ export function cloudChoiceFor(
   stored: string | null,
   models: readonly VoiceModelView[] | null | undefined,
   rate: number,
-): { modelId: string; voice: string; speed: number | null; maxCharacters: number } | null {
+  format: 'pcm' | 'mp3' = 'pcm',
+): { modelId: string; voice: string; speed: number | null; maxCharacters: number; format: 'pcm' | 'mp3' } | null {
   const parsed = parseCloudVoiceKey(stored);
   if (!parsed) return null;
   const model = models?.find((m) => m.id === parsed.modelId);
+  // To the hundredth: Readium hands the rate back as a double made from a
+  // float (1.1 as 1.1000000238), and a sentence fetched ahead at the setting's
+  // rate must be the one asked for at Readium's.
+  const speed = Math.round(rate * 100) / 100;
   return {
     modelId: parsed.modelId,
     voice: parsed.voice,
-    speed: model?.speedSupported && rate !== 1 ? rate : null,
+    speed: model?.speedSupported && speed !== 1 ? speed : null,
     maxCharacters: model?.maxCharacters ?? CLOUD_VOICE_MAX_CHARACTERS,
+    format,
   };
 }
 

@@ -7,9 +7,10 @@
  * from here and never reaches the server. Nothing in it is shared: it lives
  * in this app's cache folder and leaves with the app.
  *
- * Raw rather than the Float32 the player takes, because it is half the size:
- * 16-bit at 24 kHz is about 173 MB an hour, Float32 twice that. Turning it
- * back into Float32 on the way out is a few milliseconds a sentence.
+ * Kept as it came: MP3 where the native player decodes it (about a tenth of
+ * the size of PCM), raw 16-bit PCM otherwise, which is half the size of the
+ * Float32 the player takes and a few milliseconds a sentence to turn back.
+ * PCM at 24 kHz is about 173 MB an hour; MP3, about 15 to 20.
  *
  * Capped at about 300 MB, oldest-used out first, which holds well over an
  * hour and a half of listening: enough for going back and for a chapter read
@@ -24,6 +25,7 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { PcmDecoder } from '@/services/cloud-tts/pcm';
+import type { AudioEncoding } from '@/services/cloud-tts/request';
 
 const CAP_BYTES = 300 * 1024 * 1024;
 /** Evict down to this, so a full cache is not trimmed again on the very next piece. */
@@ -34,6 +36,8 @@ interface Entry {
   bytes: number;
   sampleRate: number;
   channels: number;
+  /** Absent on entries written before MP3, which are all PCM. */
+  kind?: AudioEncoding;
   usedAt: number;
 }
 
@@ -53,8 +57,8 @@ function indexFile(): File {
   return new File(cacheFolder(), 'index.json');
 }
 
-function pieceFile(key: string): File {
-  return new File(cacheFolder(), `${key}.pcm`);
+function pieceFile(key: string, kind: AudioEncoding = 'pcm'): File {
+  return new File(cacheFolder(), `${key}.${kind}`);
 }
 
 async function loadIndex(): Promise<Map<string, Entry>> {
@@ -91,18 +95,22 @@ function scheduleIndexWrite(): void {
   }, INDEX_WRITE_DELAY_MS);
 }
 
-export interface CachedPiece {
-  samples: Float32Array;
-  sampleRate: number;
-}
+export type CachedPiece =
+  | { kind: 'pcm'; samples: Float32Array; sampleRate: number }
+  | { kind: 'mp3'; bytes: Uint8Array };
 
-/** A piece played before, or null. Marks it used, so it is the last to go. */
-export async function readCachedPiece(key: string): Promise<CachedPiece | null> {
+/**
+ * A piece played before, or null. Marks it used, so it is the last to go.
+ * An MP3 piece is a miss where MP3 cannot be played (`canPlayMp3`).
+ */
+export async function readCachedPiece(key: string, canPlayMp3 = true): Promise<CachedPiece | null> {
   const entries = await loadIndex();
   const entry = entries.get(key);
   if (!entry) return null;
+  const kind = entry.kind ?? 'pcm';
+  if (kind === 'mp3' && !canPlayMp3) return null;
   try {
-    const file = pieceFile(key);
+    const file = pieceFile(key, kind);
     if (!file.exists) {
       entries.delete(key);
       scheduleIndexWrite();
@@ -111,7 +119,8 @@ export async function readCachedPiece(key: string): Promise<CachedPiece | null> 
     const bytes = await file.bytes();
     entry.usedAt = Date.now();
     scheduleIndexWrite();
-    return { samples: new PcmDecoder(entry.channels ?? 1).push(bytes), sampleRate: entry.sampleRate };
+    if (kind === 'mp3') return { kind, bytes };
+    return { kind, samples: new PcmDecoder(entry.channels ?? 1).push(bytes), sampleRate: entry.sampleRate };
   } catch {
     return null;
   }
@@ -121,7 +130,7 @@ export async function readCachedPiece(key: string): Promise<CachedPiece | null> 
 export async function writeCachedPiece(
   key: string,
   chunks: Uint8Array[],
-  format: { sampleRate: number; channels: number },
+  format: { kind: AudioEncoding; sampleRate: number; channels: number },
 ): Promise<void> {
   const length = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
   if (length === 0) return;
@@ -132,8 +141,14 @@ export async function writeCachedPiece(
       joined.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    pieceFile(key).write(joined);
     const entries = await loadIndex();
+    const previous = entries.get(key);
+    // The same piece saved before in the other format: its file goes too.
+    if (previous && (previous.kind ?? 'pcm') !== format.kind) {
+      const stale = pieceFile(key, previous.kind ?? 'pcm');
+      if (stale.exists) stale.delete();
+    }
+    pieceFile(key, format.kind).write(joined);
     entries.set(key, { bytes: length, ...format, usedAt: Date.now() });
     trim(entries);
     scheduleIndexWrite();
@@ -151,7 +166,7 @@ function trim(entries: Map<string, Entry>): void {
   for (const [key, entry] of oldestFirst) {
     if (total <= TRIM_TO_BYTES) break;
     try {
-      const file = pieceFile(key);
+      const file = pieceFile(key, entry.kind ?? 'pcm');
       if (file.exists) file.delete();
     } catch {
       // Gone already, or busy: forgotten either way.

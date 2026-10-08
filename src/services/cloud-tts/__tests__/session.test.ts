@@ -9,13 +9,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 type StreamOptions = {
   text: string;
   signal: AbortSignal;
-  onFormat: (format: { sampleRate: number; channels: number }) => void;
+  onFormat: (format: { kind: 'pcm' | 'mp3'; sampleRate: number; channels: number }) => void;
   onBytes: (bytes: Uint8Array) => void;
 };
 
 const calls: StreamOptions[] = [];
 let behaviour: (options: StreamOptions) => Promise<void>;
-const cache = new Map<string, { samples: Float32Array; sampleRate: number }>();
+type Cached = { kind: 'pcm'; samples: Float32Array; sampleRate: number } | { kind: 'mp3'; bytes: Uint8Array };
+const cache = new Map<string, Cached>();
 
 vi.mock('@/services/cloud-tts/request', () => {
   class CloudVoiceError extends Error {
@@ -46,12 +47,13 @@ const { CloudVoiceError } = (await import('@/services/cloud-tts/request')) as un
 };
 const { pieceCacheKey } = await import('@/services/cloud-tts/cache-key');
 
-const CHOICE = { modelId: 'hexgrad/kokoro-82m', voice: 'af_heart', speed: null, maxCharacters: 1_500 };
+const CHOICE = { modelId: 'hexgrad/kokoro-82m', voice: 'af_heart', speed: null, maxCharacters: 1_500, format: 'pcm' as const };
+const MP3_CHOICE = { ...CHOICE, format: 'mp3' as const };
 const RATE = 24_000;
 
 /** A second of audio, in two network chunks, the first ending mid-sample. */
 function speakOneSecond(options: StreamOptions): Promise<void> {
-  options.onFormat({ sampleRate: RATE, channels: 1 });
+  options.onFormat({ kind: 'pcm', sampleRate: RATE, channels: 1 });
   const bytes = new Uint8Array(RATE * 2);
   options.onBytes(bytes.slice(0, 1001));
   options.onBytes(bytes.slice(1001));
@@ -60,16 +62,25 @@ function speakOneSecond(options: StreamOptions): Promise<void> {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** A sentence in MP3, as three network chunks. */
+function speakMp3(options: StreamOptions): Promise<void> {
+  options.onFormat({ kind: 'mp3', sampleRate: RATE, channels: 1 });
+  for (const size of [400, 300, 200]) options.onBytes(new Uint8Array(size));
+  return Promise.resolve();
+}
+
 function makeSession() {
   const provided: { requestId: string; samples: number; isLast: boolean }[] = [];
+  const encoded: { requestId: string; bytes: number; mimeType: string; isLast: boolean }[] = [];
   const failures: { requestId: string; failure: string }[] = [];
   const waiting: boolean[] = [];
   const session = new CloudVoiceSession('book-1', {
     provide: (requestId, samples, _rate, isLast) => provided.push({ requestId, samples: samples.byteLength / 4, isLast }),
+    provideEncoded: (requestId, data, mimeType, isLast) => encoded.push({ requestId, bytes: data.byteLength, mimeType, isLast }),
     onFailure: (requestId, failure) => failures.push({ requestId, failure }),
     onWaiting: (value) => waiting.push(value),
   });
-  return { session, provided, failures, waiting };
+  return { session, provided, encoded, failures, waiting };
 }
 
 beforeEach(() => {
@@ -92,7 +103,7 @@ describe('CloudVoiceSession', () => {
 
   it('plays a sentence heard before from the phone, without asking the server', async () => {
     const key = pieceCacheKey({ bookId: 'book-1', modelId: CHOICE.modelId, voice: CHOICE.voice, speed: null, text: 'It was late.' });
-    cache.set(key, { samples: new Float32Array(100), sampleRate: RATE });
+    cache.set(key, { kind: 'pcm', samples: new Float32Array(100), sampleRate: RATE });
     const { session, provided } = makeSession();
     session.request('r1', 'It was late.', CHOICE);
     await flush();
@@ -128,6 +139,54 @@ describe('CloudVoiceSession', () => {
     gates.shift()?.();
     await flush();
     expect(calls.map((call) => call.text)).toEqual(['One.', 'Two.', 'Zero.']);
+  });
+
+  it('fetches what Readium says comes next, across paragraphs, and stops guessing', async () => {
+    const { session, provided } = makeSession();
+    session.upcoming(['The end of one.', 'The start of the next.', 'And a third.'], CHOICE);
+    await flush();
+    expect(calls.map((call) => call.text)).toEqual(['The end of one.', 'The start of the next.']);
+    session.utterance('Guessed here. Never fetched.', CHOICE);
+    await flush();
+    expect(calls).toHaveLength(2);
+    session.request('r1', 'The end of one.', CHOICE);
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(provided.filter((p) => p.requestId === 'r1' && p.isLast)).toHaveLength(1);
+  });
+
+  it('hands MP3 over as it lands, for the native player to decode, and ends it once', async () => {
+    behaviour = speakMp3;
+    const { session, provided, encoded, waiting } = makeSession();
+    session.request('r1', 'It was late.', MP3_CHOICE);
+    await flush();
+    expect(provided).toEqual([]);
+    expect(encoded.map((e) => e.bytes)).toEqual([400, 300, 200, 0]);
+    expect(encoded.map((e) => e.isLast)).toEqual([false, false, false, true]);
+    expect(encoded.every((e) => e.mimeType === 'audio/mpeg')).toBe(true);
+    expect(waiting.at(-1)).toBe(false);
+  });
+
+  it('replays an MP3 fetched ahead, whole, when its request comes', async () => {
+    behaviour = speakMp3;
+    const { session, encoded } = makeSession();
+    session.upcoming(['It was late.'], MP3_CHOICE);
+    await flush();
+    session.request('r1', 'It was late.', MP3_CHOICE);
+    await flush();
+    expect(calls).toHaveLength(1);
+    expect(encoded.reduce((sum, e) => sum + e.bytes, 0)).toBe(900);
+    expect(encoded.filter((e) => e.isLast)).toHaveLength(1);
+  });
+
+  it('plays an MP3 heard before from the phone, in one piece', async () => {
+    const key = pieceCacheKey({ bookId: 'book-1', modelId: CHOICE.modelId, voice: CHOICE.voice, speed: null, text: 'It was late.' });
+    cache.set(key, { kind: 'mp3', bytes: new Uint8Array(512) });
+    const { session, encoded } = makeSession();
+    session.request('r1', 'It was late.', MP3_CHOICE);
+    await flush();
+    expect(calls).toHaveLength(0);
+    expect(encoded).toEqual([{ requestId: 'r1', bytes: 512, mimeType: 'audio/mpeg', isLast: true }]);
   });
 
   it('tries a failing maker once more in silence before saying anything', async () => {

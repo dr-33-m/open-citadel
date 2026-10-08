@@ -12,13 +12,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 
-import type { ReadiumViewRef, TTSSynthesisRequest } from '@dr33m/react-native-readium';
+import type { ReadiumViewRef, TTSSynthesisRequest, TTSUpcomingEvent } from '@dr33m/react-native-readium';
 
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
 import { queryClient } from '@/lib/query-client';
 import { billingKeys } from '@/query-manager/billing/keys';
 import type { PlanPreview } from '@/services/billing-plans';
-import type { CloudVoiceFailure } from '@/services/cloud-tts/request';
+import { MP3_MIME } from '@/services/cloud-tts/forward';
+import type { AudioEncoding, CloudVoiceFailure } from '@/services/cloud-tts/request';
 import { CloudVoiceSession, type CloudVoiceChoice } from '@/services/cloud-tts/session';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -36,9 +37,9 @@ export interface HeldFailure {
 }
 
 /** The voice to ask for now, from what is stored and the catalogue last fetched. */
-export function currentCloudChoice(rate: number): CloudVoiceChoice | null {
+export function currentCloudChoice(rate: number, format: AudioEncoding): CloudVoiceChoice | null {
   const models = queryClient.getQueryData<PlanPreview>(billingKeys.planPreview())?.voices?.models;
-  return cloudChoiceFor(useSettingsStore.getState().ttsVoice, models, rate);
+  return cloudChoiceFor(useSettingsStore.getState().ttsVoice, models, rate, format);
 }
 
 export function useCloudVoiceBridge(readerRef: React.RefObject<ReadiumViewRef | null>, bookId: string | undefined) {
@@ -46,12 +47,29 @@ export function useCloudVoiceBridge(readerRef: React.RefObject<ReadiumViewRef | 
   const requestsRef = useRef(new Map<string, TTSSynthesisRequest>());
   const [working, setWorking] = useState(false);
   const [held, setHeld] = useState<HeldFailure | null>(null);
+  /**
+   * MP3 when this build's native player decodes it (the patched Readium's
+   * `ttsCanDecodeAudio`), a tenth of the bytes; PCM on a build without it.
+   * Asked once, the first time it matters: it is a fact about the binary.
+   */
+  const formatRef = useRef<AudioEncoding | null>(null);
+  const format = useCallback((): AudioEncoding => {
+    if (formatRef.current) return formatRef.current;
+    const reader = readerRef.current;
+    if (!reader) return 'pcm';
+    formatRef.current = reader.ttsCanDecodeAudio?.(MP3_MIME) ? 'mp3' : 'pcm';
+    return formatRef.current;
+  }, [readerRef]);
 
   const session = useCallback((): CloudVoiceSession | null => {
     if (!bookId) return null;
     sessionRef.current ??= new CloudVoiceSession(bookId, {
       provide: (requestId, samples, sampleRate, isLast) => {
         readerRef.current?.ttsProvideAudioChunk(requestId, samples, sampleRate, isLast);
+        if (isLast) requestsRef.current.delete(requestId);
+      },
+      provideEncoded: (requestId, data, mimeType, isLast) => {
+        readerRef.current?.ttsProvideEncodedAudio(requestId, data, mimeType, isLast);
         if (isLast) requestsRef.current.delete(requestId);
       },
       onWaiting: setWorking,
@@ -81,7 +99,7 @@ export function useCloudVoiceBridge(readerRef: React.RefObject<ReadiumViewRef | 
 
   const request = useCallback(
     (req: TTSSynthesisRequest) => {
-      const choice = currentCloudChoice(req.speed ?? 1);
+      const choice = currentCloudChoice(req.speed ?? 1, format());
       const current = session();
       if (!choice || !current) {
         readerRef.current?.ttsSynthesisFailed(req.requestId, 'No cloud voice is chosen.');
@@ -90,15 +108,24 @@ export function useCloudVoiceBridge(readerRef: React.RefObject<ReadiumViewRef | 
       requestsRef.current.set(req.requestId, req);
       current.request(req.requestId, req.text, choice);
     },
-    [readerRef, session],
+    [readerRef, session, format],
   );
 
   const utterance = useCallback(
     (after: string | null | undefined) => {
-      const choice = currentCloudChoice(useSettingsStore.getState().ttsRate);
+      const choice = currentCloudChoice(useSettingsStore.getState().ttsRate, format());
       if (choice) session()?.utterance(after, choice);
     },
-    [session],
+    [session, format],
+  );
+
+  /** Readium's own list of what comes next, from the patched native side. */
+  const upcoming = useCallback(
+    (event: TTSUpcomingEvent) => {
+      const choice = currentCloudChoice(useSettingsStore.getState().ttsRate, format());
+      if (choice) session()?.upcoming(event.upcoming, choice);
+    },
+    [session, format],
   );
 
   const cancel = useCallback((requestId: string) => {
@@ -110,10 +137,10 @@ export function useCloudVoiceBridge(readerRef: React.RefObject<ReadiumViewRef | 
   const retry = useCallback(() => {
     if (!held) return;
     setHeld(null);
-    const choice = currentCloudChoice(held.request.speed ?? 1) ?? undefined;
+    const choice = currentCloudChoice(held.request.speed ?? 1, format()) ?? undefined;
     sessionRef.current?.retry(held.request.requestId, choice);
     readerRef.current?.ttsResume();
-  }, [held, readerRef]);
+  }, [held, readerRef, format]);
 
   /** Let go of the held sentence without answering it here; the caller answers it. */
   const release = useCallback(() => {
@@ -123,5 +150,5 @@ export function useCloudVoiceBridge(readerRef: React.RefObject<ReadiumViewRef | 
     return held.request;
   }, [held]);
 
-  return { request, utterance, cancel, retry, release, working, held };
+  return { request, utterance, upcoming, cancel, retry, release, working, held };
 }
