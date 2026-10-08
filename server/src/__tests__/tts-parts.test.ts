@@ -161,6 +161,15 @@ describe('voice figures', () => {
     expect(figures.models.find((m) => m.id === 'hexgrad/kokoro-82m')?.hours).toBe(59.7);
   });
 
+  it('gives each voice its hours on every plan that reaches it, and none it does not', () => {
+    const kokoro = voiceFigures(CLOUD_VOICE_CATALOG, null).models[0];
+    expect(Object.keys(kokoro.hoursByPlan)).toEqual(['maester', 'grand_maester', 'archmaester']);
+    // The same voice lasts longer on a bigger grant.
+    expect(kokoro.hoursByPlan.archmaester).toBeGreaterThan(kokoro.hoursByPlan.maester as number);
+    const eleven = voiceFigures(CLOUD_VOICE_CATALOG, null).models.find((m) => m.id === 'elevenlabs/eleven-v4');
+    expect(Object.keys(eleven?.hoursByPlan ?? {})).toEqual(['archmaester']);
+  });
+
   it('describes every plan for the plan cards, with or without a reader', () => {
     const figures = voiceFigures(CLOUD_VOICE_CATALOG, null);
     expect(figures.defaultModelId).toBeNull();

@@ -340,3 +340,46 @@ export function listedVoices(model: Pick<CloudVoiceModel, 'id' | 'voices'>): str
   }
   return model.voices;
 }
+
+// -- What the app is told ----------------------------------------------------
+
+/**
+ * One voice model as the app draws it: everything but a price.
+ *
+ * The shape `/billing/me` and `/billing/plans` answer (`voice-figures.ts` on
+ * the server), here so the two sides cannot disagree about it.
+ */
+export interface VoiceModelView {
+  id: string;
+  label: string;
+  maker: string;
+  description: string;
+  minPlan: PlanId;
+  speedSupported: boolean;
+  maxCharacters: number;
+  /** The voices a reader is offered (`listedVoices`), in the maker's order. */
+  voices: string[];
+  defaultVoice: string;
+  /** About what a chapter costs, in Neurons. Null for a voice with no price. */
+  chapterCredits: number | null;
+  /**
+   * Hours of listening a month's grant buys on this voice: on the reader's own
+   * plan when it reaches the voice, on the plan that opens it otherwise.
+   */
+  hours: number | null;
+  /**
+   * The same, for every plan that reaches the voice. What the public
+   * `/billing/plans` answer is read for, since it knows no reader: the app
+   * picks its own plan's figure, and the plan sheets each plan's.
+   */
+  hoursByPlan: Partial<Record<PlanId, number | null>>;
+}
+
+export interface VoiceFigures {
+  /** The voice model the reader's plan starts on, or null without a plan. */
+  defaultModelId: string | null;
+  models: VoiceModelView[];
+  /** For the plan cards: who each plan reaches, and how long its default lasts. */
+  byPlan: Record<PlanId, { makers: string[]; defaultModelId: string | null; hours: number | null }>;
+}
+

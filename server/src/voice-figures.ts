@@ -17,39 +17,12 @@ import {
   voicesForPlan,
   type CloudVoiceModel,
   type PlanId,
+  type VoiceFigures,
 } from 'samwell-shared';
 
 /** One decimal: "14.6 hours" is worth saying, "14.5833" is not. */
 function oneDecimal(value: number | null): number | null {
   return value == null ? null : Math.round(value * 10) / 10;
-}
-
-export interface VoiceModelView {
-  id: string;
-  label: string;
-  maker: string;
-  description: string;
-  minPlan: PlanId;
-  speedSupported: boolean;
-  maxCharacters: number;
-  /** The voices a reader is offered (`listedVoices`), in the maker's order. */
-  voices: string[];
-  defaultVoice: string;
-  /** About what a chapter costs, in Neurons. Null for a voice with no price. */
-  chapterCredits: number | null;
-  /**
-   * Hours of listening a month's grant buys on this voice: on the reader's own
-   * plan when it reaches the voice, on the plan that opens it otherwise.
-   */
-  hours: number | null;
-}
-
-export interface VoiceFigures {
-  /** The voice model the reader's plan starts on, or null without a plan. */
-  defaultModelId: string | null;
-  models: VoiceModelView[];
-  /** For the plan cards: who each plan reaches, and how long its default lasts. */
-  byPlan: Record<PlanId, { makers: string[]; defaultModelId: string | null; hours: number | null }>;
 }
 
 export function voiceFigures(models: CloudVoiceModel[], plan: PlanId | null): VoiceFigures {
@@ -85,6 +58,12 @@ export function voiceFigures(models: CloudVoiceModel[], plan: PlanId | null): Vo
         defaultVoice: model.defaultVoice,
         chapterCredits: ttsCreditsEstimate(CHAPTER_CHARACTERS, model, counted),
         hours: oneDecimal(listeningHours(counted, model)),
+        hoursByPlan: Object.fromEntries(
+          PLAN_ORDER.filter((tier) => planIncludes(tier, model.minPlan)).map((tier) => [
+            tier,
+            oneDecimal(listeningHours(tier, model)),
+          ]),
+        ),
       };
     }),
     byPlan,
