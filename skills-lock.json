@@ -19,6 +19,12 @@
       "skillPath": "skills/appllama-app-design-skill/SKILL.md",
       "computedHash": "023b25559a5e9a4ab85ccffc9612d0d0f650608eb7f281dce8408a32649b2340"
     },
+    "create-revenuecat-project": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/create-revenuecat-project/SKILL.md",
+      "computedHash": "af2588c974f1d871405277e589c59977eff9a745ff5b73260f3368a6a23e76ac"
+    },
     "eas-app-stores": {
       "source": "expo/skills",
       "sourceType": "github",
@@ -42,6 +48,12 @@
       "sourceType": "github",
       "skillPath": "skills/emil-design-eng/SKILL.md",
       "computedHash": "41b0a4dc1a27164fe297845a6c6850a39e9242c42c9be999967fcee9df2c5974"
+    },
+    "experiment-analysis": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-experiment-analysis/SKILL.md",
+      "computedHash": "e7b4588e7e0651875cb33cd37946bc99904f6bbee475ef113d6e45b8e4a505c7"
     },
     "expo-animation": {
       "source": "expo/skills",
@@ -133,6 +145,18 @@
       "skillPath": "skills/panelui/SKILL.md",
       "computedHash": "f853d7dbab6bed17267adb2163a0bfd7ad534d9aa262671af07ef79962d05f8e"
     },
+    "rc-alternative-billing": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat-play-billing/skills/rc-alternative-billing/SKILL.md",
+      "computedHash": "9335e0e8ea961229db78f5c80e878b9e3d3bdaa222a78f4478791fe34a9b413b"
+    },
+    "rc-backend": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat-play-billing/skills/rc-backend/SKILL.md",
+      "computedHash": "1a448faf013fc215d01d758473176432fb1dd3a3ea17deefa48ebe0ffd470a9f"
+    },
     "rc-cancellations-pauses-winback": {
       "source": "revenuecat/ai-toolkit",
       "sourceType": "github",
@@ -157,6 +181,12 @@
       "skillPath": "revenuecat-play-billing/skills/rc-error-handling/SKILL.md",
       "computedHash": "9cab3aa1ea4b200ed65b8b1ac9973fa21fb6f08d1f66062088db92fca522c91f"
     },
+    "rc-one-time-products": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat-play-billing/skills/rc-one-time-products/SKILL.md",
+      "computedHash": "f1e6950a4a183238acb60606dd0632ecbfd7afceac6bf585582480769e657b9b"
+    },
     "rc-payment-recovery": {
       "source": "revenuecat/ai-toolkit",
       "sourceType": "github",
@@ -180,6 +210,18 @@
       "sourceType": "github",
       "skillPath": "revenuecat-play-billing/skills/rc-purchase-flow/SKILL.md",
       "computedHash": "daa567d76abdeaa88fa1eeb2ef11608c9e6173df958cb743abc7064a7528e906"
+    },
+    "rc-revenuecat-api-quick-reference": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat-play-billing/skills/rc-revenuecat-api-quick-reference/SKILL.md",
+      "computedHash": "2c4f2a9f84b1b3872026d42657ac9cdaf8ad108fad387b36dd964c8a39512a9b"
+    },
+    "rc-revenuecat-vs-raw-billing": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat-play-billing/skills/rc-revenuecat-vs-raw-billing/SKILL.md",
+      "computedHash": "7a3ec220c4b8f19d0ca215e46ab3e5a719e994a43a7d6c7ae1a35ac24034a425"
     },
     "rc-security": {
       "source": "revenuecat/ai-toolkit",
@@ -228,6 +270,114 @@
       "sourceType": "github",
       "skillPath": "revenuecat/skills/revenuecat/SKILL.md",
       "computedHash": "71b0d87f04983b0c6e75a632ec13169ac2d17317e0c6ccaa8bbffd40bbbdb52a"
+    },
+    "revenuecat-app-valuation": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-app-valuation/SKILL.md",
+      "computedHash": "5cc6b6b9c453ab6722a2a5e52ba8be1695c93793d9e4ddbb2b6e5db4890fbb6b"
+    },
+    "revenuecat-audiences": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-audiences/SKILL.md",
+      "computedHash": "25ec37f028a34ce45311a1872989b1bbb4b3d297780f2b0e6b6e87afd3510379"
+    },
+    "revenuecat-billing": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-billing/SKILL.md",
+      "computedHash": "56501d49cc8632502b05929fbc5805390b57fee70319e2213a148a4f42722d55"
+    },
+    "revenuecat-charts": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-charts/SKILL.md",
+      "computedHash": "b7d7a0bfaa286abfeb0b11a6a7cc6833008ecd05948bb20a56477269a761a048"
+    },
+    "revenuecat-cli": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-cli/SKILL.md",
+      "computedHash": "b3d19a98ee365999850577e6f052d466a583451ab0419955d2aa02a3821d4cb7"
+    },
+    "revenuecat-customer-center": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-customer-center/SKILL.md",
+      "computedHash": "d529993f4b8731b1b4480c4deab3063e10661fcff4031f2888fe711831e2a2ae"
+    },
+    "revenuecat-dashboard-links": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-dashboard-links/SKILL.md",
+      "computedHash": "7d67d69d6f0aa9473328bbbd359751cfdd12f3d38d748b21110f551d84d137c8"
+    },
+    "revenuecat-entitlements-gate": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-entitlements-gate/SKILL.md",
+      "computedHash": "137b725af76eac6250e80b1b562af7a41ffe33bfc9ed569d39f1d4959cf21270"
+    },
+    "revenuecat-experiments": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-experiments/SKILL.md",
+      "computedHash": "ac517525e021e75e7d9dcd6ab4d7697508e5c9b844d1704fe70e18716d7ed3c2"
+    },
+    "revenuecat-forecasting": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-forecasting/SKILL.md",
+      "computedHash": "3b5e300a1b9c31c71e4a558efcf79046f0418c2cc1bdc969f9ad6ed4a64c494a"
+    },
+    "revenuecat-identify-user": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-identify-user/SKILL.md",
+      "computedHash": "50661df3ddc3e12ccf50d478405fb8ffa4c94dc05859a30786ecfc5dcbcc6025"
+    },
+    "revenuecat-migrate": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-migrate/SKILL.md",
+      "computedHash": "ca614ac37748f21fa7dc46d35f9f4f84bad8bc18225a1527d56d2f2366097fbe"
+    },
+    "revenuecat-paywall": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-paywall/SKILL.md",
+      "computedHash": "ce19dd7f9f81763956516d2879264d11805bd2e42b84032c1c8eed7ab3bf1815"
+    },
+    "revenuecat-paywall-design": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-paywall-design/SKILL.md",
+      "computedHash": "eea2c5ad77797d562011b4dba41c2df351b2e81ff87f7243e7923671e4cb110f"
+    },
+    "revenuecat-purchase-flow": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-purchase-flow/SKILL.md",
+      "computedHash": "b5c3f941634c976ac8b656b78429153a2c5e2420788bc54f48470e3a9d8edd85"
+    },
+    "revenuecat-sdk-compatibility": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-sdk-compatibility/SKILL.md",
+      "computedHash": "09efe7d8a1437ed20926da2d2e9e688f6d19342d83082310fe7cf17a05c3c284"
+    },
+    "revenuecat-status": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-status/SKILL.md",
+      "computedHash": "9615af573b742ec02b56d782b3be527ed34872c62f9a21ae7e592fbde63c732c"
+    },
+    "revenuecat-store-state": {
+      "source": "revenuecat/ai-toolkit",
+      "sourceType": "github",
+      "skillPath": "revenuecat/skills/revenuecat-store-state/SKILL.md",
+      "computedHash": "561a5c5e4d906aa284c71e5d92792562a5ec7ee9eb1d9e2404b399fab5996872"
     },
     "revenuecat-testing-setup": {
       "source": "revenuecat/ai-toolkit",

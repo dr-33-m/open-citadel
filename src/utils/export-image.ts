@@ -16,9 +16,16 @@ export async function captureAndShare(viewRef: RefObject<View | null>): Promise<
     // Save to gallery first so the image persists even if sharing times out.
     // Write-only: saving needs no read access, and Play rejects READ_MEDIA_*
     // for an app that never browses the gallery (blocked in app.json).
-    const { status } = await MediaLibrary.requestPermissionsAsync(true);
-    if (status === "granted") {
-      await MediaLibrary.saveToLibraryAsync(uri);
+    // A failed save must not block the share sheet, so it is caught on its own.
+    // Asset.create, not saveToLibraryAsync: since SDK 57 the root export of
+    // the legacy method is a stub that always throws.
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync(true);
+      if (status === "granted") {
+        await MediaLibrary.Asset.create(uri);
+      }
+    } catch (error) {
+      console.warn("[export-image] save to library failed", error);
     }
 
     await shareAsync(uri, {
