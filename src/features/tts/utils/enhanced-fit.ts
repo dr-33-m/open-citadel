@@ -45,7 +45,10 @@ const STRAINED: EnhancedFitCopy = {
   mark: 'Needs a more powerful phone',
   title: 'These may pause on this phone',
   line: `Enhanced voices are made for phones with ${ENHANCED_SMOOTH_LABEL} of memory or more. On this one, reading may stop and start. You can still try them.`,
-  advice: 'If the pauses get in the way, use Lite voices. Cloud voices, the most advanced, are coming soon.',
+  // Cloud Kokoro is for exactly this phone: the same voices, made in the
+  // cloud, so a phone that strains to make them itself does not have to.
+  advice:
+    'If the pauses get in the way, use Lite voices, or Cloud: the same Kokoro voices, read from the cloud so the phone does not strain.',
 };
 
 export function enhancedFitCopy(fit: EnhancedFit): EnhancedFitCopy {

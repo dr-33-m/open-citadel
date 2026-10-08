@@ -1,14 +1,21 @@
 import { View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 
+import { Lock } from "@/components/icons";
 import { RowFade, type FadeSurface } from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
 import { Touchable } from "@/components/ui/touchable";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { cn } from "@/lib/cn";
 
-/** One option of a choice: the value it sets, and what it is called. */
-export type Choice<T> = { value: T; label: string };
+/**
+ * One option of a choice: the value it sets, and what it is called.
+ *
+ * `locked` draws it shut, with a lock and the line given (the plan that
+ * opens it, say). It still answers a press, with `onChange`, because the way
+ * through a lock is the caller's to offer.
+ */
+export type Choice<T> = { value: T; label: string; locked?: string | null };
 
 type ChoiceChipsProps<T> = {
   label?: string;
@@ -24,6 +31,9 @@ type ChoiceChipsProps<T> = {
   /** Share the row's width between the choices instead of scrolling, for a few that always fit. */
   fill?: boolean;
 };
+
+/** The plan's name under a locked chip: the label's face, a step smaller. */
+const LOCK_LINE = { fontSize: 9, lineHeight: 12 } as const;
 
 /**
  * One setting, as a row of square chips: the chosen one lifted on a card with
@@ -61,16 +71,30 @@ export function ChoiceChips<T extends string | number | null>({
         haptic="select"
         accessibilityRole="radio"
         accessibilityState={{ selected }}
-        accessibilityLabel={choice.label}
+        accessibilityLabel={choice.locked ? `${choice.label}, with ${choice.locked}` : choice.label}
       >
-        <ThemedText
-          type="labelSm"
-          color={
-            selected ? tokens["--color-primary"] : tokens["--color-foreground"]
-          }
-        >
-          {choice.label}
-        </ThemedText>
+        {choice.locked ? (
+          <View className={cn("py-1", fill && "items-center")}>
+            <View className="flex-row items-center gap-1">
+              <Lock size={11} color={tokens["--color-muted-foreground"]} />
+              <ThemedText type="labelSm" color={tokens["--color-muted-foreground"]}>
+                {choice.label}
+              </ThemedText>
+            </View>
+            <ThemedText type="labelSm" color={tokens["--color-muted-foreground"]} style={LOCK_LINE}>
+              {choice.locked}
+            </ThemedText>
+          </View>
+        ) : (
+          <ThemedText
+            type="labelSm"
+            color={
+              selected ? tokens["--color-primary"] : tokens["--color-foreground"]
+            }
+          >
+            {choice.label}
+          </ThemedText>
+        )}
       </Touchable>
     );
   });

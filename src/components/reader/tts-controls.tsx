@@ -4,6 +4,7 @@ import { View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
+import { Spinner } from '@/components/ui/spinner';
 import { Touchable } from '@/components/ui/touchable';
 
 import { popIn, popOut } from '@/constants/theme';
@@ -11,6 +12,12 @@ import { asColor } from '@/utils/colors';
 
 type TTSControlsProps = {
   isPlaying: boolean;
+  /**
+   * The voice has been asked for a sentence and nothing is playing yet: a
+   * cloud voice before its first audio arrives. The play button shows the
+   * wait instead of a pause sign that would read as "it is playing".
+   */
+  working?: boolean;
   onPlayPause: () => void;
   onSkipPrevious: () => void;
   onSkipNext: () => void;
@@ -18,6 +25,7 @@ type TTSControlsProps = {
 
 export function TTSControls({
   isPlaying,
+  working = false,
   onPlayPause,
   onSkipPrevious,
   onSkipNext,
@@ -53,7 +61,11 @@ export function TTSControls({
       >
         {/* Keyed on play state: the glyph pops out and the new one pops in,
             rather than swapping instantly. */}
-        {isPlaying ? (
+        {isPlaying && working ? (
+          <Animated.View key="working" entering={popIn()} exiting={popOut()}>
+            <Spinner size="sm" label="Starting the voice" />
+          </Animated.View>
+        ) : isPlaying ? (
           <Animated.View
             key="pause"
             entering={popIn()}

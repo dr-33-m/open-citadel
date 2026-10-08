@@ -31,6 +31,9 @@ describe('enhancedFitCopy', () => {
   it('gives advice only when there is something to do', () => {
     expect(enhancedFitCopy('smooth').advice).toBeNull();
     expect(enhancedFitCopy('strained').advice).toMatch(/Lite voices/);
+    // The phone that strains is the one Cloud Kokoro is for.
+    expect(enhancedFitCopy('strained').advice).toMatch(/Cloud/);
+    expect(enhancedFitCopy('strained').advice).not.toMatch(/coming soon/i);
   });
 
   it('never uses an em dash', () => {

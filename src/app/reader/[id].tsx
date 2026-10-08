@@ -32,7 +32,8 @@ import { ReadiumView } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
-import { useKokoroTtsBridge } from "@/features/reader/hooks/use-kokoro-tts-bridge";
+import { useCloudVoiceFailure } from "@/features/reader/hooks/use-cloud-voice-failure";
+import { useReadAloudBridge } from "@/features/reader/hooks/use-read-aloud-bridge";
 import { readerVoiceId } from "@/services/device-tts/catalogue";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
@@ -40,6 +41,8 @@ import { SelectionBar } from "@/components/reader/selection-bar";
 import { TocSheet } from "@/components/reader/toc-sheet";
 import { TTSControls } from "@/components/reader/tts-controls";
 import { ThemedText } from "@/components/themed-text";
+import { PlansSheet } from "@/features/billing/components/plans-sheet";
+import { CloudVoiceFailureSheet } from "@/features/tts/components/cloud-voice-failure-sheet";
 import { TtsSettingsSheet } from "@/features/tts/components/tts-settings-sheet";
 import ReanimatedView, { FadeOut } from "react-native-reanimated";
 import { easing, motion, slideDownPastEdge, slideUpFromEdge, spacing } from "@/constants/theme";
@@ -109,7 +112,11 @@ export default function ReaderScreen() {
   const router = useRouter();
   const readerRef = useRef<ReadiumViewRef>(null);
   const insets = useSafeAreaInsets();
-  const { onSynthesisRequest, onSynthesisCancel } = useKokoroTtsBridge(readerRef);
+  // Whichever voice reads, on the phone or in the cloud, answers Readium
+  // through this; a cloud voice that cannot go on is held and drawn below.
+  const readAloud = useReadAloudBridge(readerRef, id);
+  const { onSynthesisRequest, onSynthesisCancel, onUtterance } = readAloud;
+  const cloudFailure = useCloudVoiceFailure(readerRef, readAloud);
 
   const {
     currentBook,
@@ -580,6 +587,8 @@ export default function ReaderScreen() {
     if (event.utterance === ttsLastUtteranceRef.current) return;
     ttsLastUtteranceRef.current = event.utterance;
     ttsLastLocatorRef.current = event.locator;
+    // The rest of the paragraph, for a cloud voice to fetch ahead from.
+    onUtterance(event.locator.text?.after);
 
     // No goTo here: the native side (HybridReadiumView.swift's
     // `manager.onUtterance`) turns the page itself now, and waits for that
@@ -588,7 +597,7 @@ export default function ReaderScreen() {
     // calling goTo from here could only ever race the audio, not sequence
     // before it. currentLocatorRef still updates from the native
     // onLocationChange event this navigation fires either way.
-  }, []);
+  }, [onUtterance]);
 
   const handleTTSToggle = useCallback(() => {
     if (!isTTSActive) {
@@ -1009,6 +1018,7 @@ export default function ReaderScreen() {
           >
             <TTSControls
               isPlaying={ttsState?.isPlaying ?? false}
+              working={readAloud.cloud.working}
               onPlayPause={handleTTSPlayPause}
               onSkipPrevious={() => readerRef.current?.ttsSkipPrevious()}
               onSkipNext={() => readerRef.current?.ttsSkipNext()}
@@ -1167,6 +1177,8 @@ export default function ReaderScreen() {
           without leaving the book. Same panel Settings uses, so the two
           never disagree about what "the voice" currently is. */}
       <TtsSettingsSheet visible={showTtsSettings} onClose={() => setShowTtsSettings(false)} />
+      <CloudVoiceFailureSheet {...cloudFailure.sheet} />
+      <PlansSheet nested {...cloudFailure.plans} />
 
       {/* Bookmark note prompt — appears after adding a bookmark */}
       {bookmarkNotePrompt && (

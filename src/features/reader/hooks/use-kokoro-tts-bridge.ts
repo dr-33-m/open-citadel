@@ -18,8 +18,7 @@ import { useCallback } from 'react';
 import type { ReadiumViewRef, TTSSynthesisRequest } from '@dr33m/react-native-readium';
 import { KOKORO_SAMPLE_RATE } from 'react-native-executorch';
 
-import { isSupertonicVoice } from '@/services/device-tts/supertonic';
-import { resolveVoice } from '@/services/device-tts/catalogue';
+import { isAiVoice, resolveVoice } from '@/services/device-tts/catalogue';
 import { useSettingsStore } from '@/stores/settings';
 import { stop as stopSynthesis, synthesize } from '@/services/device-tts/engine';
 
@@ -35,8 +34,12 @@ export function useKokoroTtsBridge(readerRef: React.RefObject<ReadiumViewRef | n
   const onSynthesisRequest = useCallback(
     (request: TTSSynthesisRequest) => {
       void (async () => {
+        // The saved voice when it is one of ours: the native side may have
+        // been started with none (a Supertonic voice, or a cloud voice the
+        // reader has just come back to the phone from), and its own idea of
+        // the voice would then be Kokoro's default rather than the choice.
         const chosen = useSettingsStore.getState().ttsVoice;
-        const voice = isSupertonicVoice(chosen) ? chosen : resolveVoice(request.voice);
+        const voice = isAiVoice(chosen) ? chosen : resolveVoice(request.voice);
         // One retry, and only when nothing has been sent yet. A book left
         // reading unattended hits an occasional utterance that throws before
         // its first chunk — nothing this bridge does explains why, and
