@@ -10,7 +10,7 @@
  */
 import { useCallback } from 'react';
 
-import type { ReadiumViewRef, TTSSynthesisRequest } from '@dr33m/react-native-readium';
+import type { ReadiumViewRef, TTSSynthesisRequest, TTSUpcomingEvent } from '@dr33m/react-native-readium';
 
 import { useCloudVoiceBridge } from '@/features/reader/hooks/use-cloud-voice-bridge';
 import { useKokoroTtsBridge } from '@/features/reader/hooks/use-kokoro-tts-bridge';
@@ -22,8 +22,8 @@ export function useReadAloudBridge(readerRef: React.RefObject<ReadiumViewRef | n
   const cloud = useCloudVoiceBridge(readerRef, bookId);
   // The stable functions, not the objects around them, so the handlers handed
   // to the native view keep their identity across this screen's renders.
-  const { onSynthesisRequest: deviceRequest, onSynthesisCancel: deviceCancel } = device;
-  const { request: cloudRequest, cancel: cloudCancel, utterance: cloudUtterance } = cloud;
+  const { onSynthesisRequest: deviceRequest, onSynthesisCancel: deviceCancel, onUpcoming: deviceUpcoming } = device;
+  const { request: cloudRequest, cancel: cloudCancel, utterance: cloudUtterance, upcoming: cloudUpcoming } = cloud;
 
   const onSynthesisRequest = useCallback(
     (request: TTSSynthesisRequest) => {
@@ -49,5 +49,18 @@ export function useReadAloudBridge(readerRef: React.RefObject<ReadiumViewRef | n
     [cloudUtterance],
   );
 
-  return { onSynthesisRequest, onSynthesisCancel, onUtterance, device, cloud };
+  /**
+   * Readium's word on what it will ask for next, on a build whose patch sends
+   * it. The cloud voice fetches it ahead; an Enhanced voice makes it while
+   * the current sentence plays.
+   */
+  const onUpcoming = useCallback(
+    (event: TTSUpcomingEvent) => {
+      if (isCloudVoice(useSettingsStore.getState().ttsVoice)) cloudUpcoming(event);
+      else deviceUpcoming(event);
+    },
+    [cloudUpcoming, deviceUpcoming],
+  );
+
+  return { onSynthesisRequest, onSynthesisCancel, onUtterance, onUpcoming, device, cloud };
 }

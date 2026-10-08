@@ -115,7 +115,7 @@ export default function ReaderScreen() {
   // Whichever voice reads, on the phone or in the cloud, answers Readium
   // through this; a cloud voice that cannot go on is held and drawn below.
   const readAloud = useReadAloudBridge(readerRef, id);
-  const { onSynthesisRequest, onSynthesisCancel, onUtterance } = readAloud;
+  const { onSynthesisRequest, onSynthesisCancel, onUtterance, onUpcoming } = readAloud;
   const cloudFailure = useCloudVoiceFailure(readerRef, readAloud);
 
   const {
@@ -914,6 +914,7 @@ export default function ReaderScreen() {
             onTTSError={handleTTSError}
             onTTSSynthesisRequest={onSynthesisRequest}
             onTTSSynthesisCancel={onSynthesisCancel}
+            onTTSUpcoming={onUpcoming}
           />
         )}
 
