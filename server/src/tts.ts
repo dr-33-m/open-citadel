@@ -45,6 +45,12 @@ const SpeakSchema = z.object({
   voice: z.string().min(1).max(100),
   text: z.string().min(1),
   speed: z.number().min(0.5).max(2).optional(),
+  /*
+   * What the app can play. PCM is the default and what an older build asks
+   * for: its JS turns it into samples itself. A build whose native player can
+   * decode MP3 asks for that instead, which is about a tenth of the bytes.
+   */
+  format: z.enum(['pcm', 'mp3']).optional(),
 });
 
 export function createTtsRoutes(deps: TtsDeps): Hono {
@@ -59,7 +65,7 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
 
     const parsed = SpeakSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'invalid_request', message: parsed.error.message }, 400);
-    const { modelId, voice, text, speed } = parsed.data;
+    const { modelId, voice, text, speed, format: wanted = 'pcm' } = parsed.data;
 
     const model = await deps.findVoiceModel(modelId);
     if (!model) return c.json({ error: 'unknown_voice_model', modelId }, 404);
@@ -109,7 +115,7 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
     try {
       upstream = await requestSpeech(
         // Speed goes to a maker that takes it, and only when it is not 1.
-        { modelId, voice, text, format: 'pcm', speed: model.speedSupported && speed != null && speed !== 1 ? speed : undefined },
+        { modelId, voice, text, format: wanted, speed: model.speedSupported && speed != null && speed !== 1 ? speed : undefined },
         { apiKey, fetchImpl: deps.fetchImpl, signal: c.req.raw.signal },
       );
     } catch (error) {

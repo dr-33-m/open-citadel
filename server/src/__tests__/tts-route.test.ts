@@ -217,6 +217,22 @@ describe('POST /tts/speak', () => {
     expect(speechCalls[2].body).not.toHaveProperty('speed');
   });
 
+  it('asks the maker for MP3 when the app can play it, and says so', async () => {
+    await seedPlan('maester');
+    speechReply = () =>
+      new Response(new Uint8Array([0xff, 0xf3, 0x44, 0xc0]), {
+        status: 200,
+        headers: { 'Content-Type': 'audio/mpeg', 'X-Generation-Id': 'gen-2' },
+      });
+    const response = await speak({ ...kokoro, format: 'mp3' });
+    expect(response.headers.get('x-audio-format')).toBe('mp3');
+    expect(new Uint8Array(await response.arrayBuffer()).length).toBe(4);
+    expect(speechCalls[0].body.response_format).toBe('mp3');
+    // Without saying, it is PCM, as every older build expects.
+    await (await speak(kokoro)).arrayBuffer();
+    expect(speechCalls[1].body.response_format).toBe('pcm');
+  });
+
   it('answers 500 rather than a silent failure when the key is missing', async () => {
     await seedPlan('maester');
     expect((await speak(kokoro, '')).status).toBe(500);
