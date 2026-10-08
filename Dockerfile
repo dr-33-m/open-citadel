@@ -6,6 +6,9 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 ENV PORT=8787
 ENV DATABASE_URL=file:/data/samwell-cloud.sqlite
+# The cloud voices' samples live beside the database, on the same volume, so
+# a deploy does not throw them away. See server/src/voice-samples.ts.
+ENV VOICE_SAMPLES_DIR=/data/voice-samples
 
 RUN corepack enable
 RUN mkdir -p /data

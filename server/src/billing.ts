@@ -201,6 +201,15 @@ export interface BillingService {
     usage?: SettleUsage;
     priceSnapshot?: PriceSnapshot;
     description?: string;
+    /**
+     * Leave the ledger alone when nothing was debited.
+     *
+     * For read-aloud, which settles once a sentence and debits whole credits
+     * only when a running remainder crosses one (`tts-billing.ts`). A row of
+     * zero for every sentence would bury a chapter's real debits under
+     * hundreds of rows that say nothing moved. Chat keeps its row either way.
+     */
+    omitZeroLedgerRow?: boolean;
   }): Promise<SettleResult>;
   releaseReservation(args: { usageEventId: string; error?: string }): Promise<boolean>;
   sweepStaleReservations(): Promise<number>;
@@ -1103,6 +1112,23 @@ export function createBillingService(options: BillingOptions): BillingService {
         });
       }
     }
+    /*
+     * Read-aloud's running remainder, the fraction of a credit spent but not
+     * yet debited (`tts-billing.ts`). It follows the money: left on the guest
+     * it would never be charged, and dropped it would be a few sentences on
+     * the house each time somebody links.
+     */
+    statements.push(
+      {
+        sql: `INSERT INTO tts_spend (account_id, pending_nanousd, updated_at_ms)
+              SELECT ?, pending_nanousd, ? FROM tts_spend WHERE account_id = ?
+              ON CONFLICT(account_id) DO UPDATE SET
+                pending_nanousd = tts_spend.pending_nanousd + excluded.pending_nanousd,
+                updated_at_ms = excluded.updated_at_ms`,
+        args: [args.accountId, atMs, args.guestId],
+      },
+      { sql: 'DELETE FROM tts_spend WHERE account_id = ?', args: [args.guestId] },
+    );
     statements.push({
       sql: `UPDATE guest_identities
             SET linked_account_id = ?, linked_at_ms = ?
@@ -1389,6 +1415,7 @@ export function createBillingService(options: BillingOptions): BillingService {
     usage?: SettleUsage;
     priceSnapshot?: PriceSnapshot;
     description?: string;
+    omitZeroLedgerRow?: boolean;
   }): Promise<SettleResult> {
     const debit = Math.max(0, Math.floor(args.actualCredits));
     const usage = args.usage ?? {};
@@ -1459,6 +1486,12 @@ export function createBillingService(options: BillingOptions): BillingService {
     }
 
     const balance = Number(balanceRow.balance);
+    if (debit === 0 && args.omitZeroLedgerRow) {
+      // The balance did not move, so the ledger still sums to it without a
+      // row; the event row keeps the record of what was spent.
+      invalidate(owner);
+      return { settled: true, balance };
+    }
     await insertLedgerRow({
       id: `usage:${args.usageEventId}`,
       accountId: owner,

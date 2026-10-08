@@ -26,6 +26,8 @@ import { billing } from './billing.js';
 import { getDefaultModelIdForPlan, getForecastWorkload, listCloudModels } from './db.js';
 import { requireAdminKey } from './http-helpers.js';
 import { readIdentity } from './identity.js';
+import { voiceCatalog } from './voice-catalog.js';
+import { voiceFigures } from './voice-figures.js';
 
 export const billingRoutes = new Hono();
 
@@ -117,6 +119,10 @@ billingRoutes.get('/me', async (c) => {
     modelsByPlan,
     models: visible.map(toPlanModel),
     catalogue,
+    // The cloud reading voices: what this plan reaches and how long it lasts,
+    // as Neurons and hours. Every voice is listed with the plan that opens
+    // it, so a locked maker can be drawn with its plan's name.
+    voices: voiceFigures(await voiceCatalog.list(), balance.plan),
   });
 });
 
@@ -135,7 +141,7 @@ billingRoutes.get('/me', async (c) => {
  */
 billingRoutes.get('/plans', async (c) => {
   const { modelsByPlan, catalogue } = await readCatalogue('maester');
-  return c.json({ modelsByPlan, catalogue });
+  return c.json({ modelsByPlan, catalogue, voices: voiceFigures(await voiceCatalog.list(), null) });
 });
 
 billingRoutes.get('/ledger', async (c) => {

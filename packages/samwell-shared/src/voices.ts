@@ -111,11 +111,21 @@ export function pricePerMillionCharactersFromTokens(
 
 // -- The seed ----------------------------------------------------------------
 
+/*
+ * Every voice OpenRouter lists, English and not. The server keeps the maker's
+ * whole list so a voice is never refused for being missing; which of them a
+ * reader is shown is the app's call, and for Kokoro it shows the English
+ * ones, as the on-device Lite list does.
+ */
 const KOKORO_VOICES = [
   'af_heart', 'af_alloy', 'af_aoede', 'af_bella', 'af_jessica', 'af_kore', 'af_nicole',
   'af_nova', 'af_river', 'af_sarah', 'af_sky', 'am_adam', 'am_echo', 'am_eric', 'am_fenrir',
   'am_liam', 'am_michael', 'am_onyx', 'am_puck', 'am_santa', 'bf_alice', 'bf_emma',
-  'bf_isabella', 'bf_lily', 'bm_daniel', 'bm_fable', 'bm_george', 'bm_lewis',
+  'bf_isabella', 'bf_lily', 'bm_daniel', 'bm_fable', 'bm_george', 'bm_lewis', 'ef_dora',
+  'em_alex', 'em_santa', 'ff_siwis', 'hf_alpha', 'hf_beta', 'hm_omega', 'hm_psi', 'if_sara',
+  'im_nicola', 'jf_alpha', 'jf_gongitsune', 'jf_nezumi', 'jf_tebukuro', 'jm_kumo', 'pf_dora',
+  'pm_alex', 'pm_santa', 'zf_xiaobei', 'zf_xiaoni', 'zf_xiaoxiao', 'zf_xiaoyi', 'zm_yunjian',
+  'zm_yunxi', 'zm_yunxia', 'zm_yunyang',
 ];
 
 const GEMINI_VOICES = [
@@ -312,4 +322,21 @@ export function parseCloudVoiceKey(
   const split = rest.lastIndexOf(':');
   if (split <= 0 || split === rest.length - 1) return null;
   return { modelId: rest.slice(0, split), voice: rest.slice(split + 1) };
+}
+
+/**
+ * The voices a reader is shown for a model.
+ *
+ * The maker's whole list stays on the server, so a voice is never refused for
+ * being missing; this is which of them are offered. Kokoro's ids start with a
+ * letter for their language, and only `a` (American English) and `b`
+ * (British English) read an English book well, the same rule the on-device
+ * Lite list follows. One rule, here, so the app's list and the server's
+ * samples cannot disagree about it.
+ */
+export function listedVoices(model: Pick<CloudVoiceModel, 'id' | 'voices'>): string[] {
+  if (model.id.startsWith('hexgrad/kokoro')) {
+    return model.voices.filter((voice) => /^[ab][fm]_/.test(voice));
+  }
+  return model.voices;
 }

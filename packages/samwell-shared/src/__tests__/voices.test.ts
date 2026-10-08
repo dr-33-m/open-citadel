@@ -8,6 +8,7 @@ import {
     CLOUD_VOICE_MAX_CHARACTERS,
     cloudVoiceKey,
     defaultVoiceModelId,
+    listedVoices,
     listeningHours,
     parseCloudVoiceKey,
     pricePerMillionCharactersFromTokens,
@@ -191,5 +192,21 @@ describe('stored voice keys', () => {
     expect(parseCloudVoiceKey('cloud:')).toBeNull();
     expect(parseCloudVoiceKey('cloud:hexgrad/kokoro-82m:')).toBeNull();
     expect(parseCloudVoiceKey('cloud::af_heart')).toBeNull();
+  });
+});
+
+describe('listed voices', () => {
+  it('offers Kokoro in English accents only, and everyone else whole', () => {
+    const kokoro = listedVoices(byId('hexgrad/kokoro-82m'));
+    expect(kokoro).toContain('af_heart');
+    expect(kokoro).toContain('bm_george');
+    expect(kokoro.every((voice) => /^[ab]/.test(voice))).toBe(true);
+    expect(kokoro.length).toBe(28);
+    const gemini = byId('google/gemini-3.8-flash-tts');
+    expect(listedVoices(gemini)).toEqual(gemini.voices);
+  });
+
+  it('keeps every default voice on the list a reader sees', () => {
+    for (const model of CLOUD_VOICE_CATALOG) expect(listedVoices(model)).toContain(model.defaultVoice);
   });
 });
