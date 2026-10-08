@@ -6,6 +6,7 @@ import { PageFade } from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
+import { PlanReadingVoices } from "@/features/billing/components/plan-reading-voices";
 import {
     planFacts,
     type PlanFactModel,
@@ -49,6 +50,7 @@ export function PlanInfoSheet({
   plan,
   models,
   modelCount,
+  readingVoices = null,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -56,6 +58,8 @@ export function PlanInfoSheet({
   models: readonly PlanFactModel[];
   /** The server's own count, for when the catalogue itself is not available. */
   modelCount: number;
+  /** The cloud reading voices this plan reaches; null from an older server, which hides the section. */
+  readingVoices?: { makers: string[]; hours: number | null } | null;
 }) {
   const [mutedForeground] = useCSSVariable(["--color-muted-foreground"]);
   const muted = asColor(mutedForeground);
@@ -261,6 +265,10 @@ export function PlanInfoSheet({
                 </ThemedText>
               )}
             </View>
+
+            {readingVoices ? (
+              <PlanReadingVoices makers={readingVoices.makers} hours={readingVoices.hours} />
+            ) : null}
           </View>
         </Sheet.ScrollView>
       </PageFade>

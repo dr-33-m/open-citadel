@@ -21,6 +21,8 @@ export type PlanCardProps = {
   /** How many models this plan opens up. Answered by the server, not counted
    * here: a tier can gain a model without a deploy. */
   modelCount: number;
+  /** Hours of cloud reading the plan's default voice gives a month, from the server; null hides the line. */
+  readingHours?: number | null;
   /**
    * The store's own price string, which is localised and authoritative, or
    * null until the store has answered. Never a price this app made up: see
@@ -32,6 +34,11 @@ export type PlanCardProps = {
   /** Opens the sheet that explains the card's three lines. */
   onInfo: () => void;
 };
+
+/** "60", "22", "4.5": whole hours from ten up, where a tenth stops meaning anything. */
+function formatHours(hours: number): string {
+  return hours >= 10 ? String(Math.round(hours)) : String(Math.round(hours * 10) / 10);
+}
 
 /**
  * One plan, as a card.
@@ -52,6 +59,7 @@ export type PlanCardProps = {
 export function PlanCard({
   plan,
   modelCount,
+  readingHours = null,
   priceLabel,
   selected,
   onInfo,
@@ -86,6 +94,12 @@ export function PlanCard({
       ? [{ label: `${modelCount} brains to choose from`, leads: false, lines: 2 }]
       : []),
     { label: "Unused neurons roll over", leads: false, lines: 2 },
+    // The cloud reading voices, as the one figure that compares plans: how
+    // long the plan's own default voice lasts. One line, so the card's
+    // measured height holds (`BASE_CARD_HEIGHT`).
+    ...(readingHours != null
+      ? [{ label: `${formatHours(readingHours)} hours of cloud reading`, leads: false, lines: 1 }]
+      : []),
   ];
 
   return (

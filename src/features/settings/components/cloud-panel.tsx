@@ -242,6 +242,7 @@ export function CloudPanel({
           packages={packages}
           catalogue={offer.catalogue}
           modelCounts={offer.modelCounts}
+          voicesByPlan={offer.voicesByPlan}
           busy={sale.picker.busy}
           ready={offer.ready}
           prebuilt
@@ -336,6 +337,7 @@ export function CloudPanel({
           packages={packages}
           catalogue={offer.catalogue}
           modelCounts={offer.modelCounts}
+          voicesByPlan={offer.voicesByPlan}
           /* `preparing` first, the same as the branch above: the checkout
              asks the server before it opens the store sheet, and without this
              the button went quiet for that round trip and invited a second

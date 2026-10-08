@@ -23,6 +23,7 @@ import {
     PLANS,
     type CreditPlan,
     type PlanId,
+    type VoiceFigures,
 } from "samwell-shared";
 
 /**
@@ -42,17 +43,18 @@ import {
  *   16  gap-4
  *   24  credits row (`bodyMd`'s line)
  *  + 8 + 40 + 8 + 20   models on two lines, then rollover, with `gap-2`
+ *  + 8 + 20   hours of cloud reading, one line, with `gap-2`
  *   16  `p-4` bottom
  *    2  the card's own 1px borders
  *  ────
- *  242
+ *  270
  *
  * A base, not the answer. `allowFontScaling` is on by default, so lines
  * measured at the default type size is the wrong height for somebody running
  * large text - and a fixed height does not clip gracefully, it just cuts the
  * last line off. Scaled by the live font scale below.
  */
-const BASE_CARD_HEIGHT = 242;
+const BASE_CARD_HEIGHT = 270;
 
 /**
  * Past double, scaling the box further stops helping.
@@ -75,6 +77,8 @@ export type PlanCarouselProps = {
   catalogue: PlanModel[];
   /** How many models each plan opens up. */
   modelCounts: Record<PlanId, number>;
+  /** The reading voices each plan reaches, with the hours its default gives. Absent from an older server. */
+  voicesByPlan?: VoiceFigures["byPlan"] | null;
   busy: PlanId | "restore" | "manage" | null;
   /**
    * Everything the cards say is in hand. Until then the run is its skeleton,
@@ -163,6 +167,7 @@ export function PlanCarousel({
   packages,
   catalogue,
   modelCounts,
+  voicesByPlan = null,
   busy,
   ready = true,
   prebuilt = false,
@@ -297,6 +302,7 @@ export function PlanCarousel({
               contentStyle={contentStyle}
               prices={prices}
               modelCounts={modelCounts}
+              voicesByPlan={voicesByPlan}
               surface={surface}
               onIndexChange={handleIndexChange}
               onInfo={setInfoPlanId}
@@ -381,6 +387,7 @@ export function PlanCarousel({
           plan={CREDIT_PLANS[infoPlanId]}
           models={catalogue}
           modelCount={modelCounts[infoPlanId] ?? 0}
+          readingVoices={voicesByPlan?.[infoPlanId] ?? null}
         />
       ) : null}
     </View>
