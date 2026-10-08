@@ -7,8 +7,10 @@
 # `cloud_voice_models` seeds itself from samwell-shared when it is EMPTY, so a
 # fresh deploy already has these five. Running this anyway is the safe step:
 # it re-pulls each model's price and voice list from OpenRouter, fixes a tier
-# that was changed by hand, and turns on `speedSupported` only where it is
-# meant to be. It is idempotent, so running it twice changes nothing.
+# that was changed by hand, turns on `speedSupported` only where it is meant
+# to be, and sets the formats each maker answers in (`formats`: MP3 where it
+# has been heard to work; Gemini answers PCM alone and refuses anything else).
+# It is idempotent, so running it twice changes nothing.
 #
 # Placement (access is cumulative):
 #   Maester        Kokoro
@@ -60,15 +62,15 @@ register() { # <json body>
 }
 
 echo "Maester"
-register '{"id":"hexgrad/kokoro-82m","minPlan":"maester","label":"Kokoro","maker":"Kokoro","description":"The same Kokoro voices, read from the cloud so the phone does not strain.","defaultVoice":"af_heart","speedSupported":true}'
+register '{"id":"hexgrad/kokoro-82m","minPlan":"maester","label":"Kokoro","maker":"Kokoro","description":"The same Kokoro voices, read from the cloud so the phone does not strain.","defaultVoice":"af_heart","speedSupported":true,"formats":["mp3","pcm"]}'
 
 echo "Grand Maester"
-register '{"id":"google/gemini-3.8-flash-lite-tts","minPlan":"grand_maester","label":"Gemini Flash Lite","maker":"Google","description":"Clear and natural, and it lasts.","defaultVoice":"Kore","speedSupported":false}'
-register '{"id":"google/gemini-3.8-flash-tts","minPlan":"grand_maester","label":"Gemini Flash","maker":"Google","description":"Richer reading, with more feeling in it.","defaultVoice":"Kore","speedSupported":false}'
+register '{"id":"google/gemini-3.8-flash-lite-tts","minPlan":"grand_maester","label":"Gemini Flash Lite","maker":"Google","description":"Clear and natural, and it lasts.","defaultVoice":"Kore","speedSupported":false,"formats":["pcm"]}'
+register '{"id":"google/gemini-3.8-flash-tts","minPlan":"grand_maester","label":"Gemini Flash","maker":"Google","description":"Richer reading, with more feeling in it.","defaultVoice":"Kore","speedSupported":false,"formats":["pcm"]}'
 
 echo "Archmaester"
-register '{"id":"elevenlabs/eleven-v4-turbo","minPlan":"archmaester","label":"Eleven v4 Turbo","maker":"ElevenLabs","description":"Lifelike voices that start quickly.","defaultVoice":"george","speedSupported":false}'
-register '{"id":"elevenlabs/eleven-v4","minPlan":"archmaester","label":"Eleven v4","maker":"ElevenLabs","description":"The most expressive reading in the app, and the dearest.","defaultVoice":"george","speedSupported":false}'
+register '{"id":"elevenlabs/eleven-v4-turbo","minPlan":"archmaester","label":"Eleven v4 Turbo","maker":"ElevenLabs","description":"Lifelike voices that start quickly.","defaultVoice":"george","speedSupported":false,"formats":["mp3","pcm"]}'
+register '{"id":"elevenlabs/eleven-v4","minPlan":"archmaester","label":"Eleven v4","maker":"ElevenLabs","description":"The most expressive reading in the app, and the dearest.","defaultVoice":"george","speedSupported":false,"formats":["mp3","pcm"]}'
 
 echo
 echo "Voices now:"

@@ -143,8 +143,13 @@ export async function streamPiece(options: {
   }
 }
 
-/** Where a voice's free sample lives. Playing it never touches a balance. */
+/**
+ * Where a voice's free sample lives. Playing it never touches a balance.
+ * No extension: the clip is MP3 or WAV by maker, and the content type says
+ * which, so the player is never told one thing by the URL and another by
+ * the reply.
+ */
 export function sampleUrl(modelId: string, voice: string): string | null {
   const base = SAMWELL_CLOUD_BASE_URL.trim().replace(/\/+$/, '');
-  return base ? `${base}/tts/samples/${modelId}/${encodeURIComponent(voice)}.mp3` : null;
+  return base ? `${base}/tts/samples/${modelId}/${encodeURIComponent(voice)}` : null;
 }

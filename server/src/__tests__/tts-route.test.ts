@@ -233,6 +233,15 @@ describe('POST /tts/speak', () => {
     expect(speechCalls[1].body.response_format).toBe('pcm');
   });
 
+  it('asks a PCM-only maker for PCM even when the app wants MP3, and says it is PCM', async () => {
+    await seedPlan('grand_maester');
+    const response = await speak({ modelId: 'google/gemini-3.8-flash-lite-tts', voice: 'Kore', text: 'Hello.', format: 'mp3' });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-audio-format')).toBe('pcm');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(PCM);
+    expect(speechCalls[0].body.response_format).toBe('pcm');
+  });
+
   it('answers 500 rather than a silent failure when the key is missing', async () => {
     await seedPlan('maester');
     expect((await speak(kokoro, '')).status).toBe(500);

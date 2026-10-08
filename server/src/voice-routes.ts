@@ -13,14 +13,14 @@
  */
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { listedVoices, PLAN_ORDER, type PlanId } from 'samwell-shared';
+import { listedVoices, PLAN_ORDER, SPEECH_FORMATS, type PlanId, type SpeechFormat } from 'samwell-shared';
 import { z } from 'zod';
 
 import { requireAdminKey, requireOpenRouterKey } from './http-helpers.js';
 import { rateLimit } from './rate-limit.js';
 import { voiceCatalog } from './voice-catalog.js';
 import { fetchOpenRouterVoiceModel, toVoiceModel, type VoiceModelInput } from './voice-metadata.js';
-import { generateSamples, readSample, samplePath, type SampleRun } from './voice-samples.js';
+import { generateSamples, readSample, type SampleRun } from './voice-samples.js';
 
 const PlanSchema = z.enum(PLAN_ORDER as unknown as [PlanId, ...PlanId[]]);
 
@@ -30,6 +30,8 @@ const VoiceFieldsSchema = z.object({
   description: z.string().min(1).max(200).optional(),
   defaultVoice: z.string().min(1).max(100).optional(),
   speedSupported: z.boolean().optional(),
+  /** What the maker answers in. PCM is added if left out; MP3 only once heard to work. */
+  formats: z.array(z.enum(SPEECH_FORMATS as unknown as [SpeechFormat, ...SpeechFormat[]])).optional(),
 });
 
 const AddVoiceSchema = VoiceFieldsSchema.extend({ id: z.string().min(1), minPlan: PlanSchema });
@@ -123,7 +125,7 @@ voiceAdminRoutes.get('/samples', async (c) => {
 /**
  * Re-pull a stored voice model, keeping anything the body does not name: a
  * refresh of the facts must never quietly move a voice between tiers or
- * switch its speed back off.
+ * switch its speed or its MP3 back off.
  */
 voiceAdminRoutes.patch('/:id{.+}', async (c) => {
   requireAdminKey(c);
@@ -141,6 +143,7 @@ voiceAdminRoutes.patch('/:id{.+}', async (c) => {
     description: parsed.data.description ?? existing.description,
     defaultVoice: parsed.data.defaultVoice ?? existing.defaultVoice,
     speedSupported: parsed.data.speedSupported ?? existing.speedSupported,
+    formats: parsed.data.formats ?? existing.formats,
   });
   await voiceCatalog.update(model);
   return c.json({ voices: await voiceCatalog.list() });
@@ -159,19 +162,23 @@ export const voiceSampleRoutes = new Hono();
 
 voiceSampleRoutes.use('/samples/*', rateLimit({ limit: 120, windowMs: 60_000 }));
 
-/** `GET /tts/samples/<model id>/<voice>.mp3`. The model id carries a slash. */
+/**
+ * `GET /tts/samples/<model id>/<voice>`. The model id carries a slash. The
+ * clip is MP3 or WAV, whichever was made, and the content type says which;
+ * an extension on the URL is ignored, so builds that ask for `<voice>.mp3`
+ * still get a WAV clip.
+ */
 voiceSampleRoutes.get('/samples/:path{.+}', async (c) => {
   const path = c.req.param('path');
   const split = path.lastIndexOf('/');
   const modelId = path.slice(0, split);
-  const voice = path.slice(split + 1).replace(/\.mp3$/, '');
+  const voice = path.slice(split + 1).replace(/\.(mp3|wav)$/, '');
   const model = split > 0 ? await voiceCatalog.find(modelId) : null;
-  const file = model ? samplePath(model, voice) : null;
-  const audio = file ? await readSample(file) : null;
-  if (!audio) return c.json({ error: 'no_sample' }, 404);
-  return new Response(audio, {
+  const sample = model ? await readSample(model, voice) : null;
+  if (!sample) return c.json({ error: 'no_sample' }, 404);
+  return new Response(sample.audio, {
     headers: {
-      'Content-Type': 'audio/mpeg',
+      'Content-Type': sample.contentType,
       // A voice's sample never changes once made; a re-made one is asked for
       // again only by a reinstall, which is rare enough to accept.
       'Cache-Control': 'public, max-age=2592000',

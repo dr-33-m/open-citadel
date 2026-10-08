@@ -13,8 +13,10 @@
 import {
   CLOUD_VOICE_MAX_CHARACTERS,
   pricePerMillionCharactersFromTokens,
+  withPcm,
   type CloudVoiceModel,
   type PlanId,
+  type SpeechFormat,
 } from 'samwell-shared';
 
 import { MODEL_CONTEXT_REFRESH_MS } from './model-context.js';
@@ -80,6 +82,7 @@ export interface VoiceModelInput {
   description?: string;
   defaultVoice?: string;
   speedSupported?: boolean;
+  formats?: SpeechFormat[];
 }
 
 /**
@@ -112,6 +115,9 @@ export function toVoiceModel(
     // Off unless somebody has heard it work: a maker that answers 400 to a
     // speed it does not take would fail every piece read at anything but 1x.
     speedSupported: input.speedSupported ?? false,
+    // PCM unless told otherwise, for the same reason: a format the maker does
+    // not take fails every piece, and OpenRouter does not publish which it takes.
+    formats: withPcm(input.formats),
     voices,
     defaultVoice,
   };

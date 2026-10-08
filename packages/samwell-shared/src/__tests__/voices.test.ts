@@ -15,6 +15,8 @@ import {
     ttsCostUsd,
     ttsCreditsEstimate,
     voicesForPlan,
+    speechFormatFor,
+    withPcm,
 } from '../voices';
 
 const byId = (id: string) => {
@@ -208,5 +210,24 @@ describe('listed voices', () => {
 
   it('keeps every default voice on the list a reader sees', () => {
     for (const model of CLOUD_VOICE_CATALOG) expect(listedVoices(model)).toContain(model.defaultVoice);
+  });
+});
+
+describe('speech formats', () => {
+  it('asks for MP3 only from a maker that takes it', () => {
+    const byId = (id: string) => CLOUD_VOICE_CATALOG.find((model) => model.id === id)!;
+    expect(speechFormatFor(byId('hexgrad/kokoro-82m'), 'mp3')).toBe('mp3');
+    expect(speechFormatFor(byId('elevenlabs/eleven-v4'), 'mp3')).toBe('mp3');
+    // Gemini refuses anything but PCM, and refuses the whole piece.
+    expect(speechFormatFor(byId('google/gemini-3.8-flash-lite-tts'), 'mp3')).toBe('pcm');
+    expect(speechFormatFor(byId('google/gemini-3.8-flash-tts'), 'mp3')).toBe('pcm');
+    expect(speechFormatFor(byId('hexgrad/kokoro-82m'), 'pcm')).toBe('pcm');
+  });
+
+  it('gives every model PCM', () => {
+    for (const model of CLOUD_VOICE_CATALOG) expect(model.formats).toContain('pcm');
+    expect(withPcm(['mp3'])).toEqual(['pcm', 'mp3']);
+    expect(withPcm(['mp3', 'pcm', 'ogg'])).toEqual(['pcm', 'mp3']);
+    expect(withPcm(null)).toEqual(['pcm']);
   });
 });

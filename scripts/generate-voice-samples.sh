@@ -9,7 +9,10 @@
 #
 # Costs the house a few cents in total (about 140 voices, a sentence each),
 # once. Readers trying voices afterwards cost nothing: the samples are served
-# as files by GET /tts/samples/<model>/<voice>.mp3, with no sign-in.
+# as files by GET /tts/samples/<model>/<voice>, with no sign-in. MP3 where the
+# maker makes it; WAV for a maker that answers PCM alone (Gemini). Run
+# register-cloud-voices.sh first after a format change, since the run asks
+# each maker for what the catalogue says it takes.
 #
 # Usage:
 #    ADMIN_API_KEY='...' ./scripts/generate-voice-samples.sh [--force]
@@ -59,5 +62,6 @@ for f in r.get('failed', []):
   break
 done
 echo
-echo "Check one plays:"
-echo "  curl -s -o /tmp/sample.mp3 -w '%{http_code} %{content_type}\n' $BASE/tts/samples/hexgrad/kokoro-82m/af_heart.mp3"
+echo "Check one of each plays (expect audio/mpeg, then audio/wav):"
+echo "  curl -s -o /tmp/sample.mp3 -w '%{http_code} %{content_type}\n' $BASE/tts/samples/hexgrad/kokoro-82m/af_heart"
+echo "  curl -s -o /tmp/sample.wav -w '%{http_code} %{content_type}\n' $BASE/tts/samples/google/gemini-3.8-flash-tts/Kore"

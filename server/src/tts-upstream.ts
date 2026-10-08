@@ -13,6 +13,8 @@
  * content type in an unexpected shape or a cost lookup that never answers all
  * have a fallback, and CLOUD-VOICES-HANDOVER.md says what to look at first.
  */
+import type { SpeechFormat } from 'samwell-shared';
+
 import { PROVIDER_PREFERENCES } from './openrouter.js';
 
 export const SPEECH_URL = 'https://openrouter.ai/api/v1/audio/speech';
@@ -27,7 +29,7 @@ export interface SpeechRequest {
   text: string;
   /** Sent only when set, and the caller sets it only for a maker that takes it. */
   speed?: number;
-  format: 'pcm' | 'mp3';
+  format: SpeechFormat;
 }
 
 export function speechBody(request: SpeechRequest): Record<string, unknown> {

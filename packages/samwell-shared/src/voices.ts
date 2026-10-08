@@ -51,9 +51,37 @@ export interface CloudVoiceModel {
    * unverified against live traffic: see CLOUD-VOICES-HANDOVER.md.
    */
   speedSupported: boolean;
+  /**
+   * What the maker will answer in. PCM always: every maker takes it, and the
+   * app can always play it. MP3 only where the maker has been seen to accept
+   * it, because one that does not (Gemini) refuses the whole request.
+   */
+  formats: SpeechFormat[];
   /** The maker's own voice ids, exactly as the speech endpoint takes them. */
   voices: string[];
   defaultVoice: string;
+}
+
+/** How a piece of speech comes back: raw 16-bit PCM, or MP3. */
+export type SpeechFormat = 'pcm' | 'mp3';
+
+export const SPEECH_FORMATS: readonly SpeechFormat[] = ['pcm', 'mp3'];
+
+/** What a model is asked for when nothing more is known of it. */
+export const DEFAULT_SPEECH_FORMATS: SpeechFormat[] = ['pcm'];
+
+/** The known formats in a list, in a fixed order, with PCM always among them. */
+export function withPcm(formats: readonly unknown[] | null | undefined): SpeechFormat[] {
+  const known = SPEECH_FORMATS.filter((format) => formats?.includes(format));
+  return known.includes('pcm') ? known : ['pcm', ...known];
+}
+
+/**
+ * The format to ask a maker for: the one wanted when the maker takes it,
+ * PCM otherwise. The app plays either, whatever it asked for.
+ */
+export function speechFormatFor(model: Pick<CloudVoiceModel, 'formats'>, wanted: SpeechFormat): SpeechFormat {
+  return model.formats.includes(wanted) ? wanted : 'pcm';
 }
 
 /**
@@ -166,6 +194,7 @@ export const CLOUD_VOICE_CATALOG: CloudVoiceModel[] = [
     pricePerMillionCharacters: 0.62,
     maxCharacters: CLOUD_VOICE_MAX_CHARACTERS,
     speedSupported: true,
+    formats: ['mp3', 'pcm'],
     voices: KOKORO_VOICES,
     defaultVoice: 'af_heart',
   },
@@ -178,6 +207,7 @@ export const CLOUD_VOICE_CATALOG: CloudVoiceModel[] = [
     pricePerMillionCharacters: pricePerMillionCharactersFromTokens(0.0000005, 0.000006),
     maxCharacters: CLOUD_VOICE_MAX_CHARACTERS,
     speedSupported: false,
+    formats: ['pcm'],
     voices: GEMINI_VOICES,
     defaultVoice: 'Kore',
   },
@@ -190,6 +220,7 @@ export const CLOUD_VOICE_CATALOG: CloudVoiceModel[] = [
     pricePerMillionCharacters: pricePerMillionCharactersFromTokens(0.0000005, 0.000009),
     maxCharacters: CLOUD_VOICE_MAX_CHARACTERS,
     speedSupported: false,
+    formats: ['pcm'],
     voices: GEMINI_VOICES,
     defaultVoice: 'Kore',
   },
@@ -202,6 +233,7 @@ export const CLOUD_VOICE_CATALOG: CloudVoiceModel[] = [
     pricePerMillionCharacters: 20,
     maxCharacters: CLOUD_VOICE_MAX_CHARACTERS,
     speedSupported: false,
+    formats: ['mp3', 'pcm'],
     voices: ELEVENLABS_VOICES,
     defaultVoice: 'george',
   },
@@ -214,6 +246,7 @@ export const CLOUD_VOICE_CATALOG: CloudVoiceModel[] = [
     pricePerMillionCharacters: 40,
     maxCharacters: CLOUD_VOICE_MAX_CHARACTERS,
     speedSupported: false,
+    formats: ['mp3', 'pcm'],
     voices: ELEVENLABS_VOICES,
     defaultVoice: 'george',
   },

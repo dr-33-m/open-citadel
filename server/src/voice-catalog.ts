@@ -10,14 +10,16 @@
  * fills an EMPTY table and nothing more, so a voice added or retired through
  * `/admin/voices` stays that way across deploys; `min_plan` defaults to the
  * dearest tier, so a row added by hand without one is never sold cheap; and a
- * null price refuses to speak rather than speaking for nothing.
+ * null price refuses to speak rather than speaking for nothing. `audio_formats`
+ * defaults to PCM alone for the same reason: a maker asked for a format it
+ * does not take refuses the whole piece.
  *
  * A factory over a client, like `billing.ts`, so the tests can run it against
  * a throwaway database.
  */
 import type { Client } from '@libsql/client';
 
-import { CLOUD_VOICE_CATALOG, isPlanId, type CloudVoiceModel } from 'samwell-shared';
+import { CLOUD_VOICE_CATALOG, isPlanId, withPcm, type CloudVoiceModel, type SpeechFormat } from 'samwell-shared';
 
 import { db } from './db.js';
 
@@ -31,6 +33,7 @@ export const VOICE_MODELS_DDL = `CREATE TABLE IF NOT EXISTS cloud_voice_models (
   price_per_million_characters REAL,
   max_characters INTEGER NOT NULL,
   speed_supported INTEGER NOT NULL DEFAULT 0,
+  audio_formats TEXT NOT NULL DEFAULT '["pcm"]',
   voices TEXT NOT NULL,
   default_voice TEXT NOT NULL,
   pricing_fetched_at_ms INTEGER,
@@ -69,6 +72,7 @@ function rowToVoiceModel(row: Record<string, unknown>): CloudVoiceModel {
       row.price_per_million_characters == null ? null : Number(row.price_per_million_characters),
     maxCharacters: Number(row.max_characters),
     speedSupported: Number(row.speed_supported) === 1,
+    formats: parseFormats(row.audio_formats),
     voices,
     // A default the list no longer has would be refused by `/tts/speak`, so
     // it falls back to the first voice the maker still offers.
@@ -85,14 +89,43 @@ function parseVoices(raw: unknown): string[] {
   }
 }
 
+/** PCM is always there: it is what every maker answers in, and the app always plays. */
+function parseFormats(raw: unknown): SpeechFormat[] {
+  try {
+    const parsed = JSON.parse(String(raw)) as unknown;
+    return withPcm(Array.isArray(parsed) ? parsed : null);
+  } catch {
+    return withPcm(null);
+  }
+}
+
 export function createVoiceCatalog(client: Client, now: () => number = Date.now): VoiceCatalog {
   async function ensureSchema(): Promise<void> {
     await client.execute(VOICE_MODELS_DDL);
+    await addFormatsColumn();
     const count = await client.execute('SELECT COUNT(*) AS count FROM cloud_voice_models');
     if (Number(count.rows[0]?.count ?? 0) > 0) return;
     const atMs = now();
     await client.batch(
       CLOUD_VOICE_CATALOG.map((model, index) => insertStatement(model, index, atMs, null)),
+      'write',
+    );
+  }
+
+  /**
+   * A table made before `audio_formats` existed gets it once, and the models
+   * it shares with the seed take the seed's formats, so a deploy alone puts
+   * Gemini on PCM. Any other row stays on the column's PCM default.
+   */
+  async function addFormatsColumn(): Promise<void> {
+    const columns = await client.execute('PRAGMA table_info(cloud_voice_models)');
+    if (columns.rows.some((row) => row.name === 'audio_formats')) return;
+    await client.execute(`ALTER TABLE cloud_voice_models ADD COLUMN audio_formats TEXT NOT NULL DEFAULT '["pcm"]'`);
+    await client.batch(
+      CLOUD_VOICE_CATALOG.map((model) => ({
+        sql: 'UPDATE cloud_voice_models SET audio_formats = ? WHERE id = ?',
+        args: [JSON.stringify(model.formats), model.id],
+      })),
       'write',
     );
   }
@@ -106,10 +139,10 @@ export function createVoiceCatalog(client: Client, now: () => number = Date.now)
     return {
       sql: `INSERT INTO cloud_voice_models (
           id, label, maker, description, min_plan, sort_order, price_per_million_characters,
-          max_characters, speed_supported, voices, default_voice, pricing_fetched_at_ms,
+          max_characters, speed_supported, audio_formats, voices, default_voice, pricing_fetched_at_ms,
           created_at_ms, updated_at_ms
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         model.id,
         model.label,
@@ -120,6 +153,7 @@ export function createVoiceCatalog(client: Client, now: () => number = Date.now)
         model.pricePerMillionCharacters,
         model.maxCharacters,
         model.speedSupported ? 1 : 0,
+        JSON.stringify(model.formats),
         JSON.stringify(model.voices),
         model.defaultVoice,
         fetchedAtMs,
@@ -158,7 +192,7 @@ export function createVoiceCatalog(client: Client, now: () => number = Date.now)
       sql: `UPDATE cloud_voice_models SET
           label = ?, maker = ?, description = ?, min_plan = ?,
           price_per_million_characters = ?, max_characters = ?, speed_supported = ?,
-          voices = ?, default_voice = ?, pricing_fetched_at_ms = ?, updated_at_ms = ?
+          audio_formats = ?, voices = ?, default_voice = ?, pricing_fetched_at_ms = ?, updated_at_ms = ?
         WHERE id = ?`,
       args: [
         model.label,
@@ -168,6 +202,7 @@ export function createVoiceCatalog(client: Client, now: () => number = Date.now)
         model.pricePerMillionCharacters,
         model.maxCharacters,
         model.speedSupported ? 1 : 0,
+        JSON.stringify(model.formats),
         JSON.stringify(model.voices),
         model.defaultVoice,
         atMs,

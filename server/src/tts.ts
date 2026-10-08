@@ -15,7 +15,7 @@
  */
 import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { planIncludes, ttsCostUsd, type CloudVoiceModel, type PlanId } from 'samwell-shared';
+import { planIncludes, speechFormatFor, ttsCostUsd, type CloudVoiceModel, type PlanId } from 'samwell-shared';
 import { z } from 'zod';
 
 import type { BillingService } from './billing.js';
@@ -48,7 +48,9 @@ const SpeakSchema = z.object({
   /*
    * What the app can play. PCM is the default and what an older build asks
    * for: its JS turns it into samples itself. A build whose native player can
-   * decode MP3 asks for that instead, which is about a tenth of the bytes.
+   * decode MP3 asks for that instead, which is about a tenth of the bytes,
+   * and gets it from a maker that takes it. Gemini takes PCM alone, so a
+   * reader on Gemini gets PCM whatever was asked; the app plays either.
    */
   format: z.enum(['pcm', 'mp3']).optional(),
 });
@@ -115,7 +117,7 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
     try {
       upstream = await requestSpeech(
         // Speed goes to a maker that takes it, and only when it is not 1.
-        { modelId, voice, text, format: wanted, speed: model.speedSupported && speed != null && speed !== 1 ? speed : undefined },
+        { modelId, voice, text, format: speechFormatFor(model, wanted), speed: model.speedSupported && speed != null && speed !== 1 ? speed : undefined },
         { apiKey, fetchImpl: deps.fetchImpl, signal: c.req.raw.signal },
       );
     } catch (error) {

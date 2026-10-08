@@ -8,10 +8,10 @@ import { CLOUD_VOICE_CATALOG } from 'samwell-shared';
 
 import { createSpeechGuards } from '../tts-guards.js';
 import { lookupGenerationCost, parseAudioFormat, speechBody } from '../tts-upstream.js';
-import { createVoiceCatalog } from '../voice-catalog.js';
+import { createVoiceCatalog, VOICE_MODELS_DDL } from '../voice-catalog.js';
 import { voiceFigures } from '../voice-figures.js';
 import { readVoicePrice, refreshVoiceMetadata, toVoiceModel } from '../voice-metadata.js';
-import { generateSamples, samplePath } from '../voice-samples.js';
+import { generateSamples, readSample, samplePath, wavFile } from '../voice-samples.js';
 
 describe('parseAudioFormat', () => {
   it('reads the rate and channels a PCM reply names, however it spells them', () => {
@@ -111,9 +111,16 @@ describe('voice metadata', () => {
       minPlan: 'grand_maester',
       maxCharacters: 1_500,
       speedSupported: false,
+      // OpenRouter does not say which formats a maker takes: PCM until told.
+      formats: ['pcm'],
       voices: ['Zephyr', 'Kore'],
       defaultVoice: 'Kore',
     });
+    const told = toVoiceModel(
+      { id: 'hexgrad/kokoro-82m', name: 'Kokoro', supported_voices: ['af_heart'] },
+      { minPlan: 'maester', formats: ['mp3'] },
+    );
+    expect(told?.formats).toEqual(['pcm', 'mp3']);
     expect(toVoiceModel({ id: 'fish-audio/s2-pro', name: 'Fish', supported_voices: null }, { minPlan: 'archmaester' })).toBeNull();
   });
 
@@ -138,6 +145,36 @@ describe('voice metadata', () => {
       const eleven = await catalog.find('elevenlabs/eleven-v4');
       expect(eleven?.pricePerMillionCharacters).toBe(40);
       expect(eleven?.voices.length).toBe(21);
+    } finally {
+      client.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('gives a table made before formats existed the seed formats, once, on the next boot', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'samwell-voices-'));
+    const client = createClient({ url: `file:${join(dir, 'test.db')}` });
+    try {
+      // The table as the preview has it: no audio_formats column.
+      await client.execute(VOICE_MODELS_DDL.replace(`  audio_formats TEXT NOT NULL DEFAULT '["pcm"]',\n`, ''));
+      for (const [index, id] of ['hexgrad/kokoro-82m', 'google/gemini-3.8-flash-tts', 'someone/added-by-hand'].entries()) {
+        await client.execute({
+          sql: `INSERT INTO cloud_voice_models (id, label, maker, description, min_plan, sort_order,
+                  max_characters, voices, default_voice, created_at_ms, updated_at_ms)
+                VALUES (?, 'L', 'M', 'D', 'maester', ?, 1500, '["Kore","af_heart"]', 'Kore', 0, 0)`,
+          args: [id, index],
+        });
+      }
+      const catalog = createVoiceCatalog(client);
+      await catalog.ensureSchema();
+      expect((await catalog.find('hexgrad/kokoro-82m'))?.formats).toEqual(['pcm', 'mp3']);
+      expect((await catalog.find('google/gemini-3.8-flash-tts'))?.formats).toEqual(['pcm']);
+      expect((await catalog.find('someone/added-by-hand'))?.formats).toEqual(['pcm']);
+      // A second boot leaves a format set since alone.
+      const added = await catalog.find('someone/added-by-hand');
+      await catalog.update({ ...added!, formats: ['pcm', 'mp3'] });
+      await catalog.ensureSchema();
+      expect((await catalog.find('someone/added-by-hand'))?.formats).toEqual(['pcm', 'mp3']);
     } finally {
       client.close();
       rmSync(dir, { recursive: true, force: true });
@@ -185,11 +222,53 @@ describe('voice figures', () => {
 
 describe('samples', () => {
   const kokoro = CLOUD_VOICE_CATALOG[0];
+  const gemini = CLOUD_VOICE_CATALOG.find((model) => model.id.startsWith('google/'))!;
 
   it('never builds a path out of a voice the model does not have', () => {
-    expect(samplePath(kokoro, '../../etc/passwd', '/s')).toBeNull();
-    expect(samplePath(kokoro, 'not_a_voice', '/s')).toBeNull();
-    expect(samplePath(kokoro, 'af_heart', '/s')).toBe('/s/hexgrad_kokoro-82m/af_heart.mp3');
+    expect(samplePath(kokoro, '../../etc/passwd', 'mp3', '/s')).toBeNull();
+    expect(samplePath(kokoro, 'not_a_voice', 'mp3', '/s')).toBeNull();
+    expect(samplePath(kokoro, 'af_heart', 'mp3', '/s')).toBe('/s/hexgrad_kokoro-82m/af_heart.mp3');
+    expect(samplePath(kokoro, 'af_heart', 'wav', '/s')).toBe('/s/hexgrad_kokoro-82m/af_heart.wav');
+  });
+
+  it('wraps PCM in a WAV header a player reads', () => {
+    const file = wavFile(new Uint8Array([1, 0, 2, 0]), 24_000, 1);
+    const view = new DataView(file.buffer);
+    const text = (at: number) => String.fromCharCode(...file.slice(at, at + 4));
+    expect(file.byteLength).toBe(48);
+    expect([text(0), text(8), text(12), text(36)]).toEqual(['RIFF', 'WAVE', 'fmt ', 'data']);
+    expect(view.getUint32(4, true)).toBe(40);
+    expect(view.getUint16(20, true)).toBe(1);
+    expect(view.getUint16(22, true)).toBe(1);
+    expect(view.getUint32(24, true)).toBe(24_000);
+    expect(view.getUint32(28, true)).toBe(48_000);
+    expect(view.getUint16(32, true)).toBe(2);
+    expect(view.getUint16(34, true)).toBe(16);
+    expect(view.getUint32(40, true)).toBe(4);
+    expect([...file.slice(44)]).toEqual([1, 0, 2, 0]);
+  });
+
+  it('asks a PCM-only maker for PCM, keeps it as WAV, and serves it as WAV', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'samwell-samples-'));
+    try {
+      const bodies: Record<string, unknown>[] = [];
+      const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return new Response(new Uint8Array(480), { status: 200, headers: { 'Content-Type': 'audio/pcm;rate=24000;channels=1' } });
+      }) as unknown as typeof fetch;
+      const model = { ...gemini, voices: ['Kore'] };
+      const run = await generateSamples({ models: [model], apiKey: 'k', fetchImpl, dir });
+      expect(run).toEqual({ made: 1, skipped: 0, failed: [] });
+      expect(bodies[0]).toMatchObject({ response_format: 'pcm' });
+      const sample = await readSample(model, 'Kore', dir);
+      expect(sample?.contentType).toBe('audio/wav');
+      expect(sample?.audio.byteLength).toBe(44 + 480);
+      // Made once: the next run skips it.
+      expect((await generateSamples({ models: [model], apiKey: 'k', fetchImpl, dir })).skipped).toBe(1);
+      expect(await readSample(model, 'Puck', dir)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('makes each missing clip once as mp3, and reports a failure without stopping', async () => {
@@ -207,6 +286,7 @@ describe('samples', () => {
       const first = await generateSamples({ models: [model], apiKey: 'k', fetchImpl, dir });
       expect(first).toEqual({ made: 1, skipped: 0, failed: [{ modelId: kokoro.id, voice: 'am_adam', status: 500 }] });
       expect(bodies[0]).toMatchObject({ response_format: 'mp3' });
+      expect((await readSample(model, 'af_heart', dir))?.contentType).toBe('audio/mpeg');
       const second = await generateSamples({ models: [model], apiKey: 'k', fetchImpl, dir });
       expect(second.skipped).toBe(1);
     } finally {
