@@ -17,3 +17,4 @@ export * from './persona';
 export * from './tags';
 export * from './takeaway';
 export * from './tools';
+export * from './voices';

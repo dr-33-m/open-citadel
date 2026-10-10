@@ -12,7 +12,7 @@ import { Carousel, useCarouselState } from "@/components/ui/carousel";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { PlanCard } from "@/features/billing/components/plan-card";
 import { PlanSlide } from "@/features/billing/components/plan-slide";
-import type { CreditPlan, PlanId } from "samwell-shared";
+import type { CreditPlan, PlanId, VoiceFigures } from "samwell-shared";
 
 /**
  * The scroll fades, driven by the run itself.
@@ -90,6 +90,7 @@ export const PlanRun = React.memo(function PlanRun({
   contentStyle,
   prices,
   modelCounts,
+  voicesByPlan,
   surface,
   onIndexChange,
   onInfo,
@@ -105,6 +106,7 @@ export const PlanRun = React.memo(function PlanRun({
   /** The store's own price for each plan. A missing one draws as waiting. */
   prices: Partial<Record<PlanId, string>>;
   modelCounts: Record<PlanId, number>;
+  voicesByPlan: VoiceFigures["byPlan"] | null;
   surface: FadeSurface;
   onIndexChange: (index: number) => void;
   onInfo: (plan: PlanId) => void;
@@ -128,6 +130,7 @@ export const PlanRun = React.memo(function PlanRun({
               <PlanCard
                 plan={plan}
                 modelCount={modelCounts[plan.id] ?? 0}
+                readingHours={voicesByPlan?.[plan.id]?.hours ?? null}
                 priceLabel={prices[plan.id] ?? null}
                 selected={index === active}
                 onInfo={() => onInfo(plan.id)}

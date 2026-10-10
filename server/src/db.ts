@@ -395,6 +395,16 @@ export async function ensureBillingSchema(client: Client): Promise<void> {
        * databases created before it, so it is dropped and rebuilt under the
        * new one rather than left as a duplicate with a lying name.
        */
+      /*
+       * Read-aloud's running remainder: what an account has spent on cloud
+       * voices that has not yet added up to a whole credit, in nano-dollars
+       * so the arithmetic is exact. See `tts-billing.ts`.
+       */
+      `CREATE TABLE IF NOT EXISTS tts_spend (
+        account_id      TEXT PRIMARY KEY,
+        pending_nanousd INTEGER NOT NULL DEFAULT 0,
+        updated_at_ms   INTEGER NOT NULL
+      )`,
       'DROP INDEX IF EXISTS usage_events_device_time_idx',
       `CREATE INDEX IF NOT EXISTS usage_events_account_time_idx
         ON usage_events (account_id, created_at_ms)`,
@@ -948,7 +958,7 @@ export async function getOnboardingModelId(): Promise<string> {
  *
  * App Review guideline 5.1.1(v) asks that an account can be deleted from
  * inside the app, and "deleted" is meant literally: the rows keyed to it, not
- * a flag saying to ignore them. Five tables hold anything, and they are dealt
+ * a flag saying to ignore them. Six tables hold anything, and they are dealt
  * with in one batch so a half-deleted account is not a state that exists.
  *
  * The ledger goes with the rest. It is the record a balance is rebuilt from,
@@ -963,6 +973,7 @@ export async function deleteAccountData(accountId: string): Promise<void> {
       { sql: 'DELETE FROM account_credits WHERE account_id = ?', args: [accountId] },
       { sql: 'DELETE FROM credit_ledger WHERE account_id = ?', args: [accountId] },
       { sql: 'DELETE FROM onboarding_grants WHERE account_id = ?', args: [accountId] },
+      { sql: 'DELETE FROM tts_spend WHERE account_id = ?', args: [accountId] },
       /*
        * The one row that is edited rather than dropped. A redeemed insider
        * code must stay spent - deleting an account cannot be a way to hand

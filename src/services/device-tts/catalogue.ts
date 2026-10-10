@@ -18,6 +18,7 @@
 
 import type { KokoroTtsModel } from 'react-native-executorch';
 import * as Device from 'expo-device';
+import { parseCloudVoiceKey } from 'samwell-shared';
 
 import { getExecuTorch } from '@/lib/executorch';
 import {
@@ -122,8 +123,19 @@ export const ENGINE_INFO: Record<TtsEngineId, { label: string; hint: string; dow
 /** Whether this device can run the AI voices at all. */
 export const AI_VOICES_SUPPORTED = !LOW_MEMORY_ANDROID;
 
-/** Which of the reader's two voice kinds a persisted `ttsVoice` setting selects. */
-export type VoiceMode = 'ai' | 'native';
+/**
+ * Which of the reader's voice kinds a persisted `ttsVoice` setting selects:
+ * the two on-device kinds, or a cloud voice (`cloud:<modelId>:<voice>`).
+ */
+export type VoiceMode = 'ai' | 'native' | 'cloud';
+
+/** The kinds that run on the phone, which the on-device switch moves between. */
+export type OnDeviceMode = Exclude<VoiceMode, 'cloud'>;
+
+/** Whether a stored voice is a cloud one. The format itself is `samwell-shared`'s. */
+export function isCloudVoice(voice: string | null | undefined): boolean {
+  return parseCloudVoiceKey(voice) !== null;
+}
 
 export function isKokoroVoice(voice: string | null | undefined): voice is KokoroVoice {
   return !!voice && (KOKORO_VOICES as readonly string[]).includes(voice);
@@ -146,13 +158,16 @@ export function voicesOf(engine: TtsEngineId): readonly AiVoice[] {
 }
 
 /**
- * The mode a persisted `ttsVoice` puts the reader in. The AI voices come first:
- * no choice yet (`null`) or one of their ids is AI. Anything else, the
- * "system-voice" default or a specific phone voice, is native. A phone that
- * cannot hold the AI voices is always native, whatever was saved before.
+ * The mode a persisted `ttsVoice` puts the reader in. A cloud voice is cloud
+ * on any phone, since nothing about it runs here. Of the rest, the AI voices
+ * come first: no choice yet (`null`) or one of their ids is AI. Anything else,
+ * the "system-voice" default or a specific phone voice, is native. A phone
+ * that cannot hold the AI voices is always native, whatever was saved before.
+ * The web reader has no synthesis bridge at all, so it is always AI.
  */
 export function voiceMode(voice: string | null): VoiceMode {
   if (!NATIVE_VOICE_AVAILABLE) return 'ai';
+  if (isCloudVoice(voice)) return 'cloud';
   if (!AI_VOICES_SUPPORTED) return 'native';
   return voice === null || isAiVoice(voice) ? 'ai' : 'native';
 }
@@ -205,11 +220,13 @@ export function resolveVoice(voice: string | null | undefined): AiVoice {
 /**
  * The voice id the native reader is started with. Its engine that asks JS for
  * audio only knows Kokoro's ids, and takes "no voice" to mean that engine too,
- * so a Supertonic voice is sent as none and the bridge reads the real choice
- * from settings (`use-kokoro-tts-bridge.ts`).
+ * so a Supertonic or cloud voice is sent as none and the bridge reads the
+ * real choice from settings (`use-read-aloud-bridge.ts`). That is the whole
+ * of what a cloud voice asks of the native side, which is why it needs no
+ * new build.
  */
 export function readerVoiceId(voice: string | null): string | undefined {
-  return voice === null || isSupertonicVoice(voice) ? undefined : voice;
+  return voice === null || isSupertonicVoice(voice) || isCloudVoice(voice) ? undefined : voice;
 }
 
 /** One model config per accent, or null when the runtime is not in this binary. */

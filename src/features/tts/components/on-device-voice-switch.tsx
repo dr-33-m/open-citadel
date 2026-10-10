@@ -7,14 +7,14 @@ import { Touchable } from '@/components/ui/touchable';
 import { easing, elevation, motion } from '@/constants/theme';
 import { ON_DEVICE_KINDS } from '@/features/tts/utils/voice-copy';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import type { VoiceMode } from '@/services/device-tts/catalogue';
+import type { OnDeviceMode } from '@/services/device-tts/catalogue';
 
 /** `base` (180ms): the same travel as the app's other switches. */
 const TIMING = { duration: motion.base, easing };
 
 export interface OnDeviceVoiceSwitchProps {
-  mode: VoiceMode;
-  onChange: (mode: VoiceMode) => void;
+  mode: OnDeviceMode;
+  onChange: (mode: OnDeviceMode) => void;
 }
 
 /**

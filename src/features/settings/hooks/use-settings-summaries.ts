@@ -1,10 +1,11 @@
 import React from 'react';
-import { CREDIT_PLANS } from 'samwell-shared';
+import { CREDIT_PLANS, parseCloudVoiceKey } from 'samwell-shared';
 
 import { ACCOUNT_ENABLED } from '@/constants/logto';
 import type { SettingsPane } from '@/features/settings/utils/panes';
 import { podcastSummary, profileSummary, samwellSummary, voiceSummary } from '@/features/settings/utils/summaries';
 import { useCloudIdentity } from '@/hooks/use-cloud-identity';
+import { cloudVoiceLabel } from '@/features/tts/utils/cloud-voice-names';
 import { DEVICE_VOICE, isAiVoice, voiceLabel, voiceMode } from '@/services/device-tts/catalogue';
 import { useAccountStore } from '@/stores/account';
 import { useModelStore } from '@/stores/model';
@@ -35,7 +36,13 @@ export function useSettingsSummaries(): Record<SettingsPane, string> {
     // A phone voice is named from its own identifier here: the phone's list of
     // voices is slow to ask for, and one row is no reason to ask.
     const phoneVoice = ttsVoice && ttsVoice !== DEVICE_VOICE ? ttsVoice : '';
-    const voice = mode === 'ai' ? (isAiVoice(ttsVoice) ? voiceLabel(ttsVoice) : null) : deviceVoiceName(NO_VOICES, phoneVoice);
+    const cloud = parseCloudVoiceKey(ttsVoice);
+    const voice =
+      mode === 'cloud'
+        ? (cloud ? cloudVoiceLabel(cloud.voice) : null)
+        : mode === 'ai'
+          ? (isAiVoice(ttsVoice) ? voiceLabel(ttsVoice) : null)
+          : deviceVoiceName(NO_VOICES, phoneVoice);
     return {
       profile: profileSummary({
         accountsEnabled: ACCOUNT_ENABLED,

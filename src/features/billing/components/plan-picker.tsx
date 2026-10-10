@@ -31,6 +31,7 @@ export function PlanPicker({
   | "packages"
   | "catalogue"
   | "modelCounts"
+  | "voicesByPlan"
   | "busy"
   | "ready"
   | "prebuilt"

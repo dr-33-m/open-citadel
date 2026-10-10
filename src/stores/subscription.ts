@@ -90,7 +90,12 @@ type SubscriptionState = {
   error: string | null;
   reset: () => void;
   applyCustomerInfo: (customerInfo: CustomerInfo | null) => void;
-  refresh: () => Promise<void>;
+  /**
+   * `fresh` has the server ask RevenueCat before it answers. For the moments
+   * the store has just said something: after a purchase or a restore, and
+   * when the reader taps REFRESH. Every other read takes the server's row.
+   */
+  refresh: (options?: { fresh?: boolean }) => Promise<void>;
   /**
    * Take the balance the chat stream already carried.
    *
@@ -138,10 +143,11 @@ function sameLifecycle(
  *
  * The store confirms a purchase to the app before RevenueCat has finished
  * telling the server about it, so the first read can legitimately still say
- * "no plan". The webhook usually lands within a second; `readEntitlement`'s
- * own REST reconcile covers the case where it does not, but that only runs
- * when the server is asked. So the app asks a few times rather than showing
- * somebody who has just paid a carousel asking them to pay.
+ * "no plan". The webhook usually lands within a second, and where it does
+ * not (or never will, on a server RevenueCat does not call) each ask is a
+ * `fresh` one, which has the server ask RevenueCat itself. So the app asks a
+ * few times rather than showing somebody who has just paid a carousel asking
+ * them to pay.
  */
 const CONFIRM_ATTEMPTS = 6;
 const CONFIRM_DELAY_MS = 1_200;
@@ -150,6 +156,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let accountGeneration = 0;
 let refreshInFlight: Promise<void> | null = null;
+/** Whether the read in flight is a fresh one, so a fresh ask can ride on it. */
+let refreshInFlightFresh = false;
 
 /**
  * How long to wait on Samwell Cloud before giving up.
@@ -228,7 +236,7 @@ async function restoreAndConfirm(
   const customerInfo = await restorePurchases();
   if (generation !== accountGeneration) return null;
   get().applyCustomerInfo(customerInfo);
-  await get().refresh();
+  await get().refresh({ fresh: true });
   if (generation !== accountGeneration) return null;
   const restored = Boolean(get().plan);
   if (!restored) set({ error: 'No previous subscription found for this account.' });
@@ -251,6 +259,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
   reset: () => {
     accountGeneration += 1;
     refreshInFlight = null;
+    refreshInFlightFresh = false;
     set({
       status: 'unknown',
       plan: null,
@@ -277,12 +286,18 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
    * refuses a turn, so it is the thing whose answer the app draws. The
    * store's own opinion is used to start a purchase and for nothing else.
    */
-  refresh: () => {
+  refresh: (options) => {
     if (!baseUrl()) {
       set({ status: 'unavailable', error: null });
       return Promise.resolve();
     }
-    if (refreshInFlight) return refreshInFlight;
+    const fresh = options?.fresh === true;
+    if (refreshInFlight) {
+      // An ordinary read already running cannot answer a fresh ask: it may
+      // have left before the purchase did. Wait for it, then ask properly.
+      if (!fresh || refreshInFlightFresh) return refreshInFlight;
+      return refreshInFlight.then(() => get().refresh(options));
+    }
 
     const generation = accountGeneration;
     const previousPlan = get().plan;
@@ -290,9 +305,10 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
     let operation: Promise<void>;
     operation = (async () => {
       try {
-        const response = await fetchWithTimeout(`${baseUrl()}/billing/me`, {
-          headers: await cloudHeaders(),
-        });
+        const response = await fetchWithTimeout(
+          `${baseUrl()}/billing/me${fresh ? '?fresh=1' : ''}`,
+          { headers: await cloudHeaders() },
+        );
         if (!response.ok) throw new Error(`Samwell Cloud answered ${response.status}.`);
         const body = (await response.json()) as {
           balance: CreditBalance;
@@ -348,6 +364,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
       if (refreshInFlight === operation) refreshInFlight = null;
     });
     refreshInFlight = operation;
+    refreshInFlightFresh = fresh;
     return operation;
   },
 
@@ -385,7 +402,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
       get().applyCustomerInfo(customerInfo);
 
       if (downgrading) {
-        await get().refresh();
+        await get().refresh({ fresh: true });
         if (generation !== accountGeneration) return false;
         if (get().plan === plan) {
           healSelectedModel(get().models, get().defaultModelId ?? undefined, { force: true });
@@ -395,7 +412,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
       }
 
       for (let attempt = 0; attempt < CONFIRM_ATTEMPTS; attempt += 1) {
-        await get().refresh();
+        await get().refresh({ fresh: true });
         if (generation !== accountGeneration) return false;
         const confirmedPlan = get().plan;
         if (confirmedPlan && planRank(confirmedPlan) >= planRank(plan)) {

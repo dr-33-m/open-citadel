@@ -51,6 +51,11 @@ describe('voiceSummary', () => {
   it('falls back to the kind alone', () => {
     expect(voiceSummary({ mode: 'native', name: null })).toBe('Lite voice');
   });
+
+  it('names a cloud voice as Cloud and the voice', () => {
+    expect(voiceSummary({ mode: 'cloud', name: 'Kore' })).toBe('Cloud · Kore');
+    expect(voiceSummary({ mode: 'cloud', name: null })).toBe('Cloud voice');
+  });
 });
 
 describe('podcastSummary', () => {

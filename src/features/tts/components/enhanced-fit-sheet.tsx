@@ -16,6 +16,12 @@ export interface EnhancedFitSheetProps {
   fit: EnhancedFit;
   /** The way out for a phone that strains: switch to the Lite voices. */
   onUseLite: () => void;
+  /**
+   * The other way out: the same Kokoro voices from the cloud. Left out where
+   * Cloud cannot be chosen here (this build cannot sell a plan, or the server
+   * has no cloud voices); choosing it without a plan raises the plans sheet.
+   */
+  onUseCloud?: () => void;
 }
 
 /**
@@ -25,7 +31,7 @@ export interface EnhancedFitSheetProps {
  * pause it says that plainly, that they can still be tried, and the way out
  * if they prove unusable: the warning is advice, never a lock.
  */
-export function EnhancedFitSheet({ visible, onClose, fit, onUseLite }: EnhancedFitSheetProps) {
+export function EnhancedFitSheet({ visible, onClose, fit, onUseLite, onUseCloud }: EnhancedFitSheetProps) {
   const [mutedForeground, success, warning, primary] = useCSSVariable([
     '--color-muted-foreground',
     '--color-success-foreground',
@@ -66,6 +72,16 @@ export function EnhancedFitSheet({ visible, onClose, fit, onUseLite }: EnhancedF
             fill alone says which one carries on as they are. */}
         {smooth ? (
           <GoldButton label="GOT IT" size="compact" onPress={onClose} />
+        ) : onUseCloud ? (
+          // Two ways out side by side, equal, and carrying on as they are
+          // under them: the one choice that changes nothing.
+          <View className="gap-3">
+            <View className="flex-row gap-3">
+              <ActionButton label="USE LITE VOICES" onPress={onUseLite} tint={asColor(primary)} centered className="h-10 flex-1" />
+              <ActionButton label="USE CLOUD" onPress={onUseCloud} tint={asColor(primary)} centered className="h-10 flex-1" />
+            </View>
+            <GoldButton label="TRY ANYWAY" size="compact" onPress={onClose} />
+          </View>
         ) : (
           <View className="flex-row gap-3">
             <ActionButton label="USE LITE VOICES" onPress={onUseLite} tint={asColor(primary)} centered className="h-10 flex-1" />

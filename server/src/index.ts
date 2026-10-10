@@ -29,6 +29,7 @@ import {
   type CloudModelOption,
   type ModelPricing,
   type PlanId,
+  voicesForPlan,
 } from 'samwell-shared';
 import { z } from 'zod';
 
@@ -96,6 +97,10 @@ import {
   sweepStaleReservations,
 } from './billing.js';
 import { readIdentity } from './identity.js';
+import { ttsRoutes } from './tts-production.js';
+import { voiceCatalog } from './voice-catalog.js';
+import { startVoiceMetadataRefresh } from './voice-metadata.js';
+import { voiceAdminRoutes, voiceSampleRoutes } from './voice-routes.js';
 type RunAgentInput = {
   threadId?: string;
   runId?: string;
@@ -452,11 +457,15 @@ function turnKeyOwner(key: string): string {
 }
 
 await initDb();
+// The voice catalogue seeds an empty table the way `initDb` seeds the chat one.
+await voiceCatalog.ensureSchema();
 
 // Background, and deliberately not awaited: the first refresh must not hold
 // up the server accepting requests, and every model already has a usable
 // floor to fall back on until it lands.
 startModelContextRefresh();
+// Voice prices and voice lists, on the same rhythm and as soft about failure.
+startVoiceMetadataRefresh();
 
 /**
  * Where each open turn's continuation count lives.
@@ -533,6 +542,7 @@ app.use(
 
 app.get('/health', async (c) => {
   const models = await listCloudModels();
+  const voices = await voiceCatalog.list();
   return c.json({
     ok: true,
     service: 'samwell-cloud',
@@ -592,6 +602,17 @@ app.get('/health', async (c) => {
     modelsMissingPrices: models
       .filter((model) => model.inputPricePerMillion === null || model.outputPricePerMillion === null)
       .map((model) => model.id),
+    /*
+     * The same two questions for the cloud voices. A plan that reaches no
+     * voice draws an empty Cloud pane, and a voice with no price refuses
+     * every piece; neither says anything in a log.
+     */
+    voicesByPlan: Object.fromEntries(
+      PLAN_ORDER.map((plan) => [plan, voicesForPlan(voices, plan).length]),
+    ),
+    voicesMissingPrices: voices
+      .filter((voice) => voice.pricePerMillionCharacters === null)
+      .map((voice) => voice.id),
   });
 });
 
@@ -764,6 +785,11 @@ app.route('/library', gutenbergCatalogRoutes);
 app.route('/billing', billingRoutes);
 app.route('/billing', billingWebhookRoutes);
 app.route('/admin/insider', insiderAdminRoutes);
+// Reading a book aloud in a cloud voice, a piece at a time, and the free
+// samples a reader tries voices with. See `tts.ts` and `voice-routes.ts`.
+app.route('/tts', ttsRoutes);
+app.route('/tts', voiceSampleRoutes);
+app.route('/admin/voices', voiceAdminRoutes);
 // Deleting an account, which App Review requires the app to offer and only
 // this side can carry out: the Logto user goes with the rows.
 app.route('/account', accountRoutes);

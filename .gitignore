@@ -70,3 +70,7 @@ build-*.tar.gz
 
 # Local Expo modules: Gradle output
 modules/*/android/build/
+
+# Cloud voice samples made by a local server (production keeps them on /data)
+voice-samples/
+listening-test/

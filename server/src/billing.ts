@@ -142,7 +142,12 @@ export type EntitlementSyncResult =
   | { status: 'unavailable' };
 
 export interface BillingService {
-  readEntitlement(accountId: string): Promise<CreditBalance>;
+  /**
+   * `fresh` asks RevenueCat before answering, whatever the row or the cache
+   * says. For a read the app makes because the store has just told it
+   * something; see `GET /billing/me`.
+   */
+  readEntitlement(accountId: string, options?: { fresh?: boolean }): Promise<CreditBalance>;
   /** Bypasses the cache and replaces the effective plan from RevenueCat's complete customer state. */
   syncEntitlement(
     accountId: string,
@@ -201,6 +206,15 @@ export interface BillingService {
     usage?: SettleUsage;
     priceSnapshot?: PriceSnapshot;
     description?: string;
+    /**
+     * Leave the ledger alone when nothing was debited.
+     *
+     * For read-aloud, which settles once a sentence and debits whole credits
+     * only when a running remainder crosses one (`tts-billing.ts`). A row of
+     * zero for every sentence would bury a chapter's real debits under
+     * hundreds of rows that say nothing moved. Chat keeps its row either way.
+     */
+    omitZeroLedgerRow?: boolean;
   }): Promise<SettleResult>;
   releaseReservation(args: { usageEventId: string; error?: string }): Promise<boolean>;
   sweepStaleReservations(): Promise<number>;
@@ -377,9 +391,13 @@ export function createBillingService(options: BillingOptions): BillingService {
 
   // -- Entitlement -------------------------------------------------------------
 
-  async function readEntitlement(accountId: string): Promise<CreditBalance> {
+  async function readEntitlement(
+    accountId: string,
+    readOptions: { fresh?: boolean } = {},
+  ): Promise<CreditBalance> {
     const atMs = now();
-    const cached = cache.get(accountId);
+    const fresh = readOptions.fresh === true;
+    const cached = fresh ? undefined : cache.get(accountId);
     if (cached && cached.expiresAtMs > atMs) return cached.balance;
 
     let row = await readAccountRow(accountId);
@@ -393,9 +411,22 @@ export function createBillingService(options: BillingOptions): BillingService {
      * transient blip, and a genuinely lapsed subscription is corrected by its
     * own EXPIRATION webhook. A successful full-customer response with no
     * active entitlement clears the plan; unavailable responses preserve it.
+     *
+     * A row with no plan is asked about too, exactly as no row at all is. It
+     * is a reader who subscribed once and stopped, and if they subscribe
+     * again this read is the only way to learn of it wherever the webhook is
+     * late or never arrives (RevenueCat calls one server, so a preview deploy
+     * hears nothing). Left out, they paid and stayed on the plan carousel.
+     *
+     * A fresh read asks whatever the row says, and asks once: a row that
+     * holds a plan is otherwise trusted until its period ends, so a reader
+     * who has just bought a higher plan would be answered with the lower one
+     * until the webhook lands. It never clears a plan still inside its
+     * period, which an ordinary read would not have questioned either.
      */
-    if (!row || isStale(row, atMs)) {
-      await syncEntitlement(accountId);
+    const lapsed = !row || row.plan == null || isStale(row, atMs);
+    if (lapsed || fresh) {
+      await syncEntitlement(accountId, { clearIfInactive: lapsed });
       row = await readAccountRow(accountId);
     }
 
@@ -1103,6 +1134,23 @@ export function createBillingService(options: BillingOptions): BillingService {
         });
       }
     }
+    /*
+     * Read-aloud's running remainder, the fraction of a credit spent but not
+     * yet debited (`tts-billing.ts`). It follows the money: left on the guest
+     * it would never be charged, and dropped it would be a few sentences on
+     * the house each time somebody links.
+     */
+    statements.push(
+      {
+        sql: `INSERT INTO tts_spend (account_id, pending_nanousd, updated_at_ms)
+              SELECT ?, pending_nanousd, ? FROM tts_spend WHERE account_id = ?
+              ON CONFLICT(account_id) DO UPDATE SET
+                pending_nanousd = tts_spend.pending_nanousd + excluded.pending_nanousd,
+                updated_at_ms = excluded.updated_at_ms`,
+        args: [args.accountId, atMs, args.guestId],
+      },
+      { sql: 'DELETE FROM tts_spend WHERE account_id = ?', args: [args.guestId] },
+    );
     statements.push({
       sql: `UPDATE guest_identities
             SET linked_account_id = ?, linked_at_ms = ?
@@ -1389,6 +1437,7 @@ export function createBillingService(options: BillingOptions): BillingService {
     usage?: SettleUsage;
     priceSnapshot?: PriceSnapshot;
     description?: string;
+    omitZeroLedgerRow?: boolean;
   }): Promise<SettleResult> {
     const debit = Math.max(0, Math.floor(args.actualCredits));
     const usage = args.usage ?? {};
@@ -1459,6 +1508,12 @@ export function createBillingService(options: BillingOptions): BillingService {
     }
 
     const balance = Number(balanceRow.balance);
+    if (debit === 0 && args.omitZeroLedgerRow) {
+      // The balance did not move, so the ledger still sums to it without a
+      // row; the event row keeps the record of what was spent.
+      invalidate(owner);
+      return { settled: true, balance };
+    }
     await insertLedgerRow({
       id: `usage:${args.usageEventId}`,
       accountId: owner,
