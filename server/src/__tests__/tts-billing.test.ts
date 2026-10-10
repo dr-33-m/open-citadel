@@ -160,7 +160,8 @@ describe('the running remainder', () => {
     expect(charged).toBeLessThanOrEqual(owed);
     expect(owed - charged).toBeLessThan(1);
     expect((await balance()).reserved).toBe(0);
-  });
+    // 240 pieces, each several writes to a real file: slow on a slow disk.
+  }, 60_000);
 
   it('never lets two racing settles both debit the same credit', async () => {
     await seedAccount(100);

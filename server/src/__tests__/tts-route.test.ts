@@ -156,6 +156,35 @@ describe('POST /tts/speak', () => {
     expect(Number(event.cost_usd)).toBeCloseTo((kokoro.text.length / 1e6) * 0.62, 12);
   });
 
+  it('charges the listed price when OpenRouter reports a cost of nothing for audio it sent', async () => {
+    // A record read before its cost is written answers zero. Audio was
+    // delivered, so zero is not a price.
+    await seedPlan('maester');
+    generationCost = 0;
+    const response = await speak(kokoro);
+    await response.arrayBuffer();
+    await Promise.all(settles);
+    const event = await row('SELECT status, cost_usd FROM usage_events WHERE account_id = ?');
+    expect(event).toMatchObject({ status: 'completed' });
+    expect(Number(event.cost_usd)).toBeCloseTo((kokoro.text.length / 1e6) * 0.62, 12);
+  });
+
+  it('believes a cost of nothing for a piece the reader cut short', async () => {
+    await seedPlan('maester');
+    generationCost = 0;
+    const response = await speak(kokoro);
+    const reader = response.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    await Promise.all(settles);
+    const event = await row('SELECT status, cost_usd FROM usage_events WHERE account_id = ?');
+    expect(event).toMatchObject({ status: 'completed', cost_usd: 0 });
+    expect(await row('SELECT balance, reserved FROM account_credits WHERE account_id = ?')).toMatchObject({
+      balance: 500,
+      reserved: 0,
+    });
+  });
+
   it('refuses a reader with no plan before the maker is asked', async () => {
     await seedPlan(null);
     const response = await speak(kokoro);

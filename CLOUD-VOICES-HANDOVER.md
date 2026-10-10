@@ -410,6 +410,13 @@ correct for Kokoro on DeepInfra and for Gemini; possibly 2x high for
 ElevenLabs if the listed price is before the 0.5 discount). Look at
 `lookupGenerationCost` in `server/src/tts-upstream.ts`.
 
+A reported cost of zero for a piece sent whole is treated as not reported,
+and the listed price is charged (for a piece cut short, zero is believed).
+The server logs one line a piece
+saying which it was: `[TTS] <model> <n> characters: $<cost> (OpenRouter |
+listed | listed, OpenRouter said 0), <n> Neurons debited`. Read a page on the
+deployed server and look at its log: that line settles this section.
+
 ### 5.2 `speed` per maker
 
 Only Kokoro is marked as taking `speed` (seed and `register-cloud-voices.sh`);

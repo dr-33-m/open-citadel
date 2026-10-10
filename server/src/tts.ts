@@ -157,22 +157,37 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
      * (Kokoro on Together is six and a half times DeepInfra). The listed price
      * when it cannot. Nothing at all only when the maker never sent a byte
      * and OpenRouter has no record of charging us.
+     *
+     * A reported cost of zero for a piece sent whole counts as not reported.
+     * A record read before its cost is written answers zero, and taken at
+     * its word that would read a whole book aloud for nothing without one
+     * line saying so. For a piece cut short, zero is believed: the maker may
+     * well not have charged for it.
      */
     async function settlePiece(outcome: 'complete' | 'cancelled' | 'failed'): Promise<void> {
-      const actual = generationId
+      const reported = generationId
         ? await lookupGenerationCost(generationId, { apiKey: apiKey as string, fetchImpl: deps.fetchImpl, wait: deps.wait })
         : null;
+      const actual = reported != null && (reported > 0 || outcome !== 'complete') ? reported : null;
       if (actual == null && bytes === 0) {
         await deps.billing.releaseReservation({ usageEventId, error: `Piece ${outcome} before any audio` });
         return;
       }
-      await deps.charging.settleSpeech({
+      const costUsd = actual ?? (listedCost as number);
+      const { debited } = await deps.charging.settleSpeech({
         usageEventId,
         accountId,
         plan: plan as PlanId,
-        costUsd: actual ?? (listedCost as number),
+        costUsd,
         description: `Read aloud, ${model?.label ?? modelId}`,
       });
+      // Which price was charged is the one thing about a piece that cannot be
+      // seen from outside. Never the text: it is a page of somebody's book.
+      console.log(
+        `[TTS] ${modelId} ${text.length} characters: $${costUsd.toFixed(6)} ` +
+          `(${actual != null ? 'OpenRouter' : reported === 0 ? 'listed, OpenRouter said 0' : 'listed'}), ` +
+          `${debited} Neurons debited`,
+      );
     }
 
     const body = new ReadableStream<Uint8Array>({
