@@ -26,6 +26,7 @@ import { billing } from './billing.js';
 import { getDefaultModelIdForPlan, getForecastWorkload, listCloudModels } from './db.js';
 import { requireAdminKey } from './http-helpers.js';
 import { readIdentity } from './identity.js';
+import { createRateLimiter } from './rate-limit.js';
 import { voiceCatalog } from './voice-catalog.js';
 import { voiceFigures } from './voice-figures.js';
 
@@ -95,9 +96,20 @@ async function readCatalogue(pricingPlan: PlanId) {
   };
 }
 
+/**
+ * How often one account may make the server ask RevenueCat again.
+ *
+ * Room for the app's whole confirmation loop after a purchase and a few taps
+ * on REFRESH. Past it the read is answered as any other, from the row.
+ */
+const freshReads = createRateLimiter({ limit: 10, windowMs: 30_000 });
+
 billingRoutes.get('/me', async (c) => {
   const { id: accountId } = await readIdentity(c);
-  const balance = await billing.readEntitlement(accountId);
+  // `?fresh=1` is the app saying the store has just told it something: a
+  // purchase, a restore, or a reader tapping REFRESH.
+  const fresh = c.req.query('fresh') === '1' && freshReads.take(accountId).allowed;
+  const balance = await billing.readEntitlement(accountId, { fresh });
 
   const { models, toPlanModel, modelsByPlan, catalogue } = await readCatalogue(
     balance.plan ?? 'maester',

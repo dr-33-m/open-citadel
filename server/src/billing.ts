@@ -142,7 +142,12 @@ export type EntitlementSyncResult =
   | { status: 'unavailable' };
 
 export interface BillingService {
-  readEntitlement(accountId: string): Promise<CreditBalance>;
+  /**
+   * `fresh` asks RevenueCat before answering, whatever the row or the cache
+   * says. For a read the app makes because the store has just told it
+   * something; see `GET /billing/me`.
+   */
+  readEntitlement(accountId: string, options?: { fresh?: boolean }): Promise<CreditBalance>;
   /** Bypasses the cache and replaces the effective plan from RevenueCat's complete customer state. */
   syncEntitlement(
     accountId: string,
@@ -386,9 +391,13 @@ export function createBillingService(options: BillingOptions): BillingService {
 
   // -- Entitlement -------------------------------------------------------------
 
-  async function readEntitlement(accountId: string): Promise<CreditBalance> {
+  async function readEntitlement(
+    accountId: string,
+    readOptions: { fresh?: boolean } = {},
+  ): Promise<CreditBalance> {
     const atMs = now();
-    const cached = cache.get(accountId);
+    const fresh = readOptions.fresh === true;
+    const cached = fresh ? undefined : cache.get(accountId);
     if (cached && cached.expiresAtMs > atMs) return cached.balance;
 
     let row = await readAccountRow(accountId);
@@ -402,9 +411,22 @@ export function createBillingService(options: BillingOptions): BillingService {
      * transient blip, and a genuinely lapsed subscription is corrected by its
     * own EXPIRATION webhook. A successful full-customer response with no
     * active entitlement clears the plan; unavailable responses preserve it.
+     *
+     * A row with no plan is asked about too, exactly as no row at all is. It
+     * is a reader who subscribed once and stopped, and if they subscribe
+     * again this read is the only way to learn of it wherever the webhook is
+     * late or never arrives (RevenueCat calls one server, so a preview deploy
+     * hears nothing). Left out, they paid and stayed on the plan carousel.
+     *
+     * A fresh read asks whatever the row says, and asks once: a row that
+     * holds a plan is otherwise trusted until its period ends, so a reader
+     * who has just bought a higher plan would be answered with the lower one
+     * until the webhook lands. It never clears a plan still inside its
+     * period, which an ordinary read would not have questioned either.
      */
-    if (!row || isStale(row, atMs)) {
-      await syncEntitlement(accountId);
+    const lapsed = !row || row.plan == null || isStale(row, atMs);
+    if (lapsed || fresh) {
+      await syncEntitlement(accountId, { clearIfInactive: lapsed });
       row = await readAccountRow(accountId);
     }
 

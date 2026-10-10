@@ -410,7 +410,7 @@ export function CloudPanel({
           lifecycle={lifecycle}
           loading={loading}
           error={error}
-          onRefresh={() => void refresh()}
+          onRefresh={() => void refresh({ fresh: true })}
         />
 
         {plan ? (
