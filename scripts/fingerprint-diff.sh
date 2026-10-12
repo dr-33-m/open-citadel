@@ -30,10 +30,11 @@ echo "Installing fresh (this takes a minute)"
 generate() {
   local cmd="APP_VARIANT=$variant pnpm exec fingerprint fingerprint:generate --platform $platform"
   if command -v eas >/dev/null; then
-    (cd "$1" && eas env:exec "$variant" "$cmd" 2>/dev/null)
+    # eas may print its own header to stdout; keep only the fingerprint's JSON line.
+    (cd "$1" && eas env:exec "$variant" "$cmd" 2>/dev/null | grep -E '^(\[stdout\] )?\{' | sed 's/^\[stdout\] //')
   else
     echo "eas not found: comparing without the EAS environment" >&2
-    (cd "$1" && eval "$cmd" 2>/dev/null)
+    (cd "$1" && eval "$cmd" 2>/dev/null | grep -E '^(\[stdout\] )?\{' | sed 's/^\[stdout\] //')
   fi
 }
 generate "$root" >"$clone/.fp-local.json"
