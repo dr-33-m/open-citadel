@@ -1,7 +1,7 @@
 import { View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 
-import { Lock } from "@/components/icons";
+import { Info, Lock } from "@/components/icons";
 import { RowFade, type FadeSurface } from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
 import { Touchable } from "@/components/ui/touchable";
@@ -30,6 +30,12 @@ type ChoiceChipsProps<T> = {
   gutter?: "sheet" | "page" | "none";
   /** Share the row's width between the choices instead of scrolling, for a few that always fit. */
   fill?: boolean;
+  /**
+   * Draws a circled "i" at the end of each chip, and opens what there is to
+   * know about that choice: the same mark as on the on-device and cloud
+   * cards. Pressing it does not choose the chip.
+   */
+  onInfo?: (value: T) => void;
 };
 
 /** The plan's name under a locked chip: the label's face, a step smaller. */
@@ -52,6 +58,7 @@ export function ChoiceChips<T extends string | number | null>({
   surface = "popover",
   gutter = "sheet",
   fill = false,
+  onInfo,
 }: ChoiceChipsProps<T>) {
   const pad = gutter === "sheet" ? "px-4" : gutter === "page" ? "px-6" : "px-0";
   const tokens = useThemeTokens();
@@ -63,6 +70,8 @@ export function ChoiceChips<T extends string | number | null>({
         className={cn(
           "min-h-10 justify-center border px-3.5",
           fill && "flex-1 items-center",
+          // Room for the "i", so a long label never runs under it.
+          onInfo && "pr-9",
           selected
             ? "border-primary bg-card shadow-sm"
             : "border-border bg-muted",
@@ -95,6 +104,19 @@ export function ChoiceChips<T extends string | number | null>({
             {choice.label}
           </ThemedText>
         )}
+        {onInfo ? (
+          // The chip's whole height at its end, so the mark is easy to hit
+          // without being drawn any larger than on the cards.
+          <Touchable
+            className="absolute bottom-0 right-0 top-0 w-9 items-center justify-center"
+            onPress={() => onInfo(choice.value)}
+            haptic="tap"
+            accessibilityRole="button"
+            accessibilityLabel={`About ${choice.label}`}
+          >
+            <Info size={15} color={tokens["--color-muted-foreground"]} />
+          </Touchable>
+        ) : null}
       </Touchable>
     );
   });
