@@ -1,7 +1,7 @@
 /**
- * Which cloud voice a stored setting means, what the pane offers, and what it
- * says a voice costs. (What a voice is called is `cloud-voice-names.ts`,
- * which needs the on-device catalogue.)
+ * Which cloud voice a stored setting means, and where a choice lands. (What
+ * the pane draws is `cloud-voice-cards.ts`; what a voice is called is
+ * `cloud-voice-names.ts`, which needs the on-device catalogue.)
  *
  * Pure, so it can be tested on its own.
  */
@@ -11,7 +11,6 @@ import {
   cloudVoiceKey,
   parseCloudVoiceKey,
   planIncludes,
-  planRank,
   type PlanId,
   type VoiceFigures,
   type VoiceModelView,
@@ -49,15 +48,6 @@ export function selectionKey(selection: CloudSelection): string {
   return cloudVoiceKey(selection.model.id, selection.voice);
 }
 
-/** "About 17 Neurons a chapter" and "About 60 hours a month on your plan", or null without figures. */
-export function cloudCostLines(model: VoiceModelView, hours: number | null): { chapter: string | null; hours: string | null } {
-  const credits = model.chapterCredits;
-  return {
-    chapter: credits == null ? null : `About ${credits.toLocaleString('en-US')} Neuron${credits === 1 ? '' : 's'} a chapter`,
-    hours: hours == null ? null : `About ${hours >= 10 ? Math.round(hours) : hours} hours a month on your plan`,
-  };
-}
-
 /**
  * What the read-aloud session asks the server for, from the stored voice and
  * the catalogue as last fetched. Speed goes only to a maker that takes it.
@@ -87,51 +77,57 @@ export function cloudChoiceFor(
   };
 }
 
-/** One maker chip: who makes the voices, and the plan that opens them when it is not this one. */
-export interface MakerChoice {
-  value: string;
-  label: string;
-  /** The plan's short name ("ARCHMAESTER") when the reader's plan does not reach this maker. */
-  locked: string | null;
-  /** The cheapest plan that reaches this maker. */
-  minPlan: PlanId;
-}
-
-/** The makers in catalogue order, each locked with its plan's name when out of reach. */
-export function makerChoices(models: readonly VoiceModelView[], plan: PlanId | null): MakerChoice[] {
-  const out: MakerChoice[] = [];
-  for (const model of models) {
-    const existing = out.find((choice) => choice.value === model.maker);
-    if (existing) {
-      if (planRank(model.minPlan) < planRank(existing.minPlan)) existing.minPlan = model.minPlan;
-      continue;
-    }
-    out.push({ value: model.maker, label: model.maker.toUpperCase(), locked: null, minPlan: model.minPlan });
-  }
-  for (const choice of out) {
-    if (!plan || !planIncludes(plan, choice.minPlan)) choice.locked = planShortName(choice.minPlan);
-  }
-  return out;
-}
-
-/** "Grand Maester Samwell" as a chip has room for it: "GRAND MAESTER". */
+/** "Grand Maester Samwell" as a label has room for it: "GRAND MAESTER". */
 export function planShortName(plan: PlanId): string {
   return CREDIT_PLANS[plan].label.replace(/\s*Samwell$/, '').toUpperCase();
 }
 
 /**
- * A maker's models as chips, named by what tells them apart: "Gemini Flash
- * Lite" and "Gemini Flash" are FLASH LITE and FLASH under the Google chip.
- * A maker with one model has nothing to choose, and gets no chips.
+ * The cheapest plan that reaches the voice a stored setting names, or null
+ * when it names none the catalogue knows. Where the plans sheet rests when a
+ * plan has ended mid-book: on the plan that brings back the voice being heard.
  */
-export function modelChoices(models: readonly VoiceModelView[]): { value: string; label: string }[] {
-  if (models.length < 2) return [];
-  const firstWords = new Set(models.map((model) => model.label.split(' ')[0]));
-  const shared = firstWords.size === 1 ? `${[...firstWords][0]} ` : '';
-  return models.map((model) => ({
-    value: model.id,
-    label: (shared && model.label.startsWith(shared) ? model.label.slice(shared.length) : model.label).toUpperCase(),
-  }));
+export function planForCloudVoice(stored: string | null, models: readonly VoiceModelView[] | null | undefined): PlanId | null {
+  const parsed = parseCloudVoiceKey(stored);
+  return models?.find((model) => model.id === parsed?.modelId)?.minPlan ?? null;
+}
+
+/** What sits under the Cloud card: the voices, the plans that open them, or the wait before it is known which. */
+export type CloudPaneView = 'voices' | 'plans' | 'checking' | 'unreachable';
+
+/**
+ * What the cloud pane draws for this reader. The same order Samwell's own
+ * cloud panel decides in: a plan shows what it opens; nobody at all is sold
+ * one; somebody whose plan has not been read yet waits, so a reader who is
+ * already paying is never shown a price list; a server that never answered
+ * offers to ask again.
+ *
+ * A reader without a plan who asked to hear a plan's samples is shown its
+ * voices in place of the plans, and only then: sampling never stands in for
+ * the wait, since somebody who may be paying is not sampling.
+ *
+ * A build that cannot sell has no plans to show, so it falls to the voices,
+ * which draw nothing without a plan (its Cloud card is shut anyway).
+ */
+export function cloudPaneView({
+  status,
+  identity,
+  canSell,
+  sampling = false,
+}: {
+  /** The subscription store's status. */
+  status: 'unknown' | 'unavailable' | 'none' | 'active' | 'unreachable';
+  /** Who the phone is to the server: an account or a guest is `held`. */
+  identity: 'unknown' | 'none' | 'held';
+  canSell: boolean;
+  /** A plan's samples are being heard, from the plans. */
+  sampling?: boolean;
+}): CloudPaneView {
+  if (status === 'active') return 'voices';
+  if (identity === 'unknown') return 'checking';
+  if (identity === 'held' && status === 'unknown') return 'checking';
+  if (identity === 'held' && status === 'unreachable') return 'unreachable';
+  return canSell && !sampling ? 'plans' : 'voices';
 }
 
 /**

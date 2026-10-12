@@ -19,8 +19,10 @@ import { cloudJsonHeaders } from '@/services/cloud-identity';
 export type CloudVoiceFailure =
   /** The balance cannot cover another piece. */
   | 'out_of_credits'
-  /** No plan, or one that no longer reaches this voice. */
+  /** No plan: it has ended. Every plan is on offer again. */
   | 'plan_lapsed'
+  /** A plan that does not reach this voice. Only a bigger one helps. */
+  | 'plan_required'
   /** The phone could not reach the server. */
   | 'offline'
   /** The server or the maker answered, but not with audio. */
@@ -51,7 +53,7 @@ const FIRST_BYTE_TIMEOUT_MS = 20_000;
 
 function classify(status: number, error: string | undefined): CloudVoiceFailure {
   if (status === 402) return error === 'insufficient_credits' ? 'out_of_credits' : 'plan_lapsed';
-  if (status === 403) return 'plan_lapsed';
+  if (status === 403) return 'plan_required';
   return 'maker_failed';
 }
 

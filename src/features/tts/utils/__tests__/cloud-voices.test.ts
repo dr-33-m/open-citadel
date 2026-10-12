@@ -4,10 +4,9 @@ import { CLOUD_VOICE_CATALOG, listedVoices, type VoiceModelView } from 'samwell-
 
 import {
   cloudChoiceFor,
-  cloudCostLines,
-  makerChoices,
-  modelChoices,
+  cloudPaneView,
   modelForMaker,
+  planForCloudVoice,
   planShortName,
   resolveCloudSelection,
   selectionKey,
@@ -72,26 +71,9 @@ describe('cloudChoiceFor', () => {
   });
 });
 
-describe('the chips', () => {
-  it('lists each maker once, locked with the plan that opens it', () => {
-    expect(makerChoices(VIEWS, 'grand_maester')).toEqual([
-      { value: 'Kokoro', label: 'KOKORO', locked: null, minPlan: 'maester' },
-      { value: 'Google', label: 'GOOGLE', locked: null, minPlan: 'grand_maester' },
-      { value: 'ElevenLabs', label: 'ELEVENLABS', locked: 'ARCHMAESTER', minPlan: 'archmaester' },
-    ]);
-    expect(makerChoices(VIEWS, null).every((choice) => choice.locked)).toBe(true);
-  });
-
-  it('names a plan the way a chip has room for', () => {
+describe('where a choice lands', () => {
+  it('names a plan the way a label has room for', () => {
     expect(planShortName('grand_maester')).toBe('GRAND MAESTER');
-  });
-
-  it('tells a maker models apart by what differs, and offers none for a single model', () => {
-    const google = VIEWS.filter((model) => model.maker === 'Google');
-    expect(modelChoices(google).map((choice) => choice.label)).toEqual(['FLASH LITE', 'FLASH']);
-    const eleven = VIEWS.filter((model) => model.maker === 'ElevenLabs');
-    expect(modelChoices(eleven).map((choice) => choice.label)).toEqual(['V4 TURBO', 'V4']);
-    expect(modelChoices(VIEWS.filter((model) => model.maker === 'Kokoro'))).toEqual([]);
   });
 
   it('lands a maker on the voice that lasts', () => {
@@ -99,16 +81,39 @@ describe('the chips', () => {
     expect(modelForMaker(VIEWS, 'ElevenLabs', LITE)?.id).toBe('elevenlabs/eleven-v4-turbo');
     expect(modelForMaker(VIEWS, 'Nobody', LITE)).toBeNull();
   });
-});
 
-describe('cloudCostLines', () => {
-  it('says a chapter in Neurons and a month in hours, without em dashes', () => {
-    const lines = cloudCostLines(VIEWS[0], 59.7);
-    expect(lines).toEqual({ chapter: 'About 17 Neurons a chapter', hours: 'About 60 hours a month on your plan' });
-    expect(cloudCostLines({ ...VIEWS[0], chapterCredits: 1 }, 4.5)).toEqual({
-      chapter: 'About 1 Neuron a chapter',
-      hours: 'About 4.5 hours a month on your plan',
-    });
-    expect(cloudCostLines({ ...VIEWS[0], chapterCredits: null }, null)).toEqual({ chapter: null, hours: null });
+  it('finds the plan that brings a stored voice back', () => {
+    expect(planForCloudVoice(`cloud:${LITE}:Kore`, VIEWS)).toBe('grand_maester');
+    expect(planForCloudVoice('cloud:elevenlabs/eleven-v4:george', VIEWS)).toBe('archmaester');
+    expect(planForCloudVoice('af_heart', VIEWS)).toBeNull();
+    expect(planForCloudVoice(`cloud:${LITE}:Kore`, null)).toBeNull();
+  });
+
+  it('shows the voices to a reader with a plan, whoever they are', () => {
+    expect(cloudPaneView({ status: 'active', identity: 'held', canSell: true })).toBe('voices');
+    expect(cloudPaneView({ status: 'active', identity: 'unknown', canSell: false })).toBe('voices');
+  });
+
+  it('sells the plans where the voices would be to a reader without one', () => {
+    expect(cloudPaneView({ status: 'none', identity: 'held', canSell: true })).toBe('plans');
+    // Nobody yet: the subscription is never asked for, so its status stays unknown.
+    expect(cloudPaneView({ status: 'unknown', identity: 'none', canSell: true })).toBe('plans');
+  });
+
+  it('waits rather than showing prices to somebody who may be paying', () => {
+    expect(cloudPaneView({ status: 'unknown', identity: 'unknown', canSell: true })).toBe('checking');
+    expect(cloudPaneView({ status: 'unknown', identity: 'held', canSell: true })).toBe('checking');
+    expect(cloudPaneView({ status: 'unreachable', identity: 'held', canSell: true })).toBe('unreachable');
+  });
+
+  it('shows the voices of a plan being sampled, and never over the wait', () => {
+    expect(cloudPaneView({ status: 'none', identity: 'held', canSell: true, sampling: true })).toBe('voices');
+    expect(cloudPaneView({ status: 'unknown', identity: 'none', canSell: true, sampling: true })).toBe('voices');
+    expect(cloudPaneView({ status: 'unknown', identity: 'held', canSell: true, sampling: true })).toBe('checking');
+    expect(cloudPaneView({ status: 'unreachable', identity: 'held', canSell: true, sampling: true })).toBe('unreachable');
+  });
+
+  it('has no plans to show in a build that cannot sell them', () => {
+    expect(cloudPaneView({ status: 'none', identity: 'held', canSell: false })).toBe('voices');
   });
 });

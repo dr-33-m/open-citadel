@@ -6,13 +6,13 @@ import { VoiceListSkeleton } from "@/components/skeletons/voice-list-skeleton";
 import { ThemedText } from "@/components/themed-text";
 import { Sheet } from "@/components/ui/sheet";
 import {
-    DeviceVoiceRows,
-    type DeviceVoiceRowsProps,
-} from "@/features/tts/components/device-voice-rows";
+    VoiceListRows,
+    type VoiceListRowsProps,
+} from "@/features/tts/components/voice-list-rows";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import type { DeviceVoice, DeviceVoiceRow } from "@/utils/device-voices";
 
-export interface DeviceVoiceSheetProps {
+export interface VoiceListSheetProps {
   visible: boolean;
   onClose: () => void;
   rows: DeviceVoiceRow[];
@@ -29,7 +29,7 @@ export interface DeviceVoiceSheetProps {
 }
 
 /** The list of voices to choose from, opened from the voice row: the phone's own, or a voice box's. */
-export function DeviceVoiceSheet({
+export function VoiceListSheet({
   visible,
   onClose,
   rows,
@@ -40,7 +40,7 @@ export function DeviceVoiceSheet({
   note,
   onSelect,
   onPreview,
-}: DeviceVoiceSheetProps) {
+}: VoiceListSheetProps) {
   const tokens = useThemeTokens();
   return (
     // Fixed height, one detent, and a plain `Sheet.ScrollView` rather than
@@ -57,7 +57,7 @@ export function DeviceVoiceSheet({
     // detents or the stack behavior.
     //
     // A plain scroll view draws every row it is given, so the rows arrive a
-    // screenful at a time (`DeviceVoiceRows`).
+    // screenful at a time (`VoiceListRows`).
     <Sheet
       visible={visible}
       onClose={onClose}
@@ -77,7 +77,7 @@ export function DeviceVoiceSheet({
           It is asked ahead (when Settings opens), so the usual case is a list
           already in hand, and that is drawn with the sheet as it rises: its
           first screenful at once, the rest in steps after the sheet lands
-          (`DeviceVoiceRows`). It used to rise onto the placeholder every time
+          (`VoiceListRows`). It used to rise onto the placeholder every time
           and swap to the list after, which read as the voices loading again
           on each open. */}
       {loading ? (
@@ -102,13 +102,13 @@ export function DeviceVoiceSheet({
  * unmounted when the sheet closes, and the next opening starts again from
  * the first few rows.
  */
-function VoiceList(props: Omit<DeviceVoiceRowsProps, "scrolled">) {
+function VoiceList(props: Omit<VoiceListRowsProps, "scrolled">) {
   const [scrolled, setScrolled] = React.useState(false);
   const markScrolled = React.useCallback(() => setScrolled(true), []);
   return (
     <PageFade edges="both" surface="popover">
       <Sheet.ScrollView onScrollBeginDrag={markScrolled}>
-        <DeviceVoiceRows {...props} scrolled={scrolled} />
+        <VoiceListRows {...props} scrolled={scrolled} />
       </Sheet.ScrollView>
     </PageFade>
   );

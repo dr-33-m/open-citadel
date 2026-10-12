@@ -13,6 +13,12 @@ const NO_VOICES: DeviceVoice[] = [];
  * picker, and previewing one.
  *
  * Owns no persistence: the picker hands the choice to whoever mounts it.
+ *
+ * `preview` only ever starts a voice, and keeps one identity. Pressing the
+ * speaker that is playing stops it, which is `useVoiceListPicker`'s to
+ * decide, the same for every kind of voice. It used to be decided here too,
+ * from `previewing`, which remade the handler on every start and end and so
+ * redrew all of the list's rows each time.
  */
 export function useDeviceVoices() {
   const { data, isPending } = useQuery(createDeviceVoicesQueryOptions());
@@ -46,11 +52,6 @@ export function useDeviceVoices() {
       await speech?.stop().catch(() => undefined);
       if (!speech || request !== requestRef.current) return;
 
-      if (previewing === item.identifier) {
-        setPreviewing(null);
-        return;
-      }
-
       setPreviewing(item.identifier);
       const finish = () => {
         if (request === requestRef.current) setPreviewing(null);
@@ -63,7 +64,7 @@ export function useDeviceVoices() {
         onError: finish,
       });
     },
-    [previewing],
+    [],
   );
 
   return { voices, rows, loading, previewing, preview, stop };

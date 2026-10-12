@@ -21,7 +21,7 @@ export function TtsSettingsSheet({ visible, onClose }: TtsSettingsSheetProps) {
     <Sheet visible={visible} onClose={onClose} maxHeightRatio={0.9} scrollable>
       <PageFade edges="both" surface="popover">
         <Sheet.ScrollView contentContainerClassName="px-6 pb-6 pt-2">
-          <TtsSettingsPanel onDone={onClose} />
+          <TtsSettingsPanel onDone={onClose} surface="popover" />
         </Sheet.ScrollView>
       </PageFade>
     </Sheet>

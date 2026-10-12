@@ -19,7 +19,7 @@ export interface EnhancedFitSheetProps {
   /**
    * The other way out: the same Kokoro voices from the cloud. Left out where
    * Cloud cannot be chosen here (this build cannot sell a plan, or the server
-   * has no cloud voices); choosing it without a plan raises the plans sheet.
+   * has no cloud voices); choosing it without a plan shows the plans under it.
    */
   onUseCloud?: () => void;
 }

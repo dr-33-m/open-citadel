@@ -86,6 +86,20 @@ Duplication of *shape* is fine; duplication of *decisions* is not. Two lists
 that happen to look similar can stay separate. Two places deciding what
 "Samwell is ready" means cannot.
 
+**One component for one kind of thing.** Before building a picker, a sheet, a
+switch, a list or a card, look for the one the app already has and use it:
+the table of shared pieces is in the `open-citadel-structure` skill, and
+`grep` finds the rest. Everything that can use the same component must. If
+the existing one does not quite fit, give it a prop; do not write a second
+one beside it. A new kind of the same thing is new *wiring* (what it loads,
+what a choice saves), never new *drawing*. The reading voices are the model:
+the phone's voices, the Enhanced ones and every cloud voice box are three
+thin pickers over one `VoiceListPicker`, one `VoiceListSheet` and one
+`useVoiceListPicker`, so a fix to the list (it used to stutter when dragged
+shut just after opening) lands in all of them at once. When you find two
+components drawing the same thing, that is a bug to fix in the same change,
+not a note for later.
+
 ## Performance is designed in, not profiled out
 
 **Consult `vercel-react-native-skills` and `expo-react-native-performance`

@@ -36,20 +36,34 @@ export const CLOUD_VOICES_SOON = 'COMING SOON';
 /** The foot of the cloud card for a reader without a plan. */
 export const CLOUD_WITH_A_PLAN = 'WITH A PLAN';
 
-/** The line the plans sheet opens with when Cloud is what sent the reader there. */
+/** The line over the plans, where Cloud without a plan is what brought them up. */
 export const CLOUD_PLANS_LINE = 'Cloud voices come with every plan.';
 
 /** Where plans cannot be sold in the app, the Cloud card says why it stays shut. */
 export const CLOUD_PLANS_ELSEWHERE = 'Cloud voices come with a plan. Choose one in Settings, under Samwell.';
 
-/** The one trust line on the cloud pane. */
-export const CLOUD_PRIVACY = 'The page being read is sent to the voice maker and not kept.';
+/**
+ * What the "i" on the Cloud card opens: where the page goes, what is paid
+ * for, and what a connection is needed for. Said once, there, not as lines
+ * between the controls.
+ *
+ * The first point does not name who the page goes to: a voice box is not
+ * always its own host (Kokoro is a model, read by whoever serves it), and a
+ * name that is wrong for one box is worse than none.
+ */
+export const CLOUD_INFO = {
+  label: 'CLOUD',
+  title: 'Studio voices, read from the cloud.',
+  points: [
+    'The page being read is sent to the cloud to be spoken, and is not kept.',
+    'Neurons pay for the voice, never the book. Samples are free to play.',
+    'What you have already heard is kept on this phone, so going back costs nothing.',
+    'Needs a connection. On-device voices work without one, and stay free.',
+  ],
+};
 
-/** Under the speed control's place when the maker reads at one speed. */
-export const CLOUD_SPEED_FIXED = 'This voice reads at its own pace.';
-
-/** Trying a voice is free, and says so where a reader might wonder. */
-export const CLOUD_SAMPLES_FREE = 'Samples are free. Neurons pay for the voice, never the book.';
+/** In a version's sheet, for a voice box that reads at one speed. */
+export const CLOUD_SPEED_FIXED = 'This voice reads at its own pace, so there is no speed to set.';
 
 /** The one line under the switch: what the chosen kind is. */
 export function onDeviceHint(mode: OnDeviceMode): string {

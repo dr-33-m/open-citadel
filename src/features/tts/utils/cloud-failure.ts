@@ -53,6 +53,15 @@ export function cloudFailureCopy(
         primary: CONTINUE,
         secondary: options.canSell ? { label: 'SEE PLANS', action: 'plans' } : null,
       };
+    case 'plan_required':
+      return {
+        title: 'This voice needs a bigger plan',
+        line: options.canUpgrade && options.canSell
+          ? 'Your plan does not reach this voice. Carry on with a voice on this phone, or move to a plan that has it.'
+          : 'Your plan does not reach this voice. The book can carry on with your voice on this phone.',
+        primary: CONTINUE,
+        secondary: options.canUpgrade && options.canSell ? { label: 'UPGRADE', action: 'plans' } : null,
+      };
     case 'maker_failed':
       return {
         title: 'That voice is not answering.',

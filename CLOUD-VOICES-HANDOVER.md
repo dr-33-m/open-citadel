@@ -139,7 +139,8 @@ the generated files differ only where the spec did.
   bridge, so highlighting, pause, skip, page turns and the lock screen stay
   Readium's.
   - `request.ts`: `POST /tts/speak` streamed with `expo/fetch`, failures
-    turned into four kinds (`out_of_credits`, `plan_lapsed`, `offline`,
+    turned into five kinds (`out_of_credits`, `plan_lapsed` for no plan,
+    `plan_required` for a plan too small for the voice, `offline`,
     `maker_failed`). Asks for MP3 when the reader can decode it.
   - `forward.ts`: hands a sentence to the native player as it arrives: PCM
     gathered into fifth-of-a-second chunks, MP3 passed straight through, and
@@ -186,17 +187,54 @@ the generated files differ only where the spec did.
   a cloud voice's first audio arrives.
 - `features/tts/components/tts-settings-panel.tsx`: the Cloud card is live.
   The on-device controls and the cloud pane trade places under the cards
-  (the same `VoiceKindPanes`).
-- `features/tts/components/cloud-voice-pane.tsx`, `cloud-voice-picker.tsx`,
-  `features/tts/hooks/use-cloud-voice-pane.ts`, `use-voice-source.ts`,
-  `use-cloud-sample-preview.ts`: makers as chips (locked with their plan's
-  name), the model where a maker has two, the voice row and list with free
-  samples, Neurons a chapter and hours a month, speed where the maker takes
-  it, and the trust line. Choosing Cloud without a plan raises `PlansSheet`
-  over the panel; a locked maker raises it with only the plans that open it.
-- `features/tts/utils/cloud-voices.ts`, `cloud-voice-names.ts`: which voice a
-  setting means, chip labels, cost lines; Kokoro cloud voices carry the same
-  names as on the phone (`af_heart` is Yennefer).
+  (the same `components/switch-panes.tsx`).
+- The voice list is one component for every kind of voice:
+  `voice-list-picker.tsx` (the row, the list, a sample's note) over
+  `voice-list-sheet.tsx`, `voice-list-rows.tsx` and `voice-list-item.tsx`
+  (renamed from `device-voice-*`, which they had outgrown), with
+  `hooks/use-voice-list-picker.ts` for what the three kinds share (open,
+  close, the speaker that stops what it is playing). `native-voice-picker`,
+  `enhanced-voice-picker` and `cloud-voice-picker` are wiring only. The list
+  draws its first screenful and nothing more until it is scrolled, in room
+  kept for the rest (`estimatedRowsHeight`): rows added in the half second
+  after landing made a drag-to-close stall and jump back on the A33.
+- `features/tts/components/cloud-voice-pane.tsx` with `cloud-box-pane.tsx`
+  (one kept pane per open voice box, trading places through
+  `components/switch-panes.tsx`), `cloud-figures.tsx` and
+  `cloud-voice-picker.tsx`; `features/tts/hooks/use-cloud-voice-pane.ts`,
+  `use-voice-source.ts`, `use-cloud-sample-preview.ts`: built as the
+  on-device panes are. The voice boxes are one switch (`components/
+  text-switch.tsx`, the same one Lite and Enhanced use, a padlock on a box
+  the plan does not reach); a box's versions are chips with a circled "i"
+  (`ChoiceChips` with `onInfo`); then one line on the chosen version, the
+  voice row and list with free samples, and speed where the box takes it. A
+  version's "i" opens `components/info-sheet.tsx` with its hours a month and
+  Neurons a chapter; the "i" on the Cloud card opens the same sheet with
+  where the page goes and what is paid for. Cloud without a plan can still be
+  chosen, as Samwell's own Cloud card can: the plan carousel is drawn where
+  the voices would be (`cloud-source-pane.tsx` picks between the voices,
+  `cloud-voice-plans.tsx` and the shared `billing/components/
+  plan-check-card.tsx`, on `cloudPaneView` in `cloud-voices.ts`). Looking is
+  not choosing: the reading voice stays on the phone until a plan is held,
+  and `use-voice-source.ts` moves it to the cloud when one arrives. A locked
+  box still raises `PlansSheet`, with only the plans that open it.
+  Beside CHOOSE under those plans sits HEAR SAMPLES (`onSample` on
+  `PlanCarousel`, offered only here). It draws the voices pane as the resting
+  plan would have it (only the boxes that plan opens, "GRAND MAESTER SAMPLES"
+  beside VOICE BOX), with `cloud-sample-actions.tsx` and
+  `cloud-sample-footer.tsx` under it: the plan and its price, OTHER PLANS and
+  CHOOSE. The plans and the sampled voices are both kept and trade places
+  through `SwitchPanes`. What is chosen while sampling lives in
+  `use-voice-source.ts` state (`sample`) and is handed to
+  `use-cloud-voice-pane.ts`, whose one write to the settings (`choose`) is
+  skipped while sampling, so sampling can never leave a cloud voice as the
+  reading voice. Samples are files the server made once
+  (`server/src/voice-samples.ts`), free and unmetered. Buying lands on the
+  voice being sampled (`landOnCloud(plan, preferred)`).
+- `features/tts/utils/cloud-voices.ts`, `cloud-voice-cards.ts`,
+  `cloud-voice-names.ts`: which voice a setting means; what the tabs, chips
+  and a version's sheet say; Kokoro cloud voices carry the same names as on
+  the phone (`af_heart` is Yennefer).
 - `features/tts/utils/enhanced-fit.ts` and `enhanced-fit-sheet.tsx`: the
   strained-phone sheet now offers USE CLOUD beside USE LITE VOICES, with the
   line "the same Kokoro voices, read from the cloud so the phone does not
@@ -209,9 +247,19 @@ the generated files differ only where the spec did.
 - `query-manager/cloud-voices/`: the voice figures, selected from the plan
   preview query (one request for the cards and the pane).
 - `components/choice-chips.tsx`: a chip can be drawn locked with a line.
-- `features/billing/`: plan cards add "N hours of cloud reading" (card height
-  270, worked out in `plan-carousel.tsx`), and `PlanInfoSheet` gains a
-  Reading voices section.
+- `features/billing/`: plan cards add "N voice boxes to choose from" under
+  the brains line, with rollover last (card height 290, worked out in
+  `plan-carousel.tsx`); hours are the info sheet's to say. `PlanInfoSheet` is the month's
+  Neurons as one balance (`plan-neurons.tsx`), then two tiles that are also
+  the tabs, BRAINS and VOICES (`plan-spend-tile.tsx`), each quoting how far
+  the whole month goes its way; under the chosen one, a dropdown that browses
+  its estimate by brain or by voice, and what the plan includes
+  (`plan-spend-pane.tsx`), the two trading places through
+  `plan-spend-panes.tsx` with the cross-fade Lite and Enhanced use
+  (`components/switch-panes.tsx`). Both sides come from `utils/plan-spend.ts` in one
+  shape, and the sheet's state is `hooks/use-plan-info.ts`. Raised from a
+  voice wall (the plans under Cloud, a locked voice box, a plan ending
+  mid-book) it opens on VOICES (`infoOpensOn`).
 - `features/settings/`: the Settings summary reads "Cloud · Kore".
 
 ---
@@ -317,20 +365,43 @@ Archmaester (insider codes are the quickest way). Use an EPUB with long
 paragraphs and one you can find a run-on sentence in.
 
 1. **Cloud with no plan, in Settings.** Settings, Reading voice. The Cloud card
-   says WITH A PLAN. Tap it: the plans sheet rises over the panel with "Cloud
-   voices come with every plan." Dismiss it: On-device is still chosen. Buy
-   (test store): the sheet closes, Cloud is chosen, the Kokoro pane shows.
+   says WITH A PLAN. Tap it: the card is outlined and the plan carousel shows
+   under it with "Cloud voices come with every plan.", the way Samwell's Cloud
+   card does. No sheet rises. Tap On-device: its voices are back, and Settings
+   still names the on-device voice (looking at Cloud did not change the
+   reading voice). Tap Cloud again and buy (test store): the carousel gives
+   way to the voice boxes, and the reading voice is the plan's cloud voice.
+   (The buy itself was not exercised on 2026-10-12; the rest was, on the A33.)
 2. **Cloud with no plan, in the reader.** Open a book, long-press the
-   read-aloud button, tap Cloud. The plans sheet rises over the voice sheet,
-   not instead of it. Buy: it closes, Cloud is chosen, the reader is still open.
-3. **Plans and makers.** On each plan, open the Cloud pane. Maester: KOKORO
-   open, GOOGLE locked "GRAND MAESTER", ELEVENLABS locked "ARCHMAESTER". Grand
-   Maester: Google open, with FLASH LITE and FLASH. Archmaester: all open.
-   Tap a locked maker: the plans sheet offers only the plans that open it.
-4. **Figures.** Each model shows "About N Neurons a chapter" and "About N hours
-   a month on your plan". Plan cards show "60 hours of cloud reading" (Maester),
-   "15" (Grand Maester), "22" (Archmaester), and the plan info sheet has a
-   Reading voices section.
+   read-aloud button, tap Cloud. The voice sheet grows to hold the carousel,
+   which swipes sideways without dragging the sheet. Buy: the voices take its
+   place, and the reader is still open.
+2a. **Hear samples before buying.** With no plan, under Cloud, swipe to a
+   plan and tap HEAR SAMPLES. The voices of that plan take the plans' place
+   (Maester: KOKORO alone; Grand Maester: KOKORO and GOOGLE, opening on
+   Google; Archmaester: all three), with the plan, its price, OTHER PLANS and
+   CHOOSE under them. Play samples in the voice list and switch boxes. Leave
+   Settings and start a book: it reads in the on-device voice, and Settings
+   still names it (nothing chosen while sampling is saved). OTHER PLANS goes
+   back to the carousel on the same card. CHOOSE buys the plan: the buttons
+   go, the voices stay, on the voice that was being sampled. (Drawn and
+   stepped through on the A33 on 2026-10-12 with the no-plan state forced;
+   the purchase itself and the book check were not exercised.)
+3. **Plans and voice boxes.** On each plan, open the Cloud pane. Maester:
+   KOKORO open, GOOGLE and ELEVENLABS with a padlock. Grand Maester: GOOGLE
+   open, with FLASH LITE and FLASH as chips under VERSION. Archmaester: all
+   open. Tap a locked box: the switch does not move, and the plans sheet
+   offers only the plans that open it.
+4. **Figures.** Tap the "i" on a version chip (or beside Kokoro's line): the
+   sheet shows "≈ N hours A MONTH" and "≈ N Neurons A CHAPTER" under ON YOUR
+   PLAN. Tap the "i" on the Cloud card: where the page goes, what Neurons pay
+   for. Plan cards show "1 voice box to read with" (Maester), "2 voice boxes
+   to choose from" (Grand Maester) and "3" (Archmaester), after the brains
+   line and before rollover. A card's "i" opens the plan info sheet on
+   VOICES when the plans are under the Cloud reading voice: the VOICES tile
+   quotes the plan's default voice, ESTIMATE FOR lists every voice the plan
+   reaches under its voice box, and picking one changes the tile's hours.
+   Tapping BRAINS shows conversations and the included brains instead.
 5. **Samples are free.** Note the balance. Open the voice list, play six
    samples. The balance has not moved (pull to refresh in Settings).
 6. **Listening.** Choose a cloud voice, start read-aloud. The play button
@@ -371,22 +442,28 @@ paragraphs and one you can find a run-on sentence in.
     ON-DEVICE.
 12. **Plan lapsed.** Expire a test subscription. The Cloud card returns to WITH
     A PLAN and the voice goes back to the last on-device one.
+12a. **Plan lapsed mid-book.** With a cloud voice reading on Grand Maester,
+    let the test plan end (five minutes a period on the Test Store). "Your
+    plan has ended" rises; SEE PLANS offers all three plans, resting on the
+    one that reaches the voice that was reading. Buy Maester while an
+    ElevenLabs voice was reading: the book carries on in Kokoro, not in a
+    second failure.
 13. **Lock screen, notification, podcasts.** With a cloud voice reading, lock
     the phone: the lock screen card and its controls work. Start a podcast:
     read-aloud gives way as before. Podcasts and on-device read-aloud behave
     exactly as before this branch.
 14. **Enhanced fit.** On the A33, Enhanced pane, tap "Needs a more powerful
     phone": the sheet offers USE LITE VOICES and USE CLOUD.
-15. **Jank.** For the plans sheet rising and the switch flips:
+15. **Jank.** For the carousel arriving under Cloud and the switch flips:
 
     ```bash
     adb shell dumpsys gfxinfo com.dr33m.opencitadel.dev reset
-    # open the voice sheet in the reader, tap Cloud with no plan so the plans sheet rises; close; repeat 3 times
+    # open the voice sheet in the reader, tap Cloud with no plan so the carousel shows; tap On-device; repeat 3 times
     adb shell dumpsys gfxinfo com.dr33m.opencitadel.dev | grep -E "Total frames|Janky|Number Frame deadline missed|99th"
     ```
 
     Then reset again and flip On-device / Cloud and Lite / Enhanced six times.
-    Target: no frame over 32 ms while the plans sheet rises (99th percentile
+    Target: no frame over 32 ms while the carousel arrives (99th percentile
     under 32 ms), and about 5% janky frames over six flips. The development
     variant's package is `com.dr33m.opencitadel.dev` (`app.config.js` adds
     `.dev`); drop the suffix for a production build.

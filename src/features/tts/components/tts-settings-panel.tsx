@@ -2,10 +2,11 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { InfoSheet } from '@/components/info-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { EnhancedVoicePane } from '@/features/tts/components/enhanced-voice-pane';
 import { LiteVoicePane } from '@/features/tts/components/lite-voice-pane';
-import { VoiceKindPanes } from '@/features/tts/components/voice-kind-panes';
+import { SwitchPanes } from '@/components/switch-panes';
 import { useAiVoiceEngine } from '@/features/tts/hooks/use-ai-voice-engine';
 import { useVoiceKind } from '@/features/tts/hooks/use-voice-kind';
 import { OnDeviceVoiceSwitch } from '@/features/tts/components/on-device-voice-switch';
@@ -13,11 +14,11 @@ import { VoiceSourceCards } from '@/features/tts/components/voice-source-cards';
 import { EnhancedFitMark } from '@/features/tts/components/enhanced-fit-mark';
 import { EnhancedFitSheet } from '@/features/tts/components/enhanced-fit-sheet';
 import { enhancedFit } from '@/features/tts/utils/enhanced-fit';
-import { CloudVoicePane } from '@/features/tts/components/cloud-voice-pane';
+import { CloudSourcePane } from '@/features/tts/components/cloud-source-pane';
 import { useCloudVoicePane } from '@/features/tts/hooks/use-cloud-voice-pane';
 import { useVoiceSource } from '@/features/tts/hooks/use-voice-source';
 import { PlansSheet } from '@/features/billing/components/plans-sheet';
-import { ENHANCED_UNSUPPORTED, LITE_SPEED_FIXED, ON_DEVICE_KINDS, onDeviceHint, type VoiceSource } from '@/features/tts/utils/voice-copy';
+import { CLOUD_INFO, ENHANCED_UNSUPPORTED, LITE_SPEED_FIXED, ON_DEVICE_KINDS, onDeviceHint, type VoiceSource } from '@/features/tts/utils/voice-copy';
 import { Touchable } from '@/components/ui/touchable';
 import {
   AI_VOICES_SUPPORTED,
@@ -50,13 +51,17 @@ export interface TtsSettingsPanelProps {
    * it would build them mid-rise.
    */
   warm?: boolean;
+  /** The ground the panel sits on, for what fades into it: the reader's voice sheet is `popover`. */
+  surface?: 'background' | 'popover';
 }
 
 /**
  * The reading voice's settings. The first choice is where the voice runs:
- * on-device, or in the cloud. Cloud without a plan raises the plans sheet
- * over the panel (`useVoiceSource`); with one, its pane offers the maker, the
- * voice, what it costs and its speed (`CloudVoicePane`). The two sources'
+ * on-device, or in the cloud. Cloud without a plan can still be chosen, and
+ * shows the plans where its voices would be (`useVoiceSource`,
+ * `CloudVoicePlans`); with one, its pane offers the voice box, its version,
+ * the voice and its speed (`CloudVoicePane`). The "i" on the Cloud card
+ * says where the page goes and what is paid for. The two sources'
  * controls trade places under the cards, as the kinds do under their switch.
  * On-device then has two kinds, on one switch, and each shows its own controls:
  *
@@ -74,7 +79,7 @@ export interface TtsSettingsPanelProps {
  * their line, which opens `EnhancedFitSheet`: a warning, never a lock.
  *
  * Everything that belongs to a kind is in its pane, and the two panes trade
- * places under the switch (`VoiceKindPanes`). Panes drawn once are kept, so
+ * places under the switch (`SwitchPanes`). Panes drawn once are kept, so
  * going back to one is a reveal.
  *
  * Otherwise self-contained: it and the components it hosts read and write
@@ -82,13 +87,13 @@ export interface TtsSettingsPanelProps {
  * reader's own long-press quick-settings sheet can both mount it and always
  * show the same state.
  */
-export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps) {
+export function TtsSettingsPanel({ onDone, warm = false, surface = 'background' }: TtsSettingsPanelProps) {
   const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
 
-  const { source, mode, liteVoiceId, selectKind, selectDevice, selectPhoneVoice } = useVoiceKind();
+  const { source, mode, liteVoiceId, selectKind, selectDevice: backToDevice, selectPhoneVoice } = useVoiceKind();
   const ai = useAiVoiceEngine();
-  const voiceSource = useVoiceSource({ source, selectDevice });
-  const cloud = useCloudVoicePane({ onLockedMaker: voiceSource.openPlansFor });
+  const voiceSource = useVoiceSource({ source, selectDevice: backToDevice });
+  const cloud = useCloudVoicePane({ onLockedMaker: voiceSource.openPlansFor, sample: voiceSource.sample });
 
   React.useEffect(() => {
     // The phone's first answer is the slow one, so it is asked for now,
@@ -101,6 +106,9 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
   const [fitVisible, setFitVisible] = React.useState(false);
   const openFit = React.useCallback(() => setFitVisible(true), []);
   const closeFit = React.useCallback(() => setFitVisible(false), []);
+  const [cloudInfoVisible, setCloudInfoVisible] = React.useState(false);
+  const openCloudInfo = React.useCallback(() => setCloudInfoVisible(true), []);
+  const closeCloudInfo = React.useCallback(() => setCloudInfoVisible(false), []);
 
   const switchToLite = () => {
     setFitVisible(false);
@@ -148,11 +156,12 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
       ) : null}
 
       <VoiceSourceCards
-        source={source}
+        source={voiceSource.shown}
         cloudLocked={voiceSource.cloudLocked}
         cloudStatus={voiceSource.cloudStatus}
-        onSelectDevice={selectDevice}
+        onSelectDevice={voiceSource.selectDevice}
         onSelectCloud={voiceSource.selectCloud}
+        onCloudInfo={openCloudInfo}
       />
 
       {voiceSource.note ? (
@@ -161,9 +170,9 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
         </ThemedText>
       ) : null}
 
-      <VoiceKindPanes
+      <SwitchPanes
         order={SOURCE_ORDER}
-        value={source}
+        value={voiceSource.shown}
         warm={warm}
         panes={{
           device: (
@@ -177,19 +186,30 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
                   other than to the cards above: each kind's line sits right under it. */}
               <View className="gap-2">
                 {canSwitchKind ? <OnDeviceVoiceSwitch mode={mode} onChange={selectKind} /> : null}
-                <VoiceKindPanes order={KIND_ORDER} value={mode} warm={warm} panes={panes} />
+                <SwitchPanes order={KIND_ORDER} value={mode} warm={warm} panes={panes} />
               </View>
             </View>
           ),
           cloud: (
-            <CloudVoicePane
-              selection={cloud.selection}
-              makers={cloud.makers}
-              models={cloud.models}
-              costs={cloud.costs}
-              onMaker={cloud.chooseMaker}
-              onModel={cloud.chooseModel}
-              onVoice={cloud.chooseVoice}
+            <CloudSourcePane
+              view={voiceSource.pane}
+              selling={voiceSource.selling}
+              warm={warm}
+              sampling={voiceSource.sample ? { plan: voiceSource.sample.plan, onBack: voiceSource.stopSampling } : null}
+              voices={{
+                selection: cloud.selection,
+                boxes: cloud.boxes,
+                contents: cloud.contents,
+                info: cloud.info,
+                figuresLabel: cloud.figuresLabel,
+                sampleLabel: cloud.sampleLabel,
+                warm,
+                onMaker: cloud.chooseMaker,
+                onModel: cloud.chooseModel,
+                onVoice: cloud.chooseVoice,
+              }}
+              plans={{ surface, prebuilt: warm, onSample: voiceSource.startSampling }}
+              onRetry={voiceSource.retry}
             />
           ),
         }}
@@ -203,7 +223,8 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
         onUseCloud={voiceSource.cloudLocked ? undefined : switchToCloud}
       />
       {/* Over the panel wherever it is mounted: in the reader that is inside
-          the voice sheet, so it must push rather than replace it. */}
+          the voice sheet, so each must push rather than replace it. */}
+      <InfoSheet visible={cloudInfoVisible} onClose={closeCloudInfo} info={CLOUD_INFO} nested />
       <PlansSheet nested {...voiceSource.plans} />
     </View>
   );

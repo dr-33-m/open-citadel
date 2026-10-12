@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     deviceVoiceName,
     deviceVoiceRows,
+    estimatedRowsHeight,
     isPlayableVoice,
     languageCode,
     sortVoices,
@@ -79,6 +80,17 @@ describe('deviceVoiceRows', () => {
   it('gives every row its own key', () => {
     const keys = deviceVoiceRows(VOICES).map((row) => row.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('estimatedRowsHeight', () => {
+  it('adds up a heading, a one-line voice and a two-line voice, scaled with the type size', () => {
+    const rows = deviceVoiceRows([voice('en-au-x-a', 'en-AU')]);
+    // DEFAULT, System default (one line), ENGLISH, one voice with its language under it.
+    expect(kinds(rows)).toHaveLength(4);
+    expect(estimatedRowsHeight(rows)).toBe(32 + 57 + 32 + 77);
+    expect(estimatedRowsHeight(rows, 1.5)).toBe(297);
+    expect(estimatedRowsHeight([])).toBe(0);
   });
 });
 

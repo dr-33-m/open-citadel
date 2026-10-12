@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { cloudFailureCopy } from '@/features/tts/utils/cloud-failure';
 import type { CloudVoiceFailure } from '@/services/cloud-tts/request';
 
-const FAILURES: CloudVoiceFailure[] = ['out_of_credits', 'offline', 'plan_lapsed', 'maker_failed'];
+const FAILURES: CloudVoiceFailure[] = ['out_of_credits', 'offline', 'plan_lapsed', 'plan_required', 'maker_failed'];
 const SELLING = { canSell: true, canUpgrade: true };
 
 describe('cloudFailureCopy', () => {
@@ -27,6 +27,15 @@ describe('cloudFailureCopy', () => {
     expect(cloudFailureCopy('out_of_credits', SELLING).secondary).toEqual({ label: 'UPGRADE', action: 'plans' });
     expect(cloudFailureCopy('out_of_credits', { canSell: true, canUpgrade: false }).secondary).toBeNull();
     expect(cloudFailureCopy('plan_lapsed', { canSell: false, canUpgrade: true }).secondary).toBeNull();
+    expect(cloudFailureCopy('plan_required', SELLING).secondary).toEqual({ label: 'UPGRADE', action: 'plans' });
+    expect(cloudFailureCopy('plan_required', { canSell: true, canUpgrade: false }).secondary).toBeNull();
+  });
+
+  it('offers plans once the plan has ended, whether or not there is one above the plan that was held', () => {
+    expect(cloudFailureCopy('plan_lapsed', { canSell: true, canUpgrade: false }).secondary).toEqual({
+      label: 'SEE PLANS',
+      action: 'plans',
+    });
   });
 
   it('tries a failing maker again first, and a missing connection second', () => {

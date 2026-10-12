@@ -13,6 +13,8 @@ export interface VoiceSourceCardsProps {
   cloudStatus: string;
   onSelectDevice: () => void;
   onSelectCloud: () => void;
+  /** Opens what there is to know about cloud voices. Left out while the card is shut. */
+  onCloudInfo?: () => void;
 }
 
 /**
@@ -20,7 +22,7 @@ export interface VoiceSourceCardsProps {
  * with the same two names, as Samwell's own on-device and cloud, so the app
  * has one idea of what "on-device" and "cloud" mean.
  */
-export function VoiceSourceCards({ source, cloudLocked, cloudStatus, onSelectDevice, onSelectCloud }: VoiceSourceCardsProps) {
+export function VoiceSourceCards({ source, cloudLocked, cloudStatus, onSelectDevice, onSelectCloud, onCloudInfo }: VoiceSourceCardsProps) {
   return (
     <View className="flex-row gap-3" accessibilityRole="radiogroup">
       <ModeCard
@@ -41,6 +43,8 @@ export function VoiceSourceCards({ source, cloudLocked, cloudStatus, onSelectDev
         locked={cloudLocked}
         compact
         onSelect={onSelectCloud}
+        // The padlock has the corner while the card is shut.
+        onInfo={cloudLocked ? undefined : onCloudInfo}
       />
     </View>
   );

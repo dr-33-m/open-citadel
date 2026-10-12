@@ -23,14 +23,15 @@ export interface VoicePickerRowProps {
  * what they sound like and not in how they are picked.
  */
 export function VoicePickerRow({ name, onPress, accessibilityLabel }: VoicePickerRowProps) {
-  const mutedForeground = useCSSVariable('--color-muted-foreground');
+  const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
   return (
     // A tap is felt: the row opens something, and a press with no answer
     // under the finger reads as missed until the sheet has started to rise.
     <Touchable onPress={onPress} haptic="tap" accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
       <Card className="flex-row items-center justify-between p-3">
         <View className="flex-row items-center gap-3">
-          <PrefixIcon icon={AudioLines} size={28} />
+          {/* Gold, as every icon box that leads a row is (Settings, the voice boxes). */}
+          <PrefixIcon icon={AudioLines} size={28} color={asColor(primary)} />
           <ThemedText type="bodyMd">Voice</ThemedText>
         </View>
         <View className="flex-row items-center gap-1">
