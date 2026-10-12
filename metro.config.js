@@ -15,6 +15,15 @@ const config = getDefaultConfig(projectRoot);
 config.watchFolders = [path.resolve(projectRoot, 'packages')];
 config.resolver.nodeModulesPaths = [path.resolve(projectRoot, 'node_modules')];
 
+// Agent worktrees live under .claude/worktrees, each with its own node_modules.
+// Metro would watch all of them and run the system out of inotify watches
+// (ENOSPC), so keep them out of the file map.
+const defaultBlockList = config.resolver.blockList;
+config.resolver.blockList = [
+  ...(Array.isArray(defaultBlockList) ? defaultBlockList : [defaultBlockList]).filter(Boolean),
+  /[/\\]\.claude[/\\].*/,
+];
+
 // PanelUI/Uniwind's Tailwind-in-RN styling engine. Citadel Frame only ever
 // runs the two default themes (their tokens are overridden for our palette
 // and square-corner identity in src/theme.css) — the Moon/Grass families
