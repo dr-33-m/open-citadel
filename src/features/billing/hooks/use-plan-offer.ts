@@ -29,7 +29,8 @@ export type PlanOffer = {
   /** Every model with its tier, for the plan info sheets. */
   catalogue: PlanModel[];
   /** The reading voices each plan reaches and the hours its default gives, or null from an older server. */
-  voicesByPlan: VoiceFigures['byPlan'] | null;
+  /** The cloud reading voices and their hours on each plan. Null from an older server. */
+  voices: VoiceFigures | null;
   /**
    * Everything the cards say is in hand, so they can be drawn whole.
    *
@@ -90,7 +91,7 @@ export function usePlanOffer(enabled: boolean): PlanOffer {
     packages,
     modelCounts: preview.data?.modelsByPlan ?? NO_COUNTS,
     catalogue: preview.data?.catalogue ?? [],
-    voicesByPlan: preview.data?.voices?.byPlan ?? null,
+    voices: preview.data?.voices ?? null,
     // The counts are a nicety: a server that cannot say them does not hold
     // the prices back past a short grace. Settled either way is enough.
     ready: pricesIn && (!preview.isPending || graceOver),

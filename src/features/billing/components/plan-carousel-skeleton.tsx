@@ -24,6 +24,7 @@ function PlanCardBones() {
         <SkeletonBar className="h-4 w-32" />
         <SkeletonBar className="h-3 w-40" />
         <SkeletonBar className="h-3 w-36" />
+        <SkeletonBar className="h-3 w-32" />
       </View>
     </Card>
   );

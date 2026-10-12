@@ -130,7 +130,7 @@ export const PlanRun = React.memo(function PlanRun({
               <PlanCard
                 plan={plan}
                 modelCount={modelCounts[plan.id] ?? 0}
-                readingHours={voicesByPlan?.[plan.id]?.hours ?? null}
+                voiceBoxCount={voicesByPlan?.[plan.id]?.makers.length ?? 0}
                 priceLabel={prices[plan.id] ?? null}
                 selected={index === active}
                 onInfo={() => onInfo(plan.id)}

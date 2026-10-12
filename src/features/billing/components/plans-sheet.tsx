@@ -8,6 +8,7 @@ import { Sheet, useSheetSettled } from '@/components/ui/sheet';
 import { layout } from '@/constants/theme';
 import { PlanCarousel } from '@/features/billing/components/plan-carousel';
 import { usePlanSale } from '@/features/billing/hooks/use-plan-sale';
+import type { PlanSpend } from '@/features/billing/utils/plan-spend';
 import { useCloudIdentity } from '@/hooks/use-cloud-identity';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { useSubscriptionStore } from '@/stores/subscription';
@@ -24,6 +25,8 @@ export interface PlansSheetProps {
   plans?: CreditPlan[];
   /** The card the run rests on when it opens. */
   initialPlanId?: PlanId;
+  /** The side a card's info sheet opens on: the voices, where a voice is what the wall was. */
+  infoOpensOn?: PlanSpend;
   /**
    * Opened from inside another sheet (the reader's voice sheet). It then
    * rises over that sheet instead of replacing it, which would unmount this.
@@ -75,7 +78,7 @@ export function PlansSheetHost({
 }
 
 /** Inside the sheet, so it mounts with it and can tell when the rise is over. */
-function PlansSheetBody({ onClose, line, onActivated, plans, initialPlanId }: Omit<PlansSheetProps, 'visible' | 'nested'>) {
+function PlansSheetBody({ onClose, line, onActivated, plans, initialPlanId, infoOpensOn }: Omit<PlansSheetProps, 'visible' | 'nested'>) {
   const tokens = useThemeTokens();
   const identity = useCloudIdentity();
   const settled = useSheetSettled();
@@ -118,6 +121,7 @@ function PlansSheetBody({ onClose, line, onActivated, plans, initialPlanId }: Om
             ready={picker.ready && settled}
             plans={plans}
             initialPlanId={initialPlanId}
+            infoOpensOn={infoOpensOn}
             surface="popover"
             bleed={layout.gutter}
           />

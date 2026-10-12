@@ -113,7 +113,7 @@ export function usePlanSale({
       packages: offer.packages,
       catalogue: offer.catalogue,
       modelCounts: offer.modelCounts,
-      voicesByPlan: offer.voicesByPlan,
+      voices: offer.voices,
       busy: checkout.preparing ?? busy,
       ready: offer.ready,
       failed: offer.failed,
