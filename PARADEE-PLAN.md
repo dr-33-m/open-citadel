@@ -17,7 +17,8 @@ ExecuTorch and Phonemis are already compiled in, so this can ship as an OTA upda
 **The export is done, checked, and measured on a Galaxy A33** (see "The export, as built" and
 "On a Galaxy A33"): it reads a book aloud there at about twice the speed of speech, where
 Kokoro takes three and a half times as long as the speech lasts. The files are hosted (see
-"Where the files live"). What is left is measuring a 2 to 3 GB phone.
+"Where the files live"). Phones under 3 GB do not get it yet: the native reader has a wall
+of its own there, lifted in a later build (see "On a 2 GB emulator").
 
 ## What Paradee is
 
@@ -61,8 +62,9 @@ the `.pte`, `get_model_schema`, which returns JSON (each dynamic size as a range
 constraints tying them together). A program without it is taken to have fixed shapes and
 refused.
 
-Phones under 3 GB (`LOW_MEMORY_ANDROID` in `catalogue.ts`) got no AI voice at all, because
-Kokoro's FP32 weights exhausted a 2 GB emulator. That wall is the one Paradee is let past.
+Phones under 3 GB (`LOW_MEMORY_ANDROID` in `catalogue.ts`) get no AI voice at all, because
+Kokoro's FP32 weights exhausted a 2 GB emulator. That wall is the one Paradee is meant to
+get past, and for now it stays behind it too (see "On a 2 GB emulator").
 
 ## How well Paradee fits that pipeline
 
@@ -158,17 +160,22 @@ samples, and over two and a half minutes of reading aloud the app stayed between
 ## On a 2 GB emulator
 
 A fresh `paradee_2gb` emulator (x86_64, reports 2.5 GB, so under the 3 GB wall), the dev
-build, a first install. Its processor is the laptop's, so the pace here says nothing about a
-small phone's; the memory does.
+build, a first install, with Paradee let past the wall in JS for the test. Its processor is
+the laptop's, so the pace here says nothing about a small phone's; the memory does.
 
-- **Only Paradee is offered**, with no voice box chips, and the download is 64 MB from
+- **Only Paradee was offered**, with no voice box chips, and the download is 64 MB from
   Hugging Face on a phone that has nothing yet.
 - **The voice sample plays**: x0.43 to x0.49. The app grew by about 300 MB at the peak and
   did not grow on a second play. The device kept 485 MB available at its lowest.
 - **Reading aloud does not use it.** The native reader has a wall of its own:
   `needsSystemVoice()` in `TTSManager.kt` (our patch to `@dr33m/react-native-readium`,
   Android only) sends every phone under 3 GB to the phone's own voice, whatever JS asks for.
-  So on a small Android phone Paradee can be heard in Settings and never in a book.
+  So on a small Android phone Paradee could be heard in Settings and never in a book.
+
+That is why Paradee is behind the 3 GB wall in JS as well, for now (`TTS_ENGINES` in
+`catalogue.ts`, with a TODO): a voice that can be chosen and then is not the one that reads
+is worse than no voice. Phones of 3 GB and up get it over the air; smaller ones get it with
+the build that lifts the native wall.
 
 ## In the app
 
@@ -178,10 +185,10 @@ All JS, mostly in `src/services/device-tts/`, the same shape as when Supertonic 
   that speaks it. She is named Yennefer, as Kokoro's `af_heart` is, because she is that
   voice distilled. The config takes the library's own `KOKORO.EN_US.DEFAULT.phonemizer`, so
   the ~15 MB of Phonemis files are shared with Kokoro US: same address, same cache path.
-- **`catalogue.ts`**: `'paradee'` everywhere an engine is listed, and the memory wall is per
-  engine: `TTS_ENGINES` holds only the voice boxes this phone is offered, and Paradee is
-  offered under 3 GB. The native reader only knows Kokoro ids, so a Paradee voice is sent to
-  it as none, like Supertonic. Kokoro's roster moved to `kokoro.ts`.
+- **`catalogue.ts`**: `'paradee'` everywhere an engine is listed. `TTS_ENGINES` holds only
+  the voice boxes this phone is offered, which under 3 GB is none of them for now. The
+  native reader only knows Kokoro ids, so a Paradee voice is sent to it as none, like
+  Supertonic. Kokoro's roster moved to `kokoro.ts`.
 - **`engine.ts`**: Paradee's pipeline is a `KokoroTextToSpeech` over its own files, with its
   own pace meter. A voice of an engine the phone is not offered is never loaded.
 - **`files.ts`, `stores/tts.ts`**: its files and its download flag.
@@ -245,12 +252,12 @@ files to Software Mansion's model registry.
 
 ## Next steps
 
-1. **Let the reader use Paradee under 3 GB.** Take the memory wall out of `TTSManager.kt`
-   and let JS decide, as it already does everywhere else: it sends `system-voice` when the
-   phone has no Enhanced voice it can run. This is a native change, so it needs a new
-   binary and cannot go out over the air; until then small Android phones see Paradee in
-   Settings and hear the phone's voice in books.
-2. Then measure a book read aloud on the 2 GB emulator, which is what Kokoro ran out of
-   memory doing, and on a real 2 to 3 GB phone for the pace. Until then, where Paradee's
-   disclaimer bar sits is a claim, not a measurement.
+1. **Lift the native reader's wall, in a later build.** Take the memory check out of
+   `TTSManager.kt` and let JS decide, as it already does everywhere else: it sends
+   `system-voice` when the phone has no Enhanced voice it can run. It is a native change, so
+   it goes out with a new binary, not over the air.
+2. **Then offer Paradee under 3 GB**: the TODO on `TTS_ENGINES`. Before trusting it, read a
+   book aloud on the 2 GB emulator, which is what Kokoro ran out of memory doing, and
+   measure the pace on a real 2 to 3 GB phone. Where Paradee's disclaimer bar sits is a
+   claim until then.
 3. Listen for the phonemizer difference above.

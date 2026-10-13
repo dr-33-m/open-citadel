@@ -7,8 +7,8 @@
  * slower than it is spoken on a mid-range phone (a Galaxy A33 took about
  * three seconds per second of speech). Supertonic (`supertonic.ts`) is the
  * lighter one, and Paradee (`paradee.ts`) the smallest: Kokoro distilled, for
- * the phones the other two do not fit. Which engine is in use is never stored
- * on its own: it follows from the chosen voice.
+ * the phones the other two strain. Which engine is in use is never stored on
+ * its own: it follows from the chosen voice.
  */
 
 import * as Device from 'expo-device';
@@ -77,25 +77,33 @@ export const NATIVE_SPEED_SUPPORTED = process.env.EXPO_OS === 'android';
  * Kokoro's FP32 model is about 330 MB of weights and exhausted a 2 GB emulator
  * during book playback. Running out of memory kills the native runtime, which
  * JS cannot catch, so a phone this small is never asked to load it, nor
- * Supertonic, which is larger still.
+ * Supertonic, which is larger still. Paradee is small enough, and is kept
+ * behind the same wall for another reason: see `TTS_ENGINES`.
  */
 export const LOW_MEMORY_ANDROID = process.env.EXPO_OS === 'android'
   && Device.totalMemory !== null
   && Device.totalMemory < 3 * 1024 ** 3;
 
 /**
- * Whether this phone can be offered an engine. Paradee is a tenth of Kokoro's
- * size, so the wall that keeps the other two off a small phone does not keep
- * it off.
+ * The engine picker's order, lightest first, with only the engines this phone
+ * is offered: none of them under the wall.
+ *
+ * TODO: offer Paradee under the wall (`LOW_MEMORY_ANDROID ? ['paradee'] : ...`)
+ * once a build ships with the native reader's own wall lifted. Paradee itself
+ * fits: on a 2 GB emulator its sample plays with about 300 MB added. But
+ * `needsSystemVoice()` in `TTSManager.kt` (our patch to
+ * `@dr33m/react-native-readium`, Android) sends every phone under 3 GB to the
+ * phone's own voice whatever JS asks for, so there Paradee could be heard in
+ * Settings and never in a book. Lifting that is a native change, and until
+ * the build that carries it is out, the two walls stay at the same place.
  */
-function engineOffered(engine: TtsEngineId): boolean {
-  return engine === 'paradee' || !LOW_MEMORY_ANDROID;
-}
+export const TTS_ENGINES: readonly TtsEngineId[] = LOW_MEMORY_ANDROID ? [] : ['paradee', 'supertonic', 'kokoro'];
 
-/** The engine picker's order, lightest first, with only the engines this phone can be offered. */
-export const TTS_ENGINES: readonly TtsEngineId[] = (['paradee', 'supertonic', 'kokoro'] as const).filter(engineOffered);
-
-/** The voice a phone with no choice yet reads in: Kokoro's, or Paradee's where Kokoro does not fit. */
+/**
+ * The voice a phone with no choice yet reads in: Kokoro's. Paradee's where
+ * Kokoro is not offered, so nothing that falls back to this can load a model
+ * too large for the phone.
+ */
 export const DEFAULT_VOICE: AiVoice = TTS_ENGINES.includes('kokoro') ? 'af_heart' : 'pd_heart';
 
 /**
