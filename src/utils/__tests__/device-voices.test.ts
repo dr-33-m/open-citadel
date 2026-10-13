@@ -7,6 +7,7 @@ import {
     isPlayableVoice,
     languageCode,
     sortVoices,
+    voiceTotalLabel,
     type DeviceVoice,
 } from '@/utils/device-voices';
 
@@ -91,6 +92,18 @@ describe('estimatedRowsHeight', () => {
     expect(estimatedRowsHeight(rows)).toBe(32 + 57 + 32 + 77);
     expect(estimatedRowsHeight(rows, 1.5)).toBe(297);
     expect(estimatedRowsHeight([])).toBe(0);
+  });
+});
+
+describe('voiceTotalLabel', () => {
+  it('counts the voices, leaving out the headings and the system default', () => {
+    const rows = deviceVoiceRows([voice('en-au-x-a', 'en-AU'), voice('en-us-x-b', 'en-US')]);
+    expect(voiceTotalLabel(rows)).toBe('2 total');
+  });
+
+  it('says nothing when there is no voice to count', () => {
+    expect(voiceTotalLabel(deviceVoiceRows([]))).toBeNull();
+    expect(voiceTotalLabel([])).toBeNull();
   });
 });
 

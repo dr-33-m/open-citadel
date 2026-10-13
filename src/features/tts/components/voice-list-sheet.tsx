@@ -10,7 +10,11 @@ import {
     type VoiceListRowsProps,
 } from "@/features/tts/components/voice-list-rows";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
-import type { DeviceVoice, DeviceVoiceRow } from "@/utils/device-voices";
+import {
+    voiceTotalLabel,
+    type DeviceVoice,
+    type DeviceVoiceRow,
+} from "@/utils/device-voices";
 
 export interface VoiceListSheetProps {
   visible: boolean;
@@ -42,6 +46,9 @@ export function VoiceListSheet({
   onPreview,
 }: VoiceListSheetProps) {
   const tokens = useThemeTokens();
+  const muted = tokens["--color-muted-foreground"];
+  // Nothing to count while the phone has not answered yet.
+  const total = loading ? null : voiceTotalLabel(rows);
   return (
     // Fixed height, one detent, and a plain `Sheet.ScrollView` rather than
     // `Sheet.FlatList` — the same shape `PlanInfoSheet` uses, which is the
@@ -65,9 +72,16 @@ export function VoiceListSheet({
       fixedHeightRatio={0.75}
     >
       <View className="gap-1 px-6 pb-3 pt-2">
-        <ThemedText type="headlineSm">Select voice</ThemedText>
+        <View className="flex-row items-baseline justify-between gap-3">
+          <ThemedText type="headlineSm">Select voice</ThemedText>
+          {total ? (
+            <ThemedText type="bodySm" color={muted}>
+              {total}
+            </ThemedText>
+          ) : null}
+        </View>
         {note ? (
-          <ThemedText type="bodySm" color={tokens["--color-muted-foreground"]}>
+          <ThemedText type="bodySm" color={muted}>
             {note}
           </ThemedText>
         ) : null}

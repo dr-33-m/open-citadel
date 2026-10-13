@@ -36,6 +36,19 @@ export function estimatedRowsHeight(rows: readonly DeviceVoiceRow[], fontScale =
   return Math.round(height * fontScale);
 }
 
+/**
+ * How many voices these rows offer, as the sheet's heading says it: "14 total".
+ * The phone's "System default" row is a way of not choosing, so it is not
+ * counted, and a list with no voice to count says nothing.
+ */
+export function voiceTotalLabel(rows: readonly DeviceVoiceRow[]): string | null {
+  let count = 0;
+  for (const row of rows) {
+    if (row.kind === 'voice' && row.voice.identifier !== '') count += 1;
+  }
+  return count > 0 ? `${count.toLocaleString()} total` : null;
+}
+
 /** The row that means "no particular voice": the phone's default. */
 export const SYSTEM_DEFAULT_VOICE: DeviceVoice = {
   identifier: '',
