@@ -62,13 +62,19 @@ export function ChoiceChips<T extends string | number | null>({
 }: ChoiceChipsProps<T>) {
   const pad = gutter === "sheet" ? "px-4" : gutter === "page" ? "px-6" : "px-0";
   const tokens = useThemeTokens();
+  // Chips that share the row are as wide as the row lets them be, so padding
+  // only takes room from the label: three across on a narrow phone broke
+  // "SUPERTONIC" onto a second line. The label gets that room back, and is
+  // drawn a little smaller before it is ever broken.
+  const snug = fill && !onInfo;
   const chips = choices.map((choice) => {
     const selected = choice.value === value;
     return (
       <Touchable
         key={String(choice.value)}
         className={cn(
-          "min-h-10 justify-center border px-3.5",
+          "min-h-10 justify-center border",
+          snug ? "px-1.5" : "px-3.5",
           fill && "flex-1 items-center",
           // Room for the "i", so a long label never runs under it.
           onInfo && "pr-9",
@@ -100,6 +106,9 @@ export function ChoiceChips<T extends string | number | null>({
             color={
               selected ? tokens["--color-primary"] : tokens["--color-foreground"]
             }
+            numberOfLines={snug ? 1 : undefined}
+            adjustsFontSizeToFit={snug}
+            minimumFontScale={0.8}
           >
             {choice.label}
           </ThemedText>
