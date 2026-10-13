@@ -16,12 +16,13 @@ export interface EnhancedFitSheetProps {
   fit: EnhancedFit;
   /** What to say about it, for the voice box in hand (`enhancedFitCopy`). */
   copy: EnhancedFitCopy;
-  /** The way out for a phone that strains: switch to the Lite voices. */
+  /** The way out that stays on the phone: switch to the Lite voices. */
   onUseLite: () => void;
   /**
-   * The other way out: the same Kokoro voices from the cloud. Left out where
-   * Cloud cannot be chosen here (this build cannot sell a plan, or the server
-   * has no cloud voices); choosing it without a plan shows the plans under it.
+   * The first way out: the cloud's voices, which this phone's speed has no
+   * say in. Left out where Cloud cannot be chosen here (this build cannot
+   * sell a plan, or the server has no cloud voices); choosing it without a
+   * plan shows the plans under it.
    */
   onUseCloud?: () => void;
 }
@@ -29,9 +30,9 @@ export interface EnhancedFitSheetProps {
 /**
  * What the mark under the chosen voice box means on this phone.
  *
- * Where the box runs smoothly it says so and nothing more. Where it will
- * pause it says that plainly, that it can still be tried, and the way out
- * if it proves unusable: the warning is advice, never a lock.
+ * Where the box runs smoothly it says so and nothing more. Where it will be
+ * slow it says what that is like, and the ways out, Cloud first: the warning
+ * is advice, never a lock, and TRY ANYWAY is always there.
  */
 export function EnhancedFitSheet({ visible, onClose, fit, copy, onUseLite, onUseCloud }: EnhancedFitSheetProps) {
   const [mutedForeground, success, warning, primary] = useCSSVariable([
@@ -74,12 +75,13 @@ export function EnhancedFitSheet({ visible, onClose, fit, copy, onUseLite, onUse
         {smooth ? (
           <GoldButton label="GOT IT" size="compact" onPress={onClose} />
         ) : onUseCloud ? (
-          // Two ways out side by side, equal, and carrying on as they are
-          // under them: the one choice that changes nothing.
+          // Two ways out side by side, equal, in the order the advice gives
+          // them, and carrying on as they are under them: the one choice that
+          // changes nothing.
           <View className="gap-3">
             <View className="flex-row gap-3">
-              <ActionButton label="USE LITE VOICES" onPress={onUseLite} tint={asColor(primary)} centered className="h-10 flex-1" />
               <ActionButton label="USE CLOUD" onPress={onUseCloud} tint={asColor(primary)} centered className="h-10 flex-1" />
+              <ActionButton label="USE LITE VOICES" onPress={onUseLite} tint={asColor(primary)} centered className="h-10 flex-1" />
             </View>
             <GoldButton label="TRY ANYWAY" size="compact" onPress={onClose} />
           </View>

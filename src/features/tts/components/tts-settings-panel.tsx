@@ -72,7 +72,7 @@ export interface TtsSettingsPanelProps {
  * run the Enhanced voices at all says so in a line and shows the Lite ones,
  * and where there is no Lite path at all (web) only the Enhanced controls
  * show. Each voice box says how this phone will cope with it in a mark under
- * its line, which opens `EnhancedFitSheet`: where the box will pause that is
+ * its line, which opens `EnhancedFitSheet`: where the box will be slow that is
  * a warning, never a lock.
  *
  * Everything that belongs to a kind is in its pane, and the two panes trade

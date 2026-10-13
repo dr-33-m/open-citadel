@@ -1,5 +1,5 @@
 /**
- * Whether this phone runs an Enhanced voice box without long pauses.
+ * Whether this phone runs an Enhanced voice box without long waits.
  *
  * Measured, not estimated, and per voice box, because they are far apart. On
  * a Galaxy A33 (sold as 6 GB, reports 5.3 GB) Kokoro took three and a half
@@ -66,14 +66,15 @@ export type EnhancedFitCopy = {
   advice: string | null;
 };
 
-// Cloud Kokoro is for exactly the phone that strains: the same voices, made
-// in the cloud, so a phone that cannot make them itself does not have to.
-const OTHER_WAYS = 'use Lite voices, or Cloud: the same Kokoro voices, read from the cloud so the phone does not strain.';
+// The first way out is Cloud, because it is the best the app has and the one
+// kind of voice this phone's speed has no say in. It is offered for what it
+// is, never against what it costs.
+const TRY_CLOUD = 'For the best voices, try Cloud.';
 
 /**
  * What to say about a voice box on this phone. `smoother` is a voice box the
- * phone does run smoothly (`smootherBox`), named first in the advice because
- * it is the nearest way out: one press, and still on the phone.
+ * phone does run smoothly (`smootherBox`): named with the Lite voices as the
+ * way to stay on the phone, after Cloud.
  */
 export function enhancedFitCopy(fit: EnhancedFit, engine: TtsEngineId, smoother: TtsEngineId | null = null): EnhancedFitCopy {
   const name = NAMES[engine];
@@ -81,18 +82,20 @@ export function enhancedFitCopy(fit: EnhancedFit, engine: TtsEngineId, smoother:
     return {
       mark: 'Runs smoothly on this phone',
       title: `Your phone runs ${name} smoothly`,
-      line: `${name} will read on this phone without long pauses.`,
+      line: `${name} will read on this phone without long waits.`,
       advice: null,
     };
   }
   return {
     mark: 'Needs a more powerful phone',
-    title: `${name} may pause on this phone`,
-    // "Runs best on", never "is made for": Paradee is made for small phones,
-    // and one smaller than its bar is still told what to expect.
-    line: `${name} runs best on phones with ${BARS[engine].label} of memory or more. On this one, reading may stop and start. You can still try it.`,
+    title: `${name} may be slow on this phone`,
+    // What straining is like, in the reader's terms: the voice does not
+    // stutter, it goes quiet while the next sentence is made. "Runs best
+    // with", never "is made for": Paradee is made for small phones, and one
+    // smaller than its bar is still told what to expect.
+    line: `Expect long silences between sentences. It runs best with ${BARS[engine].label} of memory.`,
     advice: smoother
-      ? `${NAMES[smoother]} is the voice box that runs smoothly here. Lite voices and Cloud voices do too.`
-      : `If the pauses get in the way, ${OTHER_WAYS}`,
+      ? `${TRY_CLOUD} To stay on the phone, use ${NAMES[smoother]} or Lite voices.`
+      : `${TRY_CLOUD} To stay on the phone, use Lite voices.`,
   };
 }

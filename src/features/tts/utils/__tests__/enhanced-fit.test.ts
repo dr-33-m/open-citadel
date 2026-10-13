@@ -70,16 +70,43 @@ describe('enhancedFitCopy', () => {
   it('gives advice only when there is something to do', () => {
     expect(enhancedFitCopy('smooth', 'kokoro').advice).toBeNull();
     expect(enhancedFitCopy('strained', 'kokoro').advice).toMatch(/Lite voices/);
-    // The phone that strains is the one Cloud Kokoro is for.
     expect(enhancedFitCopy('strained', 'kokoro').advice).toMatch(/Cloud/);
     expect(enhancedFitCopy('strained', 'kokoro').advice).not.toMatch(/coming soon/i);
   });
 
-  it('names the voice box that does run smoothly first, when there is one', () => {
-    const advice = enhancedFitCopy('strained', 'kokoro', 'paradee').advice;
-    expect(advice).toMatch(/^Paradee/);
-    expect(advice).toMatch(/Lite voices/);
-    expect(advice).toMatch(/Cloud/);
+  it('advises Cloud first, then the ways to stay on the phone', () => {
+    for (const smoother of ['paradee', null] as const) {
+      const advice = enhancedFitCopy('strained', 'kokoro', smoother).advice ?? '';
+      expect(advice).toMatch(/^For the best voices, try Cloud/);
+      expect(advice.indexOf('Cloud')).toBeLessThan(advice.indexOf('Lite voices'));
+    }
+  });
+
+  it('names the voice box that does run smoothly, when there is one', () => {
+    expect(enhancedFitCopy('strained', 'kokoro', 'paradee').advice).toMatch(/use Paradee or Lite voices/);
+    expect(enhancedFitCopy('strained', 'kokoro').advice).not.toMatch(/Paradee/);
+  });
+
+  it('never sets Cloud against what it costs', () => {
+    for (const smoother of ['paradee', null] as const) {
+      const copy = enhancedFitCopy('strained', 'kokoro', smoother);
+      expect(`${copy.title} ${copy.line} ${copy.advice}`).not.toMatch(/pay|afford|money|cost|free|cheap|price/i);
+    }
+  });
+
+  it('says what straining is like, not that the voice pauses', () => {
+    const copy = enhancedFitCopy('strained', 'supertonic');
+    expect(copy.title).toBe('Supertonic may be slow on this phone');
+    expect(copy.line).toMatch(/silences between sentences/);
+    expect(`${copy.title} ${copy.line}`).not.toMatch(/pause/i);
+  });
+
+  it('stays short: a line and an advice of two sentences each at most', () => {
+    for (const box of BOXES) {
+      const copy = enhancedFitCopy('strained', box, 'paradee');
+      expect(copy.line.length).toBeLessThanOrEqual(90);
+      expect((copy.advice ?? '').length).toBeLessThanOrEqual(90);
+    }
   });
 
   it('never uses an em dash', () => {

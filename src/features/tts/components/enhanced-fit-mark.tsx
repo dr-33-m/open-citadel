@@ -18,7 +18,7 @@ export interface EnhancedFitMarkProps {
 /**
  * How this phone will cope with the chosen voice box, in one line under what
  * that box is: a ringed green tick where it runs smoothly, a ringed warning
- * where it will pause. Pressing it says why, and what to do.
+ * where it will be slow. Pressing it says why, and what to do.
  *
  * Status is said by the mark and the words together, never by colour alone.
  */
