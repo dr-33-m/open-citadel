@@ -80,15 +80,17 @@ export function enhancedFitCopy(fit: EnhancedFit, engine: TtsEngineId, smoother:
   const name = NAMES[engine];
   if (fit === 'smooth') {
     return {
-      mark: 'Runs smoothly on this phone',
+      mark: 'Runs smoothly on your phone',
       title: `Your phone runs ${name} smoothly`,
-      line: `${name} will read on this phone without long waits.`,
+      line: `${name} will read on your phone without long waits.`,
       advice: null,
     };
   }
   return {
-    mark: 'Needs a more powerful phone',
-    title: `${name} may be slow on this phone`,
+    // The mark and the title say the same thing, so opening the sheet reads
+    // as the mark with its subject put back.
+    mark: 'May be slow on your phone',
+    title: `${name} may be slow on your phone`,
     // What straining is like, in the reader's terms: the voice does not
     // stutter, it goes quiet while the next sentence is made. "Runs best
     // with", never "is made for": Paradee is made for small phones, and one

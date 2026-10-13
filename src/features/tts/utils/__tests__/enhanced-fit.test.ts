@@ -96,9 +96,16 @@ describe('enhancedFitCopy', () => {
 
   it('says what straining is like, not that the voice pauses', () => {
     const copy = enhancedFitCopy('strained', 'supertonic');
-    expect(copy.title).toBe('Supertonic may be slow on this phone');
+    expect(copy.title).toBe('Supertonic may be slow on your phone');
     expect(copy.line).toMatch(/silences between sentences/);
     expect(`${copy.title} ${copy.line}`).not.toMatch(/pause/i);
+  });
+
+  it('says the same thing on the mark as on the sheet it opens', () => {
+    expect(enhancedFitCopy('strained', 'kokoro').mark).toBe('May be slow on your phone');
+    expect(enhancedFitCopy('strained', 'kokoro').title).toBe('Kokoro may be slow on your phone');
+    expect(enhancedFitCopy('smooth', 'paradee').mark).toBe('Runs smoothly on your phone');
+    expect(enhancedFitCopy('smooth', 'paradee').title).toBe('Your phone runs Paradee smoothly');
   });
 
   it('stays short: a line and an advice of two sentences each at most', () => {
