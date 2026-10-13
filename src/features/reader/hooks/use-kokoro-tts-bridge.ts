@@ -9,7 +9,7 @@
  * audio via `onTTSSynthesisRequest` and this hook answers with
  * `ttsProvideAudioChunk` calls, one per streamed chunk.
  *
- * Supertonic speaks through the same native engine, which only knows Kokoro's
+ * Supertonic and Paradee speak through the same native engine, which only knows Kokoro's
  * voice ids: the reader starts it with no voice (`readerVoiceId`), and the
  * voice to speak in is read from settings here instead.
  */
@@ -39,7 +39,7 @@ export function useKokoroTtsBridge(readerRef: React.RefObject<ReadiumViewRef | n
     (request: TTSSynthesisRequest) => {
       void (async () => {
         // The saved voice when it is one of ours: the native side may have
-        // been started with none (a Supertonic voice, or a cloud voice the
+        // been started with none (a Supertonic or Paradee voice, or a cloud voice the
         // reader has just come back to the phone from), and its own idea of
         // the voice would then be Kokoro's default rather than the choice.
         const chosen = useSettingsStore.getState().ttsVoice;
