@@ -1,7 +1,7 @@
 /** Translating episodes into what the native player and the mini player hold. */
 import TrackPlayer, { PlayerCommand, type MediaItem } from "@rntp/player";
 
-import { localFileUri } from "@/services/podcasts/download-files";
+import { episodeArtwork, localFileUri } from "@/services/podcasts/download-paths";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
 import { upNextIds } from "@/services/podcasts/queue";
 import type { EpisodeItem } from "@/services/podcasts/records";
@@ -18,7 +18,7 @@ export function nowPlayingFrom(item: EpisodeItem): NowPlaying {
     podcastId: item.podcastId,
     title: item.title,
     showTitle: item.showTitle,
-    artworkUrl: item.imageUrl ?? item.showImageUrl,
+    artworkUrl: episodeArtwork(item),
     durationSec: item.durationSec,
     positionSec: item.positionSec,
   };
@@ -37,7 +37,7 @@ export function mediaItemFrom(item: EpisodeItem, startAt = 0): MediaItem {
     title: item.title,
     artist: item.showTitle,
     albumTitle: item.showTitle,
-    artworkUrl: item.imageUrl ?? item.showImageUrl ?? undefined,
+    artworkUrl: episodeArtwork(item) ?? undefined,
     duration: item.durationSec > 0 ? item.durationSec : undefined,
     mimeType: item.mimeType ?? undefined,
   };

@@ -1,6 +1,7 @@
 /**
  * Episode downloads: what is on the device, and the rules for fetching and
- * removing it. The queue itself is `download-queue`; files are `download-files`.
+ * removing it. The queue itself is `download-queue`; files are `download-files`,
+ * their addresses `download-paths`, and the covers saved with them `download-covers`.
  *
  * Files live in the app's own `podcasts/` folder under a name derived from the
  * episode id. Rows store only that name (see `podcast_episodes.download_file`)
@@ -16,7 +17,9 @@ import { deleteAsync } from "expo-file-system/legacy";
 
 import { db } from "@/db/client";
 import { podcastEpisodes, podcasts } from "@/db/schema";
-import { fileNameFor, folderUri, setStatus } from "@/services/podcasts/download-files";
+import { dropUnusedCovers, refreshPlayingCover } from "@/services/podcasts/download-covers";
+import { fileNameFor, setStatus } from "@/services/podcasts/download-files";
+import { folderUri } from "@/services/podcasts/download-paths";
 import { cancelDownloads, isPending, startDownloads } from "@/services/podcasts/download-queue";
 import { podcastPrefs } from "@/stores/podcast-prefs";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
@@ -50,7 +53,13 @@ export async function deleteDownloads(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   await cancelDownloads(ids);
   const rows = await db
-    .select({ id: podcastEpisodes.id, downloadFile: podcastEpisodes.downloadFile, audioUrl: podcastEpisodes.audioUrl, mimeType: podcastEpisodes.mimeType })
+    .select({
+      id: podcastEpisodes.id,
+      downloadFile: podcastEpisodes.downloadFile,
+      downloadCover: podcastEpisodes.downloadCover,
+      audioUrl: podcastEpisodes.audioUrl,
+      mimeType: podcastEpisodes.mimeType,
+    })
     .from(podcastEpisodes)
     .where(inArray(podcastEpisodes.id, ids));
   await Promise.all(
@@ -61,10 +70,14 @@ export async function deleteDownloads(ids: string[]): Promise<void> {
   await setStatus(ids, {
     downloadStatus: "none",
     downloadFile: null,
+    downloadCover: null,
     downloadedAt: null,
     downloadError: null,
     autoDownloadEligible: 0,
   });
+  // The player first, so it is never left holding a file that is about to go.
+  await refreshPlayingCover(ids);
+  await dropUnusedCovers(rows.map((r) => r.downloadCover));
   invalidatePodcastLibrary();
 }
 

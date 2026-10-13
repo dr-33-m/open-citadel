@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppState } from 'react-native';
 
+import { saveMissingCovers } from '@/services/podcasts/download-covers';
 import { resumeInterruptedDownloads } from '@/services/podcasts/downloads';
 import { restoreNowPlaying } from '@/services/podcasts/player';
 import { refreshAllShows } from '@/services/podcasts/refresh';
@@ -12,9 +13,10 @@ const LAUNCH_DELAY_MS = 4000;
 /**
  * The podcast work that belongs to the app rather than to any screen: put the
  * last episode back in the mini player, carry on downloads a closed app cut
- * short, and look for new episodes on launch and whenever the app comes back
- * to the front (only shows past the refresh interval are fetched, so coming
- * back every few minutes costs nothing).
+ * short, fetch the cover of any download still without one, and look for new
+ * episodes on launch and whenever the app comes back to the front (only shows
+ * past the refresh interval are fetched, so coming back every few minutes
+ * costs nothing).
  *
  * Nothing here runs for someone who has never opened Podcasts.
  */
@@ -27,6 +29,7 @@ export function usePodcastLifecycle(ready: boolean): void {
     void restoreNowPlaying();
     const launch = setTimeout(() => {
       void resumeInterruptedDownloads();
+      void saveMissingCovers();
       void refreshAllShows(false);
     }, LAUNCH_DELAY_MS);
     const sub = AppState.addEventListener('change', (next) => {

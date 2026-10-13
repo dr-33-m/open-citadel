@@ -71,7 +71,7 @@ export function onDeviceHint(mode: OnDeviceMode): string {
 }
 
 /** Shown in place of the switch on a phone that cannot run the Enhanced voices at all. */
-export const ENHANCED_UNSUPPORTED = 'Enhanced voices need more memory than this phone has.';
+export const ENHANCED_UNSUPPORTED = 'Enhanced voices are not supported on this phone.';
 
 /** Under a Lite voice where the phone gives no control of its speed. */
 export const LITE_SPEED_FIXED = 'Reading speed cannot be changed with a Lite voice.';

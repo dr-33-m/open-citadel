@@ -14,6 +14,7 @@
 import * as Device from 'expo-device';
 import { parseCloudVoiceKey } from 'samwell-shared';
 
+import { isExecuTorchAvailable } from '@/lib/executorch';
 import {
   ACCENT_LABELS,
   KOKORO_VOICES,
@@ -133,8 +134,12 @@ export const ENGINE_INFO: Record<TtsEngineId, { label: string; hint: string; dow
   },
 };
 
-/** Whether this device can run any of the AI voices. */
-export const AI_VOICES_SUPPORTED = TTS_ENGINES.length > 0;
+/**
+ * Whether this device can run any of the AI voices: it is offered an engine,
+ * and the runtime they all run on loads here. The web has no runtime and no
+ * phone voices either, so it keeps the AI controls, as it always has.
+ */
+export const AI_VOICES_SUPPORTED = TTS_ENGINES.length > 0 && (!NATIVE_VOICE_AVAILABLE || isExecuTorchAvailable());
 
 /**
  * Which of the reader's voice kinds a persisted `ttsVoice` setting selects:
@@ -219,5 +224,9 @@ export function resolveVoice(voice: string | null | undefined): AiVoice {
  * new build.
  */
 export function readerVoiceId(voice: string | null): string | undefined {
+  // A phone that cannot run the AI voices reads with its own, whatever was
+  // saved and before anything is: "no voice" would start the AI engine, which
+  // then has nothing to answer with. (A cloud voice is never 'native'.)
+  if (voiceMode(voice) === 'native') return voice === null || isAiVoice(voice) ? DEVICE_VOICE : voice;
   return voice === null || isSupertonicVoice(voice) || isParadeeVoice(voice) || isCloudVoice(voice) ? undefined : voice;
 }

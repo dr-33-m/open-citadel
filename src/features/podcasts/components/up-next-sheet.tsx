@@ -7,7 +7,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { PodcastArtwork } from '@/features/podcasts/components/podcast-artwork';
-import { episodeArtwork, playLabel } from '@/features/podcasts/utils/format';
+import { playLabel } from '@/features/podcasts/utils/format';
+import { episodeArtwork } from '@/services/podcasts/download-paths';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { EpisodeItem } from '@/services/podcasts/records';
 

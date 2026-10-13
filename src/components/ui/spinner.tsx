@@ -13,6 +13,19 @@ import { tv, type VariantProps } from 'tailwind-variants';
 
 /** Milliseconds for one full turn. */
 const SPIN_DURATION = 800;
+/**
+ * How many turns the ring is sent on in one animation.
+ *
+ * Changed from upstream PanelUI, which repeated a single turn. A repeat starts
+ * each turn's clock at the frame that noticed the last one had ended, so when
+ * frames arrive late or in bursts (a phone short of memory, a heavy screen
+ * mounting underneath) every burst began the turn again from the top: the
+ * ring swung part of the way round, froze, and started over, for as long as
+ * the wait lasted. That read as a spinner that was itself broken, on the
+ * phones where the wait was longest. One long run keeps one clock, so a late
+ * frame draws the ring where it should be by then and it carries on round.
+ */
+const SPIN_TURNS = 1000;
 /** Milliseconds for one half of the fade that stands in for the turn. */
 const PULSE_DURATION = 900;
 /** How far down the fade goes. Faint enough to read as a pulse, not a flicker. */
@@ -70,18 +83,27 @@ export const Spinner = memo(function Spinner({
 
   useEffect(() => {
     progress.value = 0;
-    progress.value = withRepeat(
-      withTiming(1, {
-        duration: reducedMotion ? PULSE_DURATION : SPIN_DURATION,
-        easing: reducedMotion ? Easing.inOut(Easing.ease) : Easing.linear,
-      }),
-      -1,
-      // The turn restarts where it began, because a full circle already ends
-      // where it started. The fade turns around, because a pulse that snapped
-      // back to full brightness would be the flicker the setting is there to
-      // avoid.
-      reducedMotion
-    );
+    progress.value = reducedMotion
+      ? withRepeat(
+          withTiming(1, {
+            duration: PULSE_DURATION,
+            easing: Easing.inOut(Easing.ease),
+          }),
+          -1,
+          // The fade turns around, because a pulse that snapped back to full
+          // brightness would be the flicker the setting is there to avoid.
+          true
+        )
+      : withRepeat(
+          // Many turns on one clock (see `SPIN_TURNS`). The run restarts where
+          // it began, because a whole number of circles ends where it started.
+          withTiming(SPIN_TURNS, {
+            duration: SPIN_DURATION * SPIN_TURNS,
+            easing: Easing.linear,
+          }),
+          -1,
+          false
+        );
     return () => cancelAnimation(progress);
   }, [progress, reducedMotion]);
 
@@ -100,7 +122,7 @@ export const Spinner = memo(function Spinner({
         }
       : {
           opacity: 1,
-          transform: [{ rotate: `${progress.value * 360}deg` }],
+          transform: [{ rotate: `${(progress.value % 1) * 360}deg` }],
         }
   );
 

@@ -677,6 +677,12 @@ export const podcastEpisodes = sqliteTable(
      * path stored here would go stale; this is resolved on use instead.
      */
     downloadFile: text("download_file"),
+    /**
+     * The cover saved with the download, so it is there offline: a name in the
+     * same folder, resolved on use like `downloadFile`. Episodes that share a
+     * picture (most of a show) share the one file.
+     */
+    downloadCover: text("download_cover"),
     downloadedAt: text("downloaded_at"),
     downloadError: text("download_error"),
     /** Cleared once a download is deleted, so auto-download does not fetch it again. */
