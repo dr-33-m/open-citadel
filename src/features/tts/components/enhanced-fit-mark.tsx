@@ -4,28 +4,29 @@ import { useCSSVariable } from 'uniwind';
 import { CircleAlert, CircleCheck } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { enhancedFitCopy, type EnhancedFit } from '@/features/tts/utils/enhanced-fit';
+import type { EnhancedFit, EnhancedFitCopy } from '@/features/tts/utils/enhanced-fit';
 import { asColor } from '@/utils/colors';
 
 export interface EnhancedFitMarkProps {
   fit: EnhancedFit;
+  /** What to say about it, for the voice box in hand (`enhancedFitCopy`). */
+  copy: EnhancedFitCopy;
   /** Opens the sheet that says what the mark means. */
   onPress: () => void;
 }
 
 /**
- * How this phone will cope with the Enhanced voices, in one line beside what
- * they are: a ringed green tick where they run smoothly, a ringed warning
- * where they will pause. Pressing it says why, and what to do.
+ * How this phone will cope with the chosen voice box, in one line under what
+ * that box is: a ringed green tick where it runs smoothly, a ringed warning
+ * where it will pause. Pressing it says why, and what to do.
  *
  * Status is said by the mark and the words together, never by colour alone.
  */
-export function EnhancedFitMark({ fit, onPress }: EnhancedFitMarkProps) {
+export function EnhancedFitMark({ fit, copy, onPress }: EnhancedFitMarkProps) {
   const [success, warning] = useCSSVariable(['--color-success-foreground', '--color-warning-foreground']);
   const smooth = fit === 'smooth';
   const color = asColor(smooth ? success : warning);
   const Icon = smooth ? CircleCheck : CircleAlert;
-  const copy = enhancedFitCopy(fit);
 
   return (
     <Touchable
@@ -35,7 +36,7 @@ export function EnhancedFitMark({ fit, onPress }: EnhancedFitMarkProps) {
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={copy.mark}
-      accessibilityHint="Says how these voices will run on this phone"
+      accessibilityHint="Says how this voice box will run on this phone"
     >
       <Icon size={16} color={color} strokeWidth={2} />
       <ThemedText type="bodySm" color={color}>

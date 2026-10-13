@@ -8,12 +8,12 @@ import { EnhancedVoicePane } from '@/features/tts/components/enhanced-voice-pane
 import { LiteVoicePane } from '@/features/tts/components/lite-voice-pane';
 import { SwitchPanes } from '@/components/switch-panes';
 import { useAiVoiceEngine } from '@/features/tts/hooks/use-ai-voice-engine';
+import { useEnhancedFit } from '@/features/tts/hooks/use-enhanced-fit';
 import { useVoiceKind } from '@/features/tts/hooks/use-voice-kind';
 import { OnDeviceVoiceSwitch } from '@/features/tts/components/on-device-voice-switch';
 import { VoiceSourceCards } from '@/features/tts/components/voice-source-cards';
 import { EnhancedFitMark } from '@/features/tts/components/enhanced-fit-mark';
 import { EnhancedFitSheet } from '@/features/tts/components/enhanced-fit-sheet';
-import { enhancedFit } from '@/features/tts/utils/enhanced-fit';
 import { CloudSourcePane } from '@/features/tts/components/cloud-source-pane';
 import { useCloudVoicePane } from '@/features/tts/hooks/use-cloud-voice-pane';
 import { useVoiceSource } from '@/features/tts/hooks/use-voice-source';
@@ -28,16 +28,12 @@ import {
 } from '@/services/device-tts/catalogue';
 import { prefetchDeviceVoices } from '@/query-manager/device-voices';
 import { asColor } from '@/utils/colors';
-import { deviceMemoryBytes } from '@/utils/memory-estimator';
 
 /** The kinds, left to right as the switch draws them. */
 const KIND_ORDER = ON_DEVICE_KINDS.map((kind) => kind.mode);
 
 /** The sources, left to right as their cards sit. */
 const SOURCE_ORDER: readonly VoiceSource[] = ['device', 'cloud'];
-
-/** How this phone copes with the Enhanced voices. A fact about the phone, so it is read once. */
-const ENHANCED_FIT = enhancedFit(deviceMemoryBytes());
 
 export interface TtsSettingsPanelProps {
   /** Closes the sheet this panel is mounted in, shown as a "DONE" control
@@ -65,7 +61,7 @@ export interface TtsSettingsPanelProps {
  * controls trade places under the cards, as the kinds do under their switch.
  * On-device then has two kinds, on one switch, and each shows its own controls:
  *
- * - Enhanced (`ai`): which voice box reads (Supertonic or Kokoro), then that
+ * - Enhanced (`ai`): which voice box reads (Paradee, Supertonic or Kokoro), then that
  *   engine's download card until its voices are on the device, and only then
  *   the voice carousel and reading speed. Before that there is nothing to
  *   preview or pick.
@@ -75,8 +71,9 @@ export interface TtsSettingsPanelProps {
  * The switch only shows where there is a choice to make: a phone that cannot
  * run the Enhanced voices at all says so in a line and shows the Lite ones,
  * and where there is no Lite path at all (web) only the Enhanced controls
- * show. A phone that can run them but will pause says so in a mark beside
- * their line, which opens `EnhancedFitSheet`: a warning, never a lock.
+ * show. Each voice box says how this phone will cope with it in a mark under
+ * its line, which opens `EnhancedFitSheet`: where the box will pause that is
+ * a warning, never a lock.
  *
  * Everything that belongs to a kind is in its pane, and the two panes trade
  * places under the switch (`SwitchPanes`). Panes drawn once are kept, so
@@ -103,19 +100,17 @@ export function TtsSettingsPanel({ onDone, warm = false, surface = 'background' 
 
   const nativeNote = NATIVE_SPEED_SUPPORTED ? null : LITE_SPEED_FIXED;
   const canSwitchKind = NATIVE_VOICE_AVAILABLE && AI_VOICES_SUPPORTED;
-  const [fitVisible, setFitVisible] = React.useState(false);
-  const openFit = React.useCallback(() => setFitVisible(true), []);
-  const closeFit = React.useCallback(() => setFitVisible(false), []);
+  const fit = useEnhancedFit(ai.section.engine);
   const [cloudInfoVisible, setCloudInfoVisible] = React.useState(false);
   const openCloudInfo = React.useCallback(() => setCloudInfoVisible(true), []);
   const closeCloudInfo = React.useCallback(() => setCloudInfoVisible(false), []);
 
   const switchToLite = () => {
-    setFitVisible(false);
+    fit.close();
     selectKind('native');
   };
   const switchToCloud = () => {
-    setFitVisible(false);
+    fit.close();
     voiceSource.selectCloud();
   };
 
@@ -132,7 +127,7 @@ export function TtsSettingsPanel({ onDone, warm = false, surface = 'background' 
     ai: (
       <EnhancedVoicePane
         hint={canSwitchKind ? onDeviceHint('ai') : null}
-        mark={<EnhancedFitMark fit={ENHANCED_FIT} onPress={openFit} />}
+        mark={<EnhancedFitMark {...fit.mark} />}
         section={ai.section}
         showSpeed={ai.downloaded}
         rates={ai.rates}
@@ -216,9 +211,7 @@ export function TtsSettingsPanel({ onDone, warm = false, surface = 'background' 
       />
 
       <EnhancedFitSheet
-        visible={fitVisible}
-        onClose={closeFit}
-        fit={ENHANCED_FIT}
+        {...fit.sheet}
         onUseLite={switchToLite}
         onUseCloud={voiceSource.cloudLocked ? undefined : switchToCloud}
       />

@@ -1,3 +1,4 @@
+import React from "react";
 import { View } from "react-native";
 
 import { ChoiceChips, type Choice } from "@/components/choice-chips";
@@ -13,6 +14,8 @@ export interface AiVoiceSectionProps {
   choices: Choice<TtsEngineId>[];
   /** One line on what the chosen voice box is like, under the switches. */
   hint: string;
+  /** How this phone copes with the chosen voice box, after that line. */
+  mark: React.ReactNode;
   /** The chosen voice box's voices. */
   voices: readonly AiVoice[];
   /** Whether those voices are on the phone yet. */
@@ -41,6 +44,7 @@ export function AiVoiceSection({
   engine,
   choices,
   hint,
+  mark,
   voices,
   downloaded,
   selected,
@@ -52,6 +56,10 @@ export function AiVoiceSection({
   onCancel,
 }: AiVoiceSectionProps) {
   const tokens = useThemeTokens();
+  // A phone that is offered one voice box has nothing to choose between, so
+  // the switches and the line that tells them apart are both left out. The
+  // mark stays: how the one box runs is still worth knowing.
+  const hasChoice = choices.length > 1;
 
   return (
     <View className="gap-4">
@@ -59,17 +67,26 @@ export function AiVoiceSection({
           label and them: it is what the chosen one is like, so it reads
           after the choice. */}
       <View className="gap-2">
-        <ChoiceChips
-          label="VOICE BOX"
-          choices={choices}
-          value={engine}
-          onChange={onEngineChange}
-          gutter="none"
-          fill
-        />
-        <ThemedText type="bodySm" color={tokens["--color-muted-foreground"]}>
-          {hint}
-        </ThemedText>
+        {hasChoice ? (
+          <ChoiceChips
+            label="VOICE BOX"
+            choices={choices}
+            value={engine}
+            onChange={onEngineChange}
+            gutter="none"
+            fill
+          />
+        ) : null}
+        {/* Wraps as one run, so the mark drops under the line on a narrow
+            phone or at large type instead of squeezing it. */}
+        <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
+          {hasChoice ? (
+            <ThemedText type="bodySm" color={tokens["--color-muted-foreground"]}>
+              {hint}
+            </ThemedText>
+          ) : null}
+          {mark}
+        </View>
       </View>
       {downloaded ? (
         <EnhancedVoicePicker

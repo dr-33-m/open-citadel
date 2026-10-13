@@ -7,13 +7,15 @@ import { CircleAlert, CircleCheck } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
 import { Sheet } from '@/components/ui/sheet';
-import { enhancedFitCopy, type EnhancedFit } from '@/features/tts/utils/enhanced-fit';
+import type { EnhancedFit, EnhancedFitCopy } from '@/features/tts/utils/enhanced-fit';
 import { asColor } from '@/utils/colors';
 
 export interface EnhancedFitSheetProps {
   visible: boolean;
   onClose: () => void;
   fit: EnhancedFit;
+  /** What to say about it, for the voice box in hand (`enhancedFitCopy`). */
+  copy: EnhancedFitCopy;
   /** The way out for a phone that strains: switch to the Lite voices. */
   onUseLite: () => void;
   /**
@@ -25,13 +27,13 @@ export interface EnhancedFitSheetProps {
 }
 
 /**
- * What the mark beside "Sounds more human" means on this phone.
+ * What the mark under the chosen voice box means on this phone.
  *
- * Where the voices run smoothly it says so and nothing more. Where they will
- * pause it says that plainly, that they can still be tried, and the way out
- * if they prove unusable: the warning is advice, never a lock.
+ * Where the box runs smoothly it says so and nothing more. Where it will
+ * pause it says that plainly, that it can still be tried, and the way out
+ * if it proves unusable: the warning is advice, never a lock.
  */
-export function EnhancedFitSheet({ visible, onClose, fit, onUseLite, onUseCloud }: EnhancedFitSheetProps) {
+export function EnhancedFitSheet({ visible, onClose, fit, copy, onUseLite, onUseCloud }: EnhancedFitSheetProps) {
   const [mutedForeground, success, warning, primary] = useCSSVariable([
     '--color-muted-foreground',
     '--color-success-foreground',
@@ -39,7 +41,6 @@ export function EnhancedFitSheet({ visible, onClose, fit, onUseLite, onUseCloud 
     '--color-primary',
   ]);
   const smooth = fit === 'smooth';
-  const copy = enhancedFitCopy(fit);
   const Icon = smooth ? CircleCheck : CircleAlert;
 
   return (
