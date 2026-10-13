@@ -155,6 +155,21 @@ The pace is work over speech: under 1 keeps up. Paradee's memory did not grow ov
 samples, and over two and a half minutes of reading aloud the app stayed between 1.65 and
 2.0 GB with no creep (the dev build idles at 1.26 GB).
 
+## On a 2 GB emulator
+
+A fresh `paradee_2gb` emulator (x86_64, reports 2.5 GB, so under the 3 GB wall), the dev
+build, a first install. Its processor is the laptop's, so the pace here says nothing about a
+small phone's; the memory does.
+
+- **Only Paradee is offered**, with no voice box chips, and the download is 64 MB from
+  Hugging Face on a phone that has nothing yet.
+- **The voice sample plays**: x0.43 to x0.49. The app grew by about 300 MB at the peak and
+  did not grow on a second play. The device kept 485 MB available at its lowest.
+- **Reading aloud does not use it.** The native reader has a wall of its own:
+  `needsSystemVoice()` in `TTSManager.kt` (our patch to `@dr33m/react-native-readium`,
+  Android only) sends every phone under 3 GB to the phone's own voice, whatever JS asks for.
+  So on a small Android phone Paradee can be heard in Settings and never in a book.
+
 ## In the app
 
 All JS, mostly in `src/services/device-tts/`, the same shape as when Supertonic was added.
@@ -230,6 +245,12 @@ files to Software Mansion's model registry.
 
 ## Next steps
 
-1. Measure on a 2 to 3 GB phone or emulator. Until then, offering Paradee under the 3 GB
-   wall is a claim, not a measurement, and so is where its disclaimer's bar sits.
-2. Listen for the phonemizer difference above.
+1. **Let the reader use Paradee under 3 GB.** Take the memory wall out of `TTSManager.kt`
+   and let JS decide, as it already does everywhere else: it sends `system-voice` when the
+   phone has no Enhanced voice it can run. This is a native change, so it needs a new
+   binary and cannot go out over the air; until then small Android phones see Paradee in
+   Settings and hear the phone's voice in books.
+2. Then measure a book read aloud on the 2 GB emulator, which is what Kokoro ran out of
+   memory doing, and on a real 2 to 3 GB phone for the pace. Until then, where Paradee's
+   disclaimer bar sits is a claim, not a measurement.
+3. Listen for the phonemizer difference above.
