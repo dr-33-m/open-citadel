@@ -16,12 +16,19 @@
 import { useCallback } from 'react';
 
 import type { ReadiumViewRef, TTSSynthesisRequest } from '@dr33m/react-native-readium';
-import { KOKORO_SAMPLE_RATE } from 'react-native-executorch';
 
 import { isSupertonicVoice } from '@/services/device-tts/supertonic';
 import { resolveVoice } from '@/services/device-tts/catalogue';
 import { useSettingsStore } from '@/stores/settings';
 import { stop as stopSynthesis, synthesize } from '@/services/device-tts/engine';
+
+/**
+ * The rate an empty answer is sent at: Kokoro's own. Written out rather than
+ * imported, because importing a value from `react-native-executorch` loads the
+ * whole runtime with the reader, and on a phone that cannot run it that import
+ * never returns (see `lib/executorch`).
+ */
+const KOKORO_SAMPLE_RATE = 24000;
 
 /** The exact bytes of a chunk's audio, regardless of how its Float32Array views its buffer. */
 function chunkBytes(audio: Float32Array): ArrayBuffer {
