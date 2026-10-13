@@ -2,7 +2,7 @@
  * The one answerer Readium's native engine talks to, whichever voice reads.
  *
  * The engine asks JS for every sentence and does not know which voice is
- * behind it (`readerVoiceId` starts it with none for Supertonic and cloud
+ * behind it (`readerVoiceId` starts it with none for Supertonic, Paradee and cloud
  * voices alike). This reads the setting at the moment of each request and
  * hands it to the cloud session or the on-device synthesizer, so switching
  * between them while a book is open needs no restart: the next sentence is

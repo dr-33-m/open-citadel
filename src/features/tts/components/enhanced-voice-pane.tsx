@@ -9,9 +9,9 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 export interface EnhancedVoicePaneProps {
   /** What Enhanced voices are, in one line. Left out where there is no switch to explain. */
   hint: string | null;
-  /** How this phone copes with them, beside the line. */
+  /** How this phone copes with the chosen voice box, under that box's line. */
   mark: React.ReactNode;
-  section: AiVoiceSectionProps;
+  section: Omit<AiVoiceSectionProps, 'mark'>;
   /** The chosen voice box has its voices, so there is a speed to set. */
   showSpeed: boolean;
   /** The speeds the chosen voice box can read at, or undefined for the full range. */
@@ -24,16 +24,11 @@ export function EnhancedVoicePane({ hint, mark, section, showSpeed, rates }: Enh
   return (
     <View className="gap-4">
       {hint ? (
-        // Wraps as one run, so the mark drops under the line on a narrow
-        // phone or at large type instead of squeezing it.
-        <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
-          <ThemedText type="bodySm" color={muted}>
-            {hint}
-          </ThemedText>
-          {mark}
-        </View>
+        <ThemedText type="bodySm" color={muted}>
+          {hint}
+        </ThemedText>
       ) : null}
-      <AiVoiceSection {...section} />
+      <AiVoiceSection {...section} mark={mark} />
       {showSpeed ? <ReadingSpeedStepper rates={rates} /> : null}
     </View>
   );

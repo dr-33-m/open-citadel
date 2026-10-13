@@ -16,7 +16,9 @@ import RNBlobUtil from 'react-native-blob-util';
 import type { KokoroTtsModel, SupertonicTtsModel } from 'react-native-executorch';
 
 import { cachePath, getExecuTorch } from '@/lib/executorch';
-import { kokoroModels, type KokoroAccent, type TtsEngineId } from '@/services/device-tts/catalogue';
+import type { TtsEngineId } from '@/services/device-tts/catalogue';
+import { kokoroModels, type KokoroAccent } from '@/services/device-tts/kokoro';
+import { paradeeModel } from '@/services/device-tts/paradee';
 import { supertonicModel } from '@/services/device-tts/supertonic';
 
 /** Every remote URL nested inside a model config, in no particular order. */
@@ -29,7 +31,8 @@ function collectUrls(value: unknown): string[] {
 
 /** Everything an engine downloads, as one value `download` can walk, or null without the runtime. */
 function packSource(engine: TtsEngineId): unknown {
-  return engine === 'kokoro' ? kokoroModels() : supertonicModel();
+  if (engine === 'kokoro') return kokoroModels();
+  return engine === 'paradee' ? paradeeModel() : supertonicModel();
 }
 
 /**
@@ -84,6 +87,11 @@ async function localCopy<T>(engine: TtsEngineId, model: T | null | undefined): P
  */
 export function localKokoroFiles(accent: KokoroAccent): Promise<KokoroTtsModel<string> | null> {
   return localCopy('kokoro', kokoroModels()?.[accent]);
+}
+
+/** Paradee's files on this device, or null when any of them is missing. */
+export function localParadeeFiles(): Promise<KokoroTtsModel<string> | null> {
+  return localCopy('paradee', paradeeModel());
 }
 
 /** Supertonic's files on this device, or null when any of them is missing. */
