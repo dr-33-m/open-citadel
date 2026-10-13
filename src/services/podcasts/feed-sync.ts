@@ -128,7 +128,13 @@ export async function refreshShow(show: Podcast, force = false): Promise<Refresh
         .where(eq(podcasts.id, show.id));
       return outcome;
     }
+    // Each step of what follows holds the JS thread on its own (parsing a
+    // long-running show's feed is over a second of it), and several feeds
+    // land together. Handing the thread back between the steps lets a tap in
+    // between them, instead of waiting out every feed end to end.
+    await yieldToUi();
     const feed = parseFeed(fetched.xml);
+    await yieldToUi();
 
     const stored: StoredForMerge[] = await db
       .select({
@@ -151,7 +157,9 @@ export async function refreshShow(show: Podcast, force = false): Promise<Refresh
       null,
     );
     const storedById = new Map(stored.map((s) => [s.id, s]));
+    await yieldToUi();
     const plan = planEpisodeMerge(stored, feed.episodes);
+    await yieldToUi();
 
     const updates = plan.updates.filter((u) => changed(storedById.get(u.id)!, u.episode));
     for (const batch of chunk(updates, 50)) {

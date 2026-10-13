@@ -32,9 +32,17 @@ export function useLibraryPage() {
     blogs: tab === 'blogs',
   }));
 
+  // The switch moves in the tap's own render, and that is all the tap waits
+  // for. A side opened for the first time is built behind it, as a transition:
+  // built in the same render, the switch stood still until the whole side had
+  // mounted and read its library, and the tap looked as if it had not landed.
+  // The side being left fades out meanwhile, and the new one fades in on its
+  // skeleton as soon as it exists.
   const changeTab = React.useCallback((next: LibraryTab) => {
-    setMounted((prev) => (prev[next] ? prev : { ...prev, [next]: true }));
     usePodcastPrefs.getState().set('libraryTab', next);
+    React.startTransition(() => {
+      setMounted((prev) => (prev[next] ? prev : { ...prev, [next]: true }));
+    });
   }, []);
   const openTimeline = React.useCallback(() => useHubStore.getState().goTo(HUB.timeline), []);
   const openSamwell = React.useCallback(() => useHubStore.getState().goTo(HUB.samwell), []);

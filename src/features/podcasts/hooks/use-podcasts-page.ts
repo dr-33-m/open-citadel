@@ -17,14 +17,23 @@ export type PodcastsPageView = 'import' | 'loading' | 'welcome' | 'home';
 
 
 /**
+ * How long after the side has filled before its shows are checked. Checking a
+ * show parses its whole feed on the JS thread (over a second for a long-running
+ * show's), and started with the side it took the thread just as the shelves
+ * were mounting: the side sat on its skeleton, and taps waited with it.
+ */
+const CHECK_AFTER_MS = 1500;
+
+/**
  * The podcasts side of the Library: which view it shows, and what its
  * buttons, pull and shelves do.
  *
  * Opening it is also when followed shows are checked for new episodes (those
  * past the refresh interval only; a pull checks every one), which is the
- * moment the listener would look for them.
+ * moment the listener would look for them. `landed` is the side having
+ * finished appearing: the check waits for that, and for the shelves.
  */
-export function usePodcastsPage() {
+export function usePodcastsPage(landed: boolean) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const home = usePodcastHome();
@@ -35,9 +44,12 @@ export function usePodcastsPage() {
   // so its pending state is the spinner and a second pull joins the first.
   const pull = useMutation({ mutationFn: () => refreshAllShows(true) });
 
+  const filled = landed && home.loaded;
   React.useEffect(() => {
-    void refreshAllShows(false);
-  }, []);
+    if (!filled) return undefined;
+    const timer = setTimeout(() => void refreshAllShows(false), CHECK_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [filled]);
 
   const openExplore = React.useCallback(() => openPodcastExplore(router), [router]);
   const startFresh = React.useCallback(() => {
