@@ -57,11 +57,6 @@ export function episodeMeta(item: Pick<EpisodeItem, 'pubDate' | 'durationSec'>):
   return [formatPubDate(item.pubDate), formatDuration(item.durationSec)].filter(Boolean).join(' · ');
 }
 
-/** The artwork an episode is drawn with: its own, or its show's. */
-export function episodeArtwork(item: Pick<EpisodeItem, 'imageUrl' | 'showImageUrl'>): string | null {
-  return item.imageUrl ?? item.showImageUrl;
-}
-
 /** `1.5×`, `1×`. */
 export function formatSpeed(speed: number): string {
   return `${Number(speed.toFixed(2))}×`;

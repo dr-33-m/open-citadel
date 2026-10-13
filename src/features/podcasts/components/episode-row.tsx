@@ -7,7 +7,8 @@ import { Touchable } from '@/components/ui/touchable';
 import { DownloadButton } from '@/features/podcasts/components/download-button';
 import { PlayChip } from '@/features/podcasts/components/play-chip';
 import { PodcastArtwork } from '@/features/podcasts/components/podcast-artwork';
-import { episodeArtwork, episodeMeta, listenedFraction } from '@/features/podcasts/utils/format';
+import { episodeMeta, listenedFraction } from '@/features/podcasts/utils/format';
+import { episodeArtwork } from '@/services/podcasts/download-paths';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { EpisodeItem } from '@/services/podcasts/records';
 

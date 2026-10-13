@@ -123,8 +123,8 @@ export const SamwellSection = React.memo(function SamwellSection({
           <OfflineModelCard />
         ) : (
           <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-            On-device AI is not supported on this device. Grand Maester Samwell is
-            on the way. Check back soon.
+            On-device Samwell is not supported on this phone. Choose Cloud to
+            talk to him.
           </ThemedText>
         )}
       </KeptAlive>

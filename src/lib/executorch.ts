@@ -4,7 +4,8 @@
  * `react-native-executorch` throws at import when its native module is not in
  * the binary: on web, and in any dev build made before the module was added.
  * A static import would take the whole app down in those cases, so it is
- * required here, once, behind a guard.
+ * required here, once, behind a guard. Nothing else may import a value from
+ * the package: types only.
  *
  * Deferring it pays twice. Importing the package starts a worklet runtime and
  * builds a registry of every model it knows, and none of that is needed until
@@ -16,15 +17,44 @@ import RNBlobUtil from 'react-native-blob-util';
 
 type ExecuTorch = typeof import('react-native-executorch');
 
+let available: boolean | undefined;
 let resolved = false;
 let module: ExecuTorch | null = null;
 
-/** The runtime, or null when this binary does not carry it. */
+/**
+ * Whether on-device Samwell and the Enhanced voices can run on this phone at
+ * all.
+ *
+ * Asks for the native module by name rather than loading the package, so it is
+ * cheap enough for module scope. Asked once, and the answer kept, because the
+ * asking itself can fail: the module is in every build, but creating it loads
+ * the runtime's native library, and on some phones that load is refused
+ * (1.5.1 died on launch on a 2 GB Android 15 phone exactly there). The throw
+ * reaches JS, so it is caught here and read as "not on this phone".
+ *
+ * The answer must never be asked for twice. React Native marks a module as
+ * being created before it creates it and does not clear the mark when the
+ * creation throws, so a second request for the same module waits on the first
+ * forever, on the JS thread. That is also why `getExecuTorch` checks here
+ * before it requires the package, whose first act is to ask for the module.
+ */
+export function isExecuTorchAvailable(): boolean {
+  if (available === undefined) {
+    try {
+      available = process.env.EXPO_OS !== 'web' && TurboModuleRegistry.get('RnExecutorch') != null;
+    } catch {
+      available = false;
+    }
+  }
+  return available;
+}
+
+/** The runtime, or null when this phone or this binary cannot run it. */
 export function getExecuTorch(): ExecuTorch | null {
   if (resolved) return module;
   resolved = true;
 
-  if (process.env.EXPO_OS === 'web') return null;
+  if (!isExecuTorchAvailable()) return null;
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -38,17 +68,6 @@ export function getExecuTorch(): ExecuTorch | null {
   }
 
   return module;
-}
-
-/**
- * Whether on-device Samwell can run in this binary at all.
- *
- * Asks for the native module by name rather than loading the package, so it is
- * cheap enough for module scope and costs nothing at startup.
- */
-export function isExecuTorchAvailable(): boolean {
-  if (process.env.EXPO_OS === 'web') return false;
-  return TurboModuleRegistry.get('RnExecutorch') != null;
 }
 
 /** The same hash ExecuTorch's fetcher names its cached files with. */

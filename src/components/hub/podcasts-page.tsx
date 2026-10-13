@@ -26,10 +26,10 @@ type PodcastsPageProps = {
 /** The podcasts side of the Library, wired: the welcome the first time, an import while one runs, the shelves after. */
 export function PodcastsPage({ bottomChrome, settleMs }: PodcastsPageProps) {
   const insets = useSafeAreaInsets();
-  const page = usePodcastsPage();
   // After the Library switch's fade (250ms) has run, so the shelves do not
   // mount under a moving surface. At once when the app opened on this side.
   const landed = useSettledAfter(settleMs);
+  const page = usePodcastsPage(landed);
   useLibraryFilled(page.view !== "loading");
   const { importer, episodes } = page;
 

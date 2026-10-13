@@ -59,13 +59,15 @@ function countryCode(): string {
   }
 }
 
-/** Apple requests in flight at once, so twelve charts on a slow connection arrive top first. */
+/** Chart requests in flight at once, so twelve charts on a slow connection arrive top first. */
 const turn = createRequestGate(3);
 
+/** One request to Apple's directory, with a timeout and the caller's cancellation if it has one. */
 async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
-  const done = await turn();
   const controller = new AbortController();
   const onAbort = () => controller.abort();
+  // Already cancelled (while it waited its turn): the listener would never hear it.
+  if (signal?.aborted) controller.abort();
   signal?.addEventListener("abort", onAbort);
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -75,6 +77,24 @@ async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+/**
+ * `getJson` for a chart, which waits its turn at the gate.
+ *
+ * Only the charts queue. A search, and the lookup behind a show somebody just
+ * tapped, are one request each and somebody is watching for the answer, so
+ * they go at once. They used to share the gate, and on a slow connection a
+ * tapped show sat behind every chart still loading, each allowed fifteen
+ * seconds: its page turned its spinner for minutes before it had asked for
+ * anything.
+ */
+async function getChartJson(url: string, signal?: AbortSignal): Promise<unknown> {
+  const done = await turn();
+  try {
+    return await getJson(url, signal);
+  } finally {
     done();
   }
 }
@@ -109,7 +129,7 @@ function fromChartEntry(entry: ChartEntry): DiscoveredShow | null {
 
 async function loadChart(country: string, genreId: number | null, limit: number, signal?: AbortSignal) {
   const genre = genreId == null ? "" : `/genre=${genreId}`;
-  const json = (await getJson(
+  const json = (await getChartJson(
     `https://itunes.apple.com/${country}/rss/toppodcasts/limit=${limit}${genre}/json`,
     signal,
   )) as { feed?: { entry?: ChartEntry | ChartEntry[] } };

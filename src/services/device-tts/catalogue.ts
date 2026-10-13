@@ -19,7 +19,7 @@
 import type { KokoroTtsModel } from 'react-native-executorch';
 import * as Device from 'expo-device';
 
-import { getExecuTorch } from '@/lib/executorch';
+import { getExecuTorch, isExecuTorchAvailable } from '@/lib/executorch';
 import {
   SUPERTONIC_DESCRIPTIONS,
   SUPERTONIC_LABELS,
@@ -119,8 +119,12 @@ export const ENGINE_INFO: Record<TtsEngineId, { label: string; hint: string; dow
   },
 };
 
-/** Whether this device can run the AI voices at all. */
-export const AI_VOICES_SUPPORTED = !LOW_MEMORY_ANDROID;
+/**
+ * Whether this device can run the AI voices at all: it has the memory, and
+ * the runtime they run on loads here. The web has no runtime and no phone
+ * voices either, so it keeps the AI controls, as it always has.
+ */
+export const AI_VOICES_SUPPORTED = !LOW_MEMORY_ANDROID && (!NATIVE_VOICE_AVAILABLE || isExecuTorchAvailable());
 
 /** Which of the reader's two voice kinds a persisted `ttsVoice` setting selects. */
 export type VoiceMode = 'ai' | 'native';
@@ -209,6 +213,10 @@ export function resolveVoice(voice: string | null | undefined): AiVoice {
  * from settings (`use-kokoro-tts-bridge.ts`).
  */
 export function readerVoiceId(voice: string | null): string | undefined {
+  // A phone that cannot run the AI voices reads with its own, whatever was
+  // saved and before anything is: "no voice" would start the AI engine, which
+  // then has nothing to answer with.
+  if (voiceMode(voice) === 'native') return voice === null || isAiVoice(voice) ? DEVICE_VOICE : voice;
   return voice === null || isSupertonicVoice(voice) ? undefined : voice;
 }
 
