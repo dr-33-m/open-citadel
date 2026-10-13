@@ -7,8 +7,10 @@ import { eq } from "drizzle-orm";
 import { createDownloadResumable, deleteAsync, getInfoAsync, type DownloadResumable } from "expo-file-system/legacy";
 
 import { db } from "@/db/client";
-import { podcastEpisodes } from "@/db/schema";
-import { ensureFolder, fileNameFor, folderUri, setStatus } from "@/services/podcasts/download-files";
+import { podcastEpisodes, podcasts } from "@/db/schema";
+import { coverNameFor, dropUnusedCovers, refreshPlayingCover, withSavedCover } from "@/services/podcasts/download-covers";
+import { ensureFolder, fileNameFor, setStatus } from "@/services/podcasts/download-files";
+import { folderUri } from "@/services/podcasts/download-paths";
 import { nowIso } from "@/services/podcasts/records";
 import { usePodcastDownloads } from "@/stores/podcast-downloads";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
@@ -52,8 +54,11 @@ async function runOne(id: string): Promise<DownloadOutcome> {
       id: podcastEpisodes.id,
       audioUrl: podcastEpisodes.audioUrl,
       mimeType: podcastEpisodes.mimeType,
+      imageUrl: podcastEpisodes.imageUrl,
+      showImageUrl: podcasts.imageUrl,
     })
     .from(podcastEpisodes)
+    .innerJoin(podcasts, eq(podcasts.id, podcastEpisodes.podcastId))
     .where(eq(podcastEpisodes.id, id))
     .limit(1);
   const episode = rows[0];
@@ -82,12 +87,26 @@ async function runOne(id: string): Promise<DownloadOutcome> {
       throw new Error(result ? `The server refused the download (error ${result.status}).` : "The download stopped.");
     }
     const info = await getInfoAsync(target);
-    await setStatus([id], {
-      downloadStatus: "downloaded",
-      downloadFile: name,
-      downloadedAt: nowIso(),
-      ...(info.exists && info.size ? { fileSize: info.size } : {}),
+    // The cover comes with it, so the episode has its picture with no
+    // connection. Cancelled while that was fetched is still cancelled.
+    const coverUrl = episode.imageUrl ?? episode.showImageUrl;
+    let stopped = false;
+    await withSavedCover(coverUrl, async (cover) => {
+      stopped = cancelled.has(id);
+      if (stopped) return;
+      await setStatus([id], {
+        downloadStatus: "downloaded",
+        downloadFile: name,
+        downloadCover: cover,
+        downloadedAt: nowIso(),
+        ...(info.exists && info.size ? { fileSize: info.size } : {}),
+      });
+      await refreshPlayingCover([id]);
     });
+    if (stopped) {
+      if (coverUrl) await dropUnusedCovers([coverNameFor(coverUrl)]);
+      return "cancelled";
+    }
     return "downloaded";
   } catch (err) {
     if (cancelled.has(id)) return "cancelled";

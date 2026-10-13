@@ -8,6 +8,7 @@ import { openShowPage } from '@/features/podcasts/hooks/open-podcast-page';
 import { useEpisode } from '@/features/podcasts/hooks/use-episode';
 import { playOrToggle } from '@/features/podcasts/hooks/use-episode-actions';
 import * as actions from '@/services/podcasts/actions';
+import { localCoverUri } from '@/services/podcasts/download-paths';
 import { playEpisode, seekTo } from '@/services/podcasts/player';
 import { showName } from '@/services/podcasts/records';
 import { useEpisodePlayback, usePodcastPlayer } from '@/stores/podcast-player';
@@ -63,8 +64,10 @@ export function useEpisodeScreen(id: string, landed: boolean) {
     view,
     episode,
     showTitle: show ? showName(show) : (listed?.showTitle ?? ''),
-    // The same picture either way, so the cover is not asked for twice.
-    artworkUrl: episode?.imageUrl ?? show?.imageUrl ?? listed?.showImageUrl ?? null,
+    // The same picture either way, so the cover is not asked for twice. The
+    // copy saved with a download comes first, as it does in every list.
+    artworkUrl:
+      (episode ? localCoverUri(episode) : null) ?? episode?.imageUrl ?? show?.imageUrl ?? listed?.showImageUrl ?? null,
     playback,
     chapters,
     notes,

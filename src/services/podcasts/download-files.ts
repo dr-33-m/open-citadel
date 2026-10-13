@@ -1,22 +1,11 @@
-/** Where downloaded episodes live on this device, and what their files are called. */
+/** What a downloaded episode's file is called, and writing its download state. Addresses are `download-paths`. */
 import { inArray } from "drizzle-orm";
-import { documentDirectory, getInfoAsync, makeDirectoryAsync } from "expo-file-system/legacy";
+import { getInfoAsync, makeDirectoryAsync } from "expo-file-system/legacy";
 
 import { db } from "@/db/client";
 import { podcastEpisodes } from "@/db/schema";
+import { folderUri } from "@/services/podcasts/download-paths";
 import { nowIso, type Episode } from "@/services/podcasts/records";
-
-const FOLDER = "podcasts/";
-
-export function folderUri(): string {
-  return `${documentDirectory}${FOLDER}`;
-}
-
-/** Where a downloaded episode's file is on this device, or null if it has none. */
-export function localFileUri(episode: Pick<Episode, "downloadStatus" | "downloadFile">): string | null {
-  if (episode.downloadStatus !== "downloaded" || !episode.downloadFile) return null;
-  return `${folderUri()}${episode.downloadFile}`;
-}
 
 const EXTENSIONS: Record<string, string> = {
   "audio/mpeg": "mp3",
