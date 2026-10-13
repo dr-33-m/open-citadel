@@ -7,7 +7,7 @@ import { easing, motion } from '@/constants/theme';
 
 /**
  * How far a pane travels as it changes places: the same short step as the
- * Library's sides (`ViewSwitcher`). Enough to say which way the other kind
+ * Library's sides (`ViewSwitcher`). Enough to say which way the other one
  * lies, the way the switch's card just slid, and no further.
  */
 const SHIFT = 16;
@@ -30,7 +30,7 @@ type PaneProps = {
 };
 
 /**
- * One kind's controls: fully shown or gone, easing between the two. Coming
+ * One choice's content: fully shown or gone, easing between the two. Coming
  * in, it steps in from the direction of the switch; going out, it steps away
  * the other way.
  *
@@ -64,28 +64,32 @@ function Pane({ active, startShown, direction, warm, children }: PaneProps) {
   );
 }
 
-export interface VoiceKindPanesProps<K extends string> {
-  /** The kinds, left to right as their switch draws them. */
+export interface SwitchPanesProps<K extends string> {
+  /** The choices, left to right as their switch draws them. */
   order: readonly K[];
   value: K;
-  /** Each kind's controls, or null where this phone does not offer the kind. */
+  /** Each choice's content, or null where it is not on offer. */
   panes: Record<K, React.ReactNode | null>;
   /** Build the panes that are not showing while they are hidden. See `KeptAlive`. */
   warm?: boolean;
 }
 
 /**
- * What is under the Lite / Enhanced switch: each kind's own controls, trading
- * places when the switch moves.
+ * What is under a switch: each choice's own content, trading places when the
+ * switch moves. Built for the reading voice's Lite / Enhanced switch, and
+ * used wherever two or three things take turns under the control that picks
+ * between them (the voice's on-device and cloud sides, the brains and voices
+ * of a plan's info sheet).
  *
- * Everything that belongs to a kind is in its pane (its one line, its voice,
- * its reading speed), so the whole of it leaves and arrives together, the way
- * the card above it travelled. That is what makes the switch read as one
- * control with one result instead of a row of things changing separately.
+ * Everything that belongs to a choice is in its pane (under Lite: its one
+ * line, its voice, its reading speed), so the whole of it leaves and arrives
+ * together, the way the card above it travelled. That is what makes the
+ * switch read as one control with one result instead of a row of things
+ * changing separately.
  *
  * Under Reduce Motion there is no travel: the panes cross-fade in place.
  */
-export function VoiceKindPanes<K extends string>({ order, value, panes, warm = false }: VoiceKindPanesProps<K>) {
+export function SwitchPanes<K extends string>({ order, value, panes, warm = false }: SwitchPanesProps<K>) {
   // Which way the switch last moved, set while rendering so the panes get it
   // in the same render as the new value.
   const [last, setLast] = React.useState({ value, direction: 1 });

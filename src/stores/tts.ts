@@ -25,6 +25,9 @@ const DOWNLOADED_KEYS: Record<TtsEngineId, string> = {
   // the download card once more, and only the new files are fetched.
   kokoro: "tts.kokoro.isDownloaded.v2",
   supertonic: "tts.supertonic.isDownloaded",
+  // v1: the tag its files are fetched from (`paradee.ts`). A later export is a
+  // new tag and a new key, so the download card shows once more for it.
+  paradee: "tts.paradee.isDownloaded.v1",
 };
 
 /** One engine's files: on the device or not, and how a download of them is going. */
@@ -68,7 +71,7 @@ export const useTtsStore = create<TtsStore>((set) => {
     set((state) => ({ packs: { ...state.packs, [engine]: { ...state.packs[engine], ...change } } }));
 
   return {
-    packs: { kokoro: EMPTY_PACK, supertonic: EMPTY_PACK },
+    packs: { kokoro: EMPTY_PACK, supertonic: EMPTY_PACK, paradee: EMPTY_PACK },
 
     async loadState() {
       const rows = db.select().from(appSettings).where(inArray(appSettings.key, Object.values(DOWNLOADED_KEYS))).all();

@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { db } from '@/db/client';
 import { appSettings } from '@/db/schema';
-import { DEVICE_VOICE, isAiVoice } from '@/services/device-tts/catalogue';
+import { DEVICE_VOICE, isAiVoice, isCloudVoice } from '@/services/device-tts/catalogue';
 import { decideOnboarding } from '@/utils/onboarding-gate';
 
 export type AppTheme = 'dark' | 'light';
@@ -91,6 +91,17 @@ type SettingsState = {
   ttsNaturalVoice: string | null;
   ttsPhoneVoice: string | null;
   ttsPhoneVoiceLanguage: string | null;
+  /**
+   * The same memory one level up, for the two sources. `ttsCloudVoice` is the
+   * cloud voice last chosen (`cloud:<modelId>:<voice>`), so choosing Cloud
+   * again comes back to it; `ttsDeviceVoice` is the on-device voice last
+   * reading, of either kind, which is what "Continue on-device" returns to
+   * when a cloud voice cannot go on. Null for "never chosen": see
+   * `lastDeviceVoice`.
+   */
+  ttsCloudVoice: string | null;
+  ttsDeviceVoice: string | null;
+  ttsDeviceVoiceLanguage: string | null;
   ttsRate: number;  isLoaded: boolean;
   loadSettings: () => Promise<void>;
   setUsername: (name: string) => Promise<void>;
@@ -132,6 +143,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   ttsNaturalVoice: null,
   ttsPhoneVoice: null,
   ttsPhoneVoiceLanguage: null,
+  ttsCloudVoice: null,
+  ttsDeviceVoice: null,
+  ttsDeviceVoiceLanguage: null,
   ttsRate: 1.0,  isLoaded: false,
 
   loadSettings: async () => {
@@ -163,6 +177,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       ttsNaturalVoice: map['ttsNaturalVoice'] ?? null,
       ttsPhoneVoice: map['ttsPhoneVoice'] ?? null,
       ttsPhoneVoiceLanguage: map['ttsPhoneVoiceLanguage'] ?? null,
+      ttsCloudVoice: map['ttsCloudVoice'] ?? null,
+      ttsDeviceVoice: map['ttsDeviceVoice'] ?? null,
+      ttsDeviceVoiceLanguage: map['ttsDeviceVoiceLanguage'] ?? null,
       ttsRate: parseFloat(map['ttsRate'] ?? '1'),      isLoaded: true,
     });
 
@@ -230,17 +247,33 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return;
     }
 
+    // A cloud voice is remembered as the cloud choice, and nothing on the
+    // device side is touched: the on-device voice it replaced is still the
+    // one "Continue on-device" goes back to.
+    if (isCloudVoice(voice)) {
+      set({ ttsVoice: voice, ttsVoiceLanguage: null, ttsCloudVoice: voice });
+      await saveSetting('ttsVoice', voice);
+      await db.delete(appSettings).where(eq(appSettings.key, 'ttsVoiceLanguage'));
+      await saveSetting('ttsCloudVoice', voice);
+      return;
+    }
+
     // Remembered against its own mode, not the other one's, so switching
     // modes and back restores it instead of a default.
     const natural = isAiVoice(voice);
     const phoneVoice = voice === DEVICE_VOICE ? '' : voice;
-    set(
-      natural
+    set({
+      ...(natural
         ? { ttsVoice: voice, ttsVoiceLanguage: language, ttsNaturalVoice: voice }
-        : { ttsVoice: voice, ttsVoiceLanguage: language, ttsPhoneVoice: phoneVoice, ttsPhoneVoiceLanguage: language },
-    );
+        : { ttsVoice: voice, ttsVoiceLanguage: language, ttsPhoneVoice: phoneVoice, ttsPhoneVoiceLanguage: language }),
+      ttsDeviceVoice: voice,
+      ttsDeviceVoiceLanguage: language,
+    });
 
     await saveSetting('ttsVoice', voice);
+    await saveSetting('ttsDeviceVoice', voice);
+    if (language) await saveSetting('ttsDeviceVoiceLanguage', language);
+    else await db.delete(appSettings).where(eq(appSettings.key, 'ttsDeviceVoiceLanguage'));
     // A voice with no language must not keep the previous voice's, or it
     // comes back after a restart paired with the wrong one.
     if (language) await saveSetting('ttsVoiceLanguage', language);
@@ -261,3 +294,28 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
 }));
+
+/**
+ * The on-device voice to go back to from the cloud, and its language.
+ *
+ * The one remembered when there is one. Before this build there was not, so
+ * the active voice answers if it is on-device, and otherwise the kind
+ * memories do: the Enhanced voice if one was ever chosen, the phone's own
+ * voice if not. `null` as the voice means the Enhanced default, the same as
+ * it does for `ttsVoice`.
+ */
+export function lastDeviceVoice(
+  state: Pick<
+    SettingsState,
+    'ttsVoice' | 'ttsVoiceLanguage' | 'ttsDeviceVoice' | 'ttsDeviceVoiceLanguage' | 'ttsNaturalVoice' | 'ttsPhoneVoice' | 'ttsPhoneVoiceLanguage'
+  >,
+): { voice: string | null; language: string | null } {
+  if (state.ttsDeviceVoice) return { voice: state.ttsDeviceVoice, language: state.ttsDeviceVoiceLanguage };
+  if (!isCloudVoice(state.ttsVoice)) return { voice: state.ttsVoice, language: state.ttsVoiceLanguage };
+  if (state.ttsNaturalVoice) return { voice: state.ttsNaturalVoice, language: null };
+  // '' is the phone's default voice, a real choice, not an absent one.
+  if (state.ttsPhoneVoice !== null) {
+    return { voice: state.ttsPhoneVoice || DEVICE_VOICE, language: state.ttsPhoneVoiceLanguage };
+  }
+  return { voice: null, language: null };
+}

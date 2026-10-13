@@ -23,6 +23,7 @@ export { default as Award } from 'lucide-react-native/icons/award';
 export { default as Bookmark } from 'lucide-react-native/icons/bookmark';
 export { default as BookmarkCheck } from 'lucide-react-native/icons/bookmark-check';
 export { default as BookmarkPlus } from 'lucide-react-native/icons/bookmark-plus';
+export { default as Brain } from 'lucide-react-native/icons/brain';
 export { default as BookOpen } from 'lucide-react-native/icons/book-open';
 export { default as Calendar } from 'lucide-react-native/icons/calendar';
 export { default as CalendarCheck2 } from 'lucide-react-native/icons/calendar-check-2';

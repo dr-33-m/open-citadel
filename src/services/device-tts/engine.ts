@@ -3,11 +3,11 @@
  * a voice — a singleton so repeated reading sessions never pay to reload it.
  *
  * "One" is deliberate: each Kokoro accent needs its own phonemizer, hence its
- * own pipeline, and Supertonic is a third, but two FP32 pipelines would double
- * the memory that already exhausts a 2 GB phone. So the loaded pipeline is
- * swapped when a voice of another accent or engine is asked for. That swap
- * happens inside the synthesis queue, so it can never dispose a pipeline that
- * is mid-utterance.
+ * own pipeline, and Supertonic and Paradee are two more, but two FP32
+ * pipelines would double the memory that already exhausts a 2 GB phone. So
+ * the loaded pipeline is swapped when a voice of another accent or engine is
+ * asked for. That swap happens inside the synthesis queue, so it can never
+ * dispose a pipeline that is mid-utterance.
  *
  * This is a much thinner singleton than `device-llm/engine.ts`'s: Kokoro has
  * no per-conversation cache to share, so the only hazard is calling
@@ -20,8 +20,16 @@
 import type { KokoroTextToSpeech, SupertonicTextToSpeech } from 'react-native-executorch';
 
 import { getExecuTorch } from '@/lib/executorch';
-import { VOICE_ACCENTS, type AiVoice, type KokoroAccent, type TtsEngineId } from '@/services/device-tts/catalogue';
-import { localKokoroFiles, localSupertonicFiles } from '@/services/device-tts/files';
+import {
+  engineOf,
+  isKokoroVoice,
+  resolveVoice,
+  VOICE_ACCENTS,
+  type AiVoice,
+  type KokoroAccent,
+  type TtsEngineId,
+} from '@/services/device-tts/catalogue';
+import { localKokoroFiles, localParadeeFiles, localSupertonicFiles } from '@/services/device-tts/files';
 import { atBestSteps, supertonicParts, supertonicSteps } from '@/services/device-tts/lead';
 import {
   KOKORO_CHUNKS,
@@ -33,10 +41,23 @@ import {
 } from '@/services/device-tts/pace';
 import { isSupertonicVoice, supertonicSpeed, supertonicStyle } from '@/services/device-tts/supertonic';
 
-/** Which pipeline is loaded: Supertonic's one, or one of Kokoro's per accent. */
+/**
+ * Which pipeline is loaded: Supertonic's one, Paradee's one, or one of
+ * Kokoro's per accent. Paradee's is a Kokoro pipeline over its own files.
+ */
 type Loaded =
   | { kind: 'kokoro'; accent: KokoroAccent; pipeline: KokoroTextToSpeech<string> }
+  | { kind: 'paradee'; pipeline: KokoroTextToSpeech<string> }
   | { kind: 'supertonic'; pipeline: SupertonicTextToSpeech<string> };
+
+/** What `load` is asked for: a `Loaded` before it has a pipeline. */
+type Wanted = { kind: 'kokoro'; accent: KokoroAccent } | { kind: 'paradee' } | { kind: 'supertonic' };
+
+/** The pipeline a voice is spoken through. */
+function wantedFor(voice: AiVoice): Wanted {
+  if (isKokoroVoice(voice)) return { kind: 'kokoro', accent: VOICE_ACCENTS[voice] };
+  return { kind: engineOf(voice) === 'paradee' ? 'paradee' : 'supertonic' };
+}
 
 let engine: Loaded | null = null;
 /**
@@ -55,7 +76,11 @@ let synthesisQueue: Promise<unknown> = Promise.resolve();
  * They outlive the pipeline on purpose: the phone is no faster for a change of
  * accent.
  */
-const meters: Record<TtsEngineId, PaceMeter> = { kokoro: createPaceMeter(), supertonic: createPaceMeter() };
+const meters: Record<TtsEngineId, PaceMeter> = {
+  kokoro: createPaceMeter(),
+  supertonic: createPaceMeter(),
+  paradee: createPaceMeter(),
+};
 /**
  * Supertonic's pace as it would be at its best step count, which is what
  * decides how many steps this phone is given. Kept apart from `meters`, whose
@@ -75,15 +100,15 @@ function logTiming(label: string, { chunks, firstAudioSeconds, audioSeconds, wor
 }
 
 /**
- * The Kokoro pipeline for `accent`, or Supertonic's, loaded from local files
- * if it isn't the one already loaded. Only ever called from inside a
- * synthesis turn.
+ * The Kokoro pipeline for `accent`, or Supertonic's or Paradee's, loaded from
+ * local files if it isn't the one already loaded. Only ever called from
+ * inside a synthesis turn.
  *
  * Never fetches: like `device-llm`'s `loadEngine`, this must not start a
  * multi-gigabyte-or-not download just because something asked for a voice.
  */
-async function load(want: { kind: 'kokoro'; accent: KokoroAccent } | { kind: 'supertonic' }): Promise<Loaded> {
-  const same = engine?.kind === want.kind && (want.kind === 'supertonic' || (engine.kind === 'kokoro' && engine.accent === want.accent));
+async function load(want: Wanted): Promise<Loaded> {
+  const same = engine?.kind === want.kind && (want.kind !== 'kokoro' || (engine.kind === 'kokoro' && engine.accent === want.accent));
   if (engine && same) return engine;
 
   engine?.pipeline.dispose();
@@ -94,6 +119,10 @@ async function load(want: { kind: 'kokoro'; accent: KokoroAccent } | { kind: 'su
     const files = await localSupertonicFiles();
     if (!et || !files) throw new Error("Supertonic isn't downloaded.");
     engine = { kind: 'supertonic', pipeline: await et.createSupertonicTextToSpeech(files) };
+  } else if (want.kind === 'paradee') {
+    const files = await localParadeeFiles();
+    if (!et || !files) throw new Error("Paradee isn't downloaded.");
+    engine = { kind: 'paradee', pipeline: await et.createKokoroTextToSpeech(files) };
   } else {
     const files = await localKokoroFiles(want.accent);
     if (!et || !files) throw new Error("Kokoro isn't downloaded.");
@@ -124,8 +153,12 @@ export function synthesize(text: string, options: { voice: AiVoice; speed?: numb
   async function* run() {
     await myTurn;
     try {
-      const { voice, speed } = options;
-      const loaded = await load(isSupertonicVoice(voice) ? { kind: 'supertonic' } : { kind: 'kokoro', accent: VOICE_ACCENTS[voice] });
+      // Whatever was asked for, never a voice of an engine this phone is not
+      // offered: loading one too large for it kills the app, which nothing
+      // here could catch.
+      const voice = resolveVoice(options.voice);
+      const { speed } = options;
+      const loaded = await load(wantedFor(voice));
       const first = fresh;
       fresh = false;
       if (loaded.kind === 'supertonic' && isSupertonicVoice(voice)) {
@@ -137,9 +170,11 @@ export function synthesize(text: string, options: { voice: AiVoice; speed?: numb
           logTiming(`supertonic, ${totalSteps} steps`, timing);
         };
         yield* pacedSynthesis(loaded.pipeline, text, spoken, meters.supertonic, { fresh: first, onDone, parts: supertonicParts });
-      } else if (loaded.kind === 'kokoro') {
-        const onDone = (timing: UtteranceTiming) => logTiming('kokoro', timing);
-        yield* pacedSynthesis(loaded.pipeline, text, { voice, speed }, meters.kokoro, { fresh: first, onDone, limits: KOKORO_CHUNKS });
+      } else if (loaded.kind !== 'supertonic') {
+        // Kokoro's pipeline and Paradee's are the same one over different
+        // files, so they are paced the same way, each by its own meter.
+        const onDone = (timing: UtteranceTiming) => logTiming(loaded.kind, timing);
+        yield* pacedSynthesis(loaded.pipeline, text, { voice, speed }, meters[loaded.kind], { fresh: first, onDone, limits: KOKORO_CHUNKS });
       }
     } finally {
       releaseTurn();

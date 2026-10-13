@@ -7,7 +7,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Touchable } from '@/components/ui/touchable';
 import type { DeviceVoice } from '@/utils/device-voices';
 
-export interface DeviceVoiceItemProps {
+export interface VoiceListItemProps {
   voice: DeviceVoice;
   isSelected: boolean;
   isPreviewing: boolean;
@@ -26,7 +26,7 @@ export interface DeviceVoiceItemProps {
 const pressedDim = ({ pressed }: { pressed: boolean }) => (pressed ? { opacity: 0.6 } : null);
 const ICON_BOX = { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' } as const;
 
-export const DeviceVoiceItem = React.memo(function DeviceVoiceItem({
+export const VoiceListItem = React.memo(function VoiceListItem({
   voice,
   isSelected,
   isPreviewing,
@@ -35,7 +35,7 @@ export const DeviceVoiceItem = React.memo(function DeviceVoiceItem({
   mutedForeground,
   onSelect,
   onPreview,
-}: DeviceVoiceItemProps) {
+}: VoiceListItemProps) {
   return (
     <Touchable
       className="flex-row items-center gap-4 border-b border-card px-6 py-4"

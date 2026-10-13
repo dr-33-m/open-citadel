@@ -106,6 +106,24 @@ async function ledgerCounts(
   return Object.fromEntries(result.rows.map((row) => [String(row.type), Number(row.n)]));
 }
 
+/** A billing service whose RevenueCat answers with these entitlements, and counts the asks. */
+function withRevenueCat(entitlements: Record<string, { expires_date: string }>): {
+  billing: BillingService;
+  fetches: () => number;
+} {
+  let fetches = 0;
+  const probed = createBillingService({
+    client,
+    now: () => nowMs,
+    revenueCatApiKey: 'sk_test',
+    fetchImpl: (async () => {
+      fetches += 1;
+      return { ok: true, status: 200, json: async () => ({ subscriber: { entitlements } }) };
+    }) as unknown as typeof fetch,
+  });
+  return { billing: probed, fetches: () => fetches };
+}
+
 // -- Reserving ---------------------------------------------------------------
 
 describe('reserveCredits', () => {
@@ -523,6 +541,97 @@ describe('readEntitlement', () => {
     expect(balance.balance).toBe(500 + GRANT);
     expect(balance.periodEndsAt).toBe(expiresDate);
     expect(await ledgerCounts()).toEqual({ MONTHLY_GRANT: 1 });
+  });
+
+  it('reconciles a lapsed row when the reader subscribes again', async () => {
+    // A reader who subscribed once and stopped keeps a row with no plan. A
+    // server the webhook never reaches (a preview deploy) or reaches late has
+    // only this read to learn about the new purchase from.
+    await seedPlan({ plan: null, balance: 300, periodEndMs: NOW - 5_000 });
+    const expiresDate = new Date(FUTURE).toISOString();
+
+    const probed = createBillingService({
+      client,
+      now: () => nowMs,
+      revenueCatApiKey: 'sk_test',
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          subscriber: {
+            entitlements: { grand_maester: { expires_date: expiresDate } },
+          },
+        }),
+      })) as unknown as typeof fetch,
+    });
+    const balance = await probed.readEntitlement(ACCOUNT);
+    expect(balance.plan).toBe('grand_maester');
+    expect(balance.balance).toBe(300 + GRANT);
+    expect(balance.periodEndsAt).toBe(expiresDate);
+    expect(await ledgerCounts()).toEqual({ MONTHLY_GRANT: 1 });
+  });
+
+  it('leaves a lapsed row alone when RevenueCat holds nothing for it', async () => {
+    await seedPlan({ plan: null, balance: 300, periodEndMs: NOW - 5_000 });
+    const probed = createBillingService({
+      client,
+      now: () => nowMs,
+      revenueCatApiKey: 'sk_test',
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ subscriber: { entitlements: {} } }),
+      })) as unknown as typeof fetch,
+    });
+    const balance = await probed.readEntitlement(ACCOUNT);
+    expect(balance.plan).toBeNull();
+    expect(balance.balance).toBe(300);
+    expect(await ledgerCounts()).toEqual({});
+  });
+
+  it('learns of an upgrade from a fresh read, which the row alone would hide', async () => {
+    // Mid-period on Maester, and the reader has just bought Grand Maester.
+    // The row is not stale, so an ordinary read trusts it.
+    await seedPlan({ plan: 'maester', balance: 500, periodEndMs: FUTURE });
+    const upgradedUntil = new Date(FUTURE + DAY_MS).toISOString();
+    const probed = withRevenueCat({
+      maester: { expires_date: new Date(FUTURE).toISOString() },
+      grand_maester: { expires_date: upgradedUntil },
+    });
+
+    expect((await probed.billing.readEntitlement(ACCOUNT)).plan).toBe('maester');
+    expect(probed.fetches()).toBe(0);
+
+    const balance = await probed.billing.readEntitlement(ACCOUNT, { fresh: true });
+    expect(balance.plan).toBe('grand_maester');
+    expect(balance.balance).toBe(500 + GRANT);
+    expect(balance.periodEndsAt).toBe(upgradedUntil);
+    expect(probed.fetches()).toBe(1);
+
+    // Asked again, as the app's confirmation loop does: nothing more is granted.
+    expect((await probed.billing.readEntitlement(ACCOUNT, { fresh: true })).balance).toBe(500 + GRANT);
+    expect(await ledgerCounts()).toEqual({ MONTHLY_GRANT: 1 });
+  });
+
+  it('asks RevenueCat once on a fresh read that finds nothing', async () => {
+    await seedPlan({ plan: null, balance: 300, periodEndMs: NOW - 5_000 });
+    const probed = withRevenueCat({});
+    expect((await probed.billing.readEntitlement(ACCOUNT, { fresh: true })).plan).toBeNull();
+    expect(probed.fetches()).toBe(1);
+  });
+
+  it('never clears a plan inside its period on a fresh read that finds nothing', async () => {
+    await seedPlan({ plan: 'maester', balance: 500, periodEndMs: FUTURE });
+    const probed = withRevenueCat({});
+    expect((await probed.billing.readEntitlement(ACCOUNT, { fresh: true })).plan).toBe('maester');
+  });
+
+  it('still ends a plan whose period is over on a fresh read', async () => {
+    // Otherwise tapping REFRESH once a minute would keep a lapsed plan alive.
+    await seedPlan({ plan: 'maester', balance: 500, periodEndMs: NOW - 1_000 });
+    const probed = withRevenueCat({});
+    expect((await probed.billing.readEntitlement(ACCOUNT, { fresh: true })).plan).toBeNull();
+    expect((await probed.billing.readEntitlement(ACCOUNT)).plan).toBeNull();
   });
 
   it('trusts the row when RevenueCat is not configured', async () => {

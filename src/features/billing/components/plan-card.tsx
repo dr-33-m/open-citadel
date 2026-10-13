@@ -21,6 +21,8 @@ export type PlanCardProps = {
   /** How many models this plan opens up. Answered by the server, not counted
    * here: a tier can gain a model without a deploy. */
   modelCount: number;
+  /** How many cloud voice boxes the plan reads with, from the server; 0 hides the line. */
+  voiceBoxCount?: number;
   /**
    * The store's own price string, which is localised and authoritative, or
    * null until the store has answered. Never a price this app made up: see
@@ -52,6 +54,7 @@ export type PlanCardProps = {
 export function PlanCard({
   plan,
   modelCount,
+  voiceBoxCount = 0,
   priceLabel,
   selected,
   onInfo,
@@ -84,6 +87,22 @@ export function PlanCard({
     // beat late.
     ...(modelCount > 0
       ? [{ label: `${modelCount} brains to choose from`, leads: false, lines: 2 }]
+      : []),
+    // The cloud reading voices, counted the way the brains are, and next to
+    // them: the two things the Neurons above are spent on. How long each
+    // voice lasts is the info sheet's to say. Left out against an older
+    // server, which sends no voices.
+    ...(voiceBoxCount > 0
+      ? [
+          {
+            label:
+              voiceBoxCount === 1
+                ? "1 voice box to read with"
+                : `${voiceBoxCount} voice boxes to choose from`,
+            leads: false,
+            lines: 2,
+          },
+        ]
       : []),
     { label: "Unused neurons roll over", leads: false, lines: 2 },
   ];

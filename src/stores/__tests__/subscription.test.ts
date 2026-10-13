@@ -87,6 +87,28 @@ describe('subscription refresh lifecycle', () => {
     expect(useSubscriptionStore.getState().plan).toBe('maester');
   });
 
+  it('asks afresh after an ordinary read in flight, rather than riding on it', async () => {
+    const pending = deferredResponse();
+    const fetchMock = vi
+      .fn<(url: string) => Promise<Response>>()
+      .mockImplementationOnce(() => pending.promise)
+      .mockImplementation(async () => Response.json(ACTIVE_RESPONSE));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const ordinary = useSubscriptionStore.getState().refresh();
+    const fresh = useSubscriptionStore.getState().refresh({ fresh: true });
+    expect(fresh).not.toBe(ordinary);
+
+    pending.resolve(Response.json({ ...ACTIVE_RESPONSE, balance: { ...ACTIVE_RESPONSE.balance, plan: null } }));
+    await fresh;
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://cloud.example.com/billing/me',
+      'https://cloud.example.com/billing/me?fresh=1',
+    ]);
+    expect(useSubscriptionStore.getState().plan).toBe('maester');
+  });
+
   it('discards a response that completes after the account state resets', async () => {
     const pending = deferredResponse();
     vi.stubGlobal('fetch', vi.fn(() => pending.promise));
@@ -131,6 +153,21 @@ describe('buying a plan the reader already owns', () => {
     expect(state.plan).toBe('maester');
     expect(state.error).toBeNull();
     expect(state.busy).toBeNull();
+  });
+
+  it('has the server ask the store again when confirming a purchase', async () => {
+    vi.mocked(purchase).mockResolvedValue({} as never);
+    const fetchMock = vi.fn<(url: string) => Promise<Response>>(async () =>
+      Response.json(ACTIVE_RESPONSE),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const outcome = await useSubscriptionStore
+      .getState()
+      .purchase({} as PurchasesPackage, 'maester');
+
+    expect(outcome).toBe('active');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://cloud.example.com/billing/me?fresh=1');
   });
 
   it('keeps the tapped plan busy through the restore', async () => {

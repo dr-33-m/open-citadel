@@ -1,14 +1,14 @@
-import { View } from "react-native";
+import { View, useWindowDimensions } from "react-native";
 import { useCSSVariable } from "uniwind";
 
 import { ThemedText } from "@/components/themed-text";
 import { useSheetResting } from "@/components/ui/sheet";
-import { DeviceVoiceItem } from "@/features/tts/components/device-voice-item";
+import { VoiceListItem } from "@/features/tts/components/voice-list-item";
 import { useStagedVoiceRows } from "@/features/tts/hooks/use-staged-voice-rows";
 import { asColor } from "@/utils/colors";
-import type { DeviceVoice, DeviceVoiceRow } from "@/utils/device-voices";
+import { estimatedRowsHeight, type DeviceVoice, type DeviceVoiceRow } from "@/utils/device-voices";
 
-export interface DeviceVoiceRowsProps {
+export interface VoiceListRowsProps {
   rows: DeviceVoiceRow[];
   /** The saved voice's identifier, '' for the system default. */
   selected: string;
@@ -22,10 +22,11 @@ export interface DeviceVoiceRowsProps {
 }
 
 /**
- * The voice list's rows: headings and the voices under them, a few at a
- * time (`useStagedVoiceRows`).
+ * The voice list's rows: headings and the voices under them. The first
+ * screenful is drawn with the sheet and the rest when the list is scrolled
+ * (`useStagedVoiceRows`), in room kept for them from the start.
  */
-export function DeviceVoiceRows({
+export function VoiceListRows({
   rows,
   selected,
   previewing,
@@ -33,11 +34,15 @@ export function DeviceVoiceRows({
   scrolled = true,
   onSelect,
   onPreview,
-}: DeviceVoiceRowsProps) {
+}: VoiceListRowsProps) {
   // The first screenful rises with the sheet; the rest wait for it to land,
   // and wait again whenever it is dragged. Rows committed under a finger that
   // is dragging the sheet make it stutter and jump back.
   const drawn = useStagedVoiceRows(rows, !useSheetResting(), scrolled);
+  // Room for the rows still to come, so the list is its whole length to
+  // scroll into from the first frame. Gone once they are all drawn.
+  const { fontScale } = useWindowDimensions();
+  const room = drawn.length < rows.length ? { minHeight: estimatedRowsHeight(rows, fontScale) } : undefined;
   const [primaryVar, mutedVar] = useCSSVariable([
     "--color-primary",
     "--color-muted-foreground",
@@ -57,7 +62,7 @@ export function DeviceVoiceRows({
         );
       case "voice":
         return (
-          <DeviceVoiceItem
+          <VoiceListItem
             key={row.key}
             voice={row.voice}
             isSelected={row.voice.identifier === selected}
@@ -72,5 +77,5 @@ export function DeviceVoiceRows({
     }
   };
 
-  return <>{drawn.map(renderRow)}</>;
+  return <View style={room}>{drawn.map(renderRow)}</View>;
 }

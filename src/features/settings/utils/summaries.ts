@@ -1,4 +1,5 @@
-import { onDeviceKindName } from '@/features/tts/utils/voice-copy';
+import { voiceKindName } from '@/features/tts/utils/voice-copy';
+import type { VoiceMode } from '@/services/device-tts/catalogue';
 
 /*
  * The one line under each row of the Settings root. Each says what is set
@@ -38,13 +39,13 @@ export function samwellSummary({ mode, brain, cloudBrain, plan }: SamwellFacts):
 }
 
 export type VoiceFacts = {
-  mode: 'ai' | 'native';
+  mode: VoiceMode;
   /** The voice's name, when it has one worth showing. */
   name: string | null;
 };
 
 export function voiceSummary({ mode, name }: VoiceFacts): string {
-  const kind = onDeviceKindName(mode);
+  const kind = voiceKindName(mode);
   return name ? `${kind}${DOT}${name}` : `${kind} voice`;
 }
 

@@ -11,6 +11,44 @@ export type DeviceVoiceRow =
   | { kind: 'header'; key: string; title: string }
   | { kind: 'voice'; key: string; voice: DeviceVoice };
 
+/**
+ * About how tall each kind of row is drawn, in points at the default type
+ * size (`VoiceListRows`): a heading, a voice on one line, and a voice with
+ * a second line under its name. Measured on a Galaxy A33.
+ */
+const ROW_HEIGHT = { header: 32, voice: 57, voiceWithDetail: 77 } as const;
+
+/**
+ * About how tall these rows will be once they are all drawn.
+ *
+ * The list draws its first screenful and the rest only when it is scrolled,
+ * and this is the room it keeps for the rest meanwhile, so there is a whole
+ * list to scroll into from the first frame and its length does not jump as
+ * the rows arrive. An estimate is enough: it is replaced by the rows' own
+ * height the moment the last of them is drawn.
+ */
+export function estimatedRowsHeight(rows: readonly DeviceVoiceRow[], fontScale = 1): number {
+  let height = 0;
+  for (const row of rows) {
+    if (row.kind === 'header') height += ROW_HEIGHT.header;
+    else height += row.voice.language ? ROW_HEIGHT.voiceWithDetail : ROW_HEIGHT.voice;
+  }
+  return Math.round(height * fontScale);
+}
+
+/**
+ * How many voices these rows offer, as the sheet's heading says it: "14 total".
+ * The phone's "System default" row is a way of not choosing, so it is not
+ * counted, and a list with no voice to count says nothing.
+ */
+export function voiceTotalLabel(rows: readonly DeviceVoiceRow[]): string | null {
+  let count = 0;
+  for (const row of rows) {
+    if (row.kind === 'voice' && row.voice.identifier !== '') count += 1;
+  }
+  return count > 0 ? `${count.toLocaleString()} total` : null;
+}
+
 /** The row that means "no particular voice": the phone's default. */
 export const SYSTEM_DEFAULT_VOICE: DeviceVoice = {
   identifier: '',
