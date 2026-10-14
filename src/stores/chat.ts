@@ -27,7 +27,7 @@ import {
     type ToolCallContext,
 } from '@/services/chat-tools';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
-import { asCloudRefusal, sendCloudChatTurn } from '@/services/cloud-chat';
+import { sayCloudTurnFailed, sendCloudChatTurn } from '@/services/cloud-chat';
 import {
     estimateTokens,
     planReplay,
@@ -965,14 +965,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           },
         });
       } catch (err) {
-        console.error('[Samwell Cloud] Generation error:', err);
-        // Refusals are the server working, not failing, so they get their own
-        // sentence. `asCloudRefusal` owns reading the status back out of the
-        // transport's message - this used to match on '429' by hand, which is
-        // the copy of a decision that drifts.
-        const refusal = asCloudRefusal(err);
-        const message = err instanceof Error ? err.message : 'Cloud request failed';
-        finalContent = refusal ? refusal.message : `Cloud Samwell could not respond: ${message}`;
+        // In a toast, not a bubble written into the transcript: a failure is
+        // not something Samwell said. Nothing is saved, and the reader's
+        // message stays to be sent again.
+        sayCloudTurnFailed(err);
       } finally {
         cloudAbort = null;
       }
