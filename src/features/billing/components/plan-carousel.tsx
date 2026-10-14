@@ -1,7 +1,10 @@
 import React from "react";
 import { View, useWindowDimensions } from "react-native";
 import type { PurchasesPackage } from "react-native-purchases";
+import { useCSSVariable } from "uniwind";
 
+import { ActionButton } from "@/components/action-button";
+import { Headphones } from "@/components/icons";
 import { Handover } from "@/components/navigation/handover";
 import { GoldButton } from "@/components/ui/gold-button";
 import { PlanCarouselSkeleton } from "@/features/billing/components/plan-carousel-skeleton";
@@ -11,14 +14,17 @@ import { PlanRun } from "@/features/billing/components/plan-run";
 import { PlanWaysIn } from "@/features/billing/components/plan-ways-in";
 import { SubscriptionLegalLinks } from "@/features/billing/components/subscription-legal-links";
 import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
+import type { PlanSpend } from "@/features/billing/utils/plan-spend";
 import { formatStorePrice } from "@/features/billing/utils/price";
 import type { PlanModel } from "@/stores/subscription";
+import { asColor } from "@/utils/colors";
 import { haptics } from "@/utils/haptics";
 import {
     CREDIT_PLANS,
     PLANS,
     type CreditPlan,
     type PlanId,
+    type VoiceFigures,
 } from "samwell-shared";
 
 /**
@@ -27,9 +33,10 @@ import {
  * constraint the Compass log deck documents.
  *
  * The number is the tallest card's content, summed from the theme's tokens so
- * it can be checked rather than believed. Two rows wrap and the sum holds
- * them: "6 models to choose from" runs to two lines at the tick row's width
- * (seen on device), and the Grand Maester name takes two beside the badge:
+ * it can be checked rather than believed. Two tick rows wrap at the row's
+ * width and the sum holds them ("3 voice boxes to choose from" and "Unused
+ * neurons roll over", both seen on device), and the Grand Maester name takes
+ * two lines beside the badge:
  *
  *   32  `p-4`, top and bottom
  *   40  title row - the Grand Maester name's two `bodySm` lines
@@ -37,18 +44,19 @@ import {
  *   36  price row (`headlineLg`'s line)
  *   16  gap-4
  *   24  credits row (`bodyMd`'s line)
- *  + 8 + 40 + 8 + 20   models on two lines, then rollover, with `gap-2`
- *   16  `p-4` bottom
+ *  + 8 + 20   brains, one line, with `gap-2`
+ *  + 8 + 40   voice boxes, two lines
+ *  + 8 + 40   rollover, two lines
  *    2  the card's own 1px borders
  *  ────
- *  242
+ *  290
  *
  * A base, not the answer. `allowFontScaling` is on by default, so lines
  * measured at the default type size is the wrong height for somebody running
  * large text - and a fixed height does not clip gracefully, it just cuts the
  * last line off. Scaled by the live font scale below.
  */
-const BASE_CARD_HEIGHT = 242;
+const BASE_CARD_HEIGHT = 290;
 
 /**
  * Past double, scaling the box further stops helping.
@@ -71,6 +79,16 @@ export type PlanCarouselProps = {
   catalogue: PlanModel[];
   /** How many models each plan opens up. */
   modelCounts: Record<PlanId, number>;
+  /** The cloud reading voices, with the hours each gives on each plan. Absent from an older server. */
+  voices?: VoiceFigures | null;
+  /** The side a card's info sheet opens on: the voices, where the plans are being sold for them. */
+  infoOpensOn?: PlanSpend;
+  /**
+   * Hear the resting plan's voices before buying it. Where the plans are
+   * being sold for their voices, this puts HEAR SAMPLES beside the commit as
+   * its equal: same box, the fill alone saying which one spends money.
+   */
+  onSample?: (plan: PlanId) => void;
   busy: PlanId | "restore" | "manage" | null;
   /**
    * Everything the cards say is in hand. Until then the run is its skeleton,
@@ -163,6 +181,9 @@ export function PlanCarousel({
   packages,
   catalogue,
   modelCounts,
+  voices = null,
+  infoOpensOn,
+  onSample,
   busy,
   ready = true,
   prebuilt = false,
@@ -181,6 +202,7 @@ export function PlanCarousel({
   surface = "popover",
   bleed = 0,
 }: PlanCarouselProps) {
+  const primary = useCSSVariable("--color-primary");
   const initialIndex = Math.max(
     0,
     plans.findIndex((plan) => plan.id === initialPlanId),
@@ -298,6 +320,7 @@ export function PlanCarousel({
               contentStyle={contentStyle}
               prices={prices}
               modelCounts={modelCounts}
+              voicesByPlan={voices?.byPlan ?? null}
               surface={surface}
               onIndexChange={handleIndexChange}
               onInfo={setInfoPlanId}
@@ -314,16 +337,29 @@ export function PlanCarousel({
           trailing mark on a button reads as "this goes somewhere". A screen
           reader still hears which plan, so the three never all say "choose". */}
       {showAction ? (
-        <View>
-          <GoldButton
-            label={actionVerb}
-            icon={PLAN_ICON[activePlan.id]}
-            accessibilityLabel={`${actionVerb} ${activePlan.label}`}
-            size="compact"
-            loading={busy === activePlan.id}
-            disabled={nothingToBuy || busy !== null}
-            onPress={() => choose(activePlan.id)}
-          />
+        <View className="flex-row gap-3">
+          {onSample ? (
+            <ActionButton
+              icon={Headphones}
+              label="HEAR SAMPLES"
+              tint={asColor(primary)}
+              centered
+              className="h-10 flex-1"
+              disabled={busy !== null}
+              onPress={() => onSample(activePlan.id)}
+            />
+          ) : null}
+          <View className="flex-1">
+            <GoldButton
+              label={actionVerb}
+              icon={PLAN_ICON[activePlan.id]}
+              accessibilityLabel={`${actionVerb} ${activePlan.label}`}
+              size="compact"
+              loading={busy === activePlan.id}
+              disabled={nothingToBuy || busy !== null}
+              onPress={() => choose(activePlan.id)}
+            />
+          </View>
         </View>
       ) : null}
 
@@ -358,6 +394,8 @@ export function PlanCarousel({
           plan={CREDIT_PLANS[infoPlanId]}
           models={catalogue}
           modelCount={modelCounts[infoPlanId] ?? 0}
+          voices={voices}
+          opensOn={infoOpensOn}
         />
       ) : null}
     </View>

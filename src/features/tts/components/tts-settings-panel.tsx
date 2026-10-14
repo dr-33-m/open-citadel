@@ -2,37 +2,38 @@ import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
+import { InfoSheet } from '@/components/info-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { EnhancedVoicePane } from '@/features/tts/components/enhanced-voice-pane';
 import { LiteVoicePane } from '@/features/tts/components/lite-voice-pane';
-import { VoiceKindPanes } from '@/features/tts/components/voice-kind-panes';
+import { SwitchPanes } from '@/components/switch-panes';
 import { useAiVoiceEngine } from '@/features/tts/hooks/use-ai-voice-engine';
+import { useEnhancedFit } from '@/features/tts/hooks/use-enhanced-fit';
 import { useVoiceKind } from '@/features/tts/hooks/use-voice-kind';
 import { OnDeviceVoiceSwitch } from '@/features/tts/components/on-device-voice-switch';
 import { VoiceSourceCards } from '@/features/tts/components/voice-source-cards';
 import { EnhancedFitMark } from '@/features/tts/components/enhanced-fit-mark';
 import { EnhancedFitSheet } from '@/features/tts/components/enhanced-fit-sheet';
-import { enhancedFit } from '@/features/tts/utils/enhanced-fit';
-import { CLOUD_VOICES_SOON, ENHANCED_UNSUPPORTED, LITE_SPEED_FIXED, ON_DEVICE_KINDS, onDeviceHint } from '@/features/tts/utils/voice-copy';
+import { CloudSourcePane } from '@/features/tts/components/cloud-source-pane';
+import { useCloudVoicePane } from '@/features/tts/hooks/use-cloud-voice-pane';
+import { useVoiceSource } from '@/features/tts/hooks/use-voice-source';
+import { PlansSheet } from '@/features/billing/components/plans-sheet';
+import { CLOUD_INFO, ENHANCED_UNSUPPORTED, LITE_SPEED_FIXED, ON_DEVICE_KINDS, onDeviceHint, type VoiceSource } from '@/features/tts/utils/voice-copy';
 import { Touchable } from '@/components/ui/touchable';
 import {
   AI_VOICES_SUPPORTED,
   NATIVE_SPEED_SUPPORTED,
   NATIVE_VOICE_AVAILABLE,
-  type VoiceMode,
+  type OnDeviceMode,
 } from '@/services/device-tts/catalogue';
 import { prefetchDeviceVoices } from '@/query-manager/device-voices';
 import { asColor } from '@/utils/colors';
-import { deviceMemoryBytes } from '@/utils/memory-estimator';
-
-/** On-device is the only source until cloud voices open, so its card has nothing to do. */
-const noop = () => {};
 
 /** The kinds, left to right as the switch draws them. */
 const KIND_ORDER = ON_DEVICE_KINDS.map((kind) => kind.mode);
 
-/** How this phone copes with the Enhanced voices. A fact about the phone, so it is read once. */
-const ENHANCED_FIT = enhancedFit(deviceMemoryBytes());
+/** The sources, left to right as their cards sit. */
+const SOURCE_ORDER: readonly VoiceSource[] = ['device', 'cloud'];
 
 export interface TtsSettingsPanelProps {
   /** Closes the sheet this panel is mounted in, shown as a "DONE" control
@@ -46,14 +47,21 @@ export interface TtsSettingsPanelProps {
    * it would build them mid-rise.
    */
   warm?: boolean;
+  /** The ground the panel sits on, for what fades into it: the reader's voice sheet is `popover`. */
+  surface?: 'background' | 'popover';
 }
 
 /**
  * The reading voice's settings. The first choice is where the voice runs:
- * on-device, or in the cloud (drawn shut until cloud voices open). On-device
- * then has two kinds, on one switch, and each shows its own controls:
+ * on-device, or in the cloud. Cloud without a plan can still be chosen, and
+ * shows the plans where its voices would be (`useVoiceSource`,
+ * `CloudVoicePlans`); with one, its pane offers the voice box, its version,
+ * the voice and its speed (`CloudVoicePane`). The "i" on the Cloud card
+ * says where the page goes and what is paid for. The two sources'
+ * controls trade places under the cards, as the kinds do under their switch.
+ * On-device then has two kinds, on one switch, and each shows its own controls:
  *
- * - Enhanced (`ai`): which voice box reads (Supertonic or Kokoro), then that
+ * - Enhanced (`ai`): which voice box reads (Paradee, Supertonic or Kokoro), then that
  *   engine's download card until its voices are on the device, and only then
  *   the voice carousel and reading speed. Before that there is nothing to
  *   preview or pick.
@@ -63,11 +71,12 @@ export interface TtsSettingsPanelProps {
  * The switch only shows where there is a choice to make: a phone that cannot
  * run the Enhanced voices at all says so in a line and shows the Lite ones,
  * and where there is no Lite path at all (web) only the Enhanced controls
- * show. A phone that can run them but will pause says so in a mark beside
- * their line, which opens `EnhancedFitSheet`: a warning, never a lock.
+ * show. Each voice box says how this phone will cope with it in a mark under
+ * its line, which opens `EnhancedFitSheet`: where the box will be slow that is
+ * a warning, never a lock.
  *
  * Everything that belongs to a kind is in its pane, and the two panes trade
- * places under the switch (`VoiceKindPanes`). Panes drawn once are kept, so
+ * places under the switch (`SwitchPanes`). Panes drawn once are kept, so
  * going back to one is a reveal.
  *
  * Otherwise self-contained: it and the components it hosts read and write
@@ -75,11 +84,13 @@ export interface TtsSettingsPanelProps {
  * reader's own long-press quick-settings sheet can both mount it and always
  * show the same state.
  */
-export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps) {
+export function TtsSettingsPanel({ onDone, warm = false, surface = 'background' }: TtsSettingsPanelProps) {
   const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
 
-  const { mode, liteVoiceId, selectKind, selectPhoneVoice } = useVoiceKind();
+  const { source, mode, liteVoiceId, selectKind, selectDevice: backToDevice, selectPhoneVoice } = useVoiceKind();
   const ai = useAiVoiceEngine();
+  const voiceSource = useVoiceSource({ source, selectDevice: backToDevice });
+  const cloud = useCloudVoicePane({ onLockedMaker: voiceSource.openPlansFor, sample: voiceSource.sample });
 
   React.useEffect(() => {
     // The phone's first answer is the slow one, so it is asked for now,
@@ -89,16 +100,21 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
 
   const nativeNote = NATIVE_SPEED_SUPPORTED ? null : LITE_SPEED_FIXED;
   const canSwitchKind = NATIVE_VOICE_AVAILABLE && AI_VOICES_SUPPORTED;
-  const [fitVisible, setFitVisible] = React.useState(false);
-  const openFit = React.useCallback(() => setFitVisible(true), []);
-  const closeFit = React.useCallback(() => setFitVisible(false), []);
+  const fit = useEnhancedFit(ai.section.engine);
+  const [cloudInfoVisible, setCloudInfoVisible] = React.useState(false);
+  const openCloudInfo = React.useCallback(() => setCloudInfoVisible(true), []);
+  const closeCloudInfo = React.useCallback(() => setCloudInfoVisible(false), []);
 
   const switchToLite = () => {
-    setFitVisible(false);
+    fit.close();
     selectKind('native');
   };
+  const switchToCloud = () => {
+    fit.close();
+    voiceSource.selectCloud();
+  };
 
-  const panes: Record<VoiceMode, React.ReactNode> = {
+  const panes: Record<OnDeviceMode, React.ReactNode> = {
     native: (
       <LiteVoicePane
         hint={canSwitchKind ? onDeviceHint('native') : null}
@@ -111,7 +127,7 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
     ai: (
       <EnhancedVoicePane
         hint={canSwitchKind ? onDeviceHint('ai') : null}
-        mark={<EnhancedFitMark fit={ENHANCED_FIT} onPress={openFit} />}
+        mark={<EnhancedFitMark {...fit.mark} />}
         section={ai.section}
         showSpeed={ai.downloaded}
         rates={ai.rates}
@@ -135,27 +151,74 @@ export function TtsSettingsPanel({ onDone, warm = false }: TtsSettingsPanelProps
       ) : null}
 
       <VoiceSourceCards
-        source="device"
-        cloudLocked
-        cloudStatus={CLOUD_VOICES_SOON}
-        onSelectDevice={noop}
-        onSelectCloud={noop}
+        source={voiceSource.shown}
+        cloudLocked={voiceSource.cloudLocked}
+        cloudStatus={voiceSource.cloudStatus}
+        onSelectDevice={voiceSource.selectDevice}
+        onSelectCloud={voiceSource.selectCloud}
+        onCloudInfo={openCloudInfo}
       />
 
-      {NATIVE_VOICE_AVAILABLE && !AI_VOICES_SUPPORTED ? (
+      {voiceSource.note ? (
         <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          {ENHANCED_UNSUPPORTED}
+          {voiceSource.note}
         </ThemedText>
       ) : null}
 
-      {/* The switch and what it shows are one group, closer to each other
-          than to the cards above: each kind's line sits right under it. */}
-      <View className="gap-2">
-        {canSwitchKind ? <OnDeviceVoiceSwitch mode={mode} onChange={selectKind} /> : null}
-        <VoiceKindPanes order={KIND_ORDER} value={mode} warm={warm} panes={panes} />
-      </View>
+      <SwitchPanes
+        order={SOURCE_ORDER}
+        value={voiceSource.shown}
+        warm={warm}
+        panes={{
+          device: (
+            <View className="gap-4">
+              {NATIVE_VOICE_AVAILABLE && !AI_VOICES_SUPPORTED ? (
+                <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+                  {ENHANCED_UNSUPPORTED}
+                </ThemedText>
+              ) : null}
+              {/* The switch and what it shows are one group, closer to each
+                  other than to the cards above: each kind's line sits right under it. */}
+              <View className="gap-2">
+                {canSwitchKind ? <OnDeviceVoiceSwitch mode={mode} onChange={selectKind} /> : null}
+                <SwitchPanes order={KIND_ORDER} value={mode} warm={warm} panes={panes} />
+              </View>
+            </View>
+          ),
+          cloud: (
+            <CloudSourcePane
+              view={voiceSource.pane}
+              selling={voiceSource.selling}
+              warm={warm}
+              sampling={voiceSource.sample ? { plan: voiceSource.sample.plan, onBack: voiceSource.stopSampling } : null}
+              voices={{
+                selection: cloud.selection,
+                boxes: cloud.boxes,
+                contents: cloud.contents,
+                info: cloud.info,
+                figuresLabel: cloud.figuresLabel,
+                sampleLabel: cloud.sampleLabel,
+                warm,
+                onMaker: cloud.chooseMaker,
+                onModel: cloud.chooseModel,
+                onVoice: cloud.chooseVoice,
+              }}
+              plans={{ surface, prebuilt: warm, onSample: voiceSource.startSampling }}
+              onRetry={voiceSource.retry}
+            />
+          ),
+        }}
+      />
 
-      <EnhancedFitSheet visible={fitVisible} onClose={closeFit} fit={ENHANCED_FIT} onUseLite={switchToLite} />
+      <EnhancedFitSheet
+        {...fit.sheet}
+        onUseLite={switchToLite}
+        onUseCloud={voiceSource.cloudLocked ? undefined : switchToCloud}
+      />
+      {/* Over the panel wherever it is mounted: in the reader that is inside
+          the voice sheet, so each must push rather than replace it. */}
+      <InfoSheet visible={cloudInfoVisible} onClose={closeCloudInfo} info={CLOUD_INFO} nested />
+      <PlansSheet nested {...voiceSource.plans} />
     </View>
   );
 }

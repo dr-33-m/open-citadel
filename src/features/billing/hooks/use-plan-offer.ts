@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 import type { PurchasesPackage } from 'react-native-purchases';
-import { planForPackage, type PlanId } from 'samwell-shared';
+import { planForPackage, type PlanId, type VoiceFigures } from 'samwell-shared';
 
 import { PURCHASES_ENABLED } from '@/constants/revenuecat';
 import {
@@ -28,6 +28,9 @@ export type PlanOffer = {
   modelCounts: Record<PlanId, number>;
   /** Every model with its tier, for the plan info sheets. */
   catalogue: PlanModel[];
+  /** The reading voices each plan reaches and the hours its default gives, or null from an older server. */
+  /** The cloud reading voices and their hours on each plan. Null from an older server. */
+  voices: VoiceFigures | null;
   /**
    * Everything the cards say is in hand, so they can be drawn whole.
    *
@@ -88,6 +91,7 @@ export function usePlanOffer(enabled: boolean): PlanOffer {
     packages,
     modelCounts: preview.data?.modelsByPlan ?? NO_COUNTS,
     catalogue: preview.data?.catalogue ?? [],
+    voices: preview.data?.voices ?? null,
     // The counts are a nicety: a server that cannot say them does not hold
     // the prices back past a short grace. Settled either way is enough.
     ready: pricesIn && (!preview.isPending || graceOver),

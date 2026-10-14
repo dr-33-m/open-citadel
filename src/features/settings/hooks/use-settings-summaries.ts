@@ -1,10 +1,11 @@
 import React from 'react';
-import { CREDIT_PLANS } from 'samwell-shared';
+import { CREDIT_PLANS, parseCloudVoiceKey } from 'samwell-shared';
 
 import { ACCOUNT_ENABLED } from '@/constants/logto';
 import type { SettingsPane } from '@/features/settings/utils/panes';
 import { podcastSummary, profileSummary, samwellSummary, voiceSummary } from '@/features/settings/utils/summaries';
 import { useCloudIdentity } from '@/hooks/use-cloud-identity';
+import { cloudVoiceLabel } from '@/features/tts/utils/cloud-voice-names';
 import { DEVICE_VOICE, isAiVoice, voiceLabel, voiceMode } from '@/services/device-tts/catalogue';
 import { useAccountStore } from '@/stores/account';
 import { useModelStore } from '@/stores/model';
@@ -33,9 +34,18 @@ export function useSettingsSummaries(): Record<SettingsPane, string> {
     const planName = plan ? CREDIT_PLANS[plan].label : null;
     const mode = voiceMode(ttsVoice);
     // A phone voice is named from its own identifier here: the phone's list of
-    // voices is slow to ask for, and one row is no reason to ask.
-    const phoneVoice = ttsVoice && ttsVoice !== DEVICE_VOICE ? ttsVoice : '';
-    const voice = mode === 'ai' ? (isAiVoice(ttsVoice) ? voiceLabel(ttsVoice) : null) : deviceVoiceName(NO_VOICES, phoneVoice);
+    // voices is slow to ask for, and one row is no reason to ask. An Enhanced
+    // voice's id is not a phone voice's name: it is still the saved choice on
+    // a phone that is not offered Enhanced voices (a backup from a larger
+    // one), where the phone's default reads instead.
+    const phoneVoice = ttsVoice && ttsVoice !== DEVICE_VOICE && !isAiVoice(ttsVoice) ? ttsVoice : '';
+    const cloud = parseCloudVoiceKey(ttsVoice);
+    const voice =
+      mode === 'cloud'
+        ? (cloud ? cloudVoiceLabel(cloud.voice) : null)
+        : mode === 'ai'
+          ? (isAiVoice(ttsVoice) ? voiceLabel(ttsVoice) : null)
+          : deviceVoiceName(NO_VOICES, phoneVoice);
     return {
       profile: profileSummary({
         accountsEnabled: ACCOUNT_ENABLED,

@@ -57,7 +57,7 @@ export function useAiVoiceEngine() {
 
   return useMemo(() => {
     const pack = packs[engine];
-    const section: AiVoiceSectionProps = {
+    const section: Omit<AiVoiceSectionProps, 'mark'> = {
       engine,
       choices: ENGINE_CHOICES,
       hint: ENGINE_INFO[engine].hint,

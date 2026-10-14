@@ -44,6 +44,10 @@ beforeAll(async () => {
           args: [account],
         },
         {
+          sql: `INSERT INTO tts_spend (account_id, pending_nanousd, updated_at_ms) VALUES (?, 400000, 1)`,
+          args: [account],
+        },
+        {
           sql: `INSERT INTO insider_invites (code, plan, duration_days, created_at_ms, redeemed_by, redeemed_at_ms)
                 VALUES (?, 'archmaester', 30, 1, ?, 1)`,
           args: [`code-${account}`, account],
@@ -69,7 +73,7 @@ async function countFor(table: string, account: string): Promise<number> {
   return Number(result.rows[0].n);
 }
 
-const TABLES = ['usage_events', 'account_credits', 'credit_ledger', 'onboarding_grants'];
+const TABLES = ['usage_events', 'account_credits', 'credit_ledger', 'onboarding_grants', 'tts_spend'];
 
 it('leaves the deleted account no rows', async () => {
   for (const table of TABLES) {

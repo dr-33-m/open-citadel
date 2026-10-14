@@ -17,7 +17,7 @@ import type { SubscriptionLifecycle } from "@/services/purchase-lifecycle";
 import type { PlanModel, PurchaseOutcome } from "@/stores/subscription";
 import { asColor } from "@/utils/colors";
 import { haptics } from "@/utils/haptics";
-import type { CreditPlan, PlanId } from "samwell-shared";
+import type { CreditPlan, PlanId, VoiceFigures } from "samwell-shared";
 
 type SubscriptionBusy = PlanId | "restore" | "manage" | null;
 
@@ -31,6 +31,7 @@ export function SubscriptionManagementSheet({
   packages,
   catalogue,
   modelCounts,
+  voices = null,
   testStore,
   busy,
   onClose,
@@ -49,6 +50,8 @@ export function SubscriptionManagementSheet({
   packages: Partial<Record<PlanId, PurchasesPackage>>;
   catalogue: PlanModel[];
   modelCounts: Record<PlanId, number>;
+  /** The cloud reading voices and their hours on each plan. Absent from an older server. */
+  voices?: VoiceFigures | null;
   testStore: boolean;
   busy: SubscriptionBusy;
   onClose: () => void;
@@ -177,6 +180,7 @@ export function SubscriptionManagementSheet({
             packages={packages}
             catalogue={catalogue}
             modelCounts={modelCounts}
+            voices={voices}
             busy={busy}
             onSelectionChange={setSelectedPlanId}
             onChoose={onChoose}

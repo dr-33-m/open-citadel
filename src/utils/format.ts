@@ -23,6 +23,11 @@ export function formatBytes(bytes: number | null | undefined): string {
   return `${Math.round(bytes)} B`;
 }
 
+/** "60", "22", "4.5": whole hours from ten up, where a tenth stops meaning anything. */
+export function formatHours(hours: number): string {
+  return hours >= 10 ? String(Math.round(hours)) : String(Math.round(hours * 10) / 10);
+}
+
 /**
  * `1 BOOK`, `12 EPISODES`: a count and its noun, the way a list's subtitle
  * reads. The plural is the singular plus S unless it is given.

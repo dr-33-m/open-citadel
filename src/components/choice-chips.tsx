@@ -1,14 +1,21 @@
 import { View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 
+import { Info, Lock } from "@/components/icons";
 import { RowFade, type FadeSurface } from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
 import { Touchable } from "@/components/ui/touchable";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { cn } from "@/lib/cn";
 
-/** One option of a choice: the value it sets, and what it is called. */
-export type Choice<T> = { value: T; label: string };
+/**
+ * One option of a choice: the value it sets, and what it is called.
+ *
+ * `locked` draws it shut, with a lock and the line given (the plan that
+ * opens it, say). It still answers a press, with `onChange`, because the way
+ * through a lock is the caller's to offer.
+ */
+export type Choice<T> = { value: T; label: string; locked?: string | null };
 
 type ChoiceChipsProps<T> = {
   label?: string;
@@ -23,7 +30,16 @@ type ChoiceChipsProps<T> = {
   gutter?: "sheet" | "page" | "none";
   /** Share the row's width between the choices instead of scrolling, for a few that always fit. */
   fill?: boolean;
+  /**
+   * Draws a circled "i" at the end of each chip, and opens what there is to
+   * know about that choice: the same mark as on the on-device and cloud
+   * cards. Pressing it does not choose the chip.
+   */
+  onInfo?: (value: T) => void;
 };
+
+/** The plan's name under a locked chip: the label's face, a step smaller. */
+const LOCK_LINE = { fontSize: 9, lineHeight: 12 } as const;
 
 /**
  * One setting, as a row of square chips: the chosen one lifted on a card with
@@ -42,17 +58,26 @@ export function ChoiceChips<T extends string | number | null>({
   surface = "popover",
   gutter = "sheet",
   fill = false,
+  onInfo,
 }: ChoiceChipsProps<T>) {
   const pad = gutter === "sheet" ? "px-4" : gutter === "page" ? "px-6" : "px-0";
   const tokens = useThemeTokens();
+  // Chips that share the row are as wide as the row lets them be, so padding
+  // only takes room from the label: three across on a narrow phone broke
+  // "SUPERTONIC" onto a second line. The label gets that room back, and is
+  // drawn a little smaller before it is ever broken.
+  const snug = fill && !onInfo;
   const chips = choices.map((choice) => {
     const selected = choice.value === value;
     return (
       <Touchable
         key={String(choice.value)}
         className={cn(
-          "min-h-10 justify-center border px-3.5",
+          "min-h-10 justify-center border",
+          snug ? "px-1.5" : "px-3.5",
           fill && "flex-1 items-center",
+          // Room for the "i", so a long label never runs under it.
+          onInfo && "pr-9",
           selected
             ? "border-primary bg-card shadow-sm"
             : "border-border bg-muted",
@@ -61,16 +86,46 @@ export function ChoiceChips<T extends string | number | null>({
         haptic="select"
         accessibilityRole="radio"
         accessibilityState={{ selected }}
-        accessibilityLabel={choice.label}
+        accessibilityLabel={choice.locked ? `${choice.label}, with ${choice.locked}` : choice.label}
       >
-        <ThemedText
-          type="labelSm"
-          color={
-            selected ? tokens["--color-primary"] : tokens["--color-foreground"]
-          }
-        >
-          {choice.label}
-        </ThemedText>
+        {choice.locked ? (
+          <View className={cn("py-1", fill && "items-center")}>
+            <View className="flex-row items-center gap-1">
+              <Lock size={11} color={tokens["--color-muted-foreground"]} />
+              <ThemedText type="labelSm" color={tokens["--color-muted-foreground"]}>
+                {choice.label}
+              </ThemedText>
+            </View>
+            <ThemedText type="labelSm" color={tokens["--color-muted-foreground"]} style={LOCK_LINE}>
+              {choice.locked}
+            </ThemedText>
+          </View>
+        ) : (
+          <ThemedText
+            type="labelSm"
+            color={
+              selected ? tokens["--color-primary"] : tokens["--color-foreground"]
+            }
+            numberOfLines={snug ? 1 : undefined}
+            adjustsFontSizeToFit={snug}
+            minimumFontScale={0.8}
+          >
+            {choice.label}
+          </ThemedText>
+        )}
+        {onInfo ? (
+          // The chip's whole height at its end, so the mark is easy to hit
+          // without being drawn any larger than on the cards.
+          <Touchable
+            className="absolute bottom-0 right-0 top-0 w-9 items-center justify-center"
+            onPress={() => onInfo(choice.value)}
+            haptic="tap"
+            accessibilityRole="button"
+            accessibilityLabel={`About ${choice.label}`}
+          >
+            <Info size={15} color={tokens["--color-muted-foreground"]} />
+          </Touchable>
+        ) : null}
       </Touchable>
     );
   });
