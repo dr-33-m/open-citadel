@@ -5,23 +5,28 @@ import Animated from 'react-native-reanimated';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { revealIn } from '@/constants/theme';
-import type { ImportStat } from '@/features/podcasts/utils/import-summary';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
-type ImportStatGridProps = {
-  stats: ImportStat[];
+/** One figure: the number or the word, and what it counts. */
+export type Stat = { key: string; value: string; label: string };
+
+type StatGridProps = {
+  stats: Stat[];
   /** Where the first tile falls in the screen's reveal. */
   firstStep: number;
 };
 
 /**
- * What came across, as figures rather than a list of sentences: each count in
- * the serif on its own tile, two to a row, arriving one after another.
+ * A result as figures rather than a list of sentences: each one in the serif
+ * on its own tile, two to a row, arriving one after another.
+ *
+ * Written for what a podcast import brought across, and moved here when an
+ * insider code's plan became the second result to be drawn this way.
  */
-export function ImportStatGrid({ stats, firstStep }: ImportStatGridProps) {
+export function StatGrid({ stats, firstStep }: StatGridProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
-  const rows: ImportStat[][] = [];
+  const rows: Stat[][] = [];
   for (let i = 0; i < stats.length; i += 2) rows.push(stats.slice(i, i + 2));
 
   return (

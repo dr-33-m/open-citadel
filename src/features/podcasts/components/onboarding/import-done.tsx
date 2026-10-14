@@ -5,10 +5,10 @@ import { CircleCheckBig } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
 import { revealIn } from '@/constants/theme';
-import { ImportStatGrid } from '@/features/podcasts/components/onboarding/import-stat-grid';
 import { OnboardingStage } from '@/components/stage/onboarding-stage';
 import { StageGlyph } from '@/components/stage/stage-glyph';
 import { StageHeading } from '@/components/stage/stage-heading';
+import { StatGrid } from '@/components/stage/stat-grid';
 import { importOutcome, importStats, type ImportResult } from '@/features/podcasts/utils/import-summary';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
@@ -28,7 +28,7 @@ export function ImportDone({ result, bottomPadding, onDone }: ImportDoneProps) {
     <OnboardingStage bottomPadding={bottomPadding} footer={<GoldButton label="OPEN MY PODCASTS" onPress={onDone} />}>
       <StageGlyph icon={CircleCheckBig} color={tokens['--color-primary']} />
       <StageHeading title={outcome.title} subtitle="Here is what came across." />
-      <ImportStatGrid stats={stats} firstStep={2} />
+      <StatGrid stats={stats} firstStep={2} />
       <Animated.View entering={revealIn(2 + stats.length)}>
         <ThemedText type="bodySm" color={tokens['--color-muted-foreground']} className="text-center">
           {outcome.note}

@@ -43,6 +43,14 @@ every state of work drawn, and a way out of every failure. The podcasts
 first-run and import (`src/features/podcasts/components/onboarding/`) is the
 reference build.
 
+**A failure is said in a toast, never in red text on the screen.** A code that
+was refused, a save that did not land, a feed that could not be found:
+`showToast` from `components/toast/toast-provider`, with a `key` so a second
+failure writes over the first. A red line under a field pushes the layout
+about and stays after it has stopped being true. What was typed is kept, so
+it can be mended. The insider code sheet
+(`src/features/billing/hooks/use-insider-code.ts`) is the reference.
+
 ## Components are presentational and small
 
 The `open-citadel-structure` skill has the working detail: the four layers

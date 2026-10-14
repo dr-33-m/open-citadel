@@ -38,6 +38,8 @@ export function PlanPicker({
   | "onRetry"
   | "onChoose"
   | "onRestore"
+  | "onAccount"
+  | "onInsiderCode"
   | "surface"
   | "bleed"
 >) {

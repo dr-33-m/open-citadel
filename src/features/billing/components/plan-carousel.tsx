@@ -1,22 +1,18 @@
 import React from "react";
 import { View, useWindowDimensions } from "react-native";
 import type { PurchasesPackage } from "react-native-purchases";
-import { useCSSVariable } from "uniwind";
 
 import { Handover } from "@/components/navigation/handover";
-import { ThemedText } from "@/components/themed-text";
 import { GoldButton } from "@/components/ui/gold-button";
-import { Spinner } from "@/components/ui/spinner";
-import { Touchable } from "@/components/ui/touchable";
 import { PlanCarouselSkeleton } from "@/features/billing/components/plan-carousel-skeleton";
 import { PlanOfferFailed } from "@/features/billing/components/plan-offer-failed";
 import { PlanInfoSheet } from "@/features/billing/components/plan-info-sheet";
 import { PlanRun } from "@/features/billing/components/plan-run";
+import { PlanWaysIn } from "@/features/billing/components/plan-ways-in";
 import { SubscriptionLegalLinks } from "@/features/billing/components/subscription-legal-links";
 import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
 import { formatStorePrice } from "@/features/billing/utils/price";
 import type { PlanModel } from "@/stores/subscription";
-import { asColor } from "@/utils/colors";
 import { haptics } from "@/utils/haptics";
 import {
     CREDIT_PLANS,
@@ -96,6 +92,10 @@ export type PlanCarouselProps = {
   onChoose: (plan: PlanId, packageToBuy: PurchasesPackage) => void;
   onSelectionChange?: (plan: PlanId) => void;
   onRestore?: () => void;
+  /** Sign in instead: for somebody whose account already holds a plan. */
+  onAccount?: () => void;
+  /** Redeem an insider code instead. */
+  onInsiderCode?: () => void;
   /** A subset for plan changes. The initial purchase flow shows all plans. */
   plans?: CreditPlan[];
   /** The card the run rests on when it opens. */
@@ -171,6 +171,8 @@ export function PlanCarousel({
   onChoose,
   onSelectionChange,
   onRestore,
+  onAccount,
+  onInsiderCode,
   plans = PLANS,
   initialPlanId = "grand_maester",
   showRestore = true,
@@ -179,7 +181,6 @@ export function PlanCarousel({
   surface = "popover",
   bleed = 0,
 }: PlanCarouselProps) {
-  const mutedForeground = useCSSVariable("--color-muted-foreground");
   const initialIndex = Math.max(
     0,
     plans.findIndex((plan) => plan.id === initialPlanId),
@@ -327,46 +328,22 @@ export function PlanCarousel({
       ) : null}
 
       {/*
-       * Restore, as Apple draws it on its own subscription screens: a quiet,
-       * centred text row. The bordered chip treatment competed with the gold
-       * commit above it for weight, and a secondary escape hatch must not
-       * out-shout the thing it sits under. Press feedback and the haptic stay
-       * - quiet is not inert (§1, §13). The two waits land below the row, on
-       * its own line, so their comings and goings never move the centred
-       * label a pixel.
+       * Everything that is a way in without buying, as one list: see
+       * `PlanWaysIn`. Restore's wait is drawn in its own row, where its
+       * chevron was, so nothing under the run moves when it starts.
        */}
-      {showRestore && onRestore ? (
-        <View className="items-center">
-          <Touchable
-            className="px-4 py-2"
-            onPress={onRestore}
-            disabled={busy !== null}
-            haptic="select"
-            accessibilityRole="button"
-            accessibilityLabel="Restore purchases"
-          >
-            <ThemedText
-              type="labelSm"
-              color={asColor(mutedForeground)}
-              className="tracking-[1px]"
-            >
-              RESTORE PURCHASES
-            </ThemedText>
-          </Touchable>
-        </View>
-      ) : null}
-      {/* Only the restore's own wait. A background balance check used to
-          show a spinner here too, coming and going under the run on every
-          visit; the skeleton above is the one loading state now. */}
-      {showRestore && onRestore && busy === "restore" ? (
-        <View className="items-center">
-          <Spinner size="sm" label="Looking for your subscription" />
-        </View>
-      ) : null}
+      <PlanWaysIn
+        onRestore={showRestore ? onRestore : undefined}
+        restoring={busy === "restore"}
+        disabled={busy !== null}
+        onAccount={onAccount}
+        onInsiderCode={onInsiderCode}
+      />
 
       {/*
        * Every plan picker sells a subscription, including the upgrade sheet
        * whose button lives in its footer, so App Review wants the terms here.
+       * Last, as the small print it is.
        */}
       <SubscriptionLegalLinks />
 

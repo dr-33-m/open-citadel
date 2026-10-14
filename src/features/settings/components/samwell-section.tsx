@@ -14,6 +14,10 @@ import { ACCOUNT_ENABLED } from "@/constants/logto";
 import { getCloudBlocker } from "@/features/chat/utils/cloud-access";
 import { PURCHASES_ENABLED } from "@/constants/revenuecat";
 import { useCloudIdentity } from "@/hooks/use-cloud-identity";
+import {
+    InsiderCodeHost,
+    type InsiderCodeHandle,
+} from "@/features/billing/components/insider-code-host";
 import { CloudPanel } from "@/features/settings/components/cloud-panel";
 import { OfflineModelCard } from "@/features/settings/components/offline-model-card";
 import { useSettledOnce } from "@/navigation/use-settled-once";
@@ -86,6 +90,14 @@ export const SamwellSection = React.memo(function SamwellSection({
     void setSamwellMode("cloud");
   }, [setSamwellMode]);
 
+  // Opened through a ref, so a code being typed redraws its sheet and not
+  // this section with both of its panels.
+  const insiderCode = React.useRef<InsiderCodeHandle>(null);
+  const openInsiderCode = React.useCallback(
+    () => insiderCode.current?.open(),
+    [],
+  );
+
   // A plan that lands while Cloud is only being looked at makes the look the
   // choice. A payment that confirms a moment late reports no "active" for the
   // panel to act on, and left a new subscriber on the device with the Cloud
@@ -131,11 +143,13 @@ export const SamwellSection = React.memo(function SamwellSection({
       <KeptAlive active={shownMode === "cloud"} warm={landed} className="gap-4">
         <CloudPanel
           onRequestAccount={onRequestAccount}
+          onInsiderCode={openInsiderCode}
           onAccessActivated={activateCloud}
         />
       </KeptAlive>
 
       <EngineInfoSheet mode={infoSheet} onClose={() => setInfoSheet(null)} />
+      <InsiderCodeHost ref={insiderCode} onActivated={activateCloud} />
     </View>
   );
 });
