@@ -16,6 +16,7 @@ import { HTTPException } from 'hono/http-exception';
 import { listedVoices, PLAN_ORDER, SPEECH_FORMATS, type PlanId, type SpeechFormat } from 'samwell-shared';
 import { z } from 'zod';
 
+import { parseByteRange } from './byte-range.js';
 import { requireAdminKey, requireOpenRouterKey } from './http-helpers.js';
 import { rateLimit } from './rate-limit.js';
 import { voiceCatalog } from './voice-catalog.js';
@@ -167,6 +168,9 @@ voiceSampleRoutes.use('/samples/*', rateLimit({ limit: 120, windowMs: 60_000 }))
  * clip is MP3 or WAV, whichever was made, and the content type says which;
  * an extension on the URL is ignored, so builds that ask for `<voice>.mp3`
  * still get a WAV clip.
+ *
+ * A `Range` request gets that slice as a 206: iOS will not play a WAV clip
+ * otherwise. See `parseByteRange`.
  */
 voiceSampleRoutes.get('/samples/:path{.+}', async (c) => {
   const path = c.req.param('path');
@@ -176,12 +180,23 @@ voiceSampleRoutes.get('/samples/:path{.+}', async (c) => {
   const model = split > 0 ? await voiceCatalog.find(modelId) : null;
   const sample = model ? await readSample(model, voice) : null;
   if (!sample) return c.json({ error: 'no_sample' }, 404);
-  return new Response(sample.audio, {
-    headers: {
-      'Content-Type': sample.contentType,
-      // A voice's sample never changes once made; a re-made one is asked for
-      // again only by a reinstall, which is rare enough to accept.
-      'Cache-Control': 'public, max-age=2592000',
-    },
-  });
+  const size = sample.audio.byteLength;
+  const headers: Record<string, string> = {
+    'Content-Type': sample.contentType,
+    'Accept-Ranges': 'bytes',
+    // A voice's sample never changes once made; a re-made one is asked for
+    // again only by a reinstall, which is rare enough to accept.
+    'Cache-Control': 'public, max-age=2592000',
+  };
+  const range = parseByteRange(c.req.header('Range'), size);
+  if (range === 'unsatisfiable') {
+    return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${size}` } });
+  }
+  if (range) {
+    return new Response(sample.audio.slice(range.start, range.end + 1), {
+      status: 206,
+      headers: { ...headers, 'Content-Range': `bytes ${range.start}-${range.end}/${size}` },
+    });
+  }
+  return new Response(sample.audio, { headers });
 });
