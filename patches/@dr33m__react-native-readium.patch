@@ -1967,10 +1967,10 @@ index 0000000000000000000000000000000000000000..b848bfd080973a206728aac294649e31
 +}
 diff --git a/ios/Reader/TTS/Mp3StreamDecoder.swift b/ios/Reader/TTS/Mp3StreamDecoder.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..6f3e54f08056f65d828287a87a5edc25d5f641bf
+index 0000000000000000000000000000000000000000..82cd8c06fcbd303d9b4b7ad7f7b753469033cd14
 --- /dev/null
 +++ b/ios/Reader/TTS/Mp3StreamDecoder.swift
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,189 @@
 +import AVFoundation
 +import AudioToolbox
 +import Foundation
@@ -2044,6 +2044,10 @@ index 0000000000000000000000000000000000000000..6f3e54f08056f65d828287a87a5edc25
 +            let status = converter.convert(to: pcm, error: &error) { _, outStatus in
 +                outStatus.pointee = .endOfStream
 +                return nil
++            }
++            if status == .error {
++                failure = OSStatus(truncatingIfNeeded: error?.code ?? -1)
++                return
 +            }
 +            emit(pcm)
 +            if status != .haveData || pcm.frameLength == 0 { return }
@@ -2374,10 +2378,10 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..c71a6a974eda8b4cea2cb7f38b5fdb99
  }
 diff --git a/ios/Reader/TTS/UpcomingUtterances.swift b/ios/Reader/TTS/UpcomingUtterances.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..ee2c9332939d7721c2bc3d955ea8a752d5cf93a7
+index 0000000000000000000000000000000000000000..b2b41a95999dcc8828213d690e11c48b8fdc698c
 --- /dev/null
 +++ b/ios/Reader/TTS/UpcomingUtterances.swift
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,101 @@
 +import Foundation
 +import ReadiumNavigator
 +import ReadiumShared
@@ -2398,6 +2402,10 @@ index 0000000000000000000000000000000000000000..ee2c9332939d7721c2bc3d955ea8a752
 +/// dear to repeat per sentence. Reading forward only drops what has been
 +/// reached; a skip or a jump misses the window and starts afresh. Main-actor
 +/// bound like `TTSManager`, which owns it, so calls never overlap.
++///
++/// `ReadiumShared.Locator` is spelled out in full: inside this module a bare
++/// `Locator` is the Nitro-generated one (`margelo.nitro.readium.Locator`),
++/// which has a string `href` and an optional `text`. `TTSManager` does the same.
 +@MainActor
 +final class UpcomingUtterances {
 +    private struct Entry {
@@ -2406,7 +2414,7 @@ index 0000000000000000000000000000000000000000..ee2c9332939d7721c2bc3d955ea8a752
 +        let highlight: String?
 +        let before: String?
 +
-+        func matches(_ locator: Locator) -> Bool {
++        func matches(_ locator: ReadiumShared.Locator) -> Bool {
 +            href == locator.href && highlight == locator.text.highlight && before == locator.text.before
 +        }
 +    }
@@ -2422,7 +2430,7 @@ index 0000000000000000000000000000000000000000..ee2c9332939d7721c2bc3d955ea8a752
 +    /// Up to `count` utterance texts after `current`, the locator of the
 +    /// utterance just started. `language` is what the synthesizer tokenizes
 +    /// with: its configuration's default language, or the publication's.
-+    func after(_ current: Locator, count: Int, language: Language?) async -> [String] {
++    func after(_ current: ReadiumShared.Locator, count: Int, language: Language?) async -> [String] {
 +        if let reached = ahead.firstIndex(where: { $0.matches(current) }) {
 +            ahead.removeFirst(reached + 1)
 +        } else {
@@ -2440,7 +2448,7 @@ index 0000000000000000000000000000000000000000..ee2c9332939d7721c2bc3d955ea8a752
 +        ahead = []
 +    }
 +
-+    private func reseek(_ current: Locator, language: Language?) async {
++    private func reseek(_ current: ReadiumShared.Locator, language: Language?) async {
 +        ahead = []
 +        iterator = publication.content(from: current)?.iterator()
 +        guard let first = try? await iterator?.next() else { return }
@@ -2470,7 +2478,7 @@ index 0000000000000000000000000000000000000000..ee2c9332939d7721c2bc3d955ea8a752
 +        }
 +    }
 +
-+    private func entry(text: String, locator: Locator) -> Entry? {
++    private func entry(text: String, locator: ReadiumShared.Locator) -> Entry? {
 +        guard text.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
 +        return Entry(text: text, href: locator.href, highlight: locator.text.highlight, before: locator.text.before)
 +    }
