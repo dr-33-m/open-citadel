@@ -14,7 +14,7 @@ import {
   type ChatSession,
 } from '@/services/chat-sessions';
 import { conversationForTitle, RetitleError, suggestChatTitle } from '@/services/chat-title';
-import { sendCloudChatTurn } from '@/services/cloud-chat';
+import { sayCloudTurnBlocked, sayCloudTurnFailed, sendCloudChatTurn } from '@/services/cloud-chat';
 import { useApprovalStore } from '@/stores/approval';
 import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
@@ -93,7 +93,6 @@ type CompassChatState = {
   lastStreamedMessageId: string | null;
   toolStatus: string | null;
   toolName: string | null;
-  error: string | null;
 
   loadSessions: () => Promise<void>;
   newSession: () => Promise<void>;
@@ -107,7 +106,6 @@ type CompassChatState = {
    *  asks (a swipe on its row). Resolves to the title it now has; rejects when
    *  it could not, with a `RetitleError` when the reason is worth showing. */
   retitleSession: (id: string) => Promise<string>;
-  clearError: () => void;
 };
 
 /** Everything about a turn in flight, cleared when one ends or is abandoned. */
@@ -132,7 +130,6 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
   lastStreamedMessageId: null,
   toolStatus: null,
   toolName: null,
-  error: null,
 
   loadSessions: async () => {
     set({ sessions: listSessions('compass') });
@@ -171,7 +168,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         .run();
 
       useSamwellSessionStore.getState().set({ compassDraft: null, refining: false });
-      set({ activeSessionId: id, messages: [], streamingThinking: '', streamingThinkingSeconds: null, error: null, ...IDLE });
+      set({ activeSessionId: id, messages: [], streamingThinking: '', streamingThinkingSeconds: null, ...IDLE });
       await get().loadSessions();
     } finally {
       set({ switching: null });
@@ -213,7 +210,6 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         messages,
         streamingThinking: '',
         streamingThinkingSeconds: null,
-        error: null,
         ...IDLE,
       });
       await get().loadSessions();
@@ -248,13 +244,13 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
 
     const { cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
     if (!cloudBaseUrl) {
-      set({ error: 'Samwell Cloud is not configured for this build.' });
+      sayCloudTurnBlocked('Samwell Cloud is not set up in this build.');
       return;
     }
     // Compass is cloud-only and the cloud runs on accounts. The empty state
     // already says so and offers the way out; this is the floor under it.
     if (useAccountStore.getState().status !== 'signedIn') {
-      set({ error: 'Sign in to use Grand Maester Samwell.' });
+      sayCloudTurnBlocked('Sign in to talk to Grand Maester Samwell.');
       return;
     }
 
@@ -280,7 +276,6 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       streamingThinking: '',
       streamingThinkingSeconds: null,
       lastStreamedMessageId: null,
-      error: null,
     });
 
     cloudAbort = new AbortController();
@@ -386,10 +381,8 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       }
       await get().loadSessions();
     } catch (err) {
-      set({
-        error: err instanceof Error ? err.message : 'Something went wrong. Try again.',
-        ...IDLE,
-      });
+      sayCloudTurnFailed(err);
+      set({ ...IDLE });
     } finally {
       cloudAbort = null;
     }
@@ -434,7 +427,6 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
     }
   },
 
-  clearError: () => set({ error: null }),
 }));
 
 /**
@@ -463,4 +455,3 @@ async function titleFrom(
 
 export const useCompassChatMessages = () => useCompassChatStore((s) => s.messages);
 export const useCompassChatSessions = () => useCompassChatStore((s) => s.sessions);
-export const useCompassChatError = () => useCompassChatStore((s) => s.error);

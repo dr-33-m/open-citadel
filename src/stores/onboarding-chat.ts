@@ -10,7 +10,7 @@ import {
     touchSession,
     type ChatMessage,
 } from '@/services/chat-sessions';
-import { sendCloudChatTurn } from '@/services/cloud-chat';
+import { sayCloudTurnBlocked, sayCloudTurnFailed, sendCloudChatTurn } from '@/services/cloud-chat';
 import { cloudHeaders } from '@/services/cloud-identity';
 import { hasLibrary } from '@/services/library-setup';
 import { clearShortlists } from '@/services/onboarding-tools/shortlist';
@@ -89,7 +89,6 @@ type OnboardingChatState = {
   lastStreamedMessageId: string | null;
   toolStatus: string | null;
   toolName: string | null;
-  error: string | null;
   /**
    * This account's free introduction is spent, so the conversation goes down
    * the metered route instead. See `metered` in `CloudChatTurnOptions`.
@@ -149,7 +148,6 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
   lastStreamedMessageId: null,
   toolStatus: null,
   toolName: null,
-  error: null,
   metered: false,
 
   start: async () => {
@@ -241,13 +239,13 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
 
     const { cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
     if (!cloudBaseUrl) {
-      set({ error: 'Samwell Cloud is not configured for this build.' });
+      sayCloudTurnBlocked('Samwell Cloud is not set up in this build.');
       return;
     }
     // The concierge runs on an account by definition: the welcome screen only
     // opens this after a sign-in. This is the floor under that.
     if (useAccountStore.getState().status !== 'signedIn') {
-      set({ error: 'Sign in to use Grand Maester Samwell.' });
+      sayCloudTurnBlocked('Sign in to talk to Grand Maester Samwell.');
       return;
     }
 
@@ -270,7 +268,6 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
       streamingThinking: '',
       streamingThinkingSeconds: null,
       lastStreamedMessageId: null,
-      error: null,
     });
 
     cloudAbort = new AbortController();
@@ -381,10 +378,8 @@ export const useOnboardingChatStore = create<OnboardingChatState>((set, get) => 
         lastStreamedMessageId: assistantMessage.id,
       }));
     } catch (err) {
-      set({
-        error: err instanceof Error ? err.message : 'Something went wrong. Try again.',
-        ...IDLE,
-      });
+      sayCloudTurnFailed(err);
+      set({ ...IDLE });
     } finally {
       cloudAbort = null;
     }

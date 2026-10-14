@@ -54,6 +54,7 @@ import {
   type SearchResult,
   type ToolCallContext,
 } from '@/services/chat-tools';
+import { showToast } from '@/components/toast/toast-provider';
 import { cloudHeaders } from '@/services/cloud-identity';
 import { createSmoothReveal } from '@/services/smooth-reveal';
 import { createReplySequence, replySegments } from '@/services/reply-sequence';
@@ -79,6 +80,10 @@ import { useApprovalStore } from '@/stores/approval';
 import { useSettingsStore } from '@/stores/settings';
 
 /** The three things Samwell can be doing on a cloud turn. */
+/** One key for every cloud turn that did not go through, so a second failure writes over the first. */
+const TURN_FAILED_TOAST = 'cloud-turn-failed';
+const TURN_FAILED_MESSAGE = 'Samwell could not answer just now. Try again.';
+
 /**
  * Samwell Cloud refused the turn, and why.
  *
@@ -132,6 +137,26 @@ export function asCloudRefusal(error: unknown): CloudRefused | null {
     );
   }
   return null;
+}
+
+/**
+ * Says in a toast that a cloud turn failed, for every chat that sends one.
+ *
+ * A refusal gets its own sentence, since the reader can act on it. Anything
+ * else gets one plain line: the transport's or OpenRouter's own text is long
+ * and technical, so it goes to the log. It used to be said three ways: a
+ * bubble written into the reading chat's transcript with the raw message in
+ * it, red text under onboarding's composer, and nothing at all in Compass.
+ */
+export function sayCloudTurnFailed(error: unknown): void {
+  const refusal = asCloudRefusal(error);
+  if (!refusal) console.error('[Samwell Cloud] Turn failed:', error);
+  showToast({ key: TURN_FAILED_TOAST, message: refusal?.message ?? TURN_FAILED_MESSAGE });
+}
+
+/** Says in a toast why a cloud turn was not sent at all (no server, nobody signed in). */
+export function sayCloudTurnBlocked(message: string): void {
+  showToast({ key: TURN_FAILED_TOAST, message });
 }
 
 export type SamwellTurnMode = 'reading' | 'compass' | 'onboarding';
@@ -815,6 +840,15 @@ export async function sendCloudChatTurn({
   // Set from the RUN_FINISHED event so a turn that ended only because it ran
   // out of room can say so, instead of the generic "got stuck".
   let finishReason: string | null = null;
+  /*
+   * A failure the server could only send inside the stream (`RUN_ERROR`):
+   * by then it has answered 200, so `sendMessage` resolves rather than
+   * rejecting. Without this the turn waited out the inactivity window, two
+   * minutes of a working orb, and ended with nothing.
+   */
+  // Typed through a cast so the checks below are not narrowed to `null`: it
+  // is set from a callback, which control-flow analysis does not see.
+  let streamError = null as Error | null;
 
   /*
    * Tool phase: the stretch from the first tool chunk until the model picks
@@ -1008,6 +1042,9 @@ export async function sendCloudChatTurn({
         : mode === 'compass'
           ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
           : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
+    onError: (error) => {
+      streamError = error;
+    },
     onChunk: (chunk) => {
       lastProgressAt = Date.now();
 
@@ -1152,6 +1189,9 @@ export async function sendCloudChatTurn({
     const startedAt = Date.now();
     while (Date.now() - startedAt < SETTLE_ABSOLUTE_MS) {
       if (aborted) break;
+      // Failed inside the stream: nothing more is coming. Below, what he had
+      // already said is kept and the failure is said after it.
+      if (streamError) break;
       if (finished) {
         /*
          * He has said goodbye and closed the conversation. Whatever he said
@@ -1249,7 +1289,14 @@ export async function sendCloudChatTurn({
     // Paced like any reply, and quick once stopped: stop cancels the reveal.
     await sequence.idle();
     const partial = sequence.current().trim();
-    if (!partial) {
+    // Stop ends the request too, and stopping is not a failure.
+    if (streamError && !aborted) {
+      // Said after any words he got out: those are kept as his reply rather
+      // than thrown away, so this cannot be a throw like the others.
+      sayCloudTurnFailed(
+        new Error(`Inside the stream: ${streamError.message} (POST ${endpointFor(mode, baseUrl, metered)})`),
+      );
+    } else if (!partial) {
       console.warn(
         `[Samwell Cloud] Turn produced no answer (finishReason=${finishReason ?? 'none'}, aborted=${aborted}).`,
       );
