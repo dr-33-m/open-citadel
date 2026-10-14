@@ -16,9 +16,14 @@ import {
   creditValueUsd,
   forecastCredits,
   forecastMultipliersByBand,
+  INSIDER_DURATION_ORDER,
+  insiderInviteLabel,
   modelsForPlan,
   PLAN_ORDER,
   type CloudModelOption,
+  type InsiderDuration,
+  type InsiderRedemption,
+  type InsiderRefusal,
   type PlanId,
 } from 'samwell-shared';
 
@@ -164,55 +169,96 @@ billingRoutes.get('/ledger', async (c) => {
   return c.json({ entries: await billing.readLedger(accountId, limit) });
 });
 
-const RedeemSchema = z.object({ code: z.string().min(1) });
+const RedeemSchema = z.object({ code: z.string().min(1).max(64) });
+
+/**
+ * How often one account may try a code.
+ *
+ * A code is eighty bits of randomness, so guessing one is not a real threat;
+ * this is here so a script holding a sign-in cannot use the route to hammer
+ * the database either. Ten tries is far more than anybody mistyping a code
+ * they were actually given will need.
+ */
+const redeemAttempts = createRateLimiter({ limit: 10, windowMs: 10 * 60_000 });
+
+/** Why a code was not redeemed, in the words the app shows under the field. */
+const REFUSALS: Record<InsiderRefusal, { status: 403 | 404 | 409 | 429; message: string }> = {
+  account_required: { status: 403, message: 'Sign in to use an insider code.' },
+  too_many_attempts: { status: 429, message: 'Too many tries. Wait a few minutes, then try again.' },
+  unknown_code: { status: 404, message: 'That code is not one of ours. Check it and try again.' },
+  already_redeemed: { status: 409, message: 'That code has already been used.' },
+  already_subscribed: {
+    status: 409,
+    message: 'This account already has a plan. Keep the code for somebody who needs it.',
+  },
+};
 
 billingRoutes.post('/insider/redeem', async (c) => {
-  const { id: accountId } = await readIdentity(c);
+  const identity = await readIdentity(c);
+  const refuse = (reason: InsiderRefusal) =>
+    c.json({ error: reason, message: REFUSALS[reason].message }, REFUSALS[reason].status);
 
-  const parsed = RedeemSchema.safeParse(await c.req.json());
+  /*
+   * An account, not a device. A code is spent once, and a guest identity
+   * lives in one phone's Keychain: a reinstall or a new phone would lose a
+   * year's plan with nothing left to redeem it again. In somebody's name it
+   * follows them, which is the whole of what an account is for here.
+   */
+  if (identity.kind !== 'account') return refuse('account_required');
+  if (!redeemAttempts.take(identity.id).allowed) return refuse('too_many_attempts');
+
+  const parsed = RedeemSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     throw new HTTPException(400, { message: parsed.error.message });
   }
 
-  const result = await billing.redeemInsiderInvite({ accountId, code: parsed.data.code });
-  if (!result.redeemed) {
-    if (result.reason === 'unknown_code') {
-      throw new HTTPException(404, { message: 'That code does not exist.' });
-    }
-    if (result.reason === 'already_subscribed') {
-      throw new HTTPException(409, {
-        message: 'This account already has a subscription. Keep the code for somebody who needs it.',
-      });
-    }
-    throw new HTTPException(409, { message: 'That code has already been redeemed.' });
-  }
-  return c.json({ ok: true, balance: result.balance });
+  const result = await billing.redeemInsiderInvite({
+    accountId: identity.id,
+    code: parsed.data.code,
+  });
+  if (!result.redeemed) return refuse(result.reason);
+
+  const { balance, plan, duration, endsAt } = result;
+  const redemption: InsiderRedemption = { plan, duration, endsAt };
+  return c.json({ ok: true, balance, redemption });
 });
 
 /*
- * The founder's side of insiders: minting codes. Behind the admin key like
- * every other mutation that is not a reader's business.
+ * The founder's side of insiders: minting codes and seeing where they went.
+ * Behind the admin key like every other mutation that is not a reader's
+ * business.
  */
 export const insiderAdminRoutes = new Hono();
 
 const InviteSchema = z.object({
+  /** Which package the code is for. */
   plan: z.enum(PLAN_ORDER as unknown as [PlanId, ...PlanId[]]),
-  durationDays: z.number().int().min(1).max(365),
+  /** How long it lasts: a day, a week, a month or a year. */
+  duration: z.enum(INSIDER_DURATION_ORDER as unknown as [InsiderDuration, ...InsiderDuration[]]),
+  /** Who it is for. Only ever read back in the list below. */
   note: z.string().max(500).optional(),
 });
 
 insiderAdminRoutes.post('/invites', async (c) => {
   requireAdminKey(c);
 
-  const parsed = InviteSchema.safeParse(await c.req.json());
+  const parsed = InviteSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     throw new HTTPException(400, { message: parsed.error.message });
   }
 
-  const invite = await billing.issueInsiderInvite({
-    plan: parsed.data.plan,
-    durationDays: parsed.data.durationDays,
-    note: parsed.data.note,
+  const invite = await billing.issueInsiderInvite(parsed.data);
+  return c.json({
+    ok: true,
+    ...invite,
+    // "1 year · Maester Samwell", to read back what was just minted.
+    label: insiderInviteLabel(invite.plan, invite.duration),
   });
-  return c.json({ ok: true, ...invite });
+});
+
+insiderAdminRoutes.get('/invites', async (c) => {
+  requireAdminKey(c);
+  const rawLimit = Number(c.req.query('limit') ?? '100');
+  const limit = Math.max(1, Math.min(500, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 100));
+  return c.json({ invites: await billing.listInsiderInvites(limit) });
 });

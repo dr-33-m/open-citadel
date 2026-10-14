@@ -1,25 +1,18 @@
 import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
 
-import { AccountEntryButtons } from '@/components/account/account-entry-buttons';
-import { SamwellText } from '@/components/samwell-text';
+import { AccountAsk } from '@/components/account/account-ask';
 import { Sheet } from '@/components/ui/sheet';
-import { ThemedText } from '@/components/themed-text';
-import { useAccountErrorToast } from '@/hooks/use-account-error-toast';
-import { asColor } from '@/utils/colors';
+
+const LINES = [
+  'Grand Maester Samwell runs in the cloud, so he needs an account to answer for the work. Setting you up is on the house.',
+  'Your books, highlights, notes and conversations stay on this device. The account never holds them.',
+];
 
 /**
  * The account, asked for at the one moment it is obviously worth having.
  *
- * Deliberately short. This is not the place to make the privacy argument in
- * full — the settings sheet does that, and somebody who has had the app
- * installed for ninety seconds is not reading a policy. Two lines: what they
- * get, and what it does not take.
- *
- * The buttons are the same two the account card draws, from the same file, so
- * the two front doors cannot end up behaving differently in the two places
- * they appear.
+ * Onboarding's words in the shared ask (`AccountAsk`), which is what draws
+ * them and the two buttons under them.
  */
 export function ConciergeSignInSheet({
   visible,
@@ -30,27 +23,9 @@ export function ConciergeSignInSheet({
   onClose: () => void;
   onSignedIn: () => void;
 }) {
-  const mutedForeground = useCSSVariable('--color-muted-foreground');
-
-  useAccountErrorToast();
-
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <View className="gap-4 px-6">
-        <ThemedText type="headlineSm">First, an account</ThemedText>
-
-        <SamwellText type="bodyMd" color={asColor(mutedForeground)}>
-          Grand Maester Samwell runs in the cloud, so he needs an account to answer for the work.
-          Setting you up is on the house.
-        </SamwellText>
-
-        <SamwellText type="bodyMd" color={asColor(mutedForeground)}>
-          Your books, highlights, notes and conversations stay on this device. The account never
-          holds them.
-        </SamwellText>
-
-        <AccountEntryButtons onSignedIn={onSignedIn} />
-      </View>
+      <AccountAsk title="First, an account" lines={LINES} onSignedIn={onSignedIn} />
     </Sheet>
   );
 }

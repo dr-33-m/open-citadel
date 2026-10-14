@@ -348,8 +348,8 @@ export async function ensureBillingSchema(client: Client): Promise<void> {
       `CREATE INDEX IF NOT EXISTS credit_ledger_account_time_idx
         ON credit_ledger (account_id, created_at_ms)`,
       /* Founder-issued codes that grant a plan without a store purchase.
-         Unused until the insider routes land; created here so the schema
-         arrives complete rather than in a second migration. */
+         See `billing-insider.ts`. `expires_at_ms` is the end of the term a
+         code granted, set when it is redeemed. */
       `CREATE TABLE IF NOT EXISTS insider_invites (
         code            TEXT PRIMARY KEY,
         plan            TEXT NOT NULL,
@@ -360,6 +360,9 @@ export async function ensureBillingSchema(client: Client): Promise<void> {
         redeemed_at_ms  INTEGER,
         expires_at_ms   INTEGER
       )`,
+      // An account's plan is found from the code it redeemed last.
+      `CREATE INDEX IF NOT EXISTS insider_invites_redeemed_by_idx
+        ON insider_invites (redeemed_by)`,
       /*
        * A reader who bought a plan without making an account.
        *

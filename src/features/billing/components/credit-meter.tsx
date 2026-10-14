@@ -5,6 +5,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
+import { insiderMeterDetail } from "@/features/billing/utils/insider";
 import { formatSubscriptionDate } from "@/features/billing/utils/subscription-lifecycle";
 import type { SubscriptionLifecycle } from "@/services/purchase-lifecycle";
 import { asColor } from "@/utils/colors";
@@ -55,7 +56,10 @@ export function CreditMeter({
     lifecycle?.plan === balance.plan ? lifecycle : null;
   const periodEndsAt = lifecycleMatchesPlan?.expiresAt ?? balance.periodEndsAt;
   const periodEnd = formatSubscriptionDate(periodEndsAt);
-  const periodDetail = periodEnd
+  // An insider plan has no store to renew it: what is worth saying is when
+  // the whole of it ends, not when this month's Neurons do.
+  const insiderDetail = insiderMeterDetail(balance);
+  const storeDetail = periodEnd
     ? lifecycleMatchesPlan?.billingIssueDetectedAt
       ? `payment issue · access through ${periodEnd}`
       : lifecycleMatchesPlan?.willRenew === true
@@ -64,6 +68,7 @@ export function CreditMeter({
           ? `ends ${periodEnd}`
           : `period ends ${periodEnd}`
     : null;
+  const periodDetail = insiderDetail ?? storeDetail;
   const details = [
     grant > 0 ? `${grant.toLocaleString()} added monthly` : null,
     rollover > 0 ? `${rollover.toLocaleString()} rollover included` : null,

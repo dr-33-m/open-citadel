@@ -7,6 +7,7 @@ export * from './compass';
 export * from './compass-prompts';
 export * from './compass-tools';
 export * from './free-books';
+export * from './insider';
 export * from './journal';
 export * from './limits';
 export * from './models';

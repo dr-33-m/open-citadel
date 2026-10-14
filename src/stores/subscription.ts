@@ -8,6 +8,8 @@ import {
     planRank,
     type CloudModelOption,
     type CreditBalance,
+    type InsiderRedemption,
+    type InsiderRefusal,
     type PlanId,
 } from 'samwell-shared';
 import { create } from 'zustand';
@@ -63,6 +65,16 @@ export type SubscriptionStatus =
    */
   | 'unreachable';
 export type PurchaseOutcome = 'active' | 'scheduled' | 'pending' | false;
+/**
+ * What came of an insider code: the plan it turned out to be, or why not.
+ *
+ * Handed back rather than left in `error`, because the sheet that asked is
+ * the only place it belongs. In the shared field it would also have been
+ * drawn under the credit meter, on a card that had nothing to do with it.
+ */
+export type InsiderRedeemOutcome =
+  | { ok: true; redemption: InsiderRedemption }
+  | { ok: false; reason: InsiderRefusal | null; message: string };
 
 type SubscriptionState = {
   status: SubscriptionStatus;
@@ -111,7 +123,7 @@ type SubscriptionState = {
   purchase: (packageToBuy: PurchasesPackage, plan: PlanId) => Promise<PurchaseOutcome>;
   restore: () => Promise<boolean>;
   manage: () => Promise<'opened' | 'test-store' | false>;
-  redeemInsider: (code: string) => Promise<boolean>;
+  redeemInsider: (code: string) => Promise<InsiderRedeemOutcome>;
 };
 
 function message(error: unknown, fallback: string): string {
@@ -490,24 +502,75 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
   },
 
   redeemInsider: async (code) => {
-    set({ busy: 'restore', error: null });
+    const generation = accountGeneration;
+    /*
+     * Apart from the request, because the two fail for different reasons and
+     * want different things said: no usable sign-in carries its own copy
+     * ("sign in"), and a request that never answered is the network.
+     */
+    let headers: Record<string, string>;
+    try {
+      headers = await cloudJsonHeaders();
+    } catch (error) {
+      return { ok: false, reason: null, message: message(error, 'Sign in to use an insider code.') };
+    }
     try {
       const response = await fetchWithTimeout(`${baseUrl()}/billing/insider/redeem`, {
         method: 'POST',
-        headers: await cloudJsonHeaders(),
-        body: JSON.stringify({ code: code.trim() }),
+        headers,
+        body: JSON.stringify({ code }),
       });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(body?.message ?? 'That code could not be redeemed.');
+      const body = (await response.json().catch(() => null)) as {
+        balance?: CreditBalance;
+        redemption?: InsiderRedemption;
+        error?: InsiderRefusal;
+        message?: string;
+      } | null;
+      /*
+       * A server from before the answer named the plan still redeems the
+       * code, and says so with a balance alone. Reported as the failure it
+       * looks like, the reader would try a code that is now spent. So what
+       * it opened is read off the balance instead.
+       */
+      const redemption: InsiderRedemption | null =
+        body?.redemption ??
+        (response.ok && body?.balance?.plan
+          ? {
+              plan: body.balance.plan,
+              duration: null,
+              endsAt: body.balance.termEndsAt ?? body.balance.periodEndsAt ?? '',
+            }
+          : null);
+      if (!response.ok || !redemption) {
+        return {
+          ok: false,
+          reason: body?.error ?? null,
+          message: body?.message ?? 'That code could not be used. Try again.',
+        };
       }
-      await get().refresh();
-      return true;
-    } catch (error) {
-      set({ error: message(error, 'That code could not be redeemed.') });
-      return false;
-    } finally {
-      set({ busy: null });
+      /*
+       * A read that left before the code was spent is waited out first.
+       * `refresh` hands back whatever is in flight, and that one's answer
+       * says no plan: ridden on, it would put somebody who was just given a
+       * plan back in front of the prices.
+       */
+      if (refreshInFlight) await refreshInFlight;
+      if (generation === accountGeneration) {
+        // The plan first, from the answer in hand, so a failed read below
+        // cannot leave them looking at prices either.
+        if (body?.balance?.plan) {
+          set({ status: 'active', plan: body.balance.plan, balance: body.balance, error: null });
+        }
+        // Then a read of its own, which brings the plan's brains.
+        await get().refresh();
+      }
+      return { ok: true, redemption };
+    } catch {
+      return {
+        ok: false,
+        reason: null,
+        message: 'Samwell Cloud could not be reached. Check your connection and try again.',
+      };
     }
   },
 }));

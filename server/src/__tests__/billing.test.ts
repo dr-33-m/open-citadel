@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CREDIT_PLANS, type PlanId } from 'samwell-shared';
 
 import { createBillingService, STALE_RESERVATION_MS, type BillingService } from '../billing.js';
+import { createInsiderTerms } from '../billing-insider.js';
 import { ensureBillingSchema, USAGE_EVENTS_DDL } from '../db.js';
 
 /*
@@ -495,6 +496,7 @@ describe('readEntitlement', () => {
       available: 1_000,
       grant: GRANT,
       periodEndsAt: new Date(FUTURE).toISOString(),
+      termEndsAt: null,
     });
   });
 
@@ -507,6 +509,7 @@ describe('readEntitlement', () => {
       available: 0,
       grant: 0,
       periodEndsAt: null,
+      termEndsAt: null,
     });
   });
 
@@ -696,61 +699,85 @@ describe('readEntitlement', () => {
 
 // -- Insiders ---------------------------------------------------------------
 
+/** A code for a term no route mints, to walk a term across several periods. */
+async function seedInvite(code: string, plan: string, days: number): Promise<string> {
+  await client.execute({
+    sql: `INSERT INTO insider_invites (code, plan, duration_days, created_at_ms)
+          VALUES (?, ?, ?, ?)`,
+    args: [code, plan, days, nowMs],
+  });
+  return code;
+}
+
 describe('insider invites', () => {
-  it('mints a code a human can read out, and clamps the term to a year', async () => {
-    const invite = await billing.issueInsiderInvite({ plan: 'maester', durationDays: 400 });
-    expect(invite.durationDays).toBe(365);
+  it('mints a code a human can read out, for one of four terms', async () => {
+    const invite = await billing.issueInsiderInvite({ plan: 'maester', duration: 'year' });
+    expect(invite).toMatchObject({ plan: 'maester', duration: 'year', durationDays: 365 });
     expect(invite.code).toMatch(/^[A-Z0-9]{5}(-[A-Z0-9]{5}){3}$/);
+    expect((await billing.issueInsiderInvite({ plan: 'maester', duration: 'day' })).durationDays).toBe(1);
+    expect((await billing.issueInsiderInvite({ plan: 'maester', duration: 'week' })).durationDays).toBe(7);
+    expect((await billing.issueInsiderInvite({ plan: 'maester', duration: 'month' })).durationDays).toBe(30);
   });
 
-  it('grants the first period and records the term', async () => {
-    let granted: { expiresAtMs: number; entitlement: string } | null = null;
+  it('grants the first period, records the term, and never asks RevenueCat', async () => {
     const probed = createBillingService({
       client,
       now: () => nowMs,
       revenueCatApiKey: 'sk_test',
-      fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
-        if (init?.method === 'POST' && String(url).includes('/entitlements/')) {
-          granted = {
-            expiresAtMs: Date.parse(
-              (JSON.parse(String(init.body)) as { expires_at: string }).expires_at,
-            ),
-            entitlement: String(url).split('/entitlements/')[1],
-          };
-          return { ok: true, status: 200, json: async () => ({}) };
-        }
+      fetchImpl: (async (url: RequestInfo | URL) => {
         throw new Error(`unexpected fetch: ${String(url)}`);
       }) as unknown as typeof fetch,
     });
 
-    const { code } = await probed.issueInsiderInvite({ plan: 'maester', durationDays: 60 });
+    const { code } = await probed.issueInsiderInvite({ plan: 'maester', duration: 'year' });
     const result = await probed.redeemInsiderInvite({ accountId: ACCOUNT, code });
     if (!result.redeemed) throw new Error('redemption should have succeeded');
 
+    const termEnd = new Date(nowMs + 365 * DAY_MS).toISOString();
+    expect(result.plan).toBe('maester');
+    expect(result.duration).toBe('year');
+    expect(result.endsAt).toBe(termEnd);
     expect(result.balance.plan).toBe('maester');
     expect(result.balance.source).toBe('insider');
     expect(result.balance.balance).toBe(CREDIT_PLANS.maester.monthlyCredits);
-    // The first period is bounded by the term: 60 days is shorter than the
-    // usual 30-day rhythm doubled, so the period ends with the term's month
-    // boundary and the sweep carries it from there.
-    expect(result.balance.periodEndsAt).toBe(new Date(nowMs + 30 * 86_400_000).toISOString());
+    // Credits arrive a month at a time, so the period is the first thirty
+    // days and the term is the whole year.
+    expect(result.balance.periodEndsAt).toBe(new Date(nowMs + 30 * DAY_MS).toISOString());
+    expect(result.balance.termEndsAt).toBe(termEnd);
 
     const invite = await client.execute({
       sql: 'SELECT redeemed_by, expires_at_ms FROM insider_invites WHERE code = ?',
       args: [code],
     });
     expect(String(invite.rows[0]?.redeemed_by)).toBe(ACCOUNT);
-    expect(Number(invite.rows[0]?.expires_at_ms)).toBe(nowMs + 60 * 86_400_000);
+    expect(Number(invite.rows[0]?.expires_at_ms)).toBe(nowMs + 365 * DAY_MS);
+  });
 
-    // RevenueCat holds the entitlement for the whole term, not one period.
-    expect(granted).toEqual({
-      expiresAtMs: nowMs + 60 * 86_400_000,
-      entitlement: CREDIT_PLANS.maester.entitlement,
-    });
+  it('ends a one day code after a day, on the next read', async () => {
+    const { code } = await billing.issueInsiderInvite({ plan: 'archmaester', duration: 'day' });
+    const result = await billing.redeemInsiderInvite({ accountId: ACCOUNT, code });
+    if (!result.redeemed) throw new Error('redemption should have succeeded');
+    const dayEnd = new Date(nowMs + DAY_MS).toISOString();
+    expect(result.balance.periodEndsAt).toBe(dayEnd);
+    expect(result.balance.termEndsAt).toBe(dayEnd);
+
+    // No sweep in between: the read itself notices the term is over.
+    nowMs += DAY_MS + 1_000;
+    const after = await billing.readEntitlement(ACCOUNT);
+    expect(after.plan).toBeNull();
+    expect(after.termEndsAt).toBeNull();
+    expect(after.available).toBe(0);
+  });
+
+  it('takes a code however it was typed', async () => {
+    const { code } = await billing.issueInsiderInvite({ plan: 'maester', duration: 'week' });
+    const typed = `  ${code.replace(/-/g, '').toLowerCase()} `;
+    const result = await billing.redeemInsiderInvite({ accountId: ACCOUNT, code: typed });
+    expect(result.redeemed).toBe(true);
   });
 
   it('refuses a code twice, including concurrently', async () => {
-    const { code } = await billing.issueInsiderInvite({ plan: 'maester', durationDays: 30 });
+    const { code } = await billing.issueInsiderInvite({ plan: 'maester', duration: 'month' });
     await billing.redeemInsiderInvite({ accountId: ACCOUNT, code });
     expect(await billing.redeemInsiderInvite({ accountId: ACCOUNT, code })).toEqual({
       redeemed: false,
@@ -758,12 +785,32 @@ describe('insider invites', () => {
     });
 
     // Two devices racing one code: exactly one wins, the loser sees it taken.
-    const { code: raced } = await billing.issueInsiderInvite({ plan: 'maester', durationDays: 30 });
+    const { code: raced } = await billing.issueInsiderInvite({ plan: 'maester', duration: 'month' });
     const results = await Promise.all([
       billing.redeemInsiderInvite({ accountId: 'account:reader-a', code: raced }),
       billing.redeemInsiderInvite({ accountId: 'account:reader-b', code: raced }),
     ]);
     expect(results.filter((r) => r.redeemed)).toHaveLength(1);
+  });
+
+  it('hands the code back when the plan could not be granted', async () => {
+    const { code } = await billing.issueInsiderInvite({ plan: 'maester', duration: 'year' });
+    const failing = createInsiderTerms({
+      client,
+      now: () => nowMs,
+      readAccount: async () => null,
+      grantMonthly: async () => {
+        throw new Error('database is locked');
+      },
+      clearPlan: async () => undefined,
+      readEntitlement: (accountId) => billing.readEntitlement(accountId),
+    });
+    await expect(failing.redeemInvite({ accountId: ACCOUNT, code })).rejects.toThrow('database is locked');
+
+    // Not spent: the same code still works once the grant can land.
+    const result = await billing.redeemInsiderInvite({ accountId: ACCOUNT, code });
+    expect(result.redeemed).toBe(true);
+    expect(await ledgerCounts()).toEqual({ MONTHLY_GRANT: 1 });
   });
 
   it('refuses an unknown code', async () => {
@@ -775,7 +822,7 @@ describe('insider invites', () => {
 
   it('refuses when a paid subscription is live, and leaves the code intact', async () => {
     await seedPlan({ plan: 'archmaester', balance: 5_000, periodEndMs: FUTURE });
-    const { code } = await billing.issueInsiderInvite({ plan: 'maester', durationDays: 30 });
+    const { code } = await billing.issueInsiderInvite({ plan: 'maester', duration: 'month' });
 
     expect(await billing.redeemInsiderInvite({ accountId: ACCOUNT, code })).toEqual({
       redeemed: false,
@@ -794,7 +841,7 @@ describe('insider invites', () => {
     // A lapsed subscription leaves a row with no plan; a code is exactly the
     // remedy for that reader.
     await seedPlan({ plan: null, balance: 500, periodEndMs: NOW - 1_000 });
-    const { code } = await billing.issueInsiderInvite({ plan: 'maester', durationDays: 30 });
+    const { code } = await billing.issueInsiderInvite({ plan: 'maester', duration: 'month' });
     const result = await billing.redeemInsiderInvite({ accountId: ACCOUNT, code });
     if (!result.redeemed) throw new Error('redemption should have succeeded');
     expect(result.balance.plan).toBe('maester');
@@ -802,16 +849,97 @@ describe('insider invites', () => {
     expect(result.balance.balance).toBe(500 + CREDIT_PLANS.maester.monthlyCredits);
   });
 
-  describe('the regrant sweep', () => {
+  it('lets a newer code take the place of a live one, and the old term cannot end it', async () => {
+    const week = await billing.issueInsiderInvite({ plan: 'maester', duration: 'week' });
+    await billing.redeemInsiderInvite({ accountId: ACCOUNT, code: week.code });
+
+    nowMs += DAY_MS;
+    const year = await billing.issueInsiderInvite({ plan: 'archmaester', duration: 'year' });
+    const upgraded = await billing.redeemInsiderInvite({ accountId: ACCOUNT, code: year.code });
+    if (!upgraded.redeemed) throw new Error('redemption should have succeeded');
+    const yearEnd = new Date(nowMs + 365 * DAY_MS).toISOString();
+    expect(upgraded.balance.plan).toBe('archmaester');
+    expect(upgraded.balance.termEndsAt).toBe(yearEnd);
+
+    // The week's code runs out. It no longer says anything about this account.
+    nowMs += 8 * DAY_MS;
+    expect(await billing.sweepInsiderRegrants()).toBe(0);
+    expect((await billing.readEntitlement(ACCOUNT)).plan).toBe('archmaester');
+
+    // The year's first period ends, and it is the year's plan that is regranted.
+    nowMs += 23 * DAY_MS;
+    expect(await billing.sweepInsiderRegrants()).toBe(1);
+    const carried = await billing.readEntitlement(ACCOUNT);
+    expect(carried.plan).toBe('archmaester');
+    expect(carried.termEndsAt).toBe(yearEnd);
+  });
+
+  it('hands the account to a store purchase made over an insider plan', async () => {
+    const { code } = await billing.issueInsiderInvite({ plan: 'maester', duration: 'year' });
+    await billing.redeemInsiderInvite({ accountId: ACCOUNT, code });
+
+    // They buy Grand Maester at a wall. RevenueCat only ever knows purchases.
+    nowMs += 2 * DAY_MS;
+    const storeEnd = nowMs + 30 * DAY_MS;
+    const probed = createBillingService({
+      client,
+      now: () => nowMs,
+      revenueCatApiKey: 'sk_test',
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          subscriber: {
+            entitlements: { grand_maester: { expires_date: new Date(storeEnd).toISOString() } },
+          },
+        }),
+      })) as unknown as typeof fetch,
+    });
+    // What the purchase webhook does with it.
+    expect(await probed.syncEntitlement(ACCOUNT, { clearIfInactive: false })).toEqual({
+      status: 'active',
+      plan: 'grand_maester',
+    });
+    const bought = await probed.readEntitlement(ACCOUNT);
+    expect(bought.plan).toBe('grand_maester');
+    expect(bought.source).toBe('subscription');
+    expect(bought.termEndsAt).toBeNull();
+
+    // The code's own period passes. The sweep must not put them back on it.
+    nowMs += 29 * DAY_MS;
+    expect(await billing.sweepInsiderRegrants()).toBe(0);
+    expect(String((await accountRow())?.plan)).toBe('grand_maester');
+    expect(String((await accountRow())?.source)).toBe('subscription');
+  });
+
+  it('lists every code with who redeemed it, newest first', async () => {
+    const first = await billing.issueInsiderInvite({ plan: 'maester', duration: 'week', note: 'For Ada' });
+    nowMs += 1_000;
+    const second = await billing.issueInsiderInvite({ plan: 'archmaester', duration: 'year' });
+    await billing.redeemInsiderInvite({ accountId: ACCOUNT, code: first.code });
+
+    const listed = await billing.listInsiderInvites(10);
+    expect(listed.map((invite) => invite.code)).toEqual([second.code, first.code]);
+    expect(listed[0]).toMatchObject({ plan: 'archmaester', duration: 'year', redeemedBy: null, endsAt: null });
+    expect(listed[1]).toMatchObject({
+      plan: 'maester',
+      duration: 'week',
+      note: 'For Ada',
+      redeemedBy: ACCOUNT,
+      endsAt: new Date(nowMs + 7 * DAY_MS).toISOString(),
+    });
+  });
+
+  describe('the regrant', () => {
     it('extends a term one period at a time until it ends', async () => {
-      const { code } = await billing.issueInsiderInvite({ plan: 'maester', durationDays: 70 });
+      const code = await seedInvite('AAAAA-BBBBB-CCCCC-DDDDD', 'maester', 70);
       await billing.redeemInsiderInvite({ accountId: ACCOUNT, code });
       expect(await ledgerCounts()).toEqual({ MONTHLY_GRANT: 1 });
 
       // Day 31: the first period has ended, the term has not. The regrant
       // carries the leftover balance under the plan's rollover cap, so the
       // write-off row arrives with it - exactly what a renewal does.
-      nowMs += 31 * 86_400_000;
+      nowMs += 31 * DAY_MS;
       expect(await billing.sweepInsiderRegrants()).toBe(1);
       expect(await ledgerCounts()).toEqual({ EXPIRATION: 1, MONTHLY_GRANT: 2 });
       const maesterCap = CREDIT_PLANS.maester.rolloverCap;
@@ -824,11 +952,24 @@ describe('insider invites', () => {
 
       // Day 71: the term has run out. Nothing is left to grant, so the plan
       // ends here rather than on a second, later sweep.
-      nowMs += 40 * 86_400_000;
+      nowMs += 40 * DAY_MS;
       expect(await billing.sweepInsiderRegrants()).toBe(0);
       const after = await billing.readEntitlement(ACCOUNT);
       expect(after.plan).toBeNull();
       expect(after.balance).toBe(maesterCap + CREDIT_PLANS.maester.monthlyCredits);
+    });
+
+    it('is carried by a read, without waiting for the sweep', async () => {
+      const code = await seedInvite('AAAAA-BBBBB-CCCCC-EEEEE', 'maester', 70);
+      await billing.redeemInsiderInvite({ accountId: ACCOUNT, code });
+
+      nowMs += 31 * DAY_MS;
+      const balance = await billing.readEntitlement(ACCOUNT);
+      expect(balance.plan).toBe('maester');
+      expect(balance.periodEndsAt).toBe(new Date(NOW + 60 * DAY_MS).toISOString());
+      expect(await ledgerCounts()).toEqual({ EXPIRATION: 1, MONTHLY_GRANT: 2 });
+      // And the sweep that follows finds nothing left to do.
+      expect(await billing.sweepInsiderRegrants()).toBe(0);
     });
 
     it('ignores paid subscriptions and untouched terms', async () => {
