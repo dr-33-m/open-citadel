@@ -60,8 +60,7 @@ Work in this order:
    in the gitignored root `.env`. The webhook secret the dashboard sends in
    the `Authorization` header must equal the server's
    `REVENUECAT_WEBHOOK_SECRET`, and the REST reconcile in `readEntitlement`
-   plus the insider entitlement grant want
-   `REVENUECAT_SECRET_API_KEY`. Both are new env rows; neither has a default.
+   wants `REVENUECAT_SECRET_API_KEY`. Both are new env rows; neither has a default.
    Send RevenueCat's own test event after creating the integration - the
    server answers it 200 and logs `Webhook event ignored: test`, which is the
    cheapest possible proof of the whole chain.

@@ -26,15 +26,19 @@ describe('planStanding', () => {
       planStanding({ plan: 'maester', lifecycle: renewing, balance: insider, testStore: false }),
     ).toMatchObject({
       insider: true,
+      title: 'Insider Plan',
+      subtitle: 'Given to you by Open Citadel. Nothing is charged.',
       badge: 'Insider',
       tone: 'secondary',
-      detail: `2,500 neurons each month, until ${formatTermDate(YEAR_END)}`,
+      detail: `${(2500).toLocaleString()} neurons each month, until ${formatTermDate(YEAR_END)}`,
     });
   });
 
   it('is active while the store is renewing it', () => {
     expect(standing(renewing)).toEqual({
       insider: false,
+      title: 'Manage Subscription',
+      subtitle: 'Change the plan or hand billing back to the store.',
       badge: 'Active',
       tone: 'secondary',
       detail: `${(2500).toLocaleString()} neurons each month`,

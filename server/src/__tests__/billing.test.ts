@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CREDIT_PLANS, type PlanId } from 'samwell-shared';
 
 import { createBillingService, STALE_RESERVATION_MS, type BillingService } from '../billing.js';
+import { createInsiderTerms } from '../billing-insider.js';
 import { ensureBillingSchema, USAGE_EVENTS_DDL } from '../db.js';
 
 /*
@@ -681,6 +682,26 @@ describe('insider invites', () => {
       billing.redeemInsiderInvite({ accountId: 'account:reader-b', code: raced }),
     ]);
     expect(results.filter((r) => r.redeemed)).toHaveLength(1);
+  });
+
+  it('hands the code back when the plan could not be granted', async () => {
+    const { code } = await billing.issueInsiderInvite({ plan: 'maester', duration: 'year' });
+    const failing = createInsiderTerms({
+      client,
+      now: () => nowMs,
+      readAccount: async () => null,
+      grantMonthly: async () => {
+        throw new Error('database is locked');
+      },
+      clearPlan: async () => undefined,
+      readEntitlement: (accountId) => billing.readEntitlement(accountId),
+    });
+    await expect(failing.redeemInvite({ accountId: ACCOUNT, code })).rejects.toThrow('database is locked');
+
+    // Not spent: the same code still works once the grant can land.
+    const result = await billing.redeemInsiderInvite({ accountId: ACCOUNT, code });
+    expect(result.redeemed).toBe(true);
+    expect(await ledgerCounts()).toEqual({ MONTHLY_GRANT: 1 });
   });
 
   it('refuses an unknown code', async () => {

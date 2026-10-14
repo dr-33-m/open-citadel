@@ -26,7 +26,7 @@ describe('insiderWelcome', () => {
       line: `Maester Samwell is yours until ${yearEnd}.`,
       figures: [
         { key: 'term', value: '1 year', label: 'YOUR TERM' },
-        { key: 'neurons', value: '2,500', label: 'NEURONS A MONTH' },
+        { key: 'neurons', value: (2500).toLocaleString(), label: 'NEURONS A MONTH' },
       ],
     });
   });
@@ -34,7 +34,7 @@ describe('insiderWelcome', () => {
   it('does not call a single grant monthly', () => {
     for (const duration of ['day', 'week', 'month'] as const) {
       const { figures } = insiderWelcome({ plan: 'archmaester', duration, endsAt: PERIOD_END });
-      expect(figures[1]).toEqual({ key: 'neurons', value: '30,000', label: 'NEURONS' });
+      expect(figures[1]).toEqual({ key: 'neurons', value: (30000).toLocaleString(), label: 'NEURONS' });
     }
   });
 
@@ -51,7 +51,7 @@ describe('an insider plan on a balance', () => {
   it('ends with its term, not its period', () => {
     expect(insiderEndsAt(insider)).toBe(YEAR_END);
     expect(insiderMeterDetail(insider)).toBe(`insider plan until ${yearEnd}`);
-    expect(insiderPlanDetail('maester', insider)).toBe(`2,500 neurons each month, until ${yearEnd}`);
+    expect(insiderPlanDetail('maester', insider)).toBe(`${(2500).toLocaleString()} neurons each month, until ${yearEnd}`);
   });
 
   it('is nothing on a paid plan', () => {
@@ -67,7 +67,7 @@ describe('an insider plan on a balance', () => {
   it('says a term of one period as one grant', () => {
     const week = { source: 'insider', periodEndsAt: PERIOD_END, termEndsAt: PERIOD_END } as const;
     expect(insiderPlanDetail('maester', week)).toBe(
-      `2,500 neurons, until ${formatTermDate(PERIOD_END)}`,
+      `${(2500).toLocaleString()} neurons, until ${formatTermDate(PERIOD_END)}`,
     );
   });
 });

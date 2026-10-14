@@ -16,6 +16,9 @@ import type { SubscriptionLifecycle } from '@/services/purchase-lifecycle';
 export interface PlanStanding {
   /** Given by a code, so nothing here belongs to a store. */
   insider: boolean;
+  /** What the sheet is called, and the line under it. */
+  title: string;
+  subtitle: string;
   badge: string;
   tone: 'warning' | 'secondary';
   /** The line under the plan's name. */
@@ -39,6 +42,8 @@ export function planStanding({
   if (balance.source === 'insider') {
     return {
       insider: true,
+      title: 'Insider Plan',
+      subtitle: 'Given to you by Open Citadel. Nothing is charged.',
       badge: 'Insider',
       tone: 'secondary',
       detail: insiderPlanDetail(plan, balance),
@@ -73,6 +78,8 @@ export function planStanding({
 
   return {
     insider: false,
+    title: 'Manage Subscription',
+    subtitle: 'Change the plan or hand billing back to the store.',
     badge,
     tone: billingIssue ? 'warning' : 'secondary',
     detail,

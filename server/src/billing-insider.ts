@@ -218,15 +218,35 @@ export function createInsiderTerms(deps: InsiderDeps) {
     });
     if (claim.rowsAffected === 0) return { redeemed: false, reason: 'already_redeemed' };
 
-    await deps.grantMonthly({
-      accountId: args.accountId,
-      plan,
-      periodEndMs,
-      periodStartMs: atMs,
-      idempotencyKey: `insider:${code}:period:${periodEndMs}`,
-      source: 'insider',
-      description: `Insider code ${code}`,
-    });
+    try {
+      await deps.grantMonthly({
+        accountId: args.accountId,
+        plan,
+        periodEndMs,
+        periodStartMs: atMs,
+        idempotencyKey: `insider:${code}:period:${periodEndMs}`,
+        source: 'insider',
+        description: `Insider code ${code}`,
+      });
+    } catch (error) {
+      /*
+       * The plan did not land, so the code is handed back. A code is spent
+       * once: left claimed, a database that was busy for a moment would have
+       * cost somebody the whole of what they were given, with nothing to
+       * show for it and no way to try again.
+       */
+      await client
+        .execute({
+          sql: `UPDATE insider_invites
+                SET redeemed_by = NULL, redeemed_at_ms = NULL, expires_at_ms = NULL
+                WHERE code = ? AND redeemed_by = ?`,
+          args: [code, args.accountId],
+        })
+        .catch((releaseError) => {
+          console.error(`[Billing] Insider code ${code} could not be handed back:`, releaseError);
+        });
+      throw error;
+    }
     return {
       redeemed: true,
       balance: await deps.readEntitlement(args.accountId),

@@ -45,7 +45,7 @@ export function insiderWelcome(redemption: InsiderRedemption): InsiderWelcome {
       ...(term ? [{ key: 'term', value: term.label, label: 'YOUR TERM' }] : []),
       {
         key: 'neurons',
-        value: plan.monthlyCredits.toLocaleString('en-US'),
+        value: plan.monthlyCredits.toLocaleString(),
         label: monthly ? 'NEURONS A MONTH' : 'NEURONS',
       },
     ],
@@ -76,7 +76,7 @@ export function insiderMeterDetail(balance: InsiderStanding): string | null {
 
 /** The line under the plan's name in its management sheet. */
 export function insiderPlanDetail(plan: PlanId, balance: InsiderStanding): string {
-  const neurons = CREDIT_PLANS[plan].monthlyCredits.toLocaleString('en-US');
+  const neurons = CREDIT_PLANS[plan].monthlyCredits.toLocaleString();
   const ends = formatTermDate(insiderEndsAt(balance));
   // One period is the whole term: a single grant, not a monthly one.
   const single = balance.termEndsAt != null && balance.termEndsAt === balance.periodEndsAt;

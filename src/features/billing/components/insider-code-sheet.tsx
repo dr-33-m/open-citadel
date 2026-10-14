@@ -31,15 +31,18 @@ export type InsiderCodeSheetProps = {
  * than closing on them and leaving them to find the link again.
  */
 export function InsiderCodeSheet({ visible, step, form, welcome, onSignedIn, onClose }: InsiderCodeSheetProps) {
+  // The form is what is left when it is neither of the others, so a `done`
+  // with nothing to show for it cannot draw an empty sheet.
+  let body = <InsiderCodeForm {...form} />;
+  if (step === 'account') {
+    body = <AccountAsk title="First, an account" lines={ACCOUNT_LINES} onSignedIn={onSignedIn} />;
+  } else if (step === 'done' && welcome) {
+    body = <InsiderCodeDone welcome={welcome} onDone={onClose} />;
+  }
+
   return (
     <Sheet visible={visible} onClose={onClose}>
-      {step === 'account' ? (
-        <AccountAsk title="First, an account" lines={ACCOUNT_LINES} onSignedIn={onSignedIn} />
-      ) : step === 'done' && welcome ? (
-        <InsiderCodeDone welcome={welcome} onDone={onClose} />
-      ) : (
-        <InsiderCodeForm {...form} />
-      )}
+      {body}
     </Sheet>
   );
 }
