@@ -2,6 +2,17 @@ import { Image, type ImageProps } from 'expo-image';
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
+import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-group';
+import { useDelayedFlag } from '@/hooks/use-delayed-flag';
+
+/**
+ * How long a picture may take before its skeleton starts to pulse. One held
+ * in memory or on disk is in well before this; one still on its way over the
+ * network is not. Longer than a screen's slide in (400ms), so a page of
+ * covers not yet kept does not mount its pulsing layers while it is moving.
+ */
+const SLOW_MS = 500;
+
 type CoverImageProps = Omit<ImageProps, 'placeholder' | 'transition' | 'style' | 'onLoad' | 'onError'> & {
   /** The box the picture fills, and the shape its skeleton takes until it is in. */
   style?: StyleProp<ViewStyle>;
@@ -24,13 +35,16 @@ function sourceKey(source: ImageProps['source']): string {
  * page, and is gone once the picture is in (or has failed, when the box's own
  * ground shows).
  *
- * The skeleton is a plain block and does not pulse. It did, each cover with a
- * pulsing layer of its own, and a list builds covers as it scrolls: every
- * tile that came into view mounted an animated layer, and dropped it a moment
- * later when its picture (usually already in memory) arrived. That is the
- * work a list recycles its cells to avoid, done once per cover per scroll, on
- * every shelf of every Explore page. A page waiting on its data still
- * breathes: that is its own skeleton, one layer for the whole of it.
+ * The skeleton starts as a plain block, and pulses only once the picture has
+ * kept it waiting (`SLOW_MS`). It used to pulse from the first frame, each
+ * cover with a pulsing layer of its own, and a list builds covers as it
+ * scrolls: every tile that came into view mounted an animated layer, and
+ * dropped it a moment later when its picture (usually already in memory)
+ * arrived. That is the work a list recycles its cells to avoid, done once per
+ * cover per scroll. A picture already kept never pulses now; one that is
+ * really downloading (a cleared cache, a slow connection) breathes on the
+ * shared skeleton clock, so a shelf of them breathes as one, instead of
+ * sitting there as a blank square.
  *
  * No fade in. The skeleton already says the picture is coming, and a fade
  * plays again whenever a tile is drawn anew, a picture already in memory
@@ -46,9 +60,20 @@ function CoverImageBase({ style, ...image }: CoverImageProps) {
   // No picture at all (a free book without a cover) never loads or fails, so
   // its skeleton would stay for good: the box's own ground is its cover.
   const loading = image.source != null && settledKey !== key;
+  // Not reset when a recycled cell is handed a new picture that is also
+  // loading: it is still a cover waiting, and the layer stays rather than
+  // being dropped and mounted again.
+  const slow = useDelayedFlag(loading, SLOW_MS);
+  const skeleton = slow ? (
+    <SkeletonGroup className="absolute inset-0">
+      <SkeletonBar className="h-full w-full rounded-none" />
+    </SkeletonGroup>
+  ) : loading ? (
+    <View className="absolute inset-0 bg-skeleton" />
+  ) : null;
   return (
     <View style={style}>
-      {loading ? <View className="absolute inset-0 bg-skeleton" /> : null}
+      {skeleton}
       <Image {...image} style={StyleSheet.absoluteFill} onLoad={settle} onError={settle} />
     </View>
   );
