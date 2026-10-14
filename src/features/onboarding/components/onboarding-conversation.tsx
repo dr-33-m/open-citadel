@@ -28,10 +28,7 @@ import { asColor } from '@/utils/colors';
  */
 export function OnboardingConversation({ onDone }: { onDone: () => void }) {
   const insets = useSafeAreaInsets();
-  const [mutedForeground, destructive] = useCSSVariable([
-    '--color-muted-foreground',
-    '--color-destructive',
-  ]);
+  const mutedForeground = useCSSVariable('--color-muted-foreground');
 
   const [draft, setDraft] = React.useState('');
   /*
@@ -56,7 +53,6 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
   const lastStreamedMessageId = useOnboardingChatStore((s) => s.lastStreamedMessageId);
   const toolStatus = useOnboardingChatStore((s) => s.toolStatus);
   const toolName = useOnboardingChatStore((s) => s.toolName);
-  const error = useOnboardingChatStore((s) => s.error);
 
   const onboarding = useSettingsStore((s) => s.onboarding);
 
@@ -165,14 +161,6 @@ export function OnboardingConversation({ onDone }: { onDone: () => void }) {
           indicator={indicator}
           lastStreamedMessageId={lastStreamedMessageId}
         />
-
-        {error && (
-          <View className="px-4 pb-2">
-            <ThemedText type="bodySm" color={asColor(destructive)}>
-              {error}
-            </ThemedText>
-          </View>
-        )}
 
         <OnboardingComposer
           phase={phase}
