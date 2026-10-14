@@ -247,15 +247,13 @@ index a2a697646e1c8384b1d246877c06fdbb577ec352..2ed1db2fd407265210e2583e20258d41
      }
  }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt b/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt
-index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a79cdf4c2 100644
+index 687dea2ec24b6e0338716e2a56d95c990fa53196..4585f2d43c26b39979618f064bf0305f2d4b1edc 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt
-@@ -1,7 +1,15 @@
+@@ -1,7 +1,13 @@
  package com.reactnativereadium.reader
  
  import android.app.Application
-+import android.app.ActivityManager
-+import android.content.Context
 +import com.reactnativereadium.reader.tts.KokoroTtsEngine
 +import com.reactnativereadium.reader.tts.KokoroTtsEngineProvider
 +import com.reactnativereadium.reader.tts.KokoroTtsPreferences
@@ -266,7 +264,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
  import kotlinx.coroutines.Job
  import kotlinx.coroutines.flow.distinctUntilChanged
  import kotlinx.coroutines.flow.launchIn
-@@ -11,15 +19,40 @@ import kotlinx.coroutines.launch
+@@ -11,15 +17,40 @@ import kotlinx.coroutines.launch
  import org.readium.navigator.media.common.MediaNavigator
  import org.readium.navigator.media.tts.AndroidTtsNavigator
  import org.readium.navigator.media.tts.AndroidTtsNavigatorFactory
@@ -308,7 +306,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
  @OptIn(ExperimentalReadiumApi::class)
  class TTSManager(
      private val application: Application,
-@@ -27,14 +60,41 @@ class TTSManager(
+@@ -27,14 +58,37 @@ class TTSManager(
      private val scope: CoroutineScope,
      private val onStateChange: (isPlaying: Boolean, isPaused: Boolean, rate: Float) -> Unit,
      private val onUtterance: (locator: Locator, text: String) -> Unit,
@@ -330,31 +328,27 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
      private var observeJob: Job? = null
      private var currentRate: Float = 1.0f
 +    private val upcomingUtterances = UpcomingUtterances(publication)
++
++    fun isRunning(): Boolean = navigator != null || systemNavigator != null
  
 -    fun isRunning(): Boolean = navigator != null
-+    fun isRunning(): Boolean = navigator != null || systemNavigator != null
-+
-+    private fun needsSystemVoice(): Boolean {
-+        val manager = application.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-+        val memory = ActivityManager.MemoryInfo()
-+        manager.getMemoryInfo(memory)
-+        // The FP32 Kokoro pipeline can exhaust a 2 GB Android device before
-+        // the first sentence finishes, and running out of memory kills the
-+        // whole app. Let Readium's device TTS handle it.
-+        return memory.totalMem < 3L * 1024 * 1024 * 1024
-+    }
-+
 +    /**
-+     * Kokoro speaks only its own voices (or the default, when none was chosen),
-+     * and never on a phone too small to hold it. Anything else is one of the
-+     * phone's own voices, or [SYSTEM_VOICE] for the phone's default.
++     * Kokoro speaks only its own voices (or the default, when none was chosen).
++     * Anything else is one of the phone's own voices, or [SYSTEM_VOICE] for the
++     * phone's default.
++     *
++     * JS decides which voices a phone can run, and sends [SYSTEM_VOICE] to one
++     * that can run none. This used to hold a memory wall of its own, sending
++     * every phone under 3 GB to the phone's voice whatever JS asked for, which
++     * kept the smallest Enhanced voice and the cloud voices from small phones
++     * that run them.
 +     */
 +    private fun usesKokoro(voice: String?): Boolean =
-+        !needsSystemVoice() && (voice == null || KokoroTtsEngine.VOICES.any { it.id == voice })
++        voice == null || KokoroTtsEngine.VOICES.any { it.id == voice }
  
      override fun onStopRequested() {
          stop()
-@@ -44,10 +104,11 @@ class TTSManager(
+@@ -44,10 +98,11 @@ class TTSManager(
          rate: Float? = null,
          language: String? = null,
          voice: String? = null,
@@ -368,7 +362,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
              navigator?.play()
              return
          }
-@@ -55,8 +116,54 @@ class TTSManager(
+@@ -55,8 +110,54 @@ class TTSManager(
          rate?.let { currentRate = it.coerceIn(0.25f, 4.0f) }
  
          try {
@@ -424,7 +418,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
                  if (f == null) {
                      onError("TTS is not available for this publication")
                      return
-@@ -65,21 +172,14 @@ class TTSManager(
+@@ -65,21 +166,14 @@ class TTSManager(
                  f
              }
  
@@ -449,7 +443,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
              )
  
              if (navigatorResult.isFailure) {
-@@ -92,13 +192,12 @@ class TTSManager(
+@@ -92,13 +186,12 @@ class TTSManager(
              observeNavigator(ttsNavigator)
  
              ttsNavigator.play()
@@ -464,7 +458,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
          observeJob?.cancel()
          observeJob = scope.launch {
              // Observe playback state
-@@ -110,6 +209,30 @@ class TTSManager(
+@@ -110,6 +203,30 @@ class TTSManager(
                  }
                  .launchIn(this)
  
@@ -495,7 +489,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
              // Observe utterance-level locator (sentence, not word).
              // TtsNavigator.currentLocator returns tokenLocator ?: utteranceLocator — the
              // word-level locator — which has incomplete CSS selectors and cannot be rendered
-@@ -121,16 +244,19 @@ class TTSManager(
+@@ -121,16 +238,19 @@ class TTSManager(
                  .onEach { locator ->
                      val text = locator.text.highlight ?: ""
                      onUtterance(locator, text)
@@ -515,7 +509,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
          navigator?.play()
      }
  
-@@ -138,6 +264,11 @@ class TTSManager(
+@@ -138,6 +258,11 @@ class TTSManager(
          observeJob?.cancel()
          observeJob = null
          navigator?.close()
@@ -527,7 +521,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..c98956391cc71c5fa89c8d9879d5747a
          navigator = null
          onStateChange(false, false, currentRate)
      }
-@@ -145,20 +276,52 @@ class TTSManager(
+@@ -145,20 +270,52 @@ class TTSManager(
      fun setRate(rate: Float) {
          currentRate = rate.coerceIn(0.25f, 4.0f)
          navigator?.submitPreferences(

@@ -78,8 +78,7 @@ export const NATIVE_SPEED_SUPPORTED = process.env.EXPO_OS === 'android';
  * Kokoro's FP32 model is about 330 MB of weights and exhausted a 2 GB emulator
  * during book playback. Running out of memory kills the native runtime, which
  * JS cannot catch, so a phone this small is never asked to load it, nor
- * Supertonic, which is larger still. Paradee is small enough, and is kept
- * behind the same wall for another reason: see `TTS_ENGINES`.
+ * Supertonic, which is larger still. Paradee is small enough: see `TTS_ENGINES`.
  */
 export const LOW_MEMORY_ANDROID = process.env.EXPO_OS === 'android'
   && Device.totalMemory !== null
@@ -87,18 +86,17 @@ export const LOW_MEMORY_ANDROID = process.env.EXPO_OS === 'android'
 
 /**
  * The engine picker's order, lightest first, with only the engines this phone
- * is offered: none of them under the wall.
+ * is offered: Paradee alone under the wall.
  *
- * TODO: offer Paradee under the wall (`LOW_MEMORY_ANDROID ? ['paradee'] : ...`)
- * once a build ships with the native reader's own wall lifted. Paradee itself
- * fits: on a 2 GB emulator its sample plays with about 300 MB added. But
- * `needsSystemVoice()` in `TTSManager.kt` (our patch to
- * `@dr33m/react-native-readium`, Android) sends every phone under 3 GB to the
- * phone's own voice whatever JS asks for, so there Paradee could be heard in
- * Settings and never in a book. Lifting that is a native change, and until
- * the build that carries it is out, the two walls stay at the same place.
+ * Paradee fits there: on a 2 GB emulator its sample plays with about 300 MB
+ * added. The native reader used to keep a wall of its own at 3 GB
+ * (`needsSystemVoice()` in `TTSManager.kt`, our patch to
+ * `@dr33m/react-native-readium`), so until build 1.5.2 lifted it, Paradee was
+ * kept from small phones here too: it could have been heard in Settings and
+ * never in a book. An older build never reaches this JS, since the patch moved
+ * the fingerprint.
  */
-export const TTS_ENGINES: readonly TtsEngineId[] = LOW_MEMORY_ANDROID ? [] : ['paradee', 'supertonic', 'kokoro'];
+export const TTS_ENGINES: readonly TtsEngineId[] = LOW_MEMORY_ANDROID ? ['paradee'] : ['paradee', 'supertonic', 'kokoro'];
 
 /**
  * The voice a phone with no choice yet reads in: Kokoro's. Paradee's where
