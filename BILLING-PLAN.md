@@ -87,10 +87,11 @@ Work in this order:
    `429 { error: 'credit_turn_ceiling', spent, ceiling, available }`, plus the
    existing `429 tool_loop_exhausted` - Stage 8's typed error handling reads
    exactly these shapes.
-4. Insider codes are live server-side: `POST /admin/insider/invites`
-   (`x-admin-key` header) mints a code; `POST /billing/insider/redeem`
-   `{ code }` redeems it; a timer regrants monthly until the term ends. The
-   app-side row ("Have a code?") is Stage 7's remaining work.
+4. Insider codes are built on both sides: `POST /admin/insider/invites`
+   (`x-admin-key` header) mints a code for a package and a duration;
+   `POST /billing/insider/redeem` `{ code }` redeems it for a signed-in
+   account; credits are regranted monthly until the term ends. The app's
+   "Insider code" row is under the plans in Settings. See Stage 7.
 
 **Two things still need the founder, not an agent:**
 - The Play Console and App Store Connect products, and the store credentials
@@ -292,7 +293,7 @@ test before it gets a caller. Tick a box below only when the thing is done AND
 - [x] The old meter is gone end to end: `CLOUD_LIMITS`, `CloudUsageState`,
       `getUsageState`, the `/usage` route, `settings.cloudUsage*` and
       `loadCloudUsage`. The post-turn refresh now reads the balance.
-- [ ] Stage 7 — insiders redeem UI (server side is done; no UI yet, by design)
+- [x] Stage 7 — insiders: codes by package and duration, and the redeem sheet
 
 ### Test Store — ready to build against
 - [x] Prices set on all three Test Store products (USD and ZAR), so the cards
@@ -541,7 +542,7 @@ The prize is that Open Citadel stops paying for its own inference.
 | Renewal | Roll over, capped at half a grant (1,250 / 5,000 / 15,000) |
 | Old caps | `CLOUD_LIMITS` deleted. Credits are the only thing that can refuse a turn |
 | Purchase | `Purchases.purchasePackage()` → the native store sheet. No RevenueCat paywall UI |
-| Insiders | Founder-issued redeem code granting Maester for a set term, up to a year |
+| Insiders | Founder-issued redeem code granting any plan for a day, a week, a month or a year |
 
 **One call I made for you.** You did not pick a multiplier baseline. The `×`
 badge is computed **within the plan band a model belongs to**, not against the
@@ -853,8 +854,11 @@ Always answer 200 on a duplicate — RevenueCat retries.
 **`server/src/index.ts`** — new routes:
 - `GET /billing/me` → `CreditBalance` + the plan's models
 - `GET /billing/ledger?limit=` → recent rows, for a history sheet later
-- `POST /billing/insider/redeem` `{ code }`
-- `POST /admin/insider/invites` `{ plan, durationDays, note }` → a code
+- `POST /billing/insider/redeem` `{ code }` → `{ balance, redemption }`.
+  Accounts only: a guest is refused with `403 account_required`
+- `POST /admin/insider/invites` `{ plan, duration, note? }` → a code.
+  `duration` is `day`, `week`, `month` or `year`
+- `GET /admin/insider/invites` → every code, and who redeemed it
 - `PATCH /admin/models/:id` gains `minPlan`
 
 `GET /usage` is **replaced** by `GET /billing/me`. `getUsageState`,
@@ -1231,23 +1235,76 @@ else splits one decision across two screens.
 
 ## Stage 7 — Insiders
 
-**The server side is built** (this plan's step 3 of the second session):
-`POST /admin/insider/invites` mints a grouped, uppercase code behind the
-admin key; `POST /billing/insider/redeem` claims it with a single-winner
-conditional UPDATE (two devices racing one code: exactly one wins), grants
-the first period through the same `grantMonthly` with `source: 'insider'`,
-and asks RevenueCat's **`grant-customer-entitlement`** to hold the
-entitlement for the whole term, so `readEntitlement` keeps exactly one shape
-to reason about. A timer (`sweepInsiderRegrants`, hourly in `index.ts`)
-extends the term one period at a time and clears the plan when the term has
-run out - a late sweep clears rather than granting credits for time that is
-over. Redemption refuses while a live paid subscription stands (the code
-stays intact, giftable), and is refused as `409`.
+A code is a plan the founder hands out for a set time, with nothing charged.
+The code lives in `server/src/billing-insider.ts`; the two things the server
+and the app must agree on (the four terms, and how a typed code is tidied)
+live in `packages/samwell-shared/src/insider.ts`.
 
-Remaining here:
-- [ ] The app side: `redeemInsider(code)` on the subscription store, no UI
-      yet. A "Have a code?" row under the carousel is one line when you want
-      it.
+**Minting a code.** One package, one duration:
+
+```sh
+curl -X POST https://api.open-citadel.online/admin/insider/invites \
+  -H "x-admin-key: $ADMIN_API_KEY" -H 'content-type: application/json' \
+  -d '{"plan":"maester","duration":"year","note":"For Ada"}'
+# {"ok":true,"code":"ECC64-2D28A-B1381-8F0F6","plan":"maester",
+#  "duration":"year","durationDays":365,"label":"1 year · Maester Samwell"}
+```
+
+| Field | Values |
+|---|---|
+| `plan` | `maester` · `grand_maester` · `archmaester` |
+| `duration` | `day` (1 day) · `week` (7) · `month` (30) · `year` (365) |
+| `note` | optional, who it is for; only ever read back by the list |
+
+`GET /admin/insider/invites` lists every code, newest first, with its note,
+who redeemed it and when its plan ends. It is the only way to find a code
+that was mislaid, since a code is not recoverable from anything else.
+
+**Redeeming one.** `POST /billing/insider/redeem` `{ code }`, and the rules:
+
+- **An account, not a device.** A guest identity is refused with
+  `403 account_required`. A code is spent once and a guest lives in one
+  phone's Keychain, so a reinstall would lose a year's plan with nothing left
+  to redeem again.
+- **Typed however.** Lower case, no dashes, a trailing space: the code is
+  tidied by `normalizeInsiderCode` on both sides before it is looked up.
+- **One winner.** The claim is a conditional UPDATE, so two devices racing
+  one code cannot both have it.
+- **A paid plan outranks a code.** Redeeming while a store subscription is
+  live is refused with `409 already_subscribed` and the code stays unspent.
+  The other way round, a plan bought while on an insider one takes its place.
+- **A newer code replaces an older one.** A week's trial can be followed by a
+  year without waiting the week out. The account's plan stands on the code it
+  redeemed last, and an older code's term ending no longer touches it.
+- **Ten tries in ten minutes** per account, then `429 too_many_attempts`.
+
+**Credits.** A code grants the plan's whole monthly grant at once, whatever
+its duration: a one day Archmaester code is 30,000 Neurons that stop being
+spendable a day later. A year's code is regranted every thirty days through
+the same `grantMonthly` a renewal uses, with the same rollover cap. The term
+is carried forward by `advanceTerm`, from the hourly sweep in `index.ts` and
+from any read of an account whose period has just ended, so nobody waits an
+hour for a month they are owed or keeps a plan an hour past its end.
+
+**RevenueCat is never told.** The first build asked it to hold the
+entitlement for the term. That call was dropped: the reconcile reads any
+entitlement it finds as a billing period, so a year-long one would have been
+granted as a second month and then stopped the monthly regrants. The server's
+own row is what every route reads, and a RevenueCat entitlement now always
+means a purchase.
+
+**In the app.** Under the plans in Settings, the ways in that are not a
+purchase are one list, "ALREADY HAVE A PLAN?" (`PlanWaysIn`, drawn by the carousel
+itself): Restore purchases, Sign in, Insider code. Apple asks a subscription
+screen for a way to restore or sign in, and three loose text links read as
+floating; rows with a mark, a name and one line do not. The code row opens
+one sheet
+(`InsiderCodeSheet`, state in `useInsiderCode`) that asks for an account
+first when nobody is signed in, carries on to the code once they are, and
+ends on what the code opened. `/billing/me` carries `balance.termEndsAt` for
+an insider plan, which the credit meter and the plan's management sheet draw
+as "until 13 Oct 2027"; that sheet shows no store rows for an insider, only
+"Use another code".
 
 ---
 

@@ -430,6 +430,12 @@ export interface CreditBalance {
   /** The plan's monthly grant, for drawing a meter against. */
   grant: number;
   periodEndsAt: string | null;
+  /**
+   * When an insider plan stops for good, which is not when its period does:
+   * a year's code is granted a month at a time. Null for a store plan, whose
+   * end is the store's to say.
+   */
+  termEndsAt: string | null;
 }
 
 export const NO_PLAN_BALANCE: CreditBalance = {
@@ -440,6 +446,7 @@ export const NO_PLAN_BALANCE: CreditBalance = {
   available: 0,
   grant: 0,
   periodEndsAt: null,
+  termEndsAt: null,
 };
 
 /**

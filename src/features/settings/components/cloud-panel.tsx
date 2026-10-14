@@ -12,7 +12,6 @@ import { Card } from "@/components/ui/card";
 import { GoldButton } from "@/components/ui/gold-button";
 import { PrefixIcon } from "@/components/ui/prefix-icon";
 import { Spinner } from "@/components/ui/spinner";
-import { Touchable } from "@/components/ui/touchable";
 import { ACCOUNT_ENABLED } from "@/constants/logto";
 import {
     PURCHASES_ENABLED,
@@ -44,9 +43,12 @@ import { CREDIT_PLANS, PLANS, planRank } from "samwell-shared";
  */
 export function CloudPanel({
   onRequestAccount,
+  onInsiderCode,
   onAccessActivated,
 }: {
   onRequestAccount: () => void;
+  /** Open the insider code sheet, which lives beside this panel. See `InsiderCodeHost`. */
+  onInsiderCode: () => void;
   onAccessActivated?: () => void;
 }) {
   // This panel is kept while the on-device one shows (`KeptAlive`), and
@@ -145,6 +147,12 @@ export function CloudPanel({
       if (manageError) showToast({ message: manageError, key: "billing" });
     }
   }, [manage]);
+
+  // One sheet at a time: the code's own rises once this one is on its way down.
+  const onAnotherCode = React.useCallback(() => {
+    setManageVisible(false);
+    onInsiderCode();
+  }, [onInsiderCode]);
 
   /**
    * A purchase is under way.
@@ -249,31 +257,15 @@ export function CloudPanel({
           onRetry={offer.retry}
           onChoose={sale.picker.onChoose}
           onRestore={sale.picker.onRestore}
+          /* The other ways in, listed with the restore under the plans. The
+             account one goes to the account card rather than opening the
+             browser from here, so sign-in still happens in one place; the
+             code one asks for an account itself if it needs to. */
+          onAccount={hasIdentity ? undefined : onRequestAccount}
+          onInsiderCode={onInsiderCode}
           surface="background"
           bleed={layout.gutter}
         />
-        {/* The quiet third door, for somebody who wants neither to buy nor to
-            restore: it scrolls to the account card rather than opening the
-            browser from here, so sign-in still happens in one place. */}
-        {!hasIdentity ? (
-          <View className="items-center">
-            <Touchable
-              className="px-4 py-2"
-              onPress={onRequestAccount}
-              haptic="select"
-              accessibilityRole="button"
-              accessibilityLabel="Sign in to your account"
-            >
-              <ThemedText
-                type="labelSm"
-                color={asColor(mutedForeground)}
-                className="tracking-[1px]"
-              >
-                ALREADY HAVE AN ACCOUNT
-              </ThemedText>
-            </Touchable>
-          </View>
-        ) : null}
       </>
     );
   }
@@ -347,6 +339,9 @@ export function CloudPanel({
           onRetry={offer.retry}
           onChoose={sale.picker.onChoose}
           onRestore={sale.picker.onRestore}
+          /* Signed in, or a phone whose own plan has lapsed: the account
+             has nothing more to offer, a code still does. */
+          onInsiderCode={onInsiderCode}
           surface="background"
           bleed={layout.gutter}
         />
@@ -458,6 +453,7 @@ export function CloudPanel({
           visible={manageVisible}
           plan={plan}
           lifecycle={lifecycle}
+          balance={balance}
           upgradePlans={upgradePlans}
           downgradePlans={downgradePlans}
           packages={packages}
@@ -469,6 +465,7 @@ export function CloudPanel({
           onChoose={onChoose}
           onRestore={onRestore}
           onManage={onManage}
+          onInsiderCode={onAnotherCode}
         />
       ) : null}
     </>

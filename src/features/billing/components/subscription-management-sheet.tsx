@@ -5,12 +5,11 @@ import { useCSSVariable } from "uniwind";
 
 import {
     ChevronLeft,
-    ChevronRight,
     RefreshCw,
     Settings,
+    Ticket,
     TrendingDown,
     TrendingUp,
-    type LucideIcon,
 } from "@/components/icons";
 import { PageFade } from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
@@ -18,11 +17,12 @@ import { Badge } from "@/components/ui/badge";
 import { PrefixIcon } from "@/components/ui/prefix-icon";
 import { GoldButton } from "@/components/ui/gold-button";
 import { Sheet } from "@/components/ui/sheet";
-import { Spinner } from "@/components/ui/spinner";
 import { Touchable } from "@/components/ui/touchable";
+import { ManagementRow } from "@/features/billing/components/management-row";
 import { PlanChangeView } from "@/features/billing/components/plan-change-view";
+import type { InsiderStanding } from "@/features/billing/utils/insider";
 import { PLAN_ICON } from "@/features/billing/utils/plan-icon";
-import { formatSubscriptionDate } from "@/features/billing/utils/subscription-lifecycle";
+import { planStanding } from "@/features/billing/utils/plan-standing";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import type { SubscriptionLifecycle } from "@/services/purchase-lifecycle";
 import type { PlanModel, PurchaseOutcome } from "@/stores/subscription";
@@ -32,56 +32,11 @@ import { CREDIT_PLANS, type CreditPlan, type PlanId } from "samwell-shared";
 
 type SubscriptionBusy = PlanId | "restore" | "manage" | null;
 
-function ManagementRow({
-  icon: Icon,
-  label,
-  detail,
-  busy,
-  disabled,
-  onPress,
-}: {
-  icon: LucideIcon;
-  label: string;
-  detail: string;
-  busy: boolean;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  const mutedForeground = useCSSVariable("--color-muted-foreground");
-
-  return (
-    <Touchable
-      className="flex-row items-center gap-3 border-t border-border py-3"
-      onPress={onPress}
-      disabled={disabled}
-      haptic="select"
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={detail}
-      accessibilityState={{ disabled, busy }}
-    >
-      <View className="h-9 w-9 items-center justify-center bg-muted">
-        <Icon size={17} color={asColor(mutedForeground)} />
-      </View>
-      <View className="flex-1 gap-0.5">
-        <ThemedText type="bodyMd">{label}</ThemedText>
-        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          {detail}
-        </ThemedText>
-      </View>
-      {busy ? (
-        <Spinner size="sm" label={`${label} in progress`} />
-      ) : (
-        <ChevronRight size={17} color={asColor(mutedForeground)} />
-      )}
-    </Touchable>
-  );
-}
-
 export function SubscriptionManagementSheet({
   visible,
   plan,
   lifecycle,
+  balance,
   upgradePlans,
   downgradePlans,
   packages,
@@ -93,10 +48,13 @@ export function SubscriptionManagementSheet({
   onChoose,
   onRestore,
   onManage,
+  onInsiderCode,
 }: {
   visible: boolean;
   plan: PlanId;
   lifecycle: SubscriptionLifecycle | null;
+  /** Whether the plan was bought or given, and when a given one ends. */
+  balance: InsiderStanding;
   upgradePlans: CreditPlan[];
   downgradePlans: CreditPlan[];
   packages: Partial<Record<PlanId, PurchasesPackage>>;
@@ -111,6 +69,8 @@ export function SubscriptionManagementSheet({
   ) => Promise<PurchaseOutcome>;
   onRestore: () => void;
   onManage: () => void;
+  /** Redeem another insider code. Only offered on an insider plan. */
+  onInsiderCode: () => void;
 }) {
   const [mutedForeground, gold] = useCSSVariable([
     "--color-muted-foreground",
@@ -132,36 +92,14 @@ export function SubscriptionManagementSheet({
     planChangePlans.find((candidate) => candidate.id === selectedPlanId) ??
     planChangePlans[0];
   const selectedPackage = selectedPlan ? packages[selectedPlan.id] : undefined;
-  const currentLifecycle = lifecycle?.plan === plan ? lifecycle : null;
-  const periodEnd = formatSubscriptionDate(currentLifecycle?.expiresAt ?? null);
-  const hasBillingIssue = Boolean(currentLifecycle?.billingIssueDetectedAt);
-  const canceled = Boolean(currentLifecycle?.unsubscribeDetectedAt);
-  const nonRenewing = currentLifecycle !== null && !currentLifecycle.willRenew;
-  const statusLabel = hasBillingIssue
-    ? "Payment issue"
-    : canceled
-      ? "Canceled"
-      : nonRenewing
-        ? "Not renewing"
-        : "Active";
-  const statusVariant: "warning" | "secondary" = hasBillingIssue
-    ? "warning"
-    : "secondary";
-  const statusDetail = hasBillingIssue
-    ? periodEnd
-      ? `Access remains active through ${periodEnd} while the store retries payment.`
-      : "Access remains active while the store retries payment."
-    : nonRenewing
-      ? periodEnd
-        ? `Access remains active through ${periodEnd}.`
-        : "Access remains active through the end of this billing period."
-      : `${planDetails.monthlyCredits.toLocaleString()} neurons each month`;
-  const manageLabel = hasBillingIssue ? "Fix payment" : "Manage or cancel";
-  const manageDetail = testStore
-    ? "Open Test Store guidance"
-    : hasBillingIssue
-      ? "Update your payment method in the store"
-      : "Continue in your device's subscription settings";
+  // Bought or given, and everything the sheet says about which: see
+  // `planStanding`.
+  const standing = planStanding({ plan, lifecycle, balance, testStore });
+  const title = standing.insider ? "Insider Plan" : "Manage Subscription";
+  const subtitle = standing.insider
+    ? "Given to you by Open Citadel. Nothing is charged."
+    : "Change the plan or hand billing back to the store.";
+  const backLabel = title.toUpperCase();
 
   const openPlanChange = (direction: "upgrade" | "downgrade") => {
     const plans = direction === "upgrade" ? upgradePlans : downgradePlans;
@@ -219,9 +157,9 @@ export function SubscriptionManagementSheet({
           <Sheet.ScrollView contentContainerClassName="gap-5 px-6 pb-2 pt-2">
             <>
               <View className="gap-1">
-                <ThemedText type="headlineSm">Manage Subscription</ThemedText>
+                <ThemedText type="headlineSm">{title}</ThemedText>
                 <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-                  Change the plan or hand billing back to the store.
+                  {subtitle}
                 </ThemedText>
               </View>
 
@@ -230,7 +168,7 @@ export function SubscriptionManagementSheet({
                   <ThemedText type="labelSm" color={asColor(mutedForeground)}>
                     CURRENT PLAN
                   </ThemedText>
-                  <Badge variant={statusVariant}>{statusLabel}</Badge>
+                  <Badge variant={standing.tone}>{standing.badge}</Badge>
                 </View>
                 <View className="flex-row items-center gap-3">
                   <PrefixIcon icon={PLAN_ICON[plan]} size={36} />
@@ -239,7 +177,7 @@ export function SubscriptionManagementSheet({
                   </ThemedText>
                 </View>
                 <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-                  {statusDetail}
+                  {standing.detail}
                 </ThemedText>
               </View>
 
@@ -257,36 +195,57 @@ export function SubscriptionManagementSheet({
                 </ThemedText>
               )}
 
-              <View>
-                {downgradePlans.length > 0 ? (
+              {standing.insider ? (
+                /* No store behind an insider plan, so none of the store's
+                   rows: nothing to restore, downgrade or cancel. What can be
+                   done is to put a newer code in its place. */
+                <View className="gap-3">
+                  {upgradePlans.length > 0 ? (
+                    <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+                      A plan you buy takes the place of your insider plan.
+                    </ThemedText>
+                  ) : null}
                   <ManagementRow
-                    icon={TrendingDown}
-                    label="Downgrade plan"
-                    detail="Choose a lower plan for your next renewal"
+                    icon={Ticket}
+                    label="Use another code"
+                    detail="A new code takes the place of this one"
                     busy={false}
                     disabled={controlsDisabled}
-                    onPress={() => openPlanChange("downgrade")}
+                    onPress={onInsiderCode}
                   />
-                ) : null}
-                <ManagementRow
-                  icon={RefreshCw}
-                  label="Restore purchases"
-                  detail="Check this store account for an existing plan"
-                  busy={busy === "restore"}
-                  disabled={controlsDisabled}
-                  onPress={onRestore}
-                />
-                <ManagementRow
-                  icon={Settings}
-                  label={manageLabel}
-                  detail={manageDetail}
-                  busy={busy === "manage"}
-                  disabled={controlsDisabled}
-                  onPress={onManage}
-                />
-              </View>
+                </View>
+              ) : (
+                <View>
+                  {downgradePlans.length > 0 ? (
+                    <ManagementRow
+                      icon={TrendingDown}
+                      label="Downgrade plan"
+                      detail="Choose a lower plan for your next renewal"
+                      busy={false}
+                      disabled={controlsDisabled}
+                      onPress={() => openPlanChange("downgrade")}
+                    />
+                  ) : null}
+                  <ManagementRow
+                    icon={RefreshCw}
+                    label="Restore purchases"
+                    detail="Check this store account for an existing plan"
+                    busy={busy === "restore"}
+                    disabled={controlsDisabled}
+                    onPress={onRestore}
+                  />
+                  <ManagementRow
+                    icon={Settings}
+                    label={standing.manageLabel}
+                    detail={standing.manageDetail}
+                    busy={busy === "manage"}
+                    disabled={controlsDisabled}
+                    onPress={onManage}
+                  />
+                </View>
+              )}
 
-              {testStore ? (
+              {testStore && !standing.insider ? (
                 <ThemedText type="bodySm" color={asColor(mutedForeground)}>
                   RevenueCat Test Store has no App Store or Play cancellation
                   page. Monthly test plans renew every five minutes and cancel
@@ -304,7 +263,7 @@ export function SubscriptionManagementSheet({
               haptic="select"
               hitSlop={{ top: 4, bottom: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="Back to manage subscription"
+              accessibilityLabel={`Back to ${title}`}
               style={{
                 height: 44,
                 flexDirection: "row",
@@ -314,7 +273,7 @@ export function SubscriptionManagementSheet({
             >
               <ChevronLeft size={18} color={asColor(gold)} strokeWidth={2} />
               <ThemedText type="labelSm" color={asColor(gold)}>
-                MANAGE SUBSCRIPTION
+                {backLabel}
               </ThemedText>
             </Touchable>
           </View>

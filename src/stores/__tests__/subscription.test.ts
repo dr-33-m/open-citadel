@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PurchasesPackage } from 'react-native-purchases';
 
+import { cloudJsonHeaders } from '@/services/cloud-identity';
 import { AlreadyPurchased, purchase, restore } from '@/services/purchases';
 import { useSubscriptionStore } from '../subscription';
 
@@ -45,6 +46,7 @@ const ACTIVE_RESPONSE = {
     available: 2_500,
     grant: 2_500,
     periodEndsAt: '2026-10-11T00:00:00.000Z',
+    termEndsAt: null,
   },
   models: [],
 };
@@ -158,5 +160,134 @@ describe('buying a plan the reader already owns', () => {
     expect(outcome).toBe(false);
     expect(useSubscriptionStore.getState().error).toBe('Store unavailable.');
     expect(useSubscriptionStore.getState().busy).toBeNull();
+  });
+});
+
+describe('redeeming an insider code', () => {
+  const REDEMPTION = { plan: 'maester', duration: 'year', endsAt: '2027-10-13T00:00:00.000Z' };
+  const INSIDER_BALANCE = {
+    ...ACTIVE_RESPONSE.balance,
+    source: 'insider',
+    termEndsAt: REDEMPTION.endsAt,
+  };
+
+  beforeEach(() => {
+    useSubscriptionStore.getState().reset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('takes the plan from the answer, then reads its brains', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? Response.json({ ok: true, balance: INSIDER_BALANCE, redemption: REDEMPTION })
+        : Response.json({ ...ACTIVE_RESPONSE, balance: INSIDER_BALANCE }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const outcome = await useSubscriptionStore.getState().redeemInsider('A1B2C-3D4E5-F6A7B-8C9D0');
+
+    expect(outcome).toEqual({ ok: true, redemption: REDEMPTION });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://cloud.example.com/billing/insider/redeem',
+      'https://cloud.example.com/billing/me',
+    ]);
+    const state = useSubscriptionStore.getState();
+    expect(state.status).toBe('active');
+    expect(state.plan).toBe('maester');
+    expect(state.balance.source).toBe('insider');
+    expect(state.balance.termEndsAt).toBe(REDEMPTION.endsAt);
+  });
+
+  it('waits out a read that left before the code was spent', async () => {
+    // Asked while they had no plan, and still on its way when the code lands.
+    const early = deferredResponse();
+    let reads = 0;
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return Promise.resolve(
+          Response.json({ ok: true, balance: INSIDER_BALANCE, redemption: REDEMPTION }),
+        );
+      }
+      reads += 1;
+      return reads === 1
+        ? early.promise
+        : Promise.resolve(Response.json({ ...ACTIVE_RESPONSE, balance: INSIDER_BALANCE }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const earlyRead = useSubscriptionStore.getState().refresh();
+    const redeeming = useSubscriptionStore.getState().redeemInsider('A1B2C-3D4E5-F6A7B-8C9D0');
+    early.resolve(
+      Response.json({ balance: { ...ACTIVE_RESPONSE.balance, plan: null, source: null }, models: [] }),
+    );
+    await earlyRead;
+    await redeeming;
+
+    expect(reads).toBe(2);
+    const state = useSubscriptionStore.getState();
+    expect(state.status).toBe('active');
+    expect(state.plan).toBe('maester');
+  });
+
+  it('keeps the plan when the read after it fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          return Response.json({ ok: true, balance: INSIDER_BALANCE, redemption: REDEMPTION });
+        }
+        throw new Error('offline');
+      }),
+    );
+
+    const outcome = await useSubscriptionStore.getState().redeemInsider('A1B2C-3D4E5-F6A7B-8C9D0');
+
+    expect(outcome.ok).toBe(true);
+    expect(useSubscriptionStore.getState().status).toBe('active');
+    expect(useSubscriptionStore.getState().plan).toBe('maester');
+  });
+
+  it('hands back why a code was refused, and leaves the shared error alone', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          { error: 'already_redeemed', message: 'That code has already been used.' },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    const outcome = await useSubscriptionStore.getState().redeemInsider('A1B2C-3D4E5-F6A7B-8C9D0');
+
+    expect(outcome).toEqual({
+      ok: false,
+      reason: 'already_redeemed',
+      message: 'That code has already been used.',
+    });
+    const state = useSubscriptionStore.getState();
+    expect(state.error).toBeNull();
+    expect(state.busy).toBeNull();
+    expect(state.status).toBe('unknown');
+  });
+
+  it('says what is wrong with the sign-in, and asks the server nothing', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.mocked(cloudJsonHeaders).mockRejectedValueOnce(new Error('Your sign-in has expired.'));
+
+    const outcome = await useSubscriptionStore.getState().redeemInsider('A1B2C-3D4E5-F6A7B-8C9D0');
+
+    expect(outcome).toEqual({ ok: false, reason: null, message: 'Your sign-in has expired.' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('says the cloud could not be reached, rather than throwing', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('offline'))));
+    const outcome = await useSubscriptionStore.getState().redeemInsider('A1B2C-3D4E5-F6A7B-8C9D0');
+    expect(outcome).toMatchObject({ ok: false, reason: null });
   });
 });
