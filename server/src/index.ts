@@ -37,6 +37,7 @@ import { accountRoutes } from './account-routes.js';
 import { guestRoutes } from './guest-routes.js';
 import { managementConfigured } from './logto-management.js';
 import { PROVIDER_PREFERENCES } from './openrouter.js';
+import { pickFallbackModels } from './fallback-models.js';
 import { chatTitleRoutes } from './chat-title.js';
 import { gutenbergRoutes } from './gutenberg.js';
 import { gutenbergCatalogRoutes } from './gutenberg-catalog.js';
@@ -396,6 +397,15 @@ async function* meterStream(
         }
       } else if (chunk.type === 'RUN_ERROR') {
         settled = true;
+        /*
+         * Said here, because nothing else says it. An error that arrives as
+         * an event is not thrown, so the catch below never sees it; unlogged,
+         * a request OpenRouter refused outright looked from the log like a
+         * turn that simply never ended.
+         */
+        console.error(
+          `[Samwell Cloud] Run error on ${modelId}: ${JSON.stringify(chunk).slice(0, 800)}`,
+        );
         if (billing) {
           await releaseReservation({
             usageEventId,
@@ -1073,16 +1083,10 @@ app.post('/chat/http', async (c) => {
    * From the plan's models ONLY. This is where a Maester turn is prevented
    * from quietly landing on an Archmaester model - the reroute would cost
    * the house the difference, which is exactly the leak credits exist to
-   * close. Filtered by capability as well: this request carries tool
-   * definitions, so a model that cannot call tools is not a substitute for
-   * one that can - it is a destination where the request arrives broken.
-   * Every model in the catalogue happens to support tools today, which is
-   * exactly why this is worth pinning down now: `/admin/models` can add one
-   * that does not, and nothing else would catch it.
+   * close. And no more than OpenRouter will take: see `pickFallbackModels`,
+   * which also keeps to models that can call tools.
    */
-  const fallbackModels = planModels.filter(
-    (model) => model.id !== modelId && model.capabilities.includes('tools'),
-  );
+  const fallbackModels = pickFallbackModels(planModels, modelId);
 
   /*
    * Compact against the smallest window the request could actually land on,
