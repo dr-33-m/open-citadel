@@ -17,8 +17,8 @@ ExecuTorch and Phonemis are already compiled in, so this can ship as an OTA upda
 **The export is done, checked, and measured on a Galaxy A33** (see "The export, as built" and
 "On a Galaxy A33"): it reads a book aloud there at about twice the speed of speech, where
 Kokoro takes three and a half times as long as the speech lasts. The files are hosted (see
-"Where the files live"). Phones under 3 GB do not get it yet: the native reader has a wall
-of its own there, lifted in a later build (see "On a 2 GB emulator").
+"Where the files live"). Phones under 3 GB get it from build 1.5.2, which lifted the native
+reader's own wall there (see "On a 2 GB emulator").
 
 ## What Paradee is
 
@@ -63,8 +63,8 @@ constraints tying them together). A program without it is taken to have fixed sh
 refused.
 
 Phones under 3 GB (`LOW_MEMORY_ANDROID` in `catalogue.ts`) get no AI voice at all, because
-Kokoro's FP32 weights exhausted a 2 GB emulator. That wall is the one Paradee is meant to
-get past, and for now it stays behind it too (see "On a 2 GB emulator").
+Kokoro's FP32 weights exhausted a 2 GB emulator. That wall is the one Paradee gets past:
+from build 1.5.2 it is the one voice box offered there (see "On a 2 GB emulator").
 
 ## How well Paradee fits that pipeline
 
@@ -177,6 +177,11 @@ That is why Paradee is behind the 3 GB wall in JS as well, for now (`TTS_ENGINES
 is worse than no voice. Phones of 3 GB and up get it over the air; smaller ones get it with
 the build that lifts the native wall.
 
+Build 1.5.2 lifts it: `needsSystemVoice()` is gone, the native reader takes the voice JS
+sends (JS already sends `system-voice` to a phone that can run no Enhanced voice), and
+`TTS_ENGINES` offers Paradee alone under 3 GB. Not yet read aloud on the 2 GB emulator with
+the new build; that is the check to make before trusting it.
+
 ## In the app
 
 All JS, mostly in `src/services/device-tts/`, the same shape as when Supertonic was added.
@@ -252,11 +257,11 @@ files to Software Mansion's model registry.
 
 ## Next steps
 
-1. **Lift the native reader's wall, in a later build.** Take the memory check out of
+1. **Done in build 1.5.2: lift the native reader's wall.** Take the memory check out of
    `TTSManager.kt` and let JS decide, as it already does everywhere else: it sends
    `system-voice` when the phone has no Enhanced voice it can run. It is a native change, so
    it goes out with a new binary, not over the air.
-2. **Then offer Paradee under 3 GB**: the TODO on `TTS_ENGINES`. Before trusting it, read a
+2. **Done in build 1.5.2: offer Paradee under 3 GB** (`TTS_ENGINES`). Still to do before trusting it: read a
    book aloud on the 2 GB emulator, which is what Kokoro ran out of memory doing, and
    measure the pace on a real 2 to 3 GB phone. Where Paradee's disclaimer bar sits is a
    claim until then.
