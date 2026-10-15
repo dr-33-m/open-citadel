@@ -251,12 +251,70 @@ export const SearchJourneyOutputSchema = z.object({
   formatted: z.string(),
 });
 
-export const ListCollectionsInputSchema = z.object({});
+export const ListCollectionsInputSchema = z.object({
+  collection_name: z
+    .string()
+    .optional()
+    .describe('One collection to list in full (partial match ok). Omit to list every collection with the books in it.'),
+});
+
+export const CollectionBookSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  author: z.string(),
+});
 
 export const CollectionSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
   bookCount: z.number(),
+  /** Optional so a build from before collections listed their books still validates. */
+  books: z.array(CollectionBookSchema).optional(),
+});
+
+/** Where a book stands, in the words the tools use. `finished` is the `archived` status. */
+export const LibraryStatusSchema = z.enum(['reading', 'queued', 'finished', 'unstarted']);
+
+export const SearchLibraryInputSchema = z.object({
+  query: z
+    .string()
+    .optional()
+    .describe('Words from the title or the author (partial is fine, any order). Omit to browse.'),
+  status: LibraryStatusSchema.optional().describe('Only books in this state.'),
+  collection: z.string().optional().describe('Only books in this collection (partial match ok).'),
+  favorites: z.boolean().optional().describe('Only favourites.'),
+});
+
+export const LibraryBookSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  author: z.string(),
+  category: z.string().nullable(),
+  status: LibraryStatusSchema,
+  /** 0 to 1, where the reader has got to. Null when never opened. */
+  percentage: z.number().nullable(),
+  favorite: z.boolean(),
+  collections: z.array(z.string()),
+  addedAt: z.string(),
+  completedAt: z.string().nullable(),
+});
+
+export const SearchLibraryOutputSchema = z.object({
+  books: z.array(LibraryBookSchema),
+  /** How many books matched, which can be more than were returned. */
+  total: z.number(),
+  formatted: z.string(),
+});
+
+export const GetBookDetailsInputSchema = z.object({
+  book_title: z
+    .string()
+    .optional()
+    .describe('Title of the book (partial match ok). Omit for the book this chat is about.'),
+});
+
+export const GetBookDetailsOutputSchema = z.object({
+  formatted: z.string(),
 });
 
 export const ListCollectionsOutputSchema = z.object({
@@ -324,7 +382,7 @@ export const readChapterTool = toolDefinition({
 export const suggestNextBookTool = toolDefinition({
   name: 'suggest_next_book',
   description:
-    "List the user's library (books queued to read, currently reading, and finished), so you can recommend what they should read next given where they are in their journey. Only recommend titles that appear in this list (the user's own library); never invent books they don't own.",
+    "List the user's library (books queued to read, currently reading, and finished), so you can recommend what they should read next given where they are in their journey. Only recommend titles that appear in this list (the user's own library); never invent books they don't own. To find a particular book, use search_library instead.",
   inputSchema: SuggestNextBookInputSchema,
   outputSchema: SuggestNextBookOutputSchema,
 });
@@ -552,9 +610,44 @@ export const updateThoughtTool = toolDefinition({
 
 export const listCollectionsTool = toolDefinition({
   name: 'list_collections',
-  description: "List the user's collections with how many books are in each.",
+  description:
+    "List the user's collections and the books in each (title, author and a [[book:id]] reference you can show). Pass collection_name to list one collection in full.",
   inputSchema: ListCollectionsInputSchema,
   outputSchema: ListCollectionsOutputSchema,
+});
+
+/**
+ * The whole library, searchable.
+ *
+ * Before this the only way Samwell could see the library was
+ * `suggest_next_book`, a list for recommending from: the most recently added
+ * few hundred books, trimmed further to fit. A book outside that slice did not
+ * exist as far as he could tell, which is how a reader looking straight at
+ * "The Taste of Luxury" in their Fashion collection was told it was not in
+ * their library at all. This looks the book up by what it is called.
+ */
+export const searchLibraryTool = toolDefinition({
+  name: 'search_library',
+  description:
+    "Find books in the user's library by title or author, or browse it by status, collection or favourites. Searches every book they own, whatever its state, and says for each one where they are in it, which collections hold it, and its [[book:id]] reference. Call this whenever the user mentions a book by name, before saying anything about whether they have it. If it is not found, say so plainly and ask, rather than guessing.",
+  inputSchema: SearchLibraryInputSchema,
+  outputSchema: SearchLibraryOutputSchema,
+});
+
+/**
+ * Everything the app knows about one book, without reading past the reader.
+ *
+ * The publisher's own description from the book file, its details, where the
+ * reader is in it and what they have marked. Enough to say what a book is
+ * about before they start it: the description is the jacket copy, written to
+ * be read before the book is.
+ */
+export const getBookDetailsTool = toolDefinition({
+  name: 'get_book_details',
+  description:
+    "Get one book's details: the publisher's description from the book itself, author, publisher, publication date, language, subjects, how many chapters it has, where the user is in it, when they started and finished it, which collections hold it, and how many highlights and notes they have made in it. Use this when asked what a book is about or for anything about a particular book. It never reveals text beyond where the user has read; for that, list_chapters and read_chapter keep to what they have reached.",
+  inputSchema: GetBookDetailsInputSchema,
+  outputSchema: GetBookDetailsOutputSchema,
 });
 
 /**
@@ -597,6 +690,8 @@ export const SAMWELL_TOOL_DEFINITIONS = [
   removeBookFromCollectionTool,
   deleteCollectionTool,
   listCollectionsTool,
+  searchLibraryTool,
+  getBookDetailsTool,
   renameBookTool,
   deleteBookTool,
   clearQueueTool,

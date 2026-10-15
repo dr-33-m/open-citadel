@@ -1,8 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { cloudVoiceKey, planIncludes, type PlanId } from 'samwell-shared';
 
 import { boxContents, versionInfo, voiceBoxes } from '@/features/tts/utils/cloud-voice-cards';
-import { modelForMaker, planShortName, resolveCloudSelection } from '@/features/tts/utils/cloud-voices';
+import {
+  landingForMaker,
+  landingForModel,
+  planShortName,
+  rememberCloudPick,
+  resolveCloudSelection,
+  selectionKey,
+} from '@/features/tts/utils/cloud-voices';
 import { createCloudVoicesQueryOptions } from '@/query-manager/cloud-voices';
 import { isCloudVoice } from '@/services/device-tts/catalogue';
 import { useSettingsStore } from '@/stores/settings';
@@ -18,7 +26,9 @@ import { useSubscriptionStore } from '@/stores/subscription';
  * its plan to `onLockedMaker`, which raises the plans sheet.
  *
  * Every choice writes the active voice and so also the remembered cloud one
- * (`setTtsVoice`), which is what choosing Cloud again comes back to.
+ * (`setTtsVoice`), which is what choosing Cloud again comes back to. Each
+ * version's last choice is remembered too (`ttsCloudPicks`), so going back to
+ * a voice box lands on the voice chosen in it, not on its default.
  *
  * Except while a plan is being sampled (`sample`, from `useVoiceSource`).
  * The pane is then drawn as that plan would have it: only the boxes it
@@ -40,18 +50,25 @@ export function useCloudVoicePane({
   const plan = held ?? sampling?.plan ?? null;
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const ttsCloudVoice = useSettingsStore((s) => s.ttsCloudVoice);
+  const storedPicks = useSettingsStore((s) => s.ttsCloudPicks);
   const setTtsVoice = useSettingsStore((s) => s.setTtsVoice);
+  // While sampling nothing is saved, so the picks made in the samples are
+  // remembered here, for as long as the pane is open.
+  const [samplePicks, setSamplePicks] = useState<string[]>([]);
 
   const models = figures?.models ?? [];
   const reachable = plan ? models.filter((model) => planIncludes(plan, model.minPlan)) : [];
   const defaultModelId = plan ? (figures?.byPlan[plan]?.defaultModelId ?? null) : null;
   const stored = sampling ? sampling.key : isCloudVoice(ttsVoice) ? ttsVoice : ttsCloudVoice;
   const selection = resolveCloudSelection(stored, reachable, defaultModelId);
+  const picks = sampling ? samplePicks : storedPicks;
   // Sampling shows what the plan has, not what a bigger one would add.
   const boxes = voiceBoxes(sampling ? reachable : models, plan);
   const choose = (key: string) => {
-    if (sampling) sampling.onPick(key);
-    else void setTtsVoice(key);
+    if (sampling) {
+      setSamplePicks((current) => rememberCloudPick(current, key));
+      sampling.onPick(key);
+    } else void setTtsVoice(key);
   };
 
   // Plain functions: the React Compiler memoises them, and hand-written
@@ -63,16 +80,16 @@ export function useCloudVoicePane({
       onLockedMaker(maker, box.minPlan);
       return;
     }
-    const model = modelForMaker(reachable, maker, defaultModelId);
-    if (model) choose(cloudVoiceKey(model.id, model.defaultVoice));
+    const landing = landingForMaker(reachable, maker, defaultModelId, picks);
+    if (landing) choose(selectionKey(landing));
   };
 
   const chooseModel = (modelId: string) => {
     const model = reachable.find((candidate) => candidate.id === modelId);
     if (!model) return;
-    // Gemini's two models share their voices: moving between them keeps it.
-    const voice = selection && model.voices.includes(selection.voice) ? selection.voice : model.defaultVoice;
-    choose(cloudVoiceKey(model.id, voice));
+    // The voice last chosen on it, or the one in hand where the two share
+    // voices (Gemini's two models do), or its default.
+    choose(cloudVoiceKey(model.id, landingForModel(model, selection?.voice ?? null, picks)));
   };
 
   const chooseVoice = (voice: string) => {
@@ -82,7 +99,7 @@ export function useCloudVoicePane({
   return {
     selection,
     boxes,
-    contents: boxContents(reachable, selection, defaultModelId),
+    contents: boxContents(reachable, selection, defaultModelId, picks),
     info: Object.fromEntries(reachable.map((model) => [model.id, versionInfo(model, plan)])),
     /** Whose figures a version's "i" quotes: the reader's plan, or the one being sampled. */
     figuresLabel: sampling ? `ON ${planShortName(sampling.plan)}` : 'ON YOUR PLAN',

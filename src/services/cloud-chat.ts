@@ -5,6 +5,17 @@ import {
   ONBOARDING_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_FEEDS_PROP,
   explainAppTool,
+  addNoteToHighlightTool,
+  clearQueueTool,
+  deleteBookTool,
+  deleteCollectionTool,
+  deleteNoteTool,
+  renameBookTool,
+  startReadingTool,
+  updateNoteTool,
+  updateThoughtTool,
+  getBookDetailsTool,
+  searchLibraryTool,
   addBookToCollectionTool,
   addToQueueTool,
   createCollectionTool,
@@ -49,7 +60,6 @@ import {
   toolStatus,
   type BookCandidate,
   type ChapterListing,
-  type CollectionSummary,
   type ReadingSearchResult,
   type SearchResult,
   type ToolCallContext,
@@ -76,6 +86,8 @@ import {
   runProposeGoal,
 } from '@/services/compass-tools';
 import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
+import { formatLibrarySearch, type CollectionListing, type LibraryBook } from '@/services/library-format';
+import { NO_ACTIVITY, sameActivity, turnActivity, type TurnActivity } from '@/utils/turn-activity';
 import { useApprovalStore } from '@/stores/approval';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -272,6 +284,13 @@ export interface CloudChatTurnOptions {
   onCredits?: (available: number) => void;
   /** Onboarding only: a tool really changed their library. See `onboardingActionNote`. */
   onOnboardingAction?: (note: string) => void;
+  /**
+   * What he has done this turn so far: each tool call as a step, and the web
+   * pages any search found. Called when it changes, read straight from the
+   * TanStack messages (`turnActivity`), so a step on the device and a search
+   * on the server are drawn the same way.
+   */
+  onActivity?: (activity: TurnActivity) => void;
   /**
    * A finished stretch of his reply, to keep as its own message. Given, each
    * stretch between two tool calls is a message of its own and the turn
@@ -516,6 +535,29 @@ function journeyTool(ctx: ToolCallContext) {
   });
 }
 
+/**
+ * Finding a book and reading what is known about it, defined once and handed
+ * to both factories, like the journey tool: what "this book is in the
+ * library" means cannot be decided twice.
+ */
+function libraryLookupTools(ctx: ToolCallContext) {
+  return [
+    searchLibraryTool.client(async (input) => {
+      const { result } = await executeToolCall('search_library', input, ctx);
+      const found = result as { books: LibraryBook[]; total: number };
+      return {
+        books: found.books,
+        total: found.total,
+        formatted: formatLibrarySearch(found, input.query, TOOL_RESULT_TOKEN_BUDGET.cloud),
+      };
+    }),
+    getBookDetailsTool.client(async (input) => {
+      const { result } = await executeToolCall('get_book_details', input, ctx);
+      return { formatted: formatToolResultForLLM('get_book_details', result, TOOL_RESULT_TOKEN_BUDGET.cloud) };
+    }),
+  ] as const;
+}
+
 function createCompassClientTools(ctx: ToolCallContext) {
   return clientTools(
     getCompassStatusTool.client(async () => ({ formatted: formatCompassStatus() })),
@@ -559,6 +601,7 @@ function createCompassClientTools(ctx: ToolCallContext) {
         formatted: formatToolResultForLLM('search_reading', reading, TOOL_RESULT_TOKEN_BUDGET.cloud),
       };
     }),
+    ...libraryLookupTools(ctx),
     journeyTool(ctx),
   );
 }
@@ -725,15 +768,68 @@ function createSamwellClientTools(ctx: ToolCallContext) {
     }),
     listCollectionsTool.client(async (input) => {
       const { result } = await executeToolCall('list_collections', input, ctx);
-      const collectionList = Array.isArray(result) ? (result as CollectionSummary[]) : [];
+      const listing = Array.isArray(result) ? (result as CollectionListing[]) : [];
       return {
-        collections: collectionList,
-        formatted: formatToolResultForLLM('list_collections', collectionList, TOOL_RESULT_TOKEN_BUDGET.cloud),
+        collections: listing.map((collection) => ({
+          id: collection.id,
+          name: collection.name,
+          bookCount: collection.books.length,
+          books: collection.books.map(({ id, title, author }) => ({ id, title, author })),
+        })),
+        formatted: formatToolResultForLLM('list_collections', result, TOOL_RESULT_TOKEN_BUDGET.cloud),
       };
+    }),
+    ...libraryLookupTools(ctx),
+    /*
+     * Offered by the server since the toolbox landed and never bound here, so
+     * a turn that called one waited for a result that never came. Each is
+     * approval-gated in its definition, so binding them adds no step the
+     * reader does not confirm. The server now offers only what this list
+     * declares (`offered-tools.ts`), which is what kept builds without these
+     * from hanging.
+     */
+    deleteCollectionTool.client(async (input) => {
+      const { result } = await executeToolCall('delete_collection', input, ctx);
+      return result as { ok: boolean; name?: string; bookCount?: number; error?: string };
+    }),
+    renameBookTool.client(async (input) => {
+      const { result } = await executeToolCall('rename_book', input, ctx);
+      return result as { ok: boolean; from?: string; to?: string; error?: string };
+    }),
+    deleteBookTool.client(async (input) => {
+      const { result } = await executeToolCall('delete_book', input, ctx);
+      return result as BookBatchResult;
+    }),
+    clearQueueTool.client(async (input) => {
+      const { result } = await executeToolCall('clear_queue', input, ctx);
+      return result as BookBatchResult;
+    }),
+    startReadingTool.client(async (input) => {
+      const { result } = await executeToolCall('start_reading', input, ctx);
+      return result as BookBatchResult;
+    }),
+    addNoteToHighlightTool.client(async (input) => {
+      const { result } = await executeToolCall('add_note_to_highlight', input, ctx);
+      return result as NoteToolResult;
+    }),
+    updateNoteTool.client(async (input) => {
+      const { result } = await executeToolCall('update_note', input, ctx);
+      return result as NoteToolResult;
+    }),
+    deleteNoteTool.client(async (input) => {
+      const { result } = await executeToolCall('delete_note', input, ctx);
+      return result as NoteToolResult;
+    }),
+    updateThoughtTool.client(async (input) => {
+      const { result } = await executeToolCall('update_thought', input, ctx);
+      return result as { ok: boolean; id?: string; type?: 'thought'; error?: string };
     }),
     journeyTool(ctx),
   );
 }
+
+type BookBatchResult = { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
+type NoteToolResult = { ok: boolean; noteId?: string; error?: string };
 
 function collectApproval(chunk: StreamChunk): ApprovalRequest | null {
   if (chunk.type !== 'CUSTOM' || chunk.name !== 'approval-requested') return null;
@@ -816,8 +912,18 @@ export async function sendCloudChatTurn({
   onCredits,
   onOnboardingAction,
   onReplyPart,
+  onActivity,
   signal,
 }: CloudChatTurnOptions): Promise<string> {
+  // The last activity handed over, so an unchanged one is not handed over again.
+  let activity: TurnActivity = NO_ACTIVITY;
+  const reportActivity = (messages: UIMessage[]) => {
+    if (!onActivity) return;
+    const next = turnActivity(messages);
+    if (sameActivity(activity, next)) return;
+    activity = next;
+    onActivity(next);
+  };
   /*
    * The reasoning trace, accumulated here rather than in the store, so a
    * re-render of the chat screen cannot lose a delta that arrived between two
@@ -1111,6 +1217,8 @@ export async function sendCloudChatTurn({
       }
     },
     onMessagesChange: (messages) => {
+      // Before the text check: a step starts before he says a word about it.
+      reportActivity(messages);
       const text = assistantTextSinceUser(messages);
       if (!text) return;
       saidSoFar = text;

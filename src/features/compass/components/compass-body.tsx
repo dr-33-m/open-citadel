@@ -157,6 +157,7 @@ export function CompassBody({
     refine,
     submitting,
     streamingReply,
+    streamingActivity,
     streamingThinking,
     streamingThinkingSeconds,
     lastStreamedMessageId,
@@ -174,6 +175,9 @@ export function CompassBody({
    * the reader to the bottom whether or not that is where they were.
    */
   const streaming = submitting && streamingReply.length > 0;
+  // The reply in flight is drawn once it has words or has started doing
+  // something: a search runs before a word of the answer exists.
+  const showLive = streaming || (submitting && (streamingActivity?.steps.length ?? 0) > 0);
   /*
    * The reasoning is live only until the reply starts, and only when no tool
    * is in flight — a tool call hands the row over to the tool's own orb and
@@ -297,6 +301,7 @@ export function CompassBody({
                   <ChatBubble
                     role={m.role}
                     content={m.content}
+                    activity={m.activity}
                     // The just-streamed reply is already on screen; animating
                     // its arrival is the flick the reader sees when a turn
                     // finishes.
@@ -333,13 +338,14 @@ export function CompassBody({
                 arrives, the committed message once it lands. Without a draft
                 on screen this falls through and the normal flow above has
                 already drawn it. */}
-            {submitting && streaming ? (
-              <ChatBubble role="assistant" content={streamingReply} streaming />
+            {showLive ? (
+              <ChatBubble role="assistant" content={streamingReply} activity={streamingActivity} streaming />
             ) : proposalReply ? (
               <ChatBubble
                 key={proposalReply.id}
                 role="assistant"
                 content={proposalReply.content}
+                activity={proposalReply.activity}
                 animateEntry={proposalReply.id !== lastStreamedMessageId}
               />
             ) : null}

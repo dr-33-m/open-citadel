@@ -10,6 +10,20 @@ import { db } from '@/db/client';
 import { books, chatSuggestions, collections, highlights, notes, readingProgress, thoughts } from '@/db/schema';
 import { extractReadSections } from '@/services/book-context';
 import { formatJourneyNotes, searchJourneyNotes } from '@/services/journey';
+import {
+  formatBookDetails,
+  formatCollections,
+  formatLibrarySearch,
+  type CollectionListing,
+  type LibraryStatus,
+} from '@/services/library-format';
+import {
+  listCollectionsWithBooks,
+  readBookDetails,
+  resolveLibraryBook,
+  searchLibrary,
+  type BookResolution,
+} from '@/services/library-lookup';
 import { CHARS_PER_TOKEN, estimateTokens, usableTokens } from '@/services/context-budget';
 import {
   READING_LIMITS,
@@ -662,6 +676,10 @@ export const TOOL_STATUS: Record<string, string> = {
   remove_book_from_collection: 'Updating collection…',
   delete_collection: 'Removing that collection…',
   list_collections: 'Looking over your collections…',
+  search_library: 'Looking through your library…',
+  get_book_details: 'Looking that book up…',
+  // Runs on the server, not here, but the status line is the same question.
+  web_search: 'Searching the web…',
   start_reading: 'Opening that up…',
   clear_queue: 'Clearing your queue…',
   rename_book: 'Fixing that title…',
@@ -911,9 +929,29 @@ export async function executeToolCall(
       };
     case 'list_collections':
       return {
-        result: await listCollectionsForModel(),
+        result: listCollectionsWithBooks(args.collection_name as string | undefined) ?? { error: 'collection_not_found' },
         status: toolStatus(name),
       };
+    case 'search_library':
+      return {
+        result: searchLibrary(
+          {
+            query: args.query as string | undefined,
+            status: args.status as LibraryStatus | undefined,
+            collection: args.collection as string | undefined,
+            favorites: args.favorites as boolean | undefined,
+          },
+          ctx.runtime,
+        ),
+        status: toolStatus(name),
+      };
+    case 'get_book_details': {
+      const resolved = resolveBookByTitle(args.book_title as string | undefined, ctx);
+      return {
+        result: resolved.ok ? await readBookDetails(resolved.book) : resolutionError(resolved),
+        status: toolStatus(name),
+      };
+    }
     default:
       return { result: { error: `Unknown tool: ${name}` }, status: toolStatus(name) };
   }
@@ -1300,11 +1338,18 @@ export interface ReadingSearchResult {
  * The spoiler boundary for one book: how far the reader has got.
  *
  * `null` means the book is finished and fully readable. `undefined` means
- * nothing is safely readable — a book marked as reading with no saved
- * position, which must fail closed rather than default to the whole text.
+ * nothing is safely readable: a book with no saved position, which must fail
+ * closed rather than default to the whole text.
+ *
+ * Only a finished book is whole. This used to treat every book that was not
+ * being read as finished, so a book still in the queue, or never opened at
+ * all, was handed over in full by list_chapters and read_chapter: every
+ * chapter title and every page of a book the reader had not started. A book
+ * set aside partway (back to unstarted from Currently Reading) keeps its
+ * saved position as the boundary.
  */
 function readLocatorFor(book: Book): unknown | undefined {
-  if (book.status !== 'reading') return null;
+  if (book.status === 'archived') return null;
   const prog = db
     .select({ locator: readingProgress.locator })
     .from(readingProgress)
@@ -1810,7 +1855,15 @@ export function formatToolResultForLLM(
         : JSON.stringify(result);
     case 'list_collections':
       return Array.isArray(result)
-        ? formatCollectionsForLLM(result as CollectionSummary[], tokenBudget)
+        ? formatCollections(result as CollectionListing[], tokenBudget)
+        : 'No collection by that name. Call list_collections without a name to see them all.';
+    case 'search_library': {
+      const found = result as Parameters<typeof formatLibrarySearch>[0];
+      return formatLibrarySearch(found, undefined, tokenBudget);
+    }
+    case 'get_book_details':
+      return result && typeof result === 'object' && 'book' in result
+        ? formatBookDetails(result as Parameters<typeof formatBookDetails>[0])
         : JSON.stringify(result);
     case 'list_chapters':
       return formatChapterListingForLLM(result as ChapterListing | { error: string });
@@ -1826,37 +1879,14 @@ export function formatToolResultForLLM(
 
 type Book = typeof books.$inferSelect;
 
-type BookResolution =
-  | { ok: true; book: Book }
-  | { ok: false; error: 'no_book_specified' | 'book_not_found' | 'ambiguous_book'; matches?: string[] };
-
-/** Resolves a book from a (possibly partial) title, falling back to the book
- * the current chat is about when no title is given — so "add this to my
- * queue" said mid-book-chat just works. */
+/** Which book a title means: one decision, in `library-lookup.ts`, for every tool. */
 function resolveBookByTitle(title: string | undefined, ctx: ToolCallContext): BookResolution {
-  const trimmed = title?.trim();
+  return resolveLibraryBook(title, ctx.bookId);
+}
 
-  if (!trimmed) {
-    if (!ctx.bookId) return { ok: false, error: 'no_book_specified' };
-    const book = db.select().from(books).where(eq(books.id, ctx.bookId)).get();
-    if (!book) return { ok: false, error: 'book_not_found' };
-    return { ok: true, book };
-  }
-
-  const words = trimmed.split(/\s+/).filter(Boolean);
-  const rows = db
-    .select()
-    .from(books)
-    .where(and(eq(books.kind, 'book'), or(...words.map((w) => like(books.title, `%${w}%`)))))
-    .all();
-
-  if (rows.length === 0) return { ok: false, error: 'book_not_found' };
-  if (rows.length === 1) return { ok: true, book: rows[0] };
-
-  const exact = rows.find((b) => b.title.toLowerCase() === trimmed.toLowerCase());
-  if (exact) return { ok: true, book: exact };
-
-  return { ok: false, error: 'ambiguous_book', matches: rows.map((b) => b.title) };
+/** A failed lookup as the model should read it: near matches named, so it can ask which. */
+function resolutionError(resolution: Extract<BookResolution, { ok: false }>): { error: string; matches?: string[] } {
+  return resolution.matches ? { error: resolution.error, matches: resolution.matches } : { error: resolution.error };
 }
 
 type CollectionResolution =
@@ -2207,41 +2237,4 @@ async function updateBookCollectionBatch(
   }
 
   return { ok: failed.length === 0, collectionName: collection.name, succeeded, failed };
-}
-
-export interface CollectionSummary {
-  id: string;
-  name: string;
-  bookCount: number;
-}
-
-async function listCollectionsForModel(): Promise<CollectionSummary[]> {
-  await useCollectionsStore.getState().loadCollections();
-  return useCollectionsStore.getState().collections.map((c) => ({
-    id: c.id,
-    name: c.name,
-    bookCount: c.count,
-  }));
-}
-
-export function formatCollectionsForLLM(
-  collectionList: CollectionSummary[],
-  tokenBudget: number,
-): string {
-  if (collectionList.length === 0) return 'No collections yet.';
-
-  const lines: string[] = [];
-  let spent = 0;
-  for (const c of collectionList) {
-    const line = `- "${c.name}" (${c.bookCount} book${c.bookCount === 1 ? '' : 's'})`;
-    const cost = estimateTokens(line);
-    if (lines.length > 0 && spent + cost > tokenBudget) break;
-    spent += cost;
-    lines.push(line);
-  }
-
-  const omitted = collectionList.length - lines.length;
-  return omitted > 0
-    ? `${lines.join('\n')}\n(${omitted} more not shown.)`
-    : lines.join('\n');
 }

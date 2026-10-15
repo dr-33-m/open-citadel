@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, chatSuggestions, highlights, thoughts, type BookKind } from '@/db/schema';
 import { isToolCallMessage } from '@/services/chat-transcript';
+import { parseActivity, serializeActivity, type TurnActivity } from '@/utils/turn-activity';
 
 /**
  * Chat sessions, shared by both surfaces.
@@ -54,6 +55,8 @@ export type ChatMessage = {
   /** Which engine it went through, which decides whether the journal may
    *  read it. See `chat_messages.via`. */
   via?: 'cloud' | 'device' | null;
+  /** The steps and sources of the turn this reply ends. See `chat_messages.activity`. */
+  activity?: TurnActivity | null;
 };
 
 /**
@@ -155,11 +158,17 @@ export function readMessages(sessionId: string): ChatMessage[] {
       content: row.content,
       createdAt: row.createdAt,
       via: row.via,
+      activity: parseActivity(row.activity),
     }));
 }
 
 export function appendMessage(message: ChatMessage): void {
-  db.insert(chatMessages).values(message).run();
+  db.insert(chatMessages).values(messageRow(message)).run();
+}
+
+/** A message as its row: the activity goes in as JSON. */
+export function messageRow(message: ChatMessage): typeof chatMessages.$inferInsert {
+  return { ...message, activity: serializeActivity(message.activity) };
 }
 
 /**

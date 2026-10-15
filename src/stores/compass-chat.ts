@@ -20,6 +20,7 @@ import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
+import { settleActivity, type TurnActivity } from '@/utils/turn-activity';
 
 /**
  * Compass conversations.
@@ -78,6 +79,8 @@ type CompassChatState = {
 
   submitting: boolean;
   streamingReply: string;
+  /** The steps and sources of the turn in flight; null between turns. */
+  streamingActivity: TurnActivity | null;
   /**
    * The model's reasoning for the turn in flight.
    *
@@ -112,6 +115,7 @@ type CompassChatState = {
 const IDLE = {
   submitting: false,
   streamingReply: '',
+  streamingActivity: null,
   toolStatus: null,
   toolName: null,
   // Null by default; a successful commit sets it right after spreading IDLE.
@@ -125,6 +129,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
   switching: null,
   submitting: false,
   streamingReply: '',
+  streamingActivity: null,
   streamingThinking: '',
   streamingThinkingSeconds: null,
   lastStreamedMessageId: null,
@@ -273,6 +278,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       messages: [...history, userMessage],
       submitting: true,
       streamingReply: '',
+      streamingActivity: null,
       streamingThinking: '',
       streamingThinkingSeconds: null,
       lastStreamedMessageId: null,
@@ -295,6 +301,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         onStreamingContent: (content) => set({ streamingReply: content }),
         onThinkingContent: (content) => set({ streamingThinking: content }),
         onThinkingDone: (seconds) => set({ streamingThinkingSeconds: seconds }),
+        onActivity: (activity) => set({ streamingActivity: activity }),
         onToolStatus: (status, name) =>
           set({
             toolStatus: status,
@@ -337,6 +344,8 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         content: reply,
         createdAt: new Date().toISOString(),
         via: 'cloud',
+        // What he did on the way to it, kept with what he said.
+        activity: settleActivity(get().streamingActivity),
       };
       appendMessage(assistantMessage);
       touchSession(sessionId, assistantMessage.createdAt);

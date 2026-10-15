@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 import { CompassCheckinDraftModelSchema, GoalProposalModelSchema } from './compass';
 import {
+  getBookDetailsTool,
+  searchLibraryTool,
   searchHighlightsTool,
   searchJourneyTool,
   searchReadingTool,
@@ -235,6 +237,10 @@ export const COMPASS_TOOL_DEFINITIONS = [
   searchHighlightsTool,
   searchThoughtsTool,
   searchReadingTool,
+  // Finding a book and what is known about it, the same two tools reading
+  // chat has: a goal is often about a book, and he should be able to see it.
+  searchLibraryTool,
+  getBookDetailsTool,
   /*
    * One journey, not two. A reflection written down after a Compass
    * conversation should be findable from a book chat and the other way round,

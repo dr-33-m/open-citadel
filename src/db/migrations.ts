@@ -367,6 +367,11 @@ async function ensureCompassSchema(): Promise<void> {
         SELECT \`id\` FROM \`chat_sessions\` WHERE \`kind\` IN ('compass', 'onboarding')
       )`);
   }
+  // What a cloud turn did and where its facts came from, kept with the reply.
+  // Nullable and never backfilled: older replies simply have no trail.
+  if (!messageCols.has("activity")) {
+    db.run(sql`ALTER TABLE \`chat_messages\` ADD \`activity\` text`);
+  }
 }
 
 export async function runMigrations() {

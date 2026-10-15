@@ -39,6 +39,10 @@ const TOOL_ORB: Record<string, ThinkingOrbState> = {
   list_chapters: 'searching',
   read_chapter: 'searching',
   list_collections: 'searching',
+  search_library: 'searching',
+  get_book_details: 'searching',
+  // Run on the server, but drawn the same: he is looking something up.
+  web_search: 'searching',
 
   // Weighing options rather than fetching a row.
   propose_goal: 'solving',
@@ -70,6 +74,17 @@ const TOOL_ORB: Record<string, ThinkingOrbState> = {
   // that says so.
   delete_highlight: 'listening',
   delete_thought: 'listening',
+  delete_note: 'listening',
+  delete_collection: 'listening',
+  delete_book: 'listening',
+  clear_queue: 'listening',
+
+  // Writing over what the reader wrote.
+  add_note_to_highlight: 'composing',
+  update_note: 'composing',
+  update_thought: 'composing',
+  rename_book: 'working',
+  start_reading: 'working',
 
   // Reading the app's own guide back is still reading something back.
   explain_app: 'searching',

@@ -7,11 +7,13 @@ import { useDelayedFlag } from '@/hooks/use-delayed-flag';
 
 /**
  * How long a picture may take before its skeleton starts to pulse. One held
- * in memory or on disk is in well before this; one still on its way over the
- * network is not. Longer than a screen's slide in (400ms), so a page of
- * covers not yet kept does not mount its pulsing layers while it is moving.
+ * in memory is in well before this, so a shelf scrolled back into view never
+ * mounts a pulsing layer. It was 500ms, longer than a screen's slide in, and
+ * that read as a bug: a cover read from disk on an A33 takes a few hundred
+ * milliseconds, so a page landed on a row of grey squares that sat still
+ * beside a skeleton that breathed. Past this, the square breathes with it.
  */
-const SLOW_MS = 500;
+const SLOW_MS = 150;
 
 type CoverImageProps = Omit<ImageProps, 'placeholder' | 'transition' | 'style' | 'onLoad' | 'onError'> & {
   /** The box the picture fills, and the shape its skeleton takes until it is in. */
@@ -35,16 +37,15 @@ function sourceKey(source: ImageProps['source']): string {
  * page, and is gone once the picture is in (or has failed, when the box's own
  * ground shows).
  *
- * The skeleton starts as a plain block, and pulses only once the picture has
- * kept it waiting (`SLOW_MS`). It used to pulse from the first frame, each
- * cover with a pulsing layer of its own, and a list builds covers as it
- * scrolls: every tile that came into view mounted an animated layer, and
- * dropped it a moment later when its picture (usually already in memory)
- * arrived. That is the work a list recycles its cells to avoid, done once per
- * cover per scroll. A picture already kept never pulses now; one that is
- * really downloading (a cleared cache, a slow connection) breathes on the
- * shared skeleton clock, so a shelf of them breathes as one, instead of
- * sitting there as a blank square.
+ * The skeleton starts as a plain block, and pulses once the picture has kept
+ * it waiting longer than a cache hit takes (`SLOW_MS`). It used to pulse
+ * from the first frame, each cover with a pulsing layer of its own, and a
+ * list builds covers as it scrolls: every tile that came into view mounted an
+ * animated layer, and dropped it a moment later when its picture (usually
+ * already in memory) arrived. That is the work a list recycles its cells to avoid, done once per
+ * cover per scroll. A picture in memory never pulses now; one read from disk
+ * or still downloading breathes on the shared skeleton clock, so a shelf of
+ * them breathes as one, instead of sitting there as a blank square.
  *
  * No fade in. The skeleton already says the picture is coming, and a fade
  * plays again whenever a tile is drawn anew, a picture already in memory

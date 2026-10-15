@@ -17,7 +17,7 @@ import {
   type VoiceModelView,
 } from 'samwell-shared';
 
-import { modelForMaker, planShortName, type CloudSelection } from '@/features/tts/utils/cloud-voices';
+import { landingForMaker, planShortName, type CloudSelection } from '@/features/tts/utils/cloud-voices';
 import { CLOUD_SPEED_FIXED } from '@/features/tts/utils/voice-copy';
 import { formatHours } from '@/utils/format';
 
@@ -76,25 +76,25 @@ export interface BoxContent {
  * A pane for every voice box the plan opens, in catalogue order, so the panes
  * can be kept and trade places instead of being rebuilt. The chosen box shows
  * the selection. Each other box shows where choosing it would land (the
- * plan's default when it is one of the box's, its first version otherwise,
- * on that version's default voice), so the pane is already right when its
- * tab is pressed.
+ * version and voice last chosen in it, else the plan's default when it is one
+ * of the box's, its first version otherwise, on that version's default
+ * voice), so the pane is already right when its tab is pressed.
  */
 export function boxContents(
   reachable: readonly VoiceModelView[],
   selection: CloudSelection | null,
   defaultModelId: string | null,
+  picks: readonly string[] = [],
 ): BoxContent[] {
   const makers = [...new Set(reachable.map((model) => model.maker))];
   const contents: BoxContent[] = [];
   for (const maker of makers) {
-    const chosen = selection?.model.maker === maker ? selection : null;
-    const model = chosen?.model ?? modelForMaker(reachable, maker, defaultModelId);
-    if (!model) continue;
+    const landing = selection?.model.maker === maker ? selection : landingForMaker(reachable, maker, defaultModelId, picks);
+    if (!landing) continue;
     contents.push({
       maker,
-      model,
-      voice: chosen?.voice ?? model.defaultVoice,
+      model: landing.model,
+      voice: landing.voice,
       versions: voiceVersions(reachable.filter((candidate) => candidate.maker === maker)),
     });
   }

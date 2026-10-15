@@ -1,6 +1,7 @@
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import JSZip from 'jszip';
 
+import { parseOpfMetadata, type EpubMetadata } from '@/services/epub-metadata';
 import {
   epubBasename,
   isFrontMatterHref,
@@ -264,3 +265,40 @@ export async function extractReadText(
     .join('\n\n')
     .slice(0, maxChars);
 }
+
+/**
+ * What the book file says about itself, and how many sections of body it has.
+ *
+ * For `get_book_details`. Reads only the package file, never a chapter, so
+ * nothing past the reader can leak through it. The count is of sections after
+ * the front matter, which is as near to "chapters" as an EPUB states.
+ */
+export async function readBookPackageInfo(filePath: string): Promise<BookPackageInfo> {
+  const known = packageInfoCache.get(filePath);
+  if (known) return known;
+  const zip = await JSZip.loadAsync(await readBookFile(filePath), { base64: true });
+  const opfPath = await findOpfPath(zip);
+  const opfContent = await zip.file(opfPath)?.async('string');
+  if (!opfContent) throw new Error('No OPF content');
+  const spine = parseSpine(opfContent, opfBasePath(opfPath));
+  const bodyStart = resolveBodyStart(opfContent, spine, null);
+  const info = { metadata: parseOpfMetadata(opfContent), sectionCount: Math.max(0, spine.length - bodyStart) };
+  if (packageInfoCache.size >= PACKAGE_INFO_CACHE_SIZE) {
+    const oldest = packageInfoCache.keys().next().value;
+    if (oldest !== undefined) packageInfoCache.delete(oldest);
+  }
+  packageInfoCache.set(filePath, info);
+  return info;
+}
+
+type BookPackageInfo = { metadata: EpubMetadata; sectionCount: number };
+
+/*
+ * Kept per file, because finding the package file means reading the whole
+ * book in as base64 on the JS thread: a large illustrated EPUB is a visible
+ * stall on an A33, and Samwell may look up several books in one turn, or the
+ * same one again a turn later. A file at a path does not change what it says
+ * about itself, so what was read once stays true.
+ */
+const PACKAGE_INFO_CACHE_SIZE = 32;
+const packageInfoCache = new Map<string, BookPackageInfo>();

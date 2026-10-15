@@ -31,6 +31,7 @@ import {
 } from "@/features/chat/utils/agent-activity";
 import { transcriptContent } from "@/features/chat/utils/transcript-layout";
 import type { ChatMessage } from "@/stores/chat";
+import type { TurnActivity } from "@/utils/turn-activity";
 
 interface ChatTranscriptProps {
   /** Which conversation this is. The scroller is keyed on it, so opening
@@ -38,6 +39,8 @@ interface ChatTranscriptProps {
   sessionId: string | null;
   messages: ChatMessage[];
   streamingContent: string;
+  /** What the turn in flight has done so far, drawn above its reply as it happens. */
+  streamingActivity: TurnActivity | null;
   /** True only while a reply is genuinely still owed. */
   isGenerating: boolean;
   /** The one live footer row: a status line, or the reasoning panel. */
@@ -90,6 +93,7 @@ export function ChatTranscript({
   sessionId,
   messages,
   streamingContent,
+  streamingActivity,
   isGenerating,
   indicator,
   lastStreamedMessageId,
@@ -150,6 +154,9 @@ export function ChatTranscript({
   const conversationKey = useConversationKey(sessionId);
 
   const isEmpty = turns.length === 0 && !streamingContent;
+  // The reply in flight is drawn once it has words or has started doing
+  // something: a search runs before a word of the answer exists.
+  const showStreaming = streamingContent.length > 0 || (streamingActivity?.steps.length ?? 0) > 0;
   if (isEmpty) {
     return (
       <SamwellStatusEmptyState status={status} style={floatingClearance} />
@@ -190,6 +197,7 @@ export function ChatTranscript({
                   <ChatBubble
                     role={m.role as "user" | "assistant"}
                     content={m.content}
+                    activity={m.activity}
                     // The just-streamed reply is already on screen; animating
                     // its "arrival" is the flick the reader sees when a turn
                     // finishes.
@@ -201,10 +209,11 @@ export function ChatTranscript({
                 </MessageScroller.Item>
               ))}
 
-              {streamingContent.length > 0 && (
+              {showStreaming && (
                 <ChatBubble
                   role="assistant"
                   content={streamingContent}
+                  activity={streamingActivity}
                   streaming
                   // No entrance — it grows in token by token, and matching the
                   // committed bubble (which also does not animate) makes the

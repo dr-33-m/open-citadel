@@ -38,6 +38,7 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
   const switching = useCompassChatStore((s) => s.switching);
   const submitting = useCompassChatStore((s) => s.submitting);
   const streamingReply = useCompassChatStore((s) => s.streamingReply);
+  const streamingActivity = useCompassChatStore((s) => s.streamingActivity);
   const streamingThinking = useCompassChatStore((s) => s.streamingThinking);
   const streamingThinkingSeconds = useCompassChatStore((s) => s.streamingThinkingSeconds);
   const lastStreamedMessageId = useCompassChatStore((s) => s.lastStreamedMessageId);
@@ -92,6 +93,7 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
     refine,
     submitting,
     streamingReply,
+    streamingActivity,
     streamingThinking,
     streamingThinkingSeconds,
     lastStreamedMessageId,

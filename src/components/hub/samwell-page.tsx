@@ -154,6 +154,7 @@ export function SamwellPage() {
   const toolCallStatus = useChatStore((s) => s.toolCallStatus);
   const toolCallName = useChatStore((s) => s.toolCallName);
   const streamingContent = useChatStore((s) => s.streamingContent);
+  const streamingActivity = useChatStore((s) => s.streamingActivity);
   const thinkingContent = useChatStore((s) => s.thinkingContent);
   const thinkingSeconds = useChatStore((s) => s.thinkingSeconds);
   const titleRefreshing = useChatStore((s) => s.titleRefreshing);
@@ -796,6 +797,7 @@ export function SamwellPage() {
                     sessionId={activeSession?.id ?? null}
                     messages={visibleChatMessages}
                     streamingContent={streamingContent}
+                    streamingActivity={streamingActivity}
                     isGenerating={isGenerating}
                     indicator={indicator}
                     lastStreamedMessageId={lastStreamedMessageId}

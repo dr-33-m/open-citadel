@@ -7,6 +7,7 @@ import { extractChapterTextToLocator } from '@/services/book-context';
 import { articleChatPrompt, articleText } from '@/services/blogs/article-chat';
 import {
     listSessions,
+    messageRow,
     readMessages,
     removeSession,
     renameSession,
@@ -47,6 +48,7 @@ import { afterErrand, errandRunning, runErrand } from '@/services/device-llm/err
 import { markRunFinished, markRunStarted } from '@/services/device-llm/run-marker';
 import { type KnownRef, refsInToolResults, repairRefMarkers } from '@/services/ref-markers';
 import { splitThinking } from '@/utils/think-stream';
+import { settleActivity, type TurnActivity } from '@/utils/turn-activity';
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useAccountStore } from '@/stores/account';
 import { useApprovalStore } from '@/stores/approval';
@@ -73,6 +75,8 @@ interface ChatStore {
    *  rather than showing one generic "busy" glyph for every tool. */
   toolCallName: string | null;
   streamingContent: string;
+  /** The steps and sources of the cloud turn in flight; null between turns. */
+  streamingActivity: TurnActivity | null;
   thinkingContent: string;
   /** Measured thinking time for the turn in flight, in whole seconds. Set by
    *  the cloud path once the answer starts; null when unknown, and the trace
@@ -627,6 +631,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isToolCalling: false,
   toolCallStatus: null, toolCallName: null,
   streamingContent: '',
+  streamingActivity: null,
   thinkingContent: '',
   thinkingSeconds: null,
   lastStreamedMessageId: null,
@@ -824,25 +829,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     const session = get().sessions.find((s) => s.id === id) ?? null;
-    const rows = db
-      .select()
-      .from(chatMessages)
-      .where(eq(chatMessages.sessionId, id))
-      .orderBy(chatMessages.createdAt)
-      .all();
-
-    const messages: ChatMessage[] = rows.map((r) => ({
-      id: r.id,
-      sessionId: r.sessionId,
-      role: r.role as ChatMessage['role'],
-      content: r.content,
-      createdAt: r.createdAt,
-    }));
+    // The one reader of a transcript, so a reply's trail and sources come back with it.
+    const messages = readMessages(id);
 
     set({
       activeSession: session,
       messages,
       streamingContent: '',
+      streamingActivity: null,
       thinkingContent: '',
       thinkingSeconds: null,
       lastStreamedMessageId: null,
@@ -893,10 +887,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       via: samwellMode === 'cloud' ? 'cloud' : 'device',
     };
 
-    db.insert(chatMessages).values(userMsg).run();
+    db.insert(chatMessages).values(messageRow(userMsg)).run();
     set((s) => ({
       messages: [...s.messages, userMsg],
       streamingContent: '',
+      streamingActivity: null,
       thinkingContent: '',
       thinkingSeconds: null,
       lastStreamedMessageId: null,
@@ -963,6 +958,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           onCredits: (available) => {
             useSubscriptionStore.getState().applyCreditsFromTurn(available);
           },
+          onActivity: (activity) => set({ streamingActivity: activity }),
         });
       } catch (err) {
         // In a toast, not a bubble written into the transcript: a failure is
@@ -981,8 +977,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           content: finalContent,
           createdAt: now(),
           via: 'cloud',
+          // What he did on the way to it, kept with what he said.
+          activity: settleActivity(get().streamingActivity),
         };
-        db.insert(chatMessages).values(assistantMsg).run();
+        db.insert(chatMessages).values(messageRow(assistantMsg)).run();
 
         db.update(chatSessions)
           .set({ updatedAt: now() })
@@ -992,6 +990,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         set((s) => ({
           messages: [...s.messages, assistantMsg],
           streamingContent: '',
+          streamingActivity: null,
           // Already on screen as the streaming bubble — don't let the
           // transcript play its arrival.
           lastStreamedMessageId: assistantMsg.id,
@@ -1001,7 +1000,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           isGenerating: false,
         }));
       } else {
-        set({ streamingContent: '', isThinking: false, isToolCalling: false, toolCallStatus: null, toolCallName: null, isGenerating: false });
+        set({ streamingContent: '', streamingActivity: null, isThinking: false, isToolCalling: false, toolCallStatus: null, toolCallName: null, isGenerating: false });
       }
 
       if (isFirstRealMessage) {
@@ -1130,7 +1129,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         content: finalContent,
         createdAt: now(),
       };
-      db.insert(chatMessages).values(assistantMsg).run();
+      db.insert(chatMessages).values(messageRow(assistantMsg)).run();
 
       db.update(chatSessions)
         .set({ updatedAt: now() })

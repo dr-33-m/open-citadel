@@ -5,6 +5,7 @@ import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { db } from '@/db/client';
 import { appSettings } from '@/db/schema';
 import { DEVICE_VOICE, isAiVoice, isCloudVoice } from '@/services/device-tts/catalogue';
+import { rememberCloudPick } from '@/features/tts/utils/cloud-voices';
 import { decideOnboarding } from '@/utils/onboarding-gate';
 
 export type AppTheme = 'dark' | 'light';
@@ -100,6 +101,12 @@ type SettingsState = {
    * `lastDeviceVoice`.
    */
   ttsCloudVoice: string | null;
+  /**
+   * Every version's last cloud choice, newest first (`rememberCloudPick`), so
+   * each voice box comes back to the voice chosen in it after the reader has
+   * been to another, instead of to its default.
+   */
+  ttsCloudPicks: string[];
   ttsDeviceVoice: string | null;
   ttsDeviceVoiceLanguage: string | null;
   ttsRate: number;  isLoaded: boolean;
@@ -124,6 +131,23 @@ async function saveSetting(key: string, value: string) {
     .run();
 }
 
+/**
+ * The stored picks, or the one cloud voice remembered before there were picks.
+ * Anything unreadable is the same as none: a voice box then opens on its
+ * default, which is where it opened before.
+ */
+function readCloudPicks(raw: string | undefined, lastCloudVoice: string | null): string[] {
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter((pick): pick is string => typeof pick === 'string');
+    } catch {
+      // Fall through to the single remembered voice.
+    }
+  }
+  return lastCloudVoice ? [lastCloudVoice] : [];
+}
+
 function defaultCloudBaseUrl(): string {
   return SAMWELL_CLOUD_BASE_URL.trim().replace(/\/+$/, '');
 }
@@ -144,6 +168,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   ttsPhoneVoice: null,
   ttsPhoneVoiceLanguage: null,
   ttsCloudVoice: null,
+  ttsCloudPicks: [],
   ttsDeviceVoice: null,
   ttsDeviceVoiceLanguage: null,
   ttsRate: 1.0,  isLoaded: false,
@@ -178,6 +203,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       ttsPhoneVoice: map['ttsPhoneVoice'] ?? null,
       ttsPhoneVoiceLanguage: map['ttsPhoneVoiceLanguage'] ?? null,
       ttsCloudVoice: map['ttsCloudVoice'] ?? null,
+      ttsCloudPicks: readCloudPicks(map['ttsCloudPicks'], map['ttsCloudVoice'] ?? null),
       ttsDeviceVoice: map['ttsDeviceVoice'] ?? null,
       ttsDeviceVoiceLanguage: map['ttsDeviceVoiceLanguage'] ?? null,
       ttsRate: parseFloat(map['ttsRate'] ?? '1'),      isLoaded: true,
@@ -251,10 +277,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     // device side is touched: the on-device voice it replaced is still the
     // one "Continue on-device" goes back to.
     if (isCloudVoice(voice)) {
-      set({ ttsVoice: voice, ttsVoiceLanguage: null, ttsCloudVoice: voice });
+      const ttsCloudPicks = rememberCloudPick(get().ttsCloudPicks, voice);
+      set({ ttsVoice: voice, ttsVoiceLanguage: null, ttsCloudVoice: voice, ttsCloudPicks });
       await saveSetting('ttsVoice', voice);
       await db.delete(appSettings).where(eq(appSettings.key, 'ttsVoiceLanguage'));
       await saveSetting('ttsCloudVoice', voice);
+      await saveSetting('ttsCloudPicks', JSON.stringify(ttsCloudPicks));
       return;
     }
 
