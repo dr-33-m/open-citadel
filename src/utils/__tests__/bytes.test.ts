@@ -27,6 +27,13 @@ describe('utf8Decode', () => {
     expect(utf8Decode(new Uint8Array([0xef, 0xbb, 0xbf, 0x41]))).toBe('A');
   });
 
+  it('reads text longer than one buffer, with a pair split across the edge', () => {
+    for (const lead of [8190, 8191, 8192]) {
+      const text = `${'a'.repeat(lead)}🙂é${'日本'.repeat(5000)}`;
+      expect(utf8Decode(new Uint8Array(Buffer.from(text)))).toBe(text);
+    }
+  });
+
   it('puts a replacement character where a sequence is broken', () => {
     expect(utf8Decode(new Uint8Array([0x41, 0xff, 0x42]))).toBe('A�B');
   });

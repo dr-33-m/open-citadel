@@ -56,13 +56,15 @@ export async function searchReading(args: Record<string, unknown>, ctx: ReadingT
   if (isEmptyQuery(query)) return { ...empty, error: 'Search for a word or phrase; the question words were all there was.' };
 
   const title = typeof args.book_title === 'string' && args.book_title.trim() ? args.book_title : undefined;
+  const chapter = args.chapter == null ? '' : String(args.chapter).trim();
   let scope: Book[] = readableBooks();
   let section: number | undefined;
-  if (title) {
+  // A chapter with no title is a chapter of the chat's own book.
+  const narrowed = title !== undefined || chapter !== '';
+  if (narrowed) {
     const found = resolveReadingBook(title, ctx);
     if ('error' in found) return { ...empty, error: found.error };
     scope = [found.book];
-    const chapter = typeof args.chapter === 'string' ? args.chapter.trim() : '';
     if (chapter) {
       const known = await bookExtent(found.book);
       const picked = known ? pickSection(reachedSections(known.sections, known.extent), chapter) : null;
@@ -76,7 +78,7 @@ export async function searchReading(args: Record<string, unknown>, ctx: ReadingT
     books: scope,
     section,
     limit: limits.maxSnippets,
-    perBook: title ? limits.maxSnippets : limits.maxPerBook,
+    perBook: narrowed ? limits.maxSnippets : limits.maxPerBook,
     excerptChars: limits.window * 2,
     indexNow: INDEX_NOW[ctx.runtime],
   });
@@ -171,7 +173,9 @@ export async function readChapter(args: Record<string, unknown>, ctx: ReadingToo
   const found = resolveReadingBook(typeof args.book_title === 'string' ? args.book_title : undefined, ctx);
   if ('error' in found) return found;
   const reference = typeof args.chapter === 'string' ? args.chapter : String(args.chapter ?? '');
-  const from = typeof args.from_paragraph === 'number' ? args.from_paragraph : 1;
+  // Small models write numbers as strings as often as not.
+  const asked = Number(args.from_paragraph);
+  const from = Number.isFinite(asked) && asked >= 1 ? asked : 1;
   const maxChars = Math.max(800, TOOL_RESULT_TOKEN_BUDGET[ctx.runtime] * CHARS_PER_TOKEN - READ_FRAME_CHARS);
   const read = await readReachedChapter(found.book, reference, from, maxChars);
   return 'error' in read ? read : { ...read, book: found.book.title };

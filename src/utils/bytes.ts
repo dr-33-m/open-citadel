@@ -52,13 +52,21 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return parts.join('');
 }
 
+/** Characters made into a string at a time: well under any engine's limit on arguments. */
+const CHUNK = 8192;
+
 /** UTF-8 bytes to a string. A malformed sequence becomes U+FFFD rather than throwing. */
 export function utf8Decode(bytes: Uint8Array): string {
   const parts: string[] = [];
-  let codes: number[] = [];
+  // One buffer written by index and reused, not an array grown a character
+  // at a time: a chapter is hundreds of thousands of them, decoded on the
+  // JavaScript thread. A plain array, since that is what every engine's
+  // `apply` is sure to take.
+  const codes: number[] = new Array<number>(CHUNK + 1).fill(0);
+  let n = 0;
   const flush = () => {
-    parts.push(String.fromCharCode(...codes));
-    codes = [];
+    parts.push(String.fromCharCode.apply(null, n === codes.length ? codes : codes.slice(0, n)));
+    n = 0;
   };
   let i = 0;
   // A byte-order mark says nothing worth keeping.
@@ -79,12 +87,12 @@ export function utf8Decode(bytes: Uint8Array): string {
       const point = ((byte & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
       width = 4;
       const offset = point - 0x10000;
-      codes.push(0xd800 + (offset >> 10));
+      codes[n++] = 0xd800 + (offset >> 10);
       code = 0xdc00 + (offset & 0x3ff);
     }
-    codes.push(code);
+    codes[n++] = code;
     i += width;
-    if (codes.length >= 4096) flush();
+    if (n >= CHUNK) flush();
   }
   flush();
   return parts.join('');

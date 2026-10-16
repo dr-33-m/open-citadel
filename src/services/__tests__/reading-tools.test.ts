@@ -9,13 +9,19 @@ vi.mock('@/services/book-text/reading', () => ({
   searchPassages: (...args: unknown[]) => searchPassages(...args),
   bookExtent: (...args: unknown[]) => bookExtent(...args),
 }));
-vi.mock('@/services/book-text/chapters', () => ({ listReachedChapters: vi.fn(), readReachedChapter: vi.fn() }));
+const readReachedChapter = vi.fn();
+vi.mock('@/services/book-text/chapters', () => ({
+  listReachedChapters: vi.fn(),
+  readReachedChapter: (...args: unknown[]) => readReachedChapter(...args),
+}));
 vi.mock('@/services/library-lookup', () => ({ resolveLibraryBook: (...args: unknown[]) => resolveLibraryBook(...args) }));
 
 const BOOK = { id: 'b1', title: 'Meditations', author: 'Marcus Aurelius', kind: 'book' };
 const POST = { id: 'p1', title: 'On Habits', author: 'A Blogger', kind: 'article' };
 
-const { formatChapterListingForLLM, formatChapterTextForLLM, formatReadingForLLM, searchReading } = await import('@/services/reading-tools');
+const { formatChapterListingForLLM, formatChapterTextForLLM, formatReadingForLLM, readChapter, searchReading } = await import(
+  '@/services/reading-tools'
+);
 
 const ctx = { bookId: null, runtime: 'cloud' as const };
 
@@ -23,6 +29,7 @@ beforeEach(() => {
   searchPassages.mockReset().mockResolvedValue({ hits: [], searched: 2, preparing: 0, chapters: [] });
   bookExtent.mockReset();
   resolveLibraryBook.mockReset();
+  readReachedChapter.mockReset().mockResolvedValue({ error: 'nothing_read_yet' });
 });
 
 describe('searchReading', () => {
@@ -45,6 +52,17 @@ describe('searchReading', () => {
     });
     await searchReading({ query: 'anger', book_title: 'Meditations', chapter: 'book four' }, ctx);
     expect(resolveLibraryBook).toHaveBeenCalledWith('Meditations', null, { includePosts: true });
+    expect(searchPassages.mock.calls[0][1]).toMatchObject({ books: [BOOK], section: 4 });
+  });
+
+  it('takes a chapter with no title as a chapter of the chat\'s own book', async () => {
+    resolveLibraryBook.mockReturnValue({ ok: true, book: BOOK });
+    bookExtent.mockResolvedValue({
+      sections: [{ index: 4, href: 'c4', chars: 10, title: 'Book Four', frontMatter: false, paragraphs: 3 }],
+      extent: { lastSection: 4, lastSectionChars: Infinity },
+    });
+    await searchReading({ query: 'anger', chapter: 4 }, { ...ctx, bookId: 'b1' });
+    expect(resolveLibraryBook).toHaveBeenCalledWith(undefined, 'b1', { includePosts: true });
     expect(searchPassages.mock.calls[0][1]).toMatchObject({ books: [BOOK], section: 4 });
   });
 
@@ -113,5 +131,15 @@ describe('formatChapterListingForLLM', () => {
     });
     expect(text).toContain('3. Book Three (~2,400 words, 30 paragraphs)');
     expect(text).toContain('4. Book Four (~800 words, 40 paragraphs, the reader is partway through it)');
+  });
+});
+
+describe('readChapter', () => {
+  it('reads from a paragraph given as a number or as a string, and from the start otherwise', async () => {
+    resolveLibraryBook.mockReturnValue({ ok: true, book: BOOK });
+    for (const [given, from] of [[12, 12], ['12', 12], [undefined, 1], ['soon', 1], [0, 1]] as const) {
+      await readChapter({ chapter: '3', from_paragraph: given }, ctx);
+      expect(readReachedChapter.mock.lastCall?.[2]).toBe(from);
+    }
   });
 });

@@ -13,18 +13,26 @@ export function plainText(html: string): string {
   return squeeze(decodeEntities(html.replace(/<[^>]+>/g, ' ')));
 }
 
-/** A run of text with no paragraphs in it, cut at sentence ends into pieces no longer than the cap. */
+/**
+ * A run of text with no paragraphs in it, cut at sentence ends into pieces no
+ * longer than the cap. Walks one index along the text: cutting the rest off
+ * and keeping it at every piece copied a whole unmarked book over and over.
+ */
 function splitLong(text: string): string[] {
   if (text.length <= LONGEST_PARAGRAPH) return [text];
   const pieces: string[] = [];
-  let rest = text;
-  while (rest.length > LONGEST_PARAGRAPH) {
-    const window = rest.slice(0, LONGEST_PARAGRAPH);
-    const sentenceEnd = Math.max(window.lastIndexOf('. '), window.lastIndexOf('? '), window.lastIndexOf('! '));
-    const cut = sentenceEnd > LONGEST_PARAGRAPH / 2 ? sentenceEnd + 1 : (window.lastIndexOf(' ') > 0 ? window.lastIndexOf(' ') : LONGEST_PARAGRAPH);
-    pieces.push(rest.slice(0, cut).trim());
-    rest = rest.slice(cut).trim();
+  let at = 0;
+  while (text.length - at > LONGEST_PARAGRAPH) {
+    const limit = at + LONGEST_PARAGRAPH;
+    const sentenceEnd = Math.max(text.lastIndexOf('. ', limit - 2), text.lastIndexOf('? ', limit - 2), text.lastIndexOf('! ', limit - 2));
+    const space = text.lastIndexOf(' ', limit - 1);
+    const cut = sentenceEnd - at > LONGEST_PARAGRAPH / 2 ? sentenceEnd + 1 : space > at ? space : limit;
+    const piece = text.slice(at, cut).trim();
+    if (piece) pieces.push(piece);
+    at = cut;
+    while (text.charCodeAt(at) === 32) at++;
   }
+  const rest = text.slice(at).trim();
   if (rest) pieces.push(rest);
   return pieces;
 }

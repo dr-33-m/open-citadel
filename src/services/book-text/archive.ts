@@ -51,13 +51,21 @@ export async function openEpub(filePath: string): Promise<EpubArchive> {
       const zip = await openRangedZip(size, async (position, length) =>
         base64ToBytes(await readAsStringAsync(uri, { encoding: EncodingType.Base64, position, length })),
       );
+      // Asked for on every lookup (`findEntry`), so made once.
+      const files = zip.names().filter((name) => !name.endsWith('/'));
       return {
-        names: () => zip.names().filter((name) => !name.endsWith('/')),
+        names: () => files,
         text: zip.text,
         bytes: zip.bytes,
         textMany: async (names) => {
           const found = await zip.bytesMany(names);
-          return new Map([...found].map(([name, content]) => [name, utf8Decode(content)]));
+          const texts = new Map<string, string>();
+          for (const [name, content] of found) {
+            texts.set(name, utf8Decode(content));
+            // A chapter decoded at a time, with the screen drawn in between.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+          return texts;
         },
       };
     } catch (e) {

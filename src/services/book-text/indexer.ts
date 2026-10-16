@@ -3,7 +3,7 @@ import { getInfoAsync } from 'expo-file-system/legacy';
 import { bookUri } from '@/services/book-text/archive';
 import { bookTextDriver } from '@/services/book-text/driver';
 import { extractBookText } from '@/services/book-text/extract';
-import { forgetBook, indexedFingerprint, writeBook } from '@/services/book-text/store';
+import { forgetBook, indexedBookIds, indexedFingerprint, writeBook } from '@/services/book-text/store';
 
 /** What the indexer needs to know about a book. */
 export interface IndexableBook {
@@ -78,20 +78,37 @@ export async function forgetIndexedBook(bookId: string): Promise<void> {
 /** Between books in the background, so the app keeps its frames while the index fills. */
 const PAUSE_MS = 400;
 let warming = false;
+/** Books asked for while a warm was running, taken up when it ends. */
+let queued: readonly IndexableBook[] | null = null;
 
 /**
  * Indexes these books one after another, in the background, with a pause
  * between each: so the first time Samwell searches them, he searches at once.
- * A warm already running lets the new list wait for the next one rather than
- * starting a second.
+ * A list that arrives while a warm is running (a sync landing during the
+ * first one) is taken up when that one ends; a book already indexed costs
+ * only a lookup the second time.
  */
 export async function warmIndex(books: readonly IndexableBook[]): Promise<void> {
-  if (warming) return;
+  if (warming) {
+    queued = queued ? [...queued, ...books] : books;
+    return;
+  }
   warming = true;
   try {
-    for (const book of books) {
-      await ensureIndexed(book);
-      await new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
+    let next: readonly IndexableBook[] | null = books;
+    while (next) {
+      // Books already indexed are passed over on one query, not a file check
+      // and a pause each: with a library of hundreds, every launch otherwise
+      // spent minutes walking books that were done. A book whose file changed
+      // is caught when it is next opened by a tool (`ensureIndexed`).
+      const indexed = await indexedBookIds(await bookTextDriver());
+      for (const book of next) {
+        if (indexed.has(book.id)) continue;
+        await ensureIndexed(book);
+        await new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
+      }
+      next = queued;
+      queued = null;
     }
   } finally {
     warming = false;

@@ -45,8 +45,15 @@ const LOCAL_HEADER_LENGTH = 30;
 const LOCAL_SLACK = 512;
 /** Entries closer than this are read together: skipping a gap costs a read, reading through it costs only bytes. */
 const MERGE_GAP = 64 * 1024;
-/** Most one batched read may span, whatever the gaps. */
-const LONGEST_RUN = 8 * 1024 * 1024;
+/**
+ * Most one batched read may span, whatever the gaps. Each read comes back as
+ * base64 decoded on the JavaScript thread in one go, so this is also the
+ * longest piece of that work the screen waits on.
+ */
+const LONGEST_RUN = 2 * 1024 * 1024;
+
+/** A turn of the event loop, so a batch of entries is unpacked in pieces the screen can draw between. */
+const breathe = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 const view = (bytes: Uint8Array) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
@@ -179,6 +186,7 @@ export async function openRangedZip(size: number, read: ReadRange): Promise<Rang
     for (const run of runs) {
       const buffer = await read(run.start, run.end - run.start);
       for (const { name, entry } of run.items) {
+        await breathe();
         const content = unpack(name, entry, buffer, run.start) ?? (await bytes(name));
         if (content) found.set(name, content);
       }

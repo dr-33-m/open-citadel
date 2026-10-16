@@ -3,14 +3,15 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { ExtractedSection } from '@/services/book-text/extract';
 import {
   forgetBook,
+  indexedBookIds,
   indexedFingerprint,
   paragraphsOf,
-  searchParagraphs,
   sectionsOf,
   writeBook,
   type SqlDriver,
 } from '@/services/book-text/store';
 import { prepareIndex } from '@/services/book-text/schema';
+import { searchExact, searchParagraphs } from '@/services/book-text/search';
 import { ftsMatch, parseSearchQuery } from '@/utils/search-terms';
 import { nodeDriver } from './node-driver';
 
@@ -88,8 +89,48 @@ describe('the book text index', () => {
     expect(await indexedFingerprint(driver, 'b1')).toBe('fp2');
     const whole = { lastSection: 2, lastSectionChars: Infinity };
     expect(await searchParagraphs(driver, match('spy'), [{ bookId: 'b1', extent: whole }], 10)).toEqual([]);
+    expect(await indexedBookIds(driver)).toEqual(new Set(['b1']));
     await forgetBook(driver, 'b1');
     expect(await indexedFingerprint(driver, 'b1')).toBeNull();
+    expect(await indexedBookIds(driver)).toEqual(new Set());
     expect(await searchParagraphs(driver, match('dawn'), [{ bookId: 'b1', extent: whole }], 10)).toEqual([]);
+  });
+});
+
+describe('a search over a whole library', () => {
+  const section = (index: number, paragraphs: string[], frontMatter = false): ExtractedSection => ({
+    index,
+    href: `s${index}.xhtml`,
+    title: `Section ${index}`,
+    frontMatter,
+    paragraphs,
+  });
+  const whole = { lastSection: Number.MAX_SAFE_INTEGER, lastSectionChars: Infinity };
+
+  it('answers from the ranked pool exactly as the exact query does', async () => {
+    const scopes = [];
+    for (let b = 0; b < 40; b++) {
+      const words = Array.from({ length: 6 }, (_, i) => `A lantern ${'in the dark hall '.repeat((b + i) % 5)}lit book ${b} passage ${i}.`);
+      await writeBook(driver, `lib${b}`, 'fp', [section(0, ['A lantern on the cover'], true), section(1, words), section(2, words)], 'now');
+      // Every third book read only into its first section, partway.
+      scopes.push({ bookId: `lib${b}`, extent: b % 3 === 0 ? { lastSection: 1, lastSectionChars: 120 } : whole });
+    }
+    const pooled = await searchParagraphs(driver, match('lantern'), scopes, 25);
+    expect(pooled).toHaveLength(25);
+    expect(pooled).toEqual(await searchExact(driver, match('lantern'), scopes, 25));
+    expect(pooled.every((hit) => hit.section !== 0)).toBe(true);
+  });
+
+  it('falls back to the exact query when the best matches are all past the reader', async () => {
+    const late = Array.from({ length: 2_100 }, (_, i) => `The lantern burned low over chapter five, line ${i}, here.`);
+    await writeBook(driver, 'late', 'fp', [section(0, ['Opening.']), section(1, late)], 'now');
+    await writeBook(driver, 'early', 'fp', [section(0, [`${'A long and winding passage of no consequence. '.repeat(30)}Then a lantern.`])], 'now');
+    const scopes = [
+      { bookId: 'late', extent: { lastSection: 0, lastSectionChars: Infinity } },
+      { bookId: 'early', extent: whole },
+      ...Array.from({ length: 30 }, (_, i) => ({ bookId: `absent${i}`, extent: whole })),
+    ];
+    const hits = await searchParagraphs(driver, match('lantern'), scopes, 5);
+    expect(hits.map((hit) => hit.bookId)).toEqual(['early']);
   });
 });

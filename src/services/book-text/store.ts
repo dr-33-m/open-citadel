@@ -1,4 +1,3 @@
-import type { ReadableExtent } from '@/services/book-text/extent';
 import type { ExtractedSection } from '@/services/book-text/extract';
 import { INDEX_VERSION } from '@/services/book-text/schema';
 import type { SqlDriver, SqlValue } from '@/services/book-text/sql-driver';
@@ -31,8 +30,6 @@ export interface ParagraphHit extends StoredParagraph {
 
 /** Rows per INSERT: five values each, well under SQLite's 999 parameters. */
 const ROWS_PER_INSERT = 150;
-/** Standing in for "the whole section" where SQL wants a number. */
-const WHOLE = Number.MAX_SAFE_INTEGER;
 /** The paragraph separator `start` counts across. */
 const SEPARATOR = 2;
 
@@ -43,6 +40,12 @@ export async function indexedFingerprint(driver: SqlDriver, bookId: string): Pro
     [bookId, INDEX_VERSION],
   );
   return rows[0]?.fingerprint ?? null;
+}
+
+/** Every book indexed under this version, in one query rather than one a book. */
+export async function indexedBookIds(driver: SqlDriver): Promise<Set<string>> {
+  const rows = await driver.all<{ book_id: string }>('SELECT book_id FROM indexed_books WHERE version = ?', [INDEX_VERSION]);
+  return new Set(rows.map((row) => row.book_id));
 }
 
 async function deleteRows(driver: SqlDriver, bookId: string): Promise<void> {
@@ -128,60 +131,4 @@ export async function paragraphsOf(
     'SELECT section, n, start, text FROM paragraphs WHERE book_id = ? AND section = ? AND n >= ? ORDER BY n LIMIT ?',
     [bookId, section, from, limit],
   );
-}
-
-/** One book a search may look in, and how far into it. */
-export interface SearchScope {
-  bookId: string;
-  extent: ReadableExtent;
-  /** Only this section, when the search is inside one chapter. */
-  section?: number;
-}
-
-/**
- * Paragraphs matching an FTS5 expression, best first, inside the books given
- * and never past where the reader has got in each. Front matter is left out,
- * and so is a book still being written (no `indexed_books` row yet).
- * A paragraph that straddles the reader's position is returned whole here;
- * the caller cuts it (`readablePart`), since only it can tell whether the
- * match fell before the cut.
- */
-export async function searchParagraphs(
-  driver: SqlDriver,
-  match: string,
-  scopes: readonly SearchScope[],
-  limit: number,
-): Promise<ParagraphHit[]> {
-  const readable = scopes.filter((scope) => scope.extent.lastSection >= 0);
-  if (readable.length === 0) return [];
-  const clauses: string[] = [];
-  const params: SqlValue[] = [match];
-  for (const { bookId, extent, section } of readable) {
-    const chars = Number.isFinite(extent.lastSectionChars) ? extent.lastSectionChars : WHOLE;
-    clauses.push(`(p.book_id = ? AND (p.section < ? OR (p.section = ? AND p.start < ?))${section === undefined ? '' : ' AND p.section = ?'})`);
-    params.push(bookId, extent.lastSection, extent.lastSection, chars);
-    if (section !== undefined) params.push(section);
-  }
-  params.push(limit);
-  // Short paragraphs (headings, captions) win on length alone in BM25; they
-  // are kept but placed behind passages with something in them.
-  const rows = await driver.all<{ book_id: string; section: number; n: number; start: number; text: string; title: string | null }>(
-    `SELECT p.book_id, p.section, p.n, p.start, p.text, s.title
-       FROM paragraph_fts
-       JOIN paragraphs p ON p.id = paragraph_fts.rowid
-       JOIN sections s ON s.book_id = p.book_id AND s.idx = p.section
-       JOIN indexed_books i ON i.book_id = p.book_id
-      WHERE paragraph_fts MATCH ? AND s.front_matter = 0 AND (${clauses.join(' OR ')})
-      ORDER BY bm25(paragraph_fts) + CASE WHEN length(p.text) < 60 THEN 3 ELSE 0 END
-      LIMIT ?`,
-    params,
-  );
-  return rows.map((row) => ({
-    bookId: row.book_id,
-    section: row.section,
-    n: row.n,
-    start: row.start,
-    text: row.text,
-    sectionTitle: row.title,
-  }));
 }

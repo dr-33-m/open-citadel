@@ -3,12 +3,14 @@ import { desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { books, readingProgress } from '@/db/schema';
 import { bookTextDriver } from '@/services/book-text/driver';
-import { reachedSections, readableExtent, readablePart, type ReadableExtent } from '@/services/book-text/extent';
+import { reachedSections, readableExtent, WHOLE_BOOK, type ReadableExtent } from '@/services/book-text/extent';
 import { ensureIndexed, warmIndex } from '@/services/book-text/indexer';
-import { indexedFingerprint, searchParagraphs, sectionsOf, type StoredSection } from '@/services/book-text/store';
+import { pickHits } from '@/services/book-text/pick-hits';
+import { searchParagraphs } from '@/services/book-text/search';
+import { indexedBookIds, sectionsOf, type SqlDriver, type StoredSection } from '@/services/book-text/store';
 import type { SpineLocator } from '@/services/epub-spine';
 import type { BookRow as Book } from '@/services/book-text/book-row';
-import { excerptAround, ftsMatch, matchScore, type SearchQuery } from '@/utils/search-terms';
+import { ftsMatch, type SearchQuery } from '@/utils/search-terms';
 
 /**
  * How far into a book Samwell may read: `null` for all of it (a finished
@@ -19,14 +21,31 @@ import { excerptAround, ftsMatch, matchScore, type SearchQuery } from '@/utils/s
  * partway, keeps its saved position as the boundary.
  */
 export function readLocatorFor(book: Book): SpineLocator | null | undefined {
-  if (book.kind === 'article' || book.status === 'archived') return null;
+  if (isWhole(book)) return null;
   const progress = db.select({ locator: readingProgress.locator }).from(readingProgress).where(eq(readingProgress.bookId, book.id)).get();
-  if (!progress?.locator) return undefined;
+  return parseLocator(progress?.locator);
+}
+
+const isWhole = (book: Book) => book.kind === 'article' || book.status === 'archived';
+
+function parseLocator(locator: string | null | undefined): SpineLocator | undefined {
+  if (!locator) return undefined;
   try {
-    return JSON.parse(progress.locator) as SpineLocator;
+    return JSON.parse(locator) as SpineLocator;
   } catch {
     return undefined;
   }
+}
+
+/** `readLocatorFor` for many books in one query, not one a book. */
+function readLocatorsFor(list: readonly Book[]): Map<string, SpineLocator | null | undefined> {
+  const partway = list.filter((book) => !isWhole(book));
+  const saved = new Map<string, string | null>();
+  if (partway.length > 0) {
+    const rows = db.select({ bookId: readingProgress.bookId, locator: readingProgress.locator }).from(readingProgress).all();
+    for (const row of rows) saved.set(row.bookId, row.locator);
+  }
+  return new Map(list.map((book) => [book.id, isWhole(book) ? null : parseLocator(saved.get(book.id))]));
 }
 
 /**
@@ -69,7 +88,7 @@ export interface PassageSearch {
   searched: number;
   /** Books left out because they are still being prepared for search, in the background. */
   preparing: number;
-  /** Titles of the sections searched, for a search that found nothing to try again from. */
+  /** When nothing was found: titles of the chapters reached in the most recently read books searched, to try again from. */
   chapters: string[];
 }
 
@@ -93,50 +112,46 @@ export interface PassageSearchOptions {
 export async function searchPassages(query: SearchQuery, options: PassageSearchOptions): Promise<PassageSearch> {
   const match = ftsMatch(query);
   const driver = await bookTextDriver();
-  const ready: Book[] = [];
-  const waiting: Book[] = [];
-  for (const book of options.books) {
-    if ((await indexedFingerprint(driver, book.id)) !== null) ready.push(book);
-    else waiting.push(book);
-  }
+  const indexed = await indexedBookIds(driver);
+  const ready = options.books.filter((book) => indexed.has(book.id));
+  const waiting = options.books.filter((book) => !indexed.has(book.id));
   const now = waiting.slice(0, options.indexNow);
   for (const book of now) if (await ensureIndexed(book)) ready.push(book);
   const later = waiting.slice(options.indexNow);
   if (later.length > 0) void warmIndex(later);
 
-  const extents = new Map<string, { book: Book; sections: StoredSection[]; extent: ReadableExtent }>();
+  // A finished book or a post is whole without its sections being read;
+  // only a book still being read needs them, to place the reader in it.
+  const locators = readLocatorsFor(ready);
+  const extents = new Map<string, { book: Book; extent: ReadableExtent }>();
   for (const book of ready) {
-    const sections = await sectionsOf(driver, book.id);
-    const extent = readableExtent(sections, readLocatorFor(book));
-    if (extent.lastSection >= 0) extents.set(book.id, { book, sections, extent });
+    const locator = locators.get(book.id);
+    if (locator === undefined) continue;
+    const extent = locator === null ? WHOLE_BOOK : readableExtent(await sectionsOf(driver, book.id), locator);
+    if (extent.lastSection >= 0) extents.set(book.id, { book, extent });
   }
-  const chapters = [...extents.values()].flatMap(({ sections, extent }) =>
-    reachedSections(sections, extent).flatMap((section) => (section.title ? [section.title] : [])),
-  );
-  const result = { searched: extents.size, preparing: later.length, chapters: [...new Set(chapters)] };
-  if (!match || extents.size === 0) return { hits: [], ...result };
+  const result = { searched: extents.size, preparing: later.length };
+  if (!match || extents.size === 0) return { hits: [], ...result, chapters: await chaptersOf(driver, extents) };
 
   const scopes = [...extents.values()].map(({ book, extent }) => ({ bookId: book.id, extent, section: options.section }));
   const found = await searchParagraphs(driver, match, scopes, options.limit * 4);
-  const perBook = new Map<string, number>();
-  const hits: PassageHit[] = [];
-  for (const hit of found) {
-    if (hits.length >= options.limit) break;
-    const entry = extents.get(hit.bookId);
-    if (!entry || (perBook.get(hit.bookId) ?? 0) >= options.perBook) continue;
-    const text = readablePart(entry.extent, hit.section, hit.start, hit.text);
-    // Cut at the reader's position, the words that matched may be on the far side of it.
-    if (!text || matchScore(text, query) === 0) continue;
-    perBook.set(hit.bookId, (perBook.get(hit.bookId) ?? 0) + 1);
-    hits.push({
-      book: entry.book,
-      section: hit.section,
-      sectionTitle: hit.sectionTitle,
-      paragraph: hit.n,
-      text: excerptAround(text, query, options.excerptChars),
-    });
+  const hits = pickHits(found, (bookId) => extents.get(bookId)?.extent, query, options).flatMap((hit) => {
+    const book = extents.get(hit.bookId)?.book;
+    return book ? [{ book, section: hit.section, sectionTitle: hit.sectionTitle, paragraph: hit.paragraph, text: hit.text }] : [];
+  });
+  return { hits, ...result, chapters: hits.length > 0 ? [] : await chaptersOf(driver, extents) };
+}
+
+/** Books whose chapters a search that found nothing hands back: the most recently read, which are what he is most likely after. */
+const CHAPTER_BOOKS = 3;
+
+/** Titles of the chapters reached in the first few books searched, for a search that found nothing to try again from. */
+async function chaptersOf(driver: SqlDriver, extents: ReadonlyMap<string, { book: Book; extent: ReadableExtent }>): Promise<string[]> {
+  const titles: string[] = [];
+  for (const { book, extent } of [...extents.values()].slice(0, CHAPTER_BOOKS)) {
+    for (const section of reachedSections(await sectionsOf(driver, book.id), extent)) if (section.title) titles.push(section.title);
   }
-  return { hits, ...result };
+  return [...new Set(titles)];
 }
 
 /** The books an index warm-up should cover: what a search would look in. */

@@ -22,6 +22,9 @@ export interface ReadableExtent {
 
 export const NOTHING_READ: ReadableExtent = { lastSection: -1, lastSectionChars: 0 };
 
+/** All of it, whatever its sections: a finished book or a post, known without reading its sections. */
+export const WHOLE_BOOK: ReadableExtent = { lastSection: Number.MAX_SAFE_INTEGER, lastSectionChars: Infinity };
+
 /**
  * The spoiler boundary from a reader's position: `null` for a book read to
  * the end (or a post, which has no plot to spoil), `undefined` for one with
