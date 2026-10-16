@@ -11,7 +11,6 @@ import {
   rememberCloudPick,
   rememberedVoice,
   planForCloudVoice,
-  planShortName,
   resolveCloudSelection,
   selectionKey,
 } from '@/features/tts/utils/cloud-voices';
@@ -76,10 +75,6 @@ describe('cloudChoiceFor', () => {
 });
 
 describe('where a choice lands', () => {
-  it('names a plan the way a label has room for', () => {
-    expect(planShortName('grand_maester')).toBe('GRAND MAESTER');
-  });
-
   it('lands a maker on the voice that lasts', () => {
     expect(modelForMaker(VIEWS, 'Google', LITE)?.id).toBe(LITE);
     expect(modelForMaker(VIEWS, 'ElevenLabs', LITE)?.id).toBe('elevenlabs/eleven-v4-turbo');

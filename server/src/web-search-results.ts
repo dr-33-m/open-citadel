@@ -46,7 +46,9 @@ export function readWebSources(annotations: unknown): WebSource[] {
     const url = typeof fields.url === 'string' ? fields.url.trim() : '';
     if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
     seen.add(url);
-    const title = typeof fields.title === 'string' && fields.title.trim() ? fields.title.trim() : hostOf(url);
+    // Flattened: a page's title can carry its own line breaks ("2026\n\n…").
+    const flatTitle = typeof fields.title === 'string' ? fields.title.replace(/\s+/g, ' ').trim() : '';
+    const title = flatTitle || hostOf(url);
     const content = typeof fields.content === 'string' ? fields.content : '';
     sources.push({ title, url, snippet: trimSnippet(content) });
     if (sources.length >= WEB_SEARCH_MAX_SOURCES) break;
@@ -56,7 +58,8 @@ export function readWebSources(annotations: unknown): WebSource[] {
 
 /** A page's passage on one line, cut at a word near the cap. */
 export function trimSnippet(text: string, max = WEB_SNIPPET_MAX_CHARS): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
+  // Page markdown comes back with its heading marks; the passage reads as prose without them.
+  const flat = text.replace(/(^|\s)#{1,6}\s+/g, '$1').replace(/\s+/g, ' ').trim();
   if (flat.length <= max) return flat;
   const cut = flat.slice(0, max);
   const space = cut.lastIndexOf(' ');

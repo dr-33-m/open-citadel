@@ -3,6 +3,8 @@ import type { SubscriptionStatus } from '@/stores/subscription';
 
 export type CloudBlocker =
   | 'offlineMode'
+  /** The phone has no network, so nothing sent would arrive. */
+  | 'noConnection'
   /** The server has never answered, so nothing can be said about the plan. */
   | 'cloudUnreachable'
   | 'notConfigured'
@@ -21,6 +23,8 @@ interface CloudAccessState {
   purchasable: boolean;
   subscriptionStatus: SubscriptionStatus;
   mode: 'cloud' | 'offline';
+  /** Whether the phone has a network (`useOnline`). Assumed when not said. */
+  online?: boolean;
 }
 
 /** Returns the first prerequisite standing between the reader and Cloud. */
@@ -30,8 +34,13 @@ export function getCloudBlocker({
   purchasable,
   subscriptionStatus,
   mode,
+  online = true,
 }: CloudAccessState): CloudBlocker | null {
   if (!configured) return 'notConfigured';
+  // Before anything about the reader: with no network, the account and the
+  // plan cannot be asked about, and a message would fail after it was sent.
+  // Said first, it stops the send instead.
+  if (!online) return 'noConnection';
   if (identity === 'unknown') return 'checkingAccount';
   /*
    * Nobody at all: no account, and no plan bought on this device.

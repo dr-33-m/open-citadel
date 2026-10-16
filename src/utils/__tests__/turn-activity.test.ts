@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseActivity, sameActivity, serializeActivity, settleActivity, turnActivity, type ActivityMessage } from '../turn-activity';
+import { parseActivity, sameActivity, serializeActivity, settleActivity, turnActivity, withThought, type ActivityMessage } from '../turn-activity';
 
 const call = (id: string, name: string, args: unknown, extra: Record<string, unknown> = {}) => ({
   type: 'tool-call',
@@ -27,7 +27,7 @@ describe('turnActivity', () => {
       ),
     );
     expect(activity.steps).toEqual([
-      { id: 'a', tool: 'search_library', title: 'Looked for "Taste of Luxury" in your library', detail: '1 book', status: 'done' },
+      { id: 'a', tool: 'search_library', title: 'Looked for "Taste of Luxury" in your library', detail: 'Found 1 book', status: 'done' },
       { id: 'b', tool: 'web_search', title: 'Searching the web for "Nadege Forestier"', detail: null, status: 'running' },
     ]);
   });
@@ -41,7 +41,7 @@ describe('turnActivity', () => {
       ]),
     );
     expect(activity.sources.map((s) => s.url)).toEqual(['https://a.com', 'https://b.com', 'https://c.com']);
-    expect(activity.steps[0]?.detail).toBe('2 pages');
+    expect(activity.steps[0]?.detail).toBe('Found 2 pages');
   });
 
   it('says when a step was declined or failed', () => {
@@ -100,5 +100,21 @@ describe('settleActivity', () => {
     expect(settleActivity(done)).toBe(done);
     expect(settleActivity({ steps: [], sources: [] })).toBeNull();
     expect(settleActivity(null)).toBeNull();
+  });
+});
+
+describe('withThought', () => {
+  it('keeps what he thought with the reply, through the database and back', () => {
+    const kept = withThought(null, '  Weighing the two editions.  ', 12);
+    expect(kept).toEqual({ steps: [], sources: [], thought: { text: 'Weighing the two editions.', seconds: 12 } });
+    expect(parseActivity(serializeActivity(kept))).toEqual(kept);
+  });
+
+  it('leaves out a trace with no words in it', () => {
+    expect(withThought(null, '   ', 4)).toBeNull();
+  });
+
+  it('keeps an unmeasured thought, without a duration', () => {
+    expect(withThought(null, 'Hmm.', undefined)?.thought).toEqual({ text: 'Hmm.', seconds: null });
   });
 });

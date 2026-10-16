@@ -29,9 +29,18 @@ export interface TurnStep {
   status: StepStatus;
 }
 
+/** What he worked through before answering, on a model that reasons. */
+export interface TurnThought {
+  text: string;
+  /** How long, measured where it can be; null where nothing measured it. */
+  seconds: number | null;
+}
+
 export interface TurnActivity {
   steps: TurnStep[];
   sources: WebSource[];
+  /** Kept with the reply it led to, so every reply keeps its own, not only the last. */
+  thought?: TurnThought;
 }
 
 export const NO_ACTIVITY: TurnActivity = { steps: [], sources: [] };
@@ -155,27 +164,30 @@ function count(output: unknown, key: string): number | null {
   return Array.isArray(value) ? value.length : null;
 }
 
-/** One line of what came of a finished call. */
+/**
+ * One short line of what came of a finished call: "Found 6 pages", not a bare
+ * "6 pages", so the line reads as a result on its own under the fold.
+ */
 function detailFor(tool: string, output: unknown): string | null {
   const record = (output ?? {}) as Record<string, unknown>;
   switch (tool) {
     case 'web_search': {
       const sources = count(output, 'sources') ?? 0;
-      return sources > 0 ? plural(sources, 'page') : 'Nothing useful came back';
+      return sources > 0 ? `Found ${plural(sources, 'page')}` : 'Nothing useful came back';
     }
     case 'search_library': {
       const total = typeof record.total === 'number' ? record.total : null;
-      return total === null ? null : total === 0 ? 'No match' : plural(total, 'book');
+      return total === null ? null : total === 0 ? 'No book matched' : `Found ${plural(total, 'book')}`;
     }
     case 'list_collections': {
       const n = count(output, 'collections');
-      return n === null ? null : plural(n, 'collection');
+      return n === null ? null : n === 0 ? 'No collections yet' : `Found ${plural(n, 'collection')}`;
     }
     case 'search_highlights':
     case 'search_thoughts':
     case 'search_reading': {
       const n = count(output, 'results');
-      return n === null ? null : n === 0 ? 'Nothing matched' : plural(n, 'match', 'matches');
+      return n === null ? null : n === 0 ? 'Nothing matched' : `Found ${plural(n, 'match', 'matches')}`;
     }
     case 'add_to_queue':
     case 'remove_from_queue':
@@ -267,12 +279,22 @@ export function sameActivity(a: TurnActivity, b: TurnActivity): boolean {
  * under a reply that is long done.
  */
 export function settleActivity(activity: TurnActivity | null | undefined): TurnActivity | null {
-  if (!activity || (activity.steps.length === 0 && activity.sources.length === 0)) return null;
+  if (!activity || (activity.steps.length === 0 && activity.sources.length === 0 && !activity.thought)) return null;
   if (!activity.steps.some((step) => step.status === 'running')) return activity;
   return {
+    ...activity,
     steps: activity.steps.map((step) => (step.status === 'running' ? { ...step, status: 'failed' as const, detail: 'Stopped' } : step)),
-    sources: activity.sources,
   };
+}
+
+/**
+ * The turn's activity with what he thought on the way, as a reply is kept.
+ * A trace with no words in it is nothing to open, so it is left out.
+ */
+export function withThought(activity: TurnActivity | null, text: string, seconds: number | null | undefined): TurnActivity | null {
+  const thought = text.trim();
+  if (!thought) return activity;
+  return { ...(activity ?? NO_ACTIVITY), thought: { text: thought, seconds: seconds ?? null } };
 }
 
 /** For `chat_messages.activity`: null when there is nothing to keep. */
@@ -288,7 +310,12 @@ export function parseActivity(raw: string | null | undefined): TurnActivity | nu
     const parsed = JSON.parse(raw) as Partial<TurnActivity>;
     const steps = Array.isArray(parsed.steps) ? parsed.steps.filter((s): s is TurnStep => !!s && typeof s.title === 'string') : [];
     const sources = Array.isArray(parsed.sources) ? parsed.sources.filter((s): s is WebSource => !!s && typeof s.url === 'string') : [];
-    return steps.length > 0 || sources.length > 0 ? { steps, sources } : null;
+    const thought =
+      parsed.thought && typeof parsed.thought.text === 'string' && parsed.thought.text.trim()
+        ? { text: parsed.thought.text, seconds: typeof parsed.thought.seconds === 'number' ? parsed.thought.seconds : null }
+        : undefined;
+    if (steps.length === 0 && sources.length === 0 && !thought) return null;
+    return thought ? { steps, sources, thought } : { steps, sources };
   } catch {
     return null;
   }

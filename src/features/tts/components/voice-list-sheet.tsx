@@ -30,6 +30,8 @@ export interface VoiceListSheetProps {
   note?: string | null;
   onSelect: (voice: DeviceVoice) => void;
   onPreview: (voice: DeviceVoice) => void;
+  /** The sheet's heading. "Select voice" unless the kind of voice has a name of its own ("Select Narrator"). */
+  title?: string;
 }
 
 /** The list of voices to choose from, opened from the voice row: the phone's own, or a voice box's. */
@@ -44,6 +46,7 @@ export function VoiceListSheet({
   note,
   onSelect,
   onPreview,
+  title = "Select voice",
 }: VoiceListSheetProps) {
   const tokens = useThemeTokens();
   const muted = tokens["--color-muted-foreground"];
@@ -73,7 +76,7 @@ export function VoiceListSheet({
     >
       <View className="gap-1 px-6 pb-3 pt-2">
         <View className="flex-row items-baseline justify-between gap-3">
-          <ThemedText type="headlineSm">Select voice</ThemedText>
+          <ThemedText type="headlineSm">{title}</ThemedText>
           {total ? (
             <ThemedText type="bodySm" color={muted}>
               {total}

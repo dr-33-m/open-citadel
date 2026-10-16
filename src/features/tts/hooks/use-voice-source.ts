@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { CREDIT_PLANS, PLANS, planRank, type CreditPlan, type PlanId } from 'samwell-shared';
 
 import { CAN_SELL_PLANS } from '@/features/billing/utils/can-sell';
-import { cloudPaneView, cloudVoiceForPlan, planShortName } from '@/features/tts/utils/cloud-voices';
+import { cloudPaneView, cloudVoiceForPlan } from '@/features/tts/utils/cloud-voices';
+import { planShortName } from '@/utils/plan-name';
 import {
   CLOUD_PLANS_ELSEWHERE,
   CLOUD_PLANS_LINE,

@@ -166,6 +166,11 @@ export function appendMessage(message: ChatMessage): void {
   db.insert(chatMessages).values(messageRow(message)).run();
 }
 
+/** Takes one message out of its conversation: a failed one, on its way to being sent again. */
+export function removeMessage(messageId: string): void {
+  db.delete(chatMessages).where(eq(chatMessages.id, messageId)).run();
+}
+
 /** A message as its row: the activity goes in as JSON. */
 export function messageRow(message: ChatMessage): typeof chatMessages.$inferInsert {
   return { ...message, activity: serializeActivity(message.activity) };

@@ -217,7 +217,11 @@ export function turnIndicator(
 ): TurnIndicator | null {
   const { trace, traceSeconds, ...activityInput } = input;
 
-  if (!activityInput.isGenerating && !trace) return null;
+  // Live only. A finished turn's thought is kept with its reply and opened
+  // from the reply's own footer (`ThoughtButton`), so nothing is left behind
+  // here under a reply that is done: it used to stay as a folded "Thought
+  // for…" row below the reply's copy and sources, and only for the last one.
+  if (!activityInput.isGenerating) return null;
 
   // Titling starts after the answer has landed, so it must replace a
   // completed reasoning trace rather than hiding behind it.
@@ -242,6 +246,12 @@ export function turnIndicator(
     traceSeconds !== undefined ||
     (activityInput.isGenerating && activityInput.isThinking);
   if (reasoning) {
+    // The answer itself is on screen now, and it is the status. A "Thought
+    // for 12 seconds" row with a still orb under the words as they arrive
+    // only repeated what the reply's footer says once it lands (the brain
+    // and its time, `ThoughtButton`). A tool called after this brings the row
+    // back, with the tool's own words.
+    if (activityInput.isStreaming && !activityInput.isToolCalling) return null;
     return {
       kind: 'trace',
       trace,

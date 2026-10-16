@@ -2,9 +2,10 @@ import React from 'react';
 import { View, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { Lock } from '@/components/icons';
+import { Info, Lock } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
+import { cn } from '@/lib/cn';
 import { easing, elevation, motion } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
@@ -23,6 +24,12 @@ export type TextSwitchOption<T extends string> = {
   locked?: boolean;
   /** What a screen reader says in place of the label. */
   accessibilityLabel?: string;
+  /**
+   * Draws a circled "i" at the cell's end, as a version chip carries one
+   * (`ChoiceChips`): for a kind whose one choice has nothing else to hang it
+   * on. Pressed, it opens what is worth knowing, without switching.
+   */
+  onInfo?: () => void;
 };
 
 export interface TextSwitchProps<T extends string> {
@@ -88,6 +95,8 @@ export function TextSwitch<T extends string>({ options, value, onChange }: TextS
     transform: [{ translateX: (slot.get() * row.get()) / count }],
   }));
 
+  const cellWidth = { width: `${100 / count}%` as const };
+
   const measure = (event: LayoutChangeEvent) => {
     row.set(event.nativeEvent.layout.width);
   };
@@ -114,18 +123,42 @@ export function TextSwitch<T extends string>({ options, value, onChange }: TextS
         return (
           <Touchable
             key={option.value}
-            className="h-10 flex-1 flex-row items-center justify-center gap-1.5 px-1"
+            // Exactly the card's share, not `flex-1`: flex hands a cell with
+            // more in it (a padlock, an "i") more of the row, and the card,
+            // which is always one share, then sat off-centre on it with the
+            // "i" outside. Room at the end for the mark, so a label never runs
+            // under it.
+            style={cellWidth}
+            className={cn('h-10 flex-row items-center justify-center px-1', (option.onInfo || option.locked) && 'pr-8')}
             onPress={selected ? undefined : press}
             haptic="select"
             accessibilityRole="tab"
             accessibilityState={{ selected }}
             accessibilityLabel={option.accessibilityLabel ?? option.label}
           >
-            {option.locked ? <Lock size={11} color={color} strokeWidth={2} /> : null}
             {/* One line whatever the type size: three long names share a row. */}
             <ThemedText type="labelSm" color={color} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} className="shrink">
               {option.label}
             </ThemedText>
+            {/* A padlock and an "i" sit in the same place, at the cell's end,
+                so a tab's mark is always where the eye expects it. */}
+            {option.locked ? (
+              <View pointerEvents="none" className="absolute bottom-0 right-0 top-0 w-8 items-center justify-center">
+                <Lock size={14} color={tokens['--color-muted-foreground']} />
+              </View>
+            ) : option.onInfo ? (
+              // The cell's whole height at its end, so the mark is easy to hit
+              // without being drawn any larger than on the chips.
+              <Touchable
+                className="absolute bottom-0 right-0 top-0 w-8 items-center justify-center"
+                onPress={option.onInfo}
+                haptic="tap"
+                accessibilityRole="button"
+                accessibilityLabel={`About ${option.label}`}
+              >
+                <Info size={15} color={tokens['--color-muted-foreground']} />
+              </Touchable>
+            ) : null}
           </Touchable>
         );
       })}

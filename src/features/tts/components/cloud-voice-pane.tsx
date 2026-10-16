@@ -38,7 +38,8 @@ export interface CloudVoicePaneProps {
  * so going back to a box is a reveal.
  *
  * What a version costs is one tap deeper, behind the circled "i" on its
- * chip: hours a month and Neurons a chapter, on the reader's plan.
+ * chip (or on its box's tab, for a box with one version): hours a month and
+ * Neurons a chapter, on the reader's plan.
  */
 export function CloudVoicePane({ selection, boxes, contents, info, figuresLabel, sampleLabel = null, warm = false, onMaker, onModel, onVoice }: CloudVoicePaneProps) {
   const tokens = useThemeTokens();
@@ -50,12 +51,18 @@ export function CloudVoicePane({ selection, boxes, contents, info, figuresLabel,
   if (!selection) return null;
 
   const chosen = selection.model.maker;
-  const tabs = boxes.map((box) => ({
-    value: box.maker,
-    label: box.label,
-    locked: box.locked !== null,
-    accessibilityLabel: box.locked ? `${box.maker}, with ${box.locked}` : `${box.maker} voices`,
-  }));
+  // A box with one version has no chip to carry its "i", so its tab does.
+  const singleModel = new Map(contents.filter((content) => content.versions.length === 0).map((content) => [content.maker, content.model.id]));
+  const tabs = boxes.map((box) => {
+    const modelId = box.locked ? undefined : singleModel.get(box.maker);
+    return {
+      value: box.maker,
+      label: box.label,
+      locked: box.locked !== null,
+      accessibilityLabel: box.locked ? `${box.maker}, with ${box.locked}` : `${box.maker} voices`,
+      onInfo: modelId ? () => openInfo(modelId) : undefined,
+    };
+  });
   const panes: Record<string, React.ReactNode> = {};
   for (const content of contents) {
     panes[content.maker] = (

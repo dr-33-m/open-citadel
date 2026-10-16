@@ -1,4 +1,5 @@
 import React from "react";
+import type { View } from "react-native";
 import Animated, { FadeInUp, useReducedMotion } from "react-native-reanimated";
 import { useCSSVariable } from "uniwind";
 
@@ -7,7 +8,10 @@ import { ThemedText } from "@/components/themed-text";
 import { Message } from "@/components/ui/message";
 import { easing, fontFamily, motion } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
-import type { TurnActivity } from "@/utils/turn-activity";
+import { haptics } from "@/utils/haptics";
+import type { HeldMessage } from "@/hooks/use-message-actions";
+import type { TurnActivity, TurnStep, TurnThought } from "@/utils/turn-activity";
+import type { WebSource } from "samwell-shared";
 
 /** New turns rise and fade in rather than popping into the list —
  * fires once per instance, so it plays for a freshly-sent or
@@ -29,6 +33,16 @@ interface ChatBubbleProps {
   onNavigateToHighlight?: (bookId: string, locator: string) => void;
   onNavigateToTimeline?: () => void;
   onNavigateToBook?: (bookId: string) => void;
+  /** Samwell's turns only: raises the conversation's sources sheet. */
+  onOpenSources?: (sources: readonly WebSource[]) => void;
+  /** Samwell's turns only: raises the conversation's thought sheet. */
+  onOpenThought?: (thought: TurnThought) => void;
+  /** Samwell's turns only: raises the conversation's tasks sheet. */
+  onOpenTasks?: (steps: readonly TurnStep[]) => void;
+  /** The reader's turns only: the message's id, handed back when it is held. */
+  messageId?: string;
+  /** The reader's turns only: a long press on the bubble (`useMessageActions`). */
+  onHold?: (message: HeldMessage) => void;
   /** Play the rise-and-fade entrance. Off by default: the per-session chat
    * renders bubbles in a recycled FlashList, where replaying the entrance
    * on recycled rows violates the no-entering-on-recycled-rows motion law —
@@ -55,6 +69,11 @@ export const ChatBubble = React.memo(function ChatBubble({
   onNavigateToHighlight,
   onNavigateToTimeline,
   onNavigateToBook,
+  onOpenSources,
+  onOpenThought,
+  onOpenTasks,
+  messageId,
+  onHold,
   animateEntry,
 }: ChatBubbleProps) {
   // Literal colour for ThemedText's `color` prop — the streaming cursor only;
@@ -66,6 +85,18 @@ export const ChatBubble = React.memo(function ChatBubble({
   const reduceMotion = useReducedMotion();
   const entering = animateEntry && !reduceMotion ? turnEntering : undefined;
 
+  // Measured when held, not kept: the bubble moves as the transcript scrolls,
+  // and the actions rise out of wherever it is now. The bubble, not the row
+  // Message holds by, which is the column's full width.
+  const bubbleRef = React.useRef<View>(null);
+  const hold = React.useCallback(() => {
+    if (!onHold || !messageId) return;
+    // The thump is what says the hold registered, before anything rises.
+    haptics.commit();
+    bubbleRef.current?.measureInWindow((x, y, width, height) => onHold({ id: messageId, content, rect: { x, y, width, height } }));
+  }, [onHold, messageId, content]);
+  const holdable = onHold != null && messageId != null;
+
   if (role === "assistant") {
     return (
       <Animated.View entering={entering} className={ROW_CLASS}>
@@ -76,6 +107,9 @@ export const ChatBubble = React.memo(function ChatBubble({
           onNavigateToHighlight={onNavigateToHighlight}
           onNavigateToTimeline={onNavigateToTimeline}
           onNavigateToBook={onNavigateToBook}
+          onOpenSources={onOpenSources}
+          onOpenThought={onOpenThought}
+          onOpenTasks={onOpenTasks}
         />
       </Animated.View>
     );
@@ -83,9 +117,13 @@ export const ChatBubble = React.memo(function ChatBubble({
 
   return (
     <Animated.View entering={entering} className={ROW_CLASS}>
-      <Message align="end">
+      <Message
+        align="end"
+        onLongPress={holdable ? hold : undefined}
+        accessibilityHint={holdable ? "Hold to copy it, or to send it again if it failed" : undefined}
+      >
         <Message.Content>
-          <Message.Bubble className="border-e-2 border-muted-foreground/50 bg-muted">
+          <Message.Bubble ref={bubbleRef} className="border-e-2 border-muted-foreground/50 bg-muted">
             <Message.BubbleContent
               className="text-foreground"
               style={USER_TEXT}

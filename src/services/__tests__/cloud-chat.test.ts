@@ -33,7 +33,7 @@ vi.mock('@/stores/approval', () => ({
 vi.mock('@/stores/settings', () => ({ useSettingsStore: { getState: () => ({ cloudThinkingBudget: 'low' }) } }));
 
 const { showToast } = await import('@/components/toast/toast-provider');
-const { sayCloudTurnFailed, sendCloudChatTurn } = await import('@/services/cloud-chat');
+const { CloudUnreachable, sayCloudTurnFailed, sendCloudChatTurn } = await import('@/services/cloud-chat');
 
 const started = { type: 'RUN_STARTED', runId: 'r1', threadId: 't', timestamp: at };
 const failed = { type: 'RUN_ERROR', runId: 'r1', message: 'Provider returned error', timestamp: at };
@@ -99,6 +99,18 @@ describe('how a failed turn is said', () => {
   it('gives a refusal its own sentence', () => {
     sayCloudTurnFailed(new Error('XHR error! status: 402 Payment Required'));
     expect(lastToast()).toEqual({ key: 'cloud-turn-failed', message: expect.stringContaining('AI Credits') });
+  });
+
+  it('says the connection is the problem when the server could not be reached', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    errors.mockClear();
+    sayCloudTurnFailed(new Error('XHR request failed'));
+    expect(lastToast()).toEqual({ key: 'cloud-turn-failed', message: expect.stringContaining('could not be reached') });
+    sayCloudTurnFailed(new CloudUnreachable('Cannot reach Samwell Cloud at https://x (fetch failed: UnknownHostException)'));
+    expect(lastToast()).toEqual({ key: 'cloud-turn-failed', message: expect.stringContaining('could not be reached') });
+    // Offline is not a fault: nothing is raised as an error.
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
   });
 
   it('keeps the transport out of anything else', () => {

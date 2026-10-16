@@ -1,6 +1,8 @@
+import { onlineManager } from '@tanstack/react-query';
 import { and, eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
+import { showToast } from '@/components/toast/toast-provider';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
 import { extractChapterTextToLocator } from '@/services/book-context';
@@ -8,6 +10,7 @@ import { articleChatPrompt, articleText } from '@/services/blogs/article-chat';
 import {
     listSessions,
     messageRow,
+    removeMessage,
     readMessages,
     removeSession,
     renameSession,
@@ -48,7 +51,7 @@ import { afterErrand, errandRunning, runErrand } from '@/services/device-llm/err
 import { markRunFinished, markRunStarted } from '@/services/device-llm/run-marker';
 import { type KnownRef, refsInToolResults, repairRefMarkers } from '@/services/ref-markers';
 import { splitThinking } from '@/utils/think-stream';
-import { settleActivity, type TurnActivity } from '@/utils/turn-activity';
+import { settleActivity, withThought, type TurnActivity } from '@/utils/turn-activity';
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useAccountStore } from '@/stores/account';
 import { useApprovalStore } from '@/stores/approval';
@@ -113,6 +116,13 @@ interface ChatStore {
    * rather than two that swap. Minted here when absent.
    */
   sendMessage(content: string, id?: string): Promise<void>;
+  /**
+   * Sends one of the reader's messages again: one that never got a reply. The
+   * message moves to the end of the conversation under the same id, so its
+   * bubble moves rather than being drawn twice. Says in a toast when Samwell
+   * cannot send right now, and then leaves the message where it is.
+   */
+  resendMessage(id: string): Promise<void>;
   stopGeneration(): void;
   deleteSession(id: string): Promise<void>;
   updateSessionTitle(id: string, title: string): Promise<void>;
@@ -622,6 +632,23 @@ async function sendDeviceTurn(
   }
 }
 
+/**
+ * Why a turn cannot be sent right now, or null when it can. Used by
+ * `sendMessage` as the floor under the composer (which is already disabled,
+ * with the banner saying why: see `use-samwell-readiness`), and by
+ * `resendMessage`, which has no composer and says it in a toast.
+ */
+function sendBlocked(): string | null {
+  const { samwellMode, cloudBaseUrl } = useSettingsStore.getState();
+  if (samwellMode === 'offline') return isEngineLoaded() ? null : 'Wake Samwell up to send it again.';
+  if (!cloudBaseUrl) return 'Samwell Cloud is not set up in this build.';
+  if (!onlineManager.isOnline()) return 'You are offline. Samwell Cloud needs a connection.';
+  // Grand Maester Samwell runs on accounts, so a turn with nobody behind it
+  // has nothing to bill and is not sent.
+  if (useAccountStore.getState().status !== 'signedIn') return 'Sign in to send it again.';
+  return null;
+}
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   sessions: [],
   activeSession: null,
@@ -868,13 +895,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const isFirstRealMessage = !activeSession.bookId && realMessageCount(get().messages) === 0;
 
     const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
-    if (samwellMode === 'offline' && !isEngineLoaded()) return;
-    if (samwellMode === 'cloud' && !cloudBaseUrl) return;
-    // Grand Maester Samwell runs on accounts, so a turn with nobody behind it
-    // has nothing to bill and is not sent. The composer is already disabled
-    // and the banner already says why (see `use-samwell-readiness`); this is
-    // the floor under both, for anything that reaches here another way.
-    if (samwellMode === 'cloud' && useAccountStore.getState().status !== 'signedIn') return;
+    if (sendBlocked()) return;
 
     const userMsg: ChatMessage = {
       id: id ?? uuid(),
@@ -977,8 +998,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           content: finalContent,
           createdAt: now(),
           via: 'cloud',
-          // What he did on the way to it, kept with what he said.
-          activity: settleActivity(get().streamingActivity),
+          // What he did and thought on the way to it, kept with what he said.
+          activity: withThought(settleActivity(get().streamingActivity), get().thinkingContent, get().thinkingSeconds),
         };
         db.insert(chatMessages).values(messageRow(assistantMsg)).run();
 
@@ -1128,6 +1149,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         role: 'assistant',
         content: finalContent,
         createdAt: now(),
+        // What he thought on the way to it, kept with what he said.
+        activity: withThought(null, get().thinkingContent, get().thinkingSeconds),
       };
       db.insert(chatMessages).values(messageRow(assistantMsg)).run();
 
@@ -1155,6 +1178,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     await get().loadSessions();
+  },
+
+  async resendMessage(id) {
+    const { activeSession, isGenerating, messages } = get();
+    if (!activeSession || isGenerating) return;
+    const message = messages.find((m) => m.id === id && m.role === 'user');
+    if (!message) return;
+    // Checked before the message is taken out, so a resend that cannot go
+    // never loses it.
+    const blocked = sendBlocked();
+    if (blocked) {
+      showToast({ key: 'resend', message: blocked });
+      return;
+    }
+    removeMessage(id);
+    set((s) => ({ messages: s.messages.filter((m) => m.id !== id) }));
+    // The on-device conversation may still hold the turn that failed; it is
+    // built again from the transcript, which no longer has it.
+    dropDeviceConversation();
+    await get().sendMessage(message.content, id);
   },
 
   stopGeneration() {

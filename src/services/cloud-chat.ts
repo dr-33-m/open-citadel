@@ -95,6 +95,31 @@ import { useSettingsStore } from '@/stores/settings';
 /** One key for every cloud turn that did not go through, so a second failure writes over the first. */
 const TURN_FAILED_TOAST = 'cloud-turn-failed';
 const TURN_FAILED_MESSAGE = 'Samwell could not answer just now. Try again.';
+const UNREACHABLE_MESSAGE = 'Samwell Cloud could not be reached. Check your connection and try again.';
+
+/**
+ * The phone could not reach Samwell Cloud at all: offline, no DNS, the server
+ * down. Its message keeps the detail for the log; the reader is told only
+ * that the connection is the problem.
+ */
+export class CloudUnreachable extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CloudUnreachable';
+  }
+}
+
+/**
+ * Whether a turn failed because the server could not be reached. The first
+ * turn of a run finds out in the health check (`CloudUnreachable`); a later
+ * one from the stream itself, whose transport says only "XHR request failed"
+ * when the request never got an answer.
+ */
+export function isCloudUnreachable(error: unknown): boolean {
+  if (error instanceof CloudUnreachable) return true;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /XHR request failed|Network request failed/i.test(message);
+}
 
 /**
  * Samwell Cloud refused the turn, and why.
@@ -162,8 +187,19 @@ export function asCloudRefusal(error: unknown): CloudRefused | null {
  */
 export function sayCloudTurnFailed(error: unknown): void {
   const refusal = asCloudRefusal(error);
-  if (!refusal) console.error('[Samwell Cloud] Turn failed:', error);
-  showToast({ key: TURN_FAILED_TOAST, message: refusal?.message ?? TURN_FAILED_MESSAGE });
+  const unreachable = !refusal && isCloudUnreachable(error);
+  // Being offline is a state the app is in, not a fault in it, so it is
+  // noted rather than raised: `console.error` draws a development build's
+  // error overlay over the toast that already says what happened.
+  if (unreachable) {
+    if (__DEV__) console.log('[Samwell Cloud] Unreachable:', error instanceof Error ? error.message : error);
+  } else if (!refusal) {
+    console.error('[Samwell Cloud] Turn failed:', error);
+  }
+  showToast({
+    key: TURN_FAILED_TOAST,
+    message: refusal?.message ?? (unreachable ? UNREACHABLE_MESSAGE : TURN_FAILED_MESSAGE),
+  });
 }
 
 /** Says in a toast why a cloud turn was not sent at all (no server, nobody signed in). */
@@ -886,7 +922,7 @@ export async function preflightCloudServer(baseUrl: string): Promise<void> {
   } catch (err) {
     if (err instanceof Error && err.message.includes('health check returned')) throw err;
     const detail = err instanceof Error ? err.message : String(err);
-    throw new Error(
+    throw new CloudUnreachable(
       `Cannot reach Samwell Cloud at ${baseUrl} from the app (${detail}). ` +
         'If this exact URL loads in the phone browser, the app cannot use plain HTTP. Serve the backend over HTTPS (e.g. cloudflared tunnel) or use adb reverse.',
     );

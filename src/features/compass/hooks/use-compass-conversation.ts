@@ -45,6 +45,7 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
   const toolStatus = useCompassChatStore((s) => s.toolStatus);
   const toolName = useCompassChatStore((s) => s.toolName);
   const send = useCompassChatStore((s) => s.send);
+  const resend = useCompassChatStore((s) => s.resend);
   const stop = useCompassChatStore((s) => s.stop);
   const newSession = useCompassChatStore((s) => s.newSession);
   const openSession = useCompassChatStore((s) => s.openSession);
@@ -85,6 +86,7 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
     switching,
     draft,
     send,
+    resend,
     stop,
     newSession,
     openSession,

@@ -7,7 +7,6 @@
  */
 import {
   CLOUD_VOICE_MAX_CHARACTERS,
-  CREDIT_PLANS,
   cloudVoiceKey,
   parseCloudVoiceKey,
   planIncludes,
@@ -75,11 +74,6 @@ export function cloudChoiceFor(
     maxCharacters: model?.maxCharacters ?? CLOUD_VOICE_MAX_CHARACTERS,
     format,
   };
-}
-
-/** "Grand Maester Samwell" as a label has room for it: "GRAND MAESTER". */
-export function planShortName(plan: PlanId): string {
-  return CREDIT_PLANS[plan].label.replace(/\s*Samwell$/, '').toUpperCase();
 }
 
 /**

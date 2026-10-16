@@ -20,6 +20,14 @@ describe('readWebSources', () => {
     ]);
   });
 
+  it('puts a title broken over lines on one line', () => {
+    expect(readWebSources([{ url: 'https://www.ford.com/m', title: '2026\n\n  Ford Mustang' }])[0]?.title).toBe('2026 Ford Mustang');
+  });
+
+  it('drops markdown heading marks from a passage', () => {
+    expect(trimSnippet("## What's New\n# 2026 Mustang, issue #5")).toBe("What's New 2026 Mustang, issue #5");
+  });
+
   it('keeps each address once, drops non-web ones and caps the list', () => {
     const many = Array.from({ length: 10 }, (_, i) => ({ url: `https://site${i}.com`, title: `S${i}` }));
     const sources = readWebSources([

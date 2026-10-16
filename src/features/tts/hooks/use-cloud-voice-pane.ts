@@ -6,11 +6,11 @@ import { boxContents, versionInfo, voiceBoxes } from '@/features/tts/utils/cloud
 import {
   landingForMaker,
   landingForModel,
-  planShortName,
   rememberCloudPick,
   resolveCloudSelection,
   selectionKey,
 } from '@/features/tts/utils/cloud-voices';
+import { planShortName } from '@/utils/plan-name';
 import { createCloudVoicesQueryOptions } from '@/query-manager/cloud-voices';
 import { isCloudVoice } from '@/services/device-tts/catalogue';
 import { useSettingsStore } from '@/stores/settings';

@@ -17,7 +17,8 @@ import {
   type VoiceModelView,
 } from 'samwell-shared';
 
-import { landingForMaker, planShortName, type CloudSelection } from '@/features/tts/utils/cloud-voices';
+import { landingForMaker, type CloudSelection } from '@/features/tts/utils/cloud-voices';
+import { planShortName } from '@/utils/plan-name';
 import { CLOUD_SPEED_FIXED } from '@/features/tts/utils/voice-copy';
 import { formatHours } from '@/utils/format';
 

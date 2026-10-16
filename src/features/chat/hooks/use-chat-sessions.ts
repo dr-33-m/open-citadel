@@ -24,6 +24,7 @@ export function useChatSessions() {
   const createSession = useChatStore((s) => s.createSession);
   const openSession = useChatStore((s) => s.openSession);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const resendMessage = useChatStore((s) => s.resendMessage);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
   const activeSession = useChatStore((s) => s.activeSession);
 
@@ -101,5 +102,7 @@ export function useChatSessions() {
     [activeSession, createSession, openSession, sendMessage, pendingBook],
   );
 
-  return { switching, pendingUserMessage, selectSession, newChat, send };
+  const resend = React.useCallback((id: string) => void resendMessage(id), [resendMessage]);
+
+  return { switching, pendingUserMessage, selectSession, newChat, send, resend };
 }

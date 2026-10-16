@@ -13,14 +13,8 @@ import { BookCard } from "@/components/chat/book-card";
 import { HighlightCard } from "@/components/chat/highlight-card";
 import { SuggestionCard } from "@/components/chat/suggestion-card";
 import { useMarkdownStyle } from "@/hooks/use-markdown-style";
+import { replyMarkerPattern } from "@/utils/reply-markers";
 
-// Splits on the marker protocol Samwell is instructed to emit:
-//   [[ref:highlight:hl-123]] / [[ref:thought:th-123]]  an existing entry, read-only
-//   [[suggest:highlight:sugg-1]] / [[suggest:thought:sugg-1]]  a proposal, approve/reject
-//   [[book:bk-123]]  a book from the library, shown with its cover
-function createMarkerPattern() {
-  return /\[\[(?:(ref|suggest):(highlight|thought)|(book)):([^\]]+)\]\]/g;
-}
 
 function MarkdownSegment({
   content,
@@ -91,7 +85,7 @@ export const AssistantContent = React.memo(function AssistantContent({
       | { kind: "book"; id: string }
     )[] = [];
     let lastIndex = 0;
-    const markerPattern = createMarkerPattern();
+    const markerPattern = replyMarkerPattern();
 
     let match;
     while ((match = markerPattern.exec(content)) !== null) {
