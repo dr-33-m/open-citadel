@@ -82,7 +82,11 @@ a second copy. Load it before writing or refactoring a screen.
   `Sheet.ScrollView` / `Sheet.FlatList`, and the sheet has a fixed height
   (`fixedHeightRatio` or `snapRatios`): one sized to its content
   (`maxHeightRatio`) stops at its cap but never hands the list inside it the
-  drag. `SourcesSheet` and `UpNextSheet` are the reference.
+  drag. Content that may or may not outgrow the sheet goes in `FitSheet`
+  (`components/fit-sheet`), which measures it before opening and picks: sized
+  to fit, or fixed with the content scrolling. Never guess from a count; a
+  fixed box round short content leaves a band of nothing under it.
+  `SourcesSheet` and `UpNextSheet` are the reference.
 - **No logic in JSX.** Derive above the `return`, or in a hook, or in a pure
   function in `utils/`.
 

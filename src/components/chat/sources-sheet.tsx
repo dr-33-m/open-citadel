@@ -2,9 +2,8 @@ import React from 'react';
 import { View } from 'react-native';
 
 import { SourceFavicon } from '@/components/chat/source-favicon';
-import { PageFade } from '@/components/scroll-fades';
+import { FitSheet } from '@/components/fit-sheet';
 import { ThemedText } from '@/components/themed-text';
-import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { fontFamily, spacing } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -49,53 +48,32 @@ const SourceRow = React.memo(function SourceRow({ source, muted }: { source: Web
  * Every web page a reply drew on, a row each: the site, the page's title and
  * the lines the search found in it. A tap opens the page in the in-app
  * browser. Raised from the icons under the reply (`SourceStack`); one sheet
- * per conversation, not one per reply.
+ * per conversation, not one per reply. Sized to its pages, scrolling under
+ * the pinned title only when they outgrow it (`FitSheet`).
  */
 export function SourcesSheet({ visible, onClose, sources }: SourcesSheetProps) {
   const muted = asColor(useThemeTokens()['--color-muted-foreground']);
   const line = sources.length === 1 ? 'One page from the web' : `${sources.length} pages from the web`;
-  // A sheet sized to its content stops at the cap but never hands a list
-  // inside it the drag, so a list that can outgrow the cap gets a fixed box
-  // to scroll in (see `PlanInfoSheet`). A short one fits itself and does not
-  // scroll at all.
-  const long = sources.length > FITS_UNSCROLLED;
-  const rows = sources.map((source, index) => (
-    <View key={source.url} className={index === 0 ? undefined : 'border-t border-border/70'}>
-      <SourceRow source={source} muted={muted} />
+  const header = (
+    <View className="gap-1 px-6 pb-2">
+      <ThemedText type="headlineSm">Sources</ThemedText>
+      <ThemedText type="bodySm" color={muted}>
+        {line}
+      </ThemedText>
     </View>
-  ));
+  );
 
   return (
-    <Sheet
-      visible={visible}
-      onClose={onClose}
-      fixedHeightRatio={long ? HEIGHT : undefined}
-      maxHeightRatio={long ? undefined : HEIGHT}
-      scrollable={long}
-    >
-      {/* Pinned: the title says what the list is however far down it has been read. */}
-      <View className="gap-1 px-6 pb-2">
-        <ThemedText type="headlineSm">Sources</ThemedText>
-        <ThemedText type="bodySm" color={muted}>
-          {line}
-        </ThemedText>
-      </View>
-      {long ? (
-        <PageFade edges="both" surface="popover">
-          <Sheet.ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={CONTENT}>
-            {rows}
-          </Sheet.ScrollView>
-        </PageFade>
-      ) : (
-        <View style={CONTENT}>{rows}</View>
-      )}
-    </Sheet>
+    <FitSheet visible={visible} onClose={onClose} header={header} contentStyle={CONTENT}>
+      {sources.map((source, index) => (
+        <View key={source.url} className={index === 0 ? undefined : 'border-t border-border/70'}>
+          <SourceRow source={source} muted={muted} />
+        </View>
+      ))}
+    </FitSheet>
   );
 }
 
 const FAVICON = 28;
-const HEIGHT = 0.78;
-/** How many rows sit inside `HEIGHT` on a small phone without scrolling. */
-const FITS_UNSCROLLED = 3;
 const CONTENT = { paddingHorizontal: spacing[6] };
 const TITLE = { fontFamily: fontFamily.sansSemiBold };

@@ -17,7 +17,7 @@ const ZERO_RETENTION: InfoContent = {
   title: 'Nothing you say is kept',
   line: 'Samwell Cloud only uses brains with zero data retention.',
   points: [
-    'Your message goes to the brain, which works out the answer, and then it is gone. On the way it passes through our server and OpenRouter, and neither keeps it.',
+    'Your message goes to the brain, which works out the answer, and then it is gone.',
     'Nothing is stored, not even for a day, so there is nothing for any person to read later.',
     'And nothing you say can be used to train an AI.',
     'If a brain cannot promise this, Samwell does not use it.',

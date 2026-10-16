@@ -19,11 +19,13 @@ const LABEL_GAP: ViewStyle = { gap: INDENT - MARK };
 const VOICE: TextStyle = { fontFamily: fontFamily.serifItalic };
 const TITLE: TextStyle = { fontFamily: fontFamily.sansSemiBold };
 
+const END_LABEL: TextStyle = { fontSize: 12 };
+
 function End({ label, filled, muted }: { label: string; filled: boolean; muted: string | undefined }) {
   return (
     <View className="flex-row items-center" style={LABEL_GAP}>
       <View style={MARK_STYLE} className={cn('border border-primary', filled ? 'bg-primary' : 'bg-popover')} />
-      <ThemedText type="labelSm" color={muted}>
+      <ThemedText type="bodySm" color={muted} style={END_LABEL}>
         {label}
       </ThemedText>
     </View>
@@ -31,10 +33,10 @@ function End({ label, filled, muted }: { label: string; filled: boolean; muted: 
 }
 
 /**
- * A reasoning trace drawn as the stretch of time it was: an open square where
- * he began, a thin rail down the beats he worked through (a paragraph each,
- * titled where the brain titled it), and a filled square where he stopped
- * thinking and answered. The serif's italic says it is thought, not reply.
+ * A reasoning trace drawn as the stretch of time it was, under a "thinking
+ * process" heading: an open square where he started, a thin rail down the
+ * beats he worked through (a paragraph each, titled where the brain titled
+ * it), and a filled square where he finished. The serif's italic says it is thought, not reply.
  */
 export const ThoughtTrace = React.memo(function ThoughtTrace({ text }: { text: string }) {
   const tokens = useThemeTokens();
@@ -43,7 +45,10 @@ export const ThoughtTrace = React.memo(function ThoughtTrace({ text }: { text: s
 
   return (
     <View accessibilityLabel="What Samwell thought">
-      <End label="STARTED" filled={false} muted={muted} />
+      <ThemedText type="labelSm" color={muted} className="pb-3">
+        THINKING PROCESS
+      </ThemedText>
+      <End label="Started" filled={false} muted={muted} />
       <View className="gap-4 border-s border-border py-4" style={RAIL}>
         {beats.map((beat, index) => (
           <View key={index} className="gap-1">
@@ -60,7 +65,7 @@ export const ThoughtTrace = React.memo(function ThoughtTrace({ text }: { text: s
           </View>
         ))}
       </View>
-      <End label="ANSWERED" filled muted={muted} />
+      <End label="Finished" filled muted={muted} />
     </View>
   );
 });
