@@ -1,6 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 
+import { ThoughtTrace } from '@/components/chat/thought-trace';
 import { PageFade } from '@/components/scroll-fades';
 import { ThemedText } from '@/components/themed-text';
 import { thoughtForLabel } from '@/components/ui/reasoning';
@@ -17,14 +18,15 @@ export interface ThoughtSheetProps {
   thought: TurnThought | null;
 }
 
-/** About what fits in the sheet's height on a small phone without scrolling. */
-const FITS_UNSCROLLED = 600;
+/** About what fits in the sheet's height on a small phone without scrolling, beats and their spacing included. */
+const FITS_UNSCROLLED = 450;
 const HEIGHT = 0.78;
 
 /**
  * What Samwell worked through before a reply, in full: raised from the brain
  * in the reply's footer (`ThoughtButton`). The title says how long, pinned
- * while the trace scrolls under it. One per conversation.
+ * while the trace (`ThoughtTrace`), from where he started to where he
+ * answered, scrolls under it. One per conversation.
  */
 export function ThoughtSheet({ visible, onClose, thought }: ThoughtSheetProps) {
   const muted = asColor(useThemeTokens()['--color-muted-foreground']);
@@ -34,11 +36,7 @@ export function ThoughtSheet({ visible, onClose, thought }: ThoughtSheetProps) {
   // `SourcesSheet`). A short one fits itself and does not scroll at all.
   const long = text.length > FITS_UNSCROLLED;
   const title = thoughtForLabel(thought?.seconds ?? undefined);
-  const body = (
-    <ThemedText type="bodySm" color={muted}>
-      {text}
-    </ThemedText>
-  );
+  const body = <ThoughtTrace text={text} />;
 
   return (
     <Sheet
