@@ -59,11 +59,10 @@ import {
   runExplainApp,
   toolStatus,
   type BookCandidate,
-  type ChapterListing,
-  type ReadingSearchResult,
   type SearchResult,
   type ToolCallContext,
 } from '@/services/chat-tools';
+import type { ChapterListing, ReadingSearchResult } from '@/services/reading-tools';
 import { showToast } from '@/components/toast/toast-provider';
 import { cloudHeaders } from '@/services/cloud-identity';
 import { createSmoothReveal } from '@/services/smooth-reveal';
@@ -640,7 +639,7 @@ function createCompassClientTools(ctx: ToolCallContext) {
     }),
     searchReadingTool.client(async (input) => {
       const { result } = await executeToolCall('search_reading', input, ctx);
-      const reading = (result ?? { snippets: [], chapters: [] }) as ReadingSearchResult;
+      const reading = (result ?? { snippets: [], chapters: [], preparing: 0 }) as ReadingSearchResult;
       return {
         results: reading.snippets,
         formatted: formatToolResultForLLM('search_reading', reading, TOOL_RESULT_TOKEN_BUDGET.cloud),
@@ -675,7 +674,7 @@ function createSamwellClientTools(ctx: ToolCallContext) {
     }),
     searchReadingTool.client(async (input) => {
       const { result } = await executeToolCall('search_reading', input, ctx);
-      const reading = (result ?? { snippets: [], chapters: [] }) as ReadingSearchResult;
+      const reading = (result ?? { snippets: [], chapters: [], preparing: 0 }) as ReadingSearchResult;
       return {
         results: reading.snippets,
         formatted: formatToolResultForLLM('search_reading', reading, TOOL_RESULT_TOKEN_BUDGET.cloud),

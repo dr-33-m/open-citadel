@@ -9,8 +9,8 @@ import {
 } from "expo-file-system/legacy";
 import JSZip from "jszip";
 
-import { openRangedZip } from "@/services/ranged-zip";
-import { base64ToBytes, bytesToBase64 } from "@/utils/bytes";
+import { jszipArchive, openEpub, UnreadableBook, type EpubArchive } from "@/services/book-text/archive";
+import { bytesToBase64 } from "@/utils/bytes";
 
 import { eq } from "drizzle-orm";
 
@@ -43,10 +43,7 @@ type EpubMetadata = {
 };
 
 /** What metadata is read through: an entry's text, or its bytes. */
-interface EpubEntries {
-  text(name: string): Promise<string | null>;
-  bytes(name: string): Promise<Uint8Array | null>;
-}
+type EpubEntries = Pick<EpubArchive, "text" | "bytes">;
 
 const NO_METADATA: EpubMetadata = { title: null, author: null, coverPath: null };
 
@@ -130,22 +127,15 @@ async function metadataFrom(entries: EpubEntries, bookId: string): Promise<EpubM
 
 /**
  * Parse the epub ZIP (as base64) to extract title, author, and cover image.
- * Reads the whole archive: the fallback for one `readEpubMetadata` could not
- * read in pieces. Never throws; a file it cannot parse answers with nulls.
+ * Reads the whole archive. Never throws; a file it cannot parse answers with
+ * nulls.
  */
 export async function extractEpubMetadata(
   base64: string,
   bookId: string,
 ): Promise<EpubMetadata> {
   try {
-    const zip = await JSZip.loadAsync(base64, { base64: true });
-    return await metadataFrom(
-      {
-        text: async (name) => (await zip.file(name)?.async("string")) ?? null,
-        bytes: async (name) => (await zip.file(name)?.async("uint8array")) ?? null,
-      },
-      bookId,
-    );
+    return await metadataFrom(jszipArchive(await JSZip.loadAsync(base64, { base64: true })), bookId);
   } catch (e) {
     console.warn("[book-sync] metadata extraction failed:", e);
     return NO_METADATA;
@@ -154,30 +144,20 @@ export async function extractEpubMetadata(
 
 /**
  * Title, author and cover of the EPUB at `uri`, reading only the entries they
- * come from (`openRangedZip`): its end record, its directory, container.xml,
- * the OPF and the cover. The whole file is read only for an archive the
- * ranged reader declines (ZIP64, encryption, a damaged directory), or when
- * the file's size cannot be learned.
+ * come from (`openEpub`): its directory, container.xml, the OPF and the cover.
  *
  * Like the whole-file read it replaces, a file that cannot be read at all
  * throws (the sync retries it), and one that reads but holds no metadata
  * answers with nulls.
  */
 export async function readEpubMetadata(uri: string, bookId: string): Promise<EpubMetadata> {
-  const info = await getInfoAsync(uri).catch(() => null);
-  const size = info?.exists ? ((info as { size?: number }).size ?? 0) : 0;
-  if (size > 0) {
-    try {
-      const zip = await openRangedZip(size, async (position, length) =>
-        base64ToBytes(await readAsStringAsync(uri, { encoding: EncodingType.Base64, position, length })),
-      );
-      return await metadataFrom(zip, bookId);
-    } catch (e) {
-      console.warn("[book-sync] could not read in pieces, reading the whole file:", e);
-    }
+  try {
+    return await metadataFrom(await openEpub(uri), bookId);
+  } catch (e) {
+    if (e instanceof UnreadableBook) throw e;
+    console.warn("[book-sync] metadata extraction failed:", e);
+    return NO_METADATA;
   }
-  const base64 = await readAsStringAsync(uri, { encoding: EncodingType.Base64 });
-  return extractEpubMetadata(base64, bookId);
 }
 
 export async function syncBooksFromDirectory(

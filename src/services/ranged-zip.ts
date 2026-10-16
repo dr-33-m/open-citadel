@@ -7,11 +7,19 @@ export type ReadRange = (position: number, length: number) => Promise<Uint8Array
 
 /** An archive read a piece at a time: only the entries asked for are ever fetched. */
 export interface RangedZip {
+  /** Every entry's name, directories included. */
+  names(): string[];
   has(name: string): boolean;
   /** The entry's contents, or null when there is no such entry. */
   bytes(name: string): Promise<Uint8Array | null>;
   /** The entry as UTF-8 text, or null when there is no such entry. */
   text(name: string): Promise<string | null>;
+  /**
+   * Several entries at once, read in as few passes over the file as their
+   * places allow: entries stored side by side (a book's chapters, usually)
+   * come in one read. Names with no entry are left out of the answer.
+   */
+  bytesMany(names: readonly string[]): Promise<Map<string, Uint8Array>>;
 }
 
 interface Entry {
@@ -19,6 +27,9 @@ interface Entry {
   flags: number;
   compressedSize: number;
   headerOffset: number;
+  /** The directory's lengths for the name and extra field, which the local header usually repeats. */
+  nameLength: number;
+  extraLength: number;
 }
 
 const END_OF_DIRECTORY = 0x06054b50;
@@ -27,6 +38,15 @@ const LOCAL_HEADER = 0x04034b50;
 const END_LENGTH = 22;
 const LONGEST_COMMENT = 0xffff;
 const LOCAL_HEADER_LENGTH = 30;
+/**
+ * Room for a local extra field longer than the directory's, so an entry
+ * usually takes one read rather than a header read and a data read.
+ */
+const LOCAL_SLACK = 512;
+/** Entries closer than this are read together: skipping a gap costs a read, reading through it costs only bytes. */
+const MERGE_GAP = 64 * 1024;
+/** Most one batched read may span, whatever the gaps. */
+const LONGEST_RUN = 8 * 1024 * 1024;
 
 const view = (bytes: Uint8Array) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
@@ -89,31 +109,88 @@ export async function openRangedZip(size: number, read: ReadRange): Promise<Rang
       method: directoryView.getUint16(at + 10, true),
       compressedSize: directoryView.getUint32(at + 20, true),
       headerOffset: directoryView.getUint32(at + 42, true),
+      nameLength,
+      extraLength,
     });
     at += 46 + nameLength + extraLength + commentLength;
   }
 
-  const bytes = async (name: string): Promise<Uint8Array | null> => {
-    const entry = entries.get(name);
-    if (!entry) return null;
-    if (entry.flags & 1) throw new Error(`${name} is encrypted`);
-    // The local header's own name and extra field can differ in length from
-    // the directory's, so it is read for where the data starts.
-    const header = await read(entry.headerOffset, LOCAL_HEADER_LENGTH);
-    const headerView = view(header);
-    if (header.length < LOCAL_HEADER_LENGTH || headerView.getUint32(0, true) !== LOCAL_HEADER) {
-      throw new Error(`No local header for ${name}`);
-    }
-    const dataStart = entry.headerOffset + LOCAL_HEADER_LENGTH + headerView.getUint16(26, true) + headerView.getUint16(28, true);
-    const data = entry.compressedSize > 0 ? await read(dataStart, entry.compressedSize) : new Uint8Array(0);
+  /** How far past its header an entry's data probably ends, slack included, inside the file. */
+  const spanEnd = (entry: Entry) =>
+    Math.min(size, entry.headerOffset + LOCAL_HEADER_LENGTH + entry.nameLength + entry.extraLength + entry.compressedSize + LOCAL_SLACK);
+
+  /**
+   * An entry's contents out of a buffer read from `bufferStart`, or null when
+   * the buffer stops short of them (a local extra field longer than the slack).
+   */
+  const unpack = (name: string, entry: Entry, buffer: Uint8Array, bufferStart: number): Uint8Array | null => {
+    const at = entry.headerOffset - bufferStart;
+    if (at < 0 || at + LOCAL_HEADER_LENGTH > buffer.length) return null;
+    const headerView = view(buffer.subarray(at, at + LOCAL_HEADER_LENGTH));
+    if (headerView.getUint32(0, true) !== LOCAL_HEADER) throw new Error(`No local header for ${name}`);
+    const dataStart = at + LOCAL_HEADER_LENGTH + headerView.getUint16(26, true) + headerView.getUint16(28, true);
+    const dataEnd = dataStart + entry.compressedSize;
+    if (dataEnd > buffer.length) return null;
+    const data = buffer.subarray(dataStart, dataEnd);
     if (entry.method === 0) return data;
     if (entry.method === 8) return inflateRaw(data);
     throw new Error(`${name} uses compression method ${entry.method}`);
   };
 
+  const wanted = (name: string): Entry | null => {
+    const entry = entries.get(name);
+    if (!entry) return null;
+    if (entry.flags & 1) throw new Error(`${name} is encrypted`);
+    return entry;
+  };
+
+  const bytes = async (name: string): Promise<Uint8Array | null> => {
+    const entry = wanted(name);
+    if (!entry) return null;
+    const buffer = await read(entry.headerOffset, spanEnd(entry) - entry.headerOffset);
+    const found = unpack(name, entry, buffer, entry.headerOffset);
+    if (found) return found;
+    // The local header's extra field outgrew the slack: read again, as long as it says.
+    const header = view(buffer.subarray(0, LOCAL_HEADER_LENGTH));
+    const length = LOCAL_HEADER_LENGTH + header.getUint16(26, true) + header.getUint16(28, true) + entry.compressedSize;
+    const again = unpack(name, entry, await read(entry.headerOffset, Math.min(length, size - entry.headerOffset)), entry.headerOffset);
+    if (!again) throw new Error(`${name} runs past the end of the file`);
+    return again;
+  };
+
+  const bytesMany = async (names: readonly string[]): Promise<Map<string, Uint8Array>> => {
+    const found = new Map<string, Uint8Array>();
+    const queue = [...new Set(names)]
+      .map((name) => ({ name, entry: wanted(name) }))
+      .filter((item): item is { name: string; entry: Entry } => item.entry !== null)
+      .sort((a, b) => a.entry.headerOffset - b.entry.headerOffset);
+    // Runs of entries near enough to read together.
+    const runs: { start: number; end: number; items: typeof queue }[] = [];
+    for (const item of queue) {
+      const end = spanEnd(item.entry);
+      const run = runs[runs.length - 1];
+      if (run && item.entry.headerOffset - run.end <= MERGE_GAP && end - run.start <= LONGEST_RUN) {
+        run.end = Math.max(run.end, end);
+        run.items.push(item);
+      } else {
+        runs.push({ start: item.entry.headerOffset, end, items: [item] });
+      }
+    }
+    for (const run of runs) {
+      const buffer = await read(run.start, run.end - run.start);
+      for (const { name, entry } of run.items) {
+        const content = unpack(name, entry, buffer, run.start) ?? (await bytes(name));
+        if (content) found.set(name, content);
+      }
+    }
+    return found;
+  };
+
   return {
+    names: () => [...entries.keys()],
     has: (name) => entries.has(name),
     bytes,
+    bytesMany,
     text: async (name) => {
       const content = await bytes(name);
       return content ? utf8Decode(content) : null;

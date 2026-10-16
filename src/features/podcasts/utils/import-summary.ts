@@ -1,4 +1,5 @@
 import type { ImportSummary } from '@/services/podcasts/antennapod/types';
+import { formatCount } from '@/utils/format';
 
 /** What an import brought in, whichever kind of file it was. */
 export type ImportResult =
@@ -8,10 +9,6 @@ export type ImportResult =
 /** One figure on the done screen: the number, and what it counts. */
 export type ImportStat = { key: string; value: string; label: string };
 
-/** 3412 as "3,412": counts this size are read at a glance, not parsed. */
-export function formatCount(n: number): string {
-  return String(Math.max(0, Math.round(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
 
 function stat(key: string, n: number, one: string, many: string): ImportStat {
   return { key, value: formatCount(n), label: n === 1 ? one : many };

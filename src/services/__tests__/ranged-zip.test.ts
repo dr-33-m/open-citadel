@@ -65,3 +65,46 @@ describe('openRangedZip', () => {
     await expect(openRangedZip(bytes.length, reader(bytes).read)).rejects.toThrow(/Not a ZIP/);
   });
 });
+
+describe('openRangedZip, many entries at once', () => {
+  it('reads a book of chapters in a handful of reads, each chapter exactly', async () => {
+    const files: Record<string, string> = { 'META-INF/container.xml': '<c/>' };
+    for (let i = 0; i < 60; i++) files[`OEBPS/ch${i}.xhtml`] = `<p>Chapter ${i}. ${'words '.repeat(200 + i)}</p>`;
+    const bytes = await zipOf(files);
+    const { read, stats } = reader(bytes);
+    const zip = await openRangedZip(bytes.length, read);
+    const opened = stats.reads;
+    const names = Object.keys(files).filter((name) => name.startsWith('OEBPS/'));
+    const found = await zip.bytesMany([...names, 'OEBPS/missing.xhtml']);
+    expect(stats.reads - opened).toBeLessThanOrEqual(2);
+    expect(found.size).toBe(60);
+    expect(new TextDecoder().decode(found.get('OEBPS/ch7.xhtml'))).toBe(files['OEBPS/ch7.xhtml']);
+  });
+
+  it('reads one entry in one read', async () => {
+    const bytes = await zipOf({ 'a.txt': 'alpha', 'b.txt': 'beta' });
+    const { read, stats } = reader(bytes);
+    const zip = await openRangedZip(bytes.length, read);
+    const opened = stats.reads;
+    expect(await zip.text('b.txt')).toBe('beta');
+    expect(stats.reads - opened).toBe(1);
+  });
+
+  it('reads apart entries that are far apart', async () => {
+    const noise = new Uint8Array(500_000);
+    let seed = 7;
+    for (let i = 0; i < noise.length; i++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      noise[i] = seed & 0xff;
+    }
+    const bytes = await zipOf({ 'a.txt': 'alpha', 'big.bin': noise, 'z.txt': 'zulu' }, { compression: 'STORE' });
+    const { read, stats } = reader(bytes);
+    const zip = await openRangedZip(bytes.length, read);
+    const opened = stats.reads;
+    const found = await zip.bytesMany(['a.txt', 'z.txt']);
+    expect(new TextDecoder().decode(found.get('z.txt'))).toBe('zulu');
+    // Two reads, not one through half a megabyte of image.
+    expect(stats.reads - opened).toBe(2);
+    expect(stats.bytes).toBeLessThan(100_000);
+  });
+});

@@ -96,14 +96,20 @@ export type BookResolution =
  * The book a title means, or the book the chat is about when none is given,
  * so "add this to my queue" said in a book chat just works.
  */
-export function resolveLibraryBook(title: string | undefined, contextBookId: string | null): BookResolution {
+export function resolveLibraryBook(
+  title: string | undefined,
+  contextBookId: string | null,
+  { includePosts = false }: { includePosts?: boolean } = {},
+): BookResolution {
   const trimmed = title?.trim();
   if (!trimmed) {
     if (!contextBookId) return { ok: false, error: 'no_book_specified' };
     const book = db.select().from(books).where(eq(books.id, contextBookId)).get();
     return book ? { ok: true, book } : { ok: false, error: 'book_not_found' };
   }
-  const shelf = db.select().from(books).where(eq(books.kind, 'book')).all();
+  // The reading tools read a blog post opened in the reader as readily as a
+  // book, so they find one by its title too; the shelf tools never list one.
+  const shelf = includePosts ? db.select().from(books).all() : db.select().from(books).where(eq(books.kind, 'book')).all();
   const resolution = resolveTitle(trimmed, shelf);
   if (resolution.kind === 'one') return { ok: true, book: resolution.book };
   if (resolution.kind === 'ambiguous') {

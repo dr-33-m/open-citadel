@@ -60,10 +60,18 @@ export const ReadingSnippetSchema = z.object({
   /** Chapter the passage came from, where the book names one. */
   section: z.string().nullable(),
   snippet: z.string(),
+  /** The chapter's number, as list_chapters and read_chapter take it. Optional: older apps do not send it. */
+  chapter: z.number().optional(),
+  /** The paragraph's number in its chapter, from 1, for read_chapter's from_paragraph. */
+  paragraph: z.number().optional(),
 });
 
 export const SearchReadingInputSchema = z.object({
   query: z.string(),
+  /** Search one book or blog post instead of everything read. */
+  book_title: z.string().optional(),
+  /** With book_title: search one chapter, by number or title. */
+  chapter: z.string().optional(),
 });
 
 export const ChapterEntrySchema = z.object({
@@ -71,6 +79,8 @@ export const ChapterEntrySchema = z.object({
   title: z.string().nullable(),
   approxWords: z.number(),
   current: z.boolean(),
+  /** How many paragraphs the chapter has. Optional: older apps do not send it. */
+  paragraphs: z.number().optional(),
 });
 
 export const ListChaptersInputSchema = z.object({
@@ -85,6 +95,8 @@ export const ListChaptersOutputSchema = z.object({
 export const ReadChapterInputSchema = z.object({
   book_title: z.string().optional(),
   chapter: z.string(),
+  /** Start at this paragraph (from 1): to read around a search hit, or to continue a long chapter. */
+  from_paragraph: z.number().int().min(1).optional(),
 });
 
 export const ReadChapterOutputSchema = z.object({
@@ -358,7 +370,7 @@ export const searchHighlightsTool = toolDefinition({
 export const searchReadingTool = toolDefinition({
   name: 'search_reading',
   description:
-    "Search the FULL TEXT of the books the user is currently reading or has finished, for passages relevant to a topic or question. Only ever returns text the user has ALREADY read, never content ahead of their current reading position. Use this mid-conversation to ground your points in what the user's own authors actually say, citing the book.",
+    "Search the FULL TEXT of everything the user has read: books they are reading or have finished, and blog posts they have opened. Ranked, best passages first; each hit says its book, chapter number and paragraph number. Put exact phrases in double quotes; other words are matched by their stem (\"leading\" finds \"leaders\"). Give book_title to search one book or post, and chapter as well to search one chapter. Only ever returns text the user has ALREADY read, never anything past their reading position. Then read_chapter with the hit's chapter and a from_paragraph a little before it to read the passage in context. Cite the book when you use what it says.",
   inputSchema: SearchReadingInputSchema,
   outputSchema: SearchReadingOutputSchema,
 });
@@ -366,7 +378,7 @@ export const searchReadingTool = toolDefinition({
 export const listChaptersTool = toolDefinition({
   name: 'list_chapters',
   description:
-    "List the chapters of one of the user's books that they have ALREADY reached, with rough lengths. Use this before read_chapter to see what is actually in the book rather than guessing at search terms. Never lists chapters ahead of the user's reading position, since a chapter title gives away plot as readily as the text does.",
+    "List the chapters of one of the user's books or blog posts that they have ALREADY reached: each chapter's number, title, length in words and paragraphs, and which one they are partway through. The map before read_chapter or a search inside one chapter. Never lists chapters past the user's reading position, since a chapter title gives away plot as readily as the text does.",
   inputSchema: ListChaptersInputSchema,
   outputSchema: ListChaptersOutputSchema,
 });
@@ -374,7 +386,7 @@ export const listChaptersTool = toolDefinition({
 export const readChapterTool = toolDefinition({
   name: 'read_chapter',
   description:
-    'Read the FULL text of one chapter the user has already read, by number (from list_chapters) or by title. Use when a keyword search is too narrow and you need the whole argument of a chapter to discuss it properly. Stops at the user\u2019s reading position if they are partway through.',
+    'Read a chapter the user has already read, by number (from list_chapters or a search hit) or by title, with its paragraphs numbered. from_paragraph starts partway: a few paragraphs before a search hit to read it in context, or where the last read stopped to continue a long chapter (it says where to pick up). Stops at the user\u2019s reading position if they are partway through.',
   inputSchema: ReadChapterInputSchema,
   outputSchema: ReadChapterOutputSchema,
 });

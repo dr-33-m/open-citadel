@@ -8,8 +8,18 @@ import {
 
 import { db } from '@/db/client';
 import { books, chatSuggestions, collections, highlights, notes, readingProgress, thoughts } from '@/db/schema';
-import { extractReadSections } from '@/services/book-context';
 import { formatJourneyNotes, searchJourneyNotes } from '@/services/journey';
+import {
+  formatChapterListingForLLM,
+  formatChapterTextForLLM,
+  formatReadingForLLM,
+  listChapters,
+  readChapter,
+  searchReading,
+  type ChapterListing,
+  type ChapterText,
+  type ReadingSearchResult,
+} from '@/services/reading-tools';
 import {
   formatBookDetails,
   formatCollections,
@@ -24,17 +34,13 @@ import {
   searchLibrary,
   type BookResolution,
 } from '@/services/library-lookup';
-import { CHARS_PER_TOKEN, estimateTokens, usableTokens } from '@/services/context-budget';
-import {
-  READING_LIMITS,
-  SEARCH_LIMITS,
-  TOOL_RESULT_TOKEN_BUDGET,
-  type ToolRuntime,
-} from '@/services/tool-limits';
+import { estimateTokens, usableTokens } from '@/services/context-budget';
+import { SEARCH_LIMITS, type ToolRuntime } from '@/services/tool-limits';
 import { useBooksStore } from '@/stores/books';
 import { useCollectionsStore } from '@/stores/collections';
 import { useReaderStore } from '@/stores/reader';
 import { useTimelineStore } from '@/stores/timeline';
+import { filterTerms, isEmptyQuery, parseSearchQuery, rankByMatch, type SearchQuery } from '@/utils/search-terms';
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
@@ -102,7 +108,7 @@ export const SAMWELL_TOOLS = [
     function: {
       name: 'list_chapters',
       description:
-        "List the chapters of one of the user's books that they have already reached, with rough lengths. Use before read_chapter to see what is actually there. Never lists chapters ahead of the user's reading position.",
+        "List the chapters of one of the user's books or blog posts that they have already reached: number, title, words, paragraphs. Use before read_chapter. Never lists chapters ahead of the user's reading position.",
       parameters: {
         type: 'object',
         properties: {
@@ -120,7 +126,7 @@ export const SAMWELL_TOOLS = [
     function: {
       name: 'read_chapter',
       description:
-        'Read the full text of one chapter the user has already read, by number (from list_chapters) or title. Use when a keyword search is too narrow and you need the whole argument of a chapter.',
+        'Read a chapter the user has already read, by number (from list_chapters or a search hit) or title, paragraphs numbered. from_paragraph starts partway: before a search hit, or to continue where the last read stopped.',
       parameters: {
         type: 'object',
         properties: {
@@ -132,6 +138,10 @@ export const SAMWELL_TOOLS = [
             type: 'string',
             description: 'Chapter number from list_chapters, or its title.',
           },
+          from_paragraph: {
+            type: 'number',
+            description: 'Paragraph to start at, from 1.',
+          },
         },
         required: ['chapter'],
       },
@@ -142,13 +152,17 @@ export const SAMWELL_TOOLS = [
     function: {
       name: 'search_reading',
       description:
-        "Search the full text of the books the user is currently reading or has finished, for passages relevant to a topic. Only returns text the user has already read (never ahead of their position). Use to ground points in what the user's authors actually say.",
+        "Search the full text of what the user has read (books, opened blog posts), best passages first, each with its chapter and paragraph. Never past their position. Quote exact phrases.",
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'Topic or question to find relevant passages for',
+            description: 'Words or a "quoted phrase" to find',
+          },
+          book_title: {
+            type: 'string',
+            description: 'Search only this book or post',
           },
         },
         required: ['query'],
@@ -761,29 +775,16 @@ export async function executeToolCall(
         status: toolStatus(name),
       };
     case 'search_reading':
-      return {
-        result: await searchReading((args.query as string) ?? '', ctx.runtime),
-        status: toolStatus(name),
-      };
+      return { result: await searchReading(args, ctx), status: toolStatus(name) };
     case 'search_journey':
       return {
         result: formatJourneyNotes(searchJourneyNotes((args.query as string) ?? '')),
         status: toolStatus(name),
       };
     case 'list_chapters':
-      return {
-        result: await listChapters(args.book_title as string | undefined, ctx),
-        status: toolStatus(name),
-      };
+      return { result: await listChapters(args, ctx), status: toolStatus(name) };
     case 'read_chapter':
-      return {
-        result: await readChapter(
-          args.book_title as string | undefined,
-          (args.chapter as string) ?? '',
-          ctx,
-        ),
-        status: toolStatus(name),
-      };
+      return { result: await readChapter(args, ctx), status: toolStatus(name) };
     case 'suggest_next_book':
       return {
         result: await suggestNextBook(ctx.runtime),
@@ -976,15 +977,20 @@ async function searchHighlights(
   }
 
   const results: SearchResult[] = [];
+  // Read the way every library search reads a query (`search-terms`): quoted
+  // phrases whole, words by their stem, the filler of a question dropped.
+  const parsed = parseSearchQuery(q);
+  const words = queryWords(q, parsed);
 
   // Each filter TYPE the caller supplied must ALL hold (AND) — query, tag,
   // and book_title narrow together, not as alternatives. Within a single
-  // type, any of its own words matching is enough (OR): e.g. a two-word
-  // query matches either word, but {query, tag} together requires both.
+  // type, any of its own words matching is enough (OR); the ranking below
+  // then puts the highlights holding more of them first.
   const conditions = [];
   if (q) {
-    const words = q.split(/\s+/).filter(Boolean);
-    conditions.push(or(...words.map((w) => or(like(highlights.text, `%${w}%`), like(books.title, `%${w}%`)))));
+    conditions.push(
+      or(...words.map((w) => or(like(highlights.text, `%${w}%`), like(books.title, `%${w}%`), like(notes.text, `%${w}%`)))),
+    );
   }
   if (b) {
     const words = b.split(/\s+/).filter(Boolean);
@@ -1007,7 +1013,8 @@ async function searchHighlights(
     .leftJoin(notes, eq(notes.highlightId, highlights.id))
     .where(and(...conditions))
     .orderBy(desc(highlights.createdAt))
-    .limit(limits.matched)
+    // A wider net than is returned, so the ranking has something to choose from.
+    .limit(q ? limits.matched * RANK_POOL : limits.matched)
     .all();
 
   // Dedup by highlight id (a highlight can have multiple notes)
@@ -1034,9 +1041,7 @@ async function searchHighlights(
   // Also search notes text directly (may surface highlights via note content),
   // still respecting book_title/tag if the caller gave them.
   if (q) {
-    const noteConditions = [
-      or(...q.split(/\s+/).filter(Boolean).map((w) => like(notes.text, `%${w}%`))),
-    ];
+    const noteConditions = [or(...words.map((w) => like(notes.text, `%${w}%`)))];
     if (b) {
       const words = b.split(/\s+/).filter(Boolean);
       noteConditions.push(or(...words.map((w) => like(books.title, `%${w}%`))));
@@ -1076,7 +1081,23 @@ async function searchHighlights(
     }
   }
 
-  return results.slice(0, limits.matched);
+  return rankWhenAsked(results, parsed, (r) => `${r.text} ${r.noteText ?? ''} ${r.bookTitle ?? ''}`).slice(0, limits.matched);
+}
+
+/** How many times more rows are fetched than returned, for the ranking to choose from. */
+const RANK_POOL = 4;
+
+/** The words to look for: the query's meaningful terms, or its raw words when it had nothing but filler. */
+function queryWords(raw: string, parsed: SearchQuery): string[] {
+  const terms = filterTerms(parsed);
+  return terms.length > 0 ? terms : raw.split(/\s+/).filter(Boolean);
+}
+
+/** Best match first when the query had something to rank by; newest first otherwise. */
+function rankWhenAsked<T>(rows: T[], parsed: SearchQuery, textOf: (row: T) => string): T[] {
+  if (isEmptyQuery(parsed)) return rows;
+  const ranked = rankByMatch(rows, parsed, textOf);
+  return ranked.length > 0 ? ranked : rows;
 }
 
 // ── Helper: get recent highlights ──────────────────────────────────────────
@@ -1154,20 +1175,19 @@ async function searchThoughts(
 
   // query and tag must both hold when both are given — see the identical
   // fix in searchHighlights above for why this used to be a plain OR.
+  const parsed = parseSearchQuery(q);
   const conditions = [];
-  if (q) {
-    const words = q.split(/\s+/).filter(Boolean);
-    conditions.push(or(...words.map((w) => like(thoughts.text, `%${w}%`))));
-  }
+  if (q) conditions.push(or(...queryWords(q, parsed).map((w) => like(thoughts.text, `%${w}%`))));
   if (t) conditions.push(like(thoughts.tags, `%"${t}"%`));
 
-  const rows = db
+  const pool = db
     .select()
     .from(thoughts)
     .where(and(...conditions))
     .orderBy(desc(thoughts.createdAt))
-    .limit(limits.matched)
+    .limit(q ? limits.matched * RANK_POOL : limits.matched)
     .all();
+  const rows = rankWhenAsked(pool, parsed, (row) => row.text).slice(0, limits.matched);
 
   return rows.map((row) => ({
     id: row.id,
@@ -1305,339 +1325,6 @@ async function suggestThought(
     .run();
 
   return { ok: true, suggestionId: id };
-}
-
-// ── search_reading implementation (spoiler-bounded full-text) ──────────────
-
-export interface ReadingSnippet {
-  book: string;
-  author: string;
-  /** Chapter or section the passage came from, where the book names one. */
-  section: string | null;
-  snippet: string;
-}
-
-/** Below this, too little has been read for a search to say anything useful. */
-const READING_MIN_READ_CHARS = 2_000;
-
-
-export interface ReadingSearchResult {
-  snippets: ReadingSnippet[];
-  /**
-   * Titles of the read sections that were searched.
-   *
-   * Returned so a search that finds nothing is still informative: Samwell
-   * learns what is actually in reach and can requery in the book's own
-   * language, instead of concluding the library is empty or asking the reader
-   * to supply the passage himself.
-   */
-  chapters: string[];
-}
-
-/**
- * The spoiler boundary for one book: how far the reader has got.
- *
- * `null` means the book is finished and fully readable. `undefined` means
- * nothing is safely readable: a book with no saved position, which must fail
- * closed rather than default to the whole text.
- *
- * Only a finished book is whole. This used to treat every book that was not
- * being read as finished, so a book still in the queue, or never opened at
- * all, was handed over in full by list_chapters and read_chapter: every
- * chapter title and every page of a book the reader had not started. A book
- * set aside partway (back to unstarted from Currently Reading) keeps its
- * saved position as the boundary.
- */
-function readLocatorFor(book: Book): unknown | undefined {
-  if (book.status === 'archived') return null;
-  const prog = db
-    .select({ locator: readingProgress.locator })
-    .from(readingProgress)
-    .where(eq(readingProgress.bookId, book.id))
-    .get();
-  if (!prog?.locator) return undefined;
-  return JSON.parse(prog.locator);
-}
-
-async function searchReading(query: string, runtime: ToolRuntime): Promise<ReadingSearchResult> {
-  const limits = READING_LIMITS[runtime];
-  const words = query
-    .toLowerCase()
-    .split(/[^a-z0-9']+/)
-    .filter((w) => w.length >= 3);
-  if (words.length === 0) return { snippets: [], chapters: [] };
-
-  const reading = db.select().from(books).where(eq(books.status, 'reading')).all();
-  const finished = db
-    .select()
-    .from(books)
-    .where(eq(books.status, 'archived'))
-    .orderBy(desc(books.completedAt))
-    .limit(limits.finishedBooks)
-    .all();
-
-  const snippets: ReadingSnippet[] = [];
-  const chapters: string[] = [];
-  let totalChars = 0;
-
-  for (const book of [...reading, ...finished]) {
-    if (snippets.length >= limits.maxSnippets || totalChars >= limits.totalChars) break;
-    if (!book.filePath) continue;
-
-    try {
-      const locator = readLocatorFor(book);
-      if (locator === undefined) continue;
-
-      // Sections rather than one blob: the book's own structure says which
-      // parts are jacket copy and what each chapter is called, and both are
-      // lost the moment it is flattened.
-      const sections = await extractReadSections(book.filePath, locator as never);
-      const body = sections.filter((sec) => !sec.frontMatter);
-      const readChars = body.reduce((n, sec) => n + sec.text.length, 0);
-      if (readChars < READING_MIN_READ_CHARS) continue;
-
-      for (const section of body) {
-        if (section.title && !chapters.includes(section.title)) chapters.push(section.title);
-      }
-
-      let perBook = 0;
-
-      for (const section of body) {
-        if (perBook >= limits.maxPerBook) break;
-        if (snippets.length >= limits.maxSnippets) break;
-
-        const lower = section.text.toLowerCase();
-        const takenAt: number[] = [];
-
-        for (const word of words) {
-          if (perBook >= limits.maxPerBook) break;
-
-          const idx = lower.indexOf(word);
-          if (idx < 0) continue;
-          // Two query words landing in the same paragraph would otherwise
-          // return near-identical snippets and spend the budget twice.
-          if (takenAt.some((t) => Math.abs(t - idx) < limits.window * 2)) continue;
-
-          const start = Math.max(0, idx - limits.window);
-          const end = Math.min(section.text.length, idx + limits.window);
-          const snippet =
-            (start > 0 ? '…' : '') +
-            section.text.slice(start, end).trim() +
-            (end < section.text.length ? '…' : '');
-
-          snippets.push({
-            book: book.title,
-            author: book.author,
-            section: section.title,
-            snippet,
-          });
-          takenAt.push(idx);
-          perBook++;
-          totalChars += snippet.length;
-        }
-      }
-    } catch {
-      // Skip unreadable/unparseable books.
-    }
-  }
-
-  return { snippets, chapters };
-}
-
-/**
- * Share of the result budget the fallback chapter list may spend. It is a
- * consolation prize for a failed search, not the answer, so it takes a slice
- * rather than the whole allowance.
- */
-const CHAPTER_LIST_BUDGET_SHARE = 0.4;
-
-// ── Book browsing (list_chapters / read_chapter) ────────────────────────────
-
-export interface ChapterEntry {
-  /** Spine position, and the handle `read_chapter` takes. */
-  index: number;
-  title: string | null;
-  /** Roughly how long the section is, so a caller can judge before reading it. */
-  approxWords: number;
-  /** The section the reader is partway through. */
-  current: boolean;
-}
-
-export interface ChapterListing {
-  book: string;
-  author: string;
-  chapters: ChapterEntry[];
-}
-
-/**
- * The chapters of a book the reader has actually reached.
- *
- * Deliberately stops at the reading position rather than listing the whole
- * table of contents. Chapter titles ahead of the reader give away plot as
- * readily as the text does, so the spoiler boundary applies to the map as
- * well as the territory.
- */
-async function listChapters(
-  bookTitle: string | undefined,
-  ctx: ToolCallContext,
-): Promise<ChapterListing | { error: string }> {
-  const resolved = resolveBookByTitle(bookTitle, ctx);
-  if (!resolved.ok) return { error: resolved.error };
-  const book = resolved.book;
-  if (!book.filePath) return { error: 'book_file_missing' };
-
-  const locator = readLocatorFor(book);
-  if (locator === undefined) return { error: 'nothing_read_yet' };
-
-  const sections = await extractReadSections(book.filePath, locator as never);
-  const body = sections.filter((sec) => !sec.frontMatter);
-
-  return {
-    book: book.title,
-    author: book.author,
-    chapters: body.map((sec) => ({
-      index: sec.index,
-      title: sec.title,
-      approxWords: Math.round(sec.text.split(/\s+/).length / 10) * 10,
-      current: sec.partial,
-    })),
-  };
-}
-
-export interface ChapterText {
-  book: string;
-  title: string | null;
-  index: number;
-  text: string;
-  /** True when the reader has not finished this chapter and it was cut short. */
-  partial: boolean;
-  /** True when the text was trimmed to fit the caller's budget. */
-  truncated: boolean;
-}
-
-/**
- * The full text of one already-read chapter.
- *
- * The counterpart to {@link listChapters}: having seen what is there, read
- * the one that matters instead of matching keywords blindly. Only offered
- * where the context window can hold a chapter, which on device it cannot.
- */
-async function readChapter(
-  bookTitle: string | undefined,
-  chapter: string,
-  ctx: ToolCallContext,
-): Promise<ChapterText | { error: string }> {
-  const resolved = resolveBookByTitle(bookTitle, ctx);
-  if (!resolved.ok) return { error: resolved.error };
-  const book = resolved.book;
-  if (!book.filePath) return { error: 'book_file_missing' };
-
-  const locator = readLocatorFor(book);
-  if (locator === undefined) return { error: 'nothing_read_yet' };
-
-  const sections = await extractReadSections(book.filePath, locator as never);
-  const body = sections.filter((sec) => !sec.frontMatter);
-  if (body.length === 0) return { error: 'nothing_read_yet' };
-
-  const wanted = chapter.trim().toLowerCase();
-  const asIndex = Number.parseInt(wanted, 10);
-  const section =
-    body.find((sec) => sec.index === asIndex) ??
-    body.find((sec) => sec.title?.toLowerCase() === wanted) ??
-    body.find((sec) => sec.title?.toLowerCase().includes(wanted));
-
-  if (!section) return { error: 'chapter_not_found_or_not_read_yet' };
-
-  const maxChars = TOOL_RESULT_TOKEN_BUDGET[ctx.runtime] * Math.floor(CHARS_PER_TOKEN);
-  const truncated = section.text.length > maxChars;
-
-  return {
-    book: book.title,
-    title: section.title,
-    index: section.index,
-    text: truncated ? `${section.text.slice(0, maxChars)}…` : section.text,
-    partial: section.partial,
-    truncated,
-  };
-}
-
-export function formatChapterListingForLLM(listing: ChapterListing | { error: string }): string {
-  if ('error' in listing) return `Could not list chapters: ${listing.error}.`;
-  if (listing.chapters.length === 0) {
-    return `The reader has not started "${listing.book}" yet, so there is nothing to browse.`;
-  }
-  const lines = listing.chapters.map(
-    (c) =>
-      `${c.index}. ${c.title ?? '(untitled section)'} (~${c.approxWords} words)` +
-      `${c.current ? ' (currently reading, partially read)' : ''}`,
-  );
-  return (
-    `Chapters of "${listing.book}" the reader has reached. Use read_chapter with the number or title to read one in full.\n\n` +
-    lines.join('\n')
-  );
-}
-
-export function formatChapterTextForLLM(chapter: ChapterText | { error: string }): string {
-  if ('error' in chapter) return `Could not read that chapter: ${chapter.error}.`;
-  const header = `"${chapter.book}", ${chapter.title ?? `section ${chapter.index}`}`;
-  const notes = [
-    chapter.partial ? 'the reader is partway through this chapter, so it stops at their position' : null,
-    chapter.truncated ? 'the text was trimmed to fit' : null,
-  ].filter(Boolean);
-  const suffix = notes.length > 0 ? `\n\n(Note: ${notes.join('; ')}.)` : '';
-  return `From ${header}:\n\n${chapter.text}${suffix}`;
-}
-
-export function formatReadingForLLM(
-  result: ReadingSearchResult,
-  tokenBudget: number,
-): string {
-  const { snippets, chapters } = result;
-
-  if (snippets.length === 0) {
-    // A failed search still hands back the map. Naming the sections that were
-    // searched lets Samwell try again in the book's own words, which is the
-    // difference between a dead end and a second attempt.
-    const base =
-      'No passage matched in the parts of these books the reader has reached. Only text up to their current position is searchable.';
-    if (chapters.length === 0) {
-      return `${base} Try asking about their highlights instead.`;
-    }
-    const listBudget = tokenBudget * CHAPTER_LIST_BUDGET_SHARE;
-    const listed: string[] = [];
-    let spent = 0;
-    for (const title of chapters) {
-      const cost = estimateTokens(title);
-      if (listed.length > 0 && spent + cost > listBudget) break;
-      spent += cost;
-      listed.push(title);
-    }
-    const more = chapters.length - listed.length;
-    return (
-      `${base} Sections read so far: ${listed.join('; ')}` +
-      `${more > 0 ? ` (and ${more} more)` : ''}.` +
-      ' Search again with wording drawn from these, or ask about their highlights.'
-    );
-  }
-
-  const blocks: string[] = [];
-  let spent = 0;
-
-  for (const [i, s] of snippets.entries()) {
-    const from = s.section ? `"${s.book}", ${s.section}` : `"${s.book}"`;
-    const block = `${i + 1}. From ${from} by ${s.author}:\n   "${s.snippet}"`;
-    const cost = estimateTokens(block);
-    if (blocks.length > 0 && spent + cost > tokenBudget) break;
-    spent += cost;
-    blocks.push(block);
-  }
-
-  const omitted = snippets.length - blocks.length;
-  if (omitted > 0) {
-    blocks.push(`(${omitted} more passage${omitted === 1 ? '' : 's'} not shown.)`);
-  }
-
-  return blocks.join('\n\n');
 }
 
 // ── suggest_next_book implementation ───────────────────────────────────────
