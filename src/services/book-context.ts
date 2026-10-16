@@ -1,8 +1,6 @@
-import { readAsStringAsync } from 'expo-file-system/legacy';
-import JSZip from 'jszip';
-
+import { findEntry, openEpub, opfFolder, opfPathOf, type EpubArchive } from '@/services/book-text/archive';
+import { parseOpfMetadata, type EpubMetadata } from '@/services/epub-metadata';
 import {
-  epubBasename,
   isFrontMatterHref,
   parseNavHref,
   parseSpine,
@@ -48,66 +46,24 @@ function extractSectionTitle(html: string): string | null {
   return text.length > 0 && text.length <= 120 ? text : null;
 }
 
-async function findOpfPath(zip: JSZip): Promise<string> {
-  const containerXml = await zip.file('META-INF/container.xml')?.async('string');
-  if (!containerXml) throw new Error('No container.xml found');
-  const match = containerXml.match(/full-path="([^"]+)"/);
-  if (!match) throw new Error('No OPF path in container.xml');
-  return match[1];
-}
-
-function opfBasePath(opfPath: string): string {
-  const idx = opfPath.lastIndexOf('/');
-  return idx >= 0 ? opfPath.slice(0, idx + 1) : '';
-}
-
-function findChapterFile(zip: JSZip, locatorHref: string, basePath: string): JSZip.JSZipObject | null {
-  // Try exact match first (absolute path within zip)
-  const fullPath = basePath + locatorHref;
-  let file = zip.file(fullPath);
-  if (file) return file;
-
-  // Try without basePath (locator href may already be absolute)
-  file = zip.file(locatorHref);
-  if (file) return file;
-
-  // Try matching by filename only
-  const basename = locatorHref.split('/').pop() ?? '';
-  const allFiles = zip.files;
-  for (const name of Object.keys(allFiles)) {
-    if (name.endsWith(basename) && !allFiles[name].dir) {
-      return allFiles[name];
-    }
-  }
-  return null;
+async function findOpfPath(archive: EpubArchive): Promise<string> {
+  const opfPath = await opfPathOf(archive);
+  if (!opfPath) throw new Error('No OPF path in container.xml');
+  return opfPath;
 }
 
 /**
- * A book file's bytes, as base64.
- *
- * The URI goes to the reader as stored. It used to have `file://` stripped
- * first, and Android's reader takes a path with no scheme for the name of a
- * bundled resource, so every book kept in the app's own folder (blog posts,
- * free books, imports on iOS) failed to read: chats about them were grounded
- * in nothing, and Samwell asked for the text he should already have had.
- * A bare path, if one is ever stored, is given the scheme instead.
+ * One chapter's text, by the reader's locator. Reads the archive's directory,
+ * its package file and that chapter, and nothing else of the book
+ * (`openEpub`): it runs every time a highlight is made and every time a chat
+ * opens on a passage.
  */
-function readBookFile(filePath: string): Promise<string> {
-  const uri = filePath.startsWith('/') ? `file://${filePath}` : filePath;
-  return readAsStringAsync(uri, { encoding: 'base64' });
-}
-
 async function loadChapterText(filePath: string, locator: Locator): Promise<string> {
-  const b64 = await readBookFile(filePath);
-
-  const zip = await JSZip.loadAsync(b64, { base64: true });
-  const opfPath = await findOpfPath(zip);
-  const basePath = opfBasePath(opfPath);
-
-  const chapterFile = findChapterFile(zip, locator.href, basePath);
-  if (!chapterFile) throw new Error(`Chapter not found: ${locator.href}`);
-
-  const html = await chapterFile.async('string');
+  const archive = await openEpub(filePath);
+  const basePath = opfFolder(await findOpfPath(archive));
+  const entry = findEntry(archive, locator.href, basePath);
+  const html = entry ? await archive.text(entry) : null;
+  if (html == null) throw new Error(`Chapter not found: ${locator.href}`);
   return stripHtml(html);
 }
 
@@ -163,7 +119,7 @@ export async function extractSurroundingText(
  *  - chapters after → excluded entirely (spoiler-safe at the data layer)
  *
  * Pass `locator = null` for a fully-read (archived) book to get the whole text.
- * The EPUB is unzipped once. Result is capped at `maxChars`. The reading-order
+ * The EPUB is opened once, and only its chapters are read. Result is capped at `maxChars`. The reading-order
  * and cutoff logic lives in the pure `epub-spine` module.
  */
 export interface ReadSection {
@@ -193,12 +149,10 @@ export async function extractReadSections(
   locator: Locator | null,
   maxChars = 200_000,
 ): Promise<ReadSection[]> {
-  const b64 = await readBookFile(filePath);
-  const zip = await JSZip.loadAsync(b64, { base64: true });
-
-  const opfPath = await findOpfPath(zip);
-  const basePath = opfBasePath(opfPath);
-  const opfContent = await zip.file(opfPath)?.async('string');
+  const archive = await openEpub(filePath);
+  const opfPath = await findOpfPath(archive);
+  const basePath = opfFolder(opfPath);
+  const opfContent = await archive.text(opfPath);
   if (!opfContent) throw new Error('No OPF content');
 
   const spine = parseSpine(opfContent, basePath);
@@ -207,16 +161,8 @@ export async function extractReadSections(
   const { cutoffIndex, progression } = resolveReadCutoff(spine, locator);
 
   const readZipHtml = async (path: string): Promise<string> => {
-    let file = zip.file(path);
-    if (!file) {
-      const base = epubBasename(path);
-      const match = Object.keys(zip.files).find(
-        (name) => !zip.files[name].dir && name.endsWith(base),
-      );
-      if (match) file = zip.file(match);
-    }
-    if (!file) return '';
-    return file.async('string');
+    const entry = findEntry(archive, path, '');
+    return entry ? ((await archive.text(entry)) ?? '') : '';
   };
 
   const navHref = parseNavHref(opfContent, basePath);
@@ -264,3 +210,40 @@ export async function extractReadText(
     .join('\n\n')
     .slice(0, maxChars);
 }
+
+/**
+ * What the book file says about itself, and how many sections of body it has.
+ *
+ * For `get_book_details`. Reads only the package file, never a chapter, so
+ * nothing past the reader can leak through it. The count is of sections after
+ * the front matter, which is as near to "chapters" as an EPUB states.
+ */
+export async function readBookPackageInfo(filePath: string): Promise<BookPackageInfo> {
+  const known = packageInfoCache.get(filePath);
+  if (known) return known;
+  const archive = await openEpub(filePath);
+  const opfPath = await findOpfPath(archive);
+  const opfContent = await archive.text(opfPath);
+  if (!opfContent) throw new Error('No OPF content');
+  const spine = parseSpine(opfContent, opfFolder(opfPath));
+  const bodyStart = resolveBodyStart(opfContent, spine, null);
+  const info = { metadata: parseOpfMetadata(opfContent), sectionCount: Math.max(0, spine.length - bodyStart) };
+  if (packageInfoCache.size >= PACKAGE_INFO_CACHE_SIZE) {
+    const oldest = packageInfoCache.keys().next().value;
+    if (oldest !== undefined) packageInfoCache.delete(oldest);
+  }
+  packageInfoCache.set(filePath, info);
+  return info;
+}
+
+type BookPackageInfo = { metadata: EpubMetadata; sectionCount: number };
+
+/*
+ * Kept per file. Finding the package file used to mean reading the whole
+ * book in as base64 on the JS thread; it is a few small reads now, but
+ * Samwell may look up several books in one turn, or the same one again a
+ * turn later, and a file at a path does not change what it says about
+ * itself, so what was read once stays true.
+ */
+const PACKAGE_INFO_CACHE_SIZE = 32;
+const packageInfoCache = new Map<string, BookPackageInfo>();

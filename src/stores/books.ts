@@ -31,6 +31,7 @@ import {
     type SyncPhase,
     type SyncStatus,
 } from "@/services/sync-coordinator";
+import { warmReadingIndex } from "@/services/book-text/reading";
 
 export type Book = typeof books.$inferSelect;
 export type BookStatus = "reading" | "queued" | "archived" | "favorite";
@@ -299,6 +300,8 @@ function applySyncProgress(
 
   if (job.status === "completed" || job.status === "failed") {
     get().loadBooks();
+    // New books in, so Samwell's search index catches up behind the scan.
+    if (job.status === "completed" && job.addedCount > 0) warmReadingIndex();
     /*
      * A folder that has gone is worth saying whether or not anyone asked.
      *

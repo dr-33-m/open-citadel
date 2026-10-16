@@ -75,6 +75,18 @@ a second copy. Load it before writing or refactoring a screen.
   `components/scroll-fades`. The scrollbars are all hidden, so the fade is the
   only thing saying content continues; pass the right `surface` or it draws a
   band of the wrong shade instead of a fade.
+- **Headers never scroll.** A screen's or a sheet's title, the line under it,
+  a search field or a tab switch sits outside the scroll view, and only the
+  content under it moves. A title scrolled away leaves a list that no longer
+  says what it is. In a sheet that means the header is a sibling *above*
+  `Sheet.ScrollView` / `Sheet.FlatList`, and the sheet has a fixed height
+  (`fixedHeightRatio` or `snapRatios`): one sized to its content
+  (`maxHeightRatio`) stops at its cap but never hands the list inside it the
+  drag. Content that may or may not outgrow the sheet goes in `FitSheet`
+  (`components/fit-sheet`), which measures it before opening and picks: sized
+  to fit, or fixed with the content scrolling. Never guess from a count; a
+  fixed box round short content leaves a band of nothing under it.
+  `SourcesSheet` and `UpNextSheet` are the reference.
 - **No logic in JSX.** Derive above the `return`, or in a hook, or in a pure
   function in `utils/`.
 

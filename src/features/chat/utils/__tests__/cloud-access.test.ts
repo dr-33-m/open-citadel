@@ -38,6 +38,16 @@ describe('getCloudBlocker', () => {
     ).toBe('needsPlan');
   });
 
+  it('says there is no connection before anything about the reader', () => {
+    const offline = { configured, purchasable, mode: 'cloud' as const, online: false };
+    expect(getCloudBlocker({ ...offline, identity: 'account', subscriptionStatus: 'active' })).toBe('noConnection');
+    expect(getCloudBlocker({ ...offline, identity: 'none', subscriptionStatus: 'none' })).toBe('noConnection');
+    // A build with no server is still that first: no connection would fix it.
+    expect(getCloudBlocker({ ...offline, configured: false, identity: 'account', subscriptionStatus: 'active' })).toBe('notConfigured');
+    // Online is assumed when it is not said.
+    expect(getCloudBlocker({ configured, purchasable, mode: 'cloud', identity: 'account', subscriptionStatus: 'active' })).toBeNull();
+  });
+
   it('asks a reader with nobody to be for a plan, not an account', () => {
     // The rejection this answers: paying may not require registering. The way
     // through for somebody with no account is now the plans, and the account

@@ -15,17 +15,15 @@
 
 import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 import {
-    EncodingType,
     StorageAccessFramework,
     getInfoAsync,
-    readAsStringAsync,
     readDirectoryAsync,
 } from "expo-file-system/legacy";
 
 import { db } from "@/db/client";
 import { books, syncItems, syncJobs, syncSkips } from "@/db/schema";
 import { deleteBookData } from "./book-delete";
-import { extractEpubMetadata } from "./book-sync";
+import { readEpubMetadata } from "./book-sync";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -709,11 +707,6 @@ async function phasePreparing(jobId: string): Promise<void> {
       }
 
       try {
-        // Read and parse EPUB
-        const base64 = await readAsStringAsync(item.sourceUri, {
-          encoding: EncodingType.Base64,
-        });
-
         // Resolve bookId (may have been set during import)
         let bookId = item.bookId;
         if (!bookId) {
@@ -725,12 +718,13 @@ async function phasePreparing(jobId: string): Promise<void> {
         }
 
         if (bookId) {
-          const meta = await extractEpubMetadata(base64, bookId);
+          // Only the entries the metadata comes from are read, not the file.
+          const meta = await readEpubMetadata(item.sourceUri, bookId);
 
           /*
            * Read the whole file and got NOTHING out of it: no title, no
            * author, no cover. That is a file that will not open, and it is the
-           * shape most of them take — `extractEpubMetadata` catches its own
+           * shape most of them take — `readEpubMetadata` catches its own
            * parse errors and answers with three nulls, so a corrupt EPUB never
            * throws and never reaches the retry limit below.
            *

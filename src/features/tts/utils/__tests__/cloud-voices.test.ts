@@ -5,9 +5,12 @@ import { CLOUD_VOICE_CATALOG, listedVoices, type VoiceModelView } from 'samwell-
 import {
   cloudChoiceFor,
   cloudPaneView,
+  landingForMaker,
+  landingForModel,
   modelForMaker,
+  rememberCloudPick,
+  rememberedVoice,
   planForCloudVoice,
-  planShortName,
   resolveCloudSelection,
   selectionKey,
 } from '@/features/tts/utils/cloud-voices';
@@ -72,10 +75,6 @@ describe('cloudChoiceFor', () => {
 });
 
 describe('where a choice lands', () => {
-  it('names a plan the way a label has room for', () => {
-    expect(planShortName('grand_maester')).toBe('GRAND MAESTER');
-  });
-
   it('lands a maker on the voice that lasts', () => {
     expect(modelForMaker(VIEWS, 'Google', LITE)?.id).toBe(LITE);
     expect(modelForMaker(VIEWS, 'ElevenLabs', LITE)?.id).toBe('elevenlabs/eleven-v4-turbo');
@@ -115,5 +114,41 @@ describe('where a choice lands', () => {
 
   it('has no plans to show in a build that cannot sell them', () => {
     expect(cloudPaneView({ status: 'none', identity: 'held', canSell: false })).toBe('voices');
+  });
+});
+
+describe('remembering a voice per voice box', () => {
+  const makers = [...new Set(VIEWS.map((model) => model.maker))];
+  const [first, second] = makers;
+  const modelOf = (maker: string | undefined) => VIEWS.find((model) => model.maker === maker)!;
+  const otherVoice = (model: VoiceModelView) => model.voices.find((voice) => voice !== model.defaultVoice) ?? model.defaultVoice;
+
+  it('keeps one pick a version, newest first', () => {
+    const a = modelOf(first);
+    const picks = rememberCloudPick(rememberCloudPick([], `cloud:${a.id}:${a.defaultVoice}`), `cloud:${a.id}:${otherVoice(a)}`);
+    expect(picks).toEqual([`cloud:${a.id}:${otherVoice(a)}`]);
+    expect(rememberedVoice(picks, a)).toBe(otherVoice(a));
+  });
+
+  it('comes back to the voice chosen in a box after visiting another', () => {
+    const a = modelOf(first);
+    const b = modelOf(second);
+    let picks = rememberCloudPick([], `cloud:${a.id}:${otherVoice(a)}`);
+    picks = rememberCloudPick(picks, `cloud:${b.id}:${otherVoice(b)}`);
+    expect(landingForMaker(VIEWS, a.maker, null, picks)).toEqual({ model: a, voice: otherVoice(a) });
+    expect(landingForMaker(VIEWS, b.maker, null, picks)).toEqual({ model: b, voice: otherVoice(b) });
+  });
+
+  it('falls to the box default when nothing was chosen there, or the choice is gone', () => {
+    const a = modelOf(first);
+    expect(landingForMaker(VIEWS, a.maker, null, [])).toEqual({ model: modelForMaker(VIEWS, a.maker, null), voice: modelForMaker(VIEWS, a.maker, null)!.defaultVoice });
+    expect(landingForMaker(VIEWS, a.maker, null, [`cloud:${a.id}:NoSuchVoice`])?.voice).toBe(modelForMaker(VIEWS, a.maker, null)!.defaultVoice);
+  });
+
+  it('moves between versions keeping what each remembers, or the shared voice', () => {
+    const a = modelOf(first);
+    expect(landingForModel(a, otherVoice(a), [])).toBe(otherVoice(a));
+    expect(landingForModel(a, 'NotHere', [])).toBe(a.defaultVoice);
+    expect(landingForModel(a, 'NotHere', [`cloud:${a.id}:${otherVoice(a)}`])).toBe(otherVoice(a));
   });
 });

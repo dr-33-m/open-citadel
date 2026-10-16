@@ -2,13 +2,9 @@ import React from 'react';
 import { View } from 'react-native';
 
 import { ChoiceChips } from '@/components/choice-chips';
-import { Info } from '@/components/icons';
-import { ThemedText } from '@/components/themed-text';
-import { Touchable } from '@/components/ui/touchable';
 import { CloudVoicePicker } from '@/features/tts/components/cloud-voice-picker';
 import { ReadingSpeedStepper } from '@/features/tts/components/reading-speed-stepper';
 import type { BoxContent } from '@/features/tts/utils/cloud-voice-cards';
-import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { cn } from '@/lib/cn';
 
 export interface CloudBoxPaneProps {
@@ -23,39 +19,22 @@ export interface CloudBoxPaneProps {
 
 /**
  * Everything that belongs to one voice box, under its tab: its versions as
- * chips where it has more than one, one line on what the chosen version is
- * like, the voice row, and reading speed where the box takes it. A box with
- * one version has no chip to carry the "i", so the mark sits beside its line.
+ * chips where it has more than one, then the narrator row, and reading speed
+ * where the box takes it. What a version is like is said in the sheet behind
+ * its "i", not in a line under the chips; a box with one version has no chip,
+ * so its tab carries the "i" (`CloudVoicePane`).
  */
 function CloudBoxPaneView({ content, onModel, onVoice, onInfo }: CloudBoxPaneProps) {
-  const muted = useThemeTokens()['--color-muted-foreground'];
   const { model, voice, versions } = content;
   const hasVersions = versions.length > 0;
-  const line = (
-    <View className="flex-row items-start gap-3">
-      <ThemedText type="bodySm" color={muted} className="flex-1">
-        {model.description}
-      </ThemedText>
-      {hasVersions ? null : (
-        <Touchable onPress={() => onInfo(model.id)} haptic="tap" hitSlop={10} accessibilityRole="button" accessibilityLabel={`About ${model.label}`}>
-          <Info size={16} color={muted} />
-        </Touchable>
-      )}
-    </View>
-  );
 
   return (
-    // A box's line sits right under the switch, as Lite's does; chips carry
-    // a label of their own, which wants a little more air above it.
+    // Chips carry a label of their own, which wants a little more air above
+    // it; a box with none starts at its narrator row, right under the switch.
     <View className={cn('gap-4', hasVersions && 'pt-2')}>
       {hasVersions ? (
-        <View className="gap-2">
-          <ChoiceChips label="VERSION" choices={versions} value={model.id} onChange={onModel} onInfo={onInfo} gutter="none" fill />
-          {line}
-        </View>
-      ) : (
-        line
-      )}
+        <ChoiceChips label="VERSION" choices={versions} value={model.id} onChange={onModel} onInfo={onInfo} gutter="none" fill />
+      ) : null}
       <CloudVoicePicker modelId={model.id} voices={model.voices} selected={voice} onPick={onVoice} />
       {model.speedSupported ? <ReadingSpeedStepper /> : null}
     </View>

@@ -212,6 +212,13 @@ export const chatMessages = sqliteTable("chat_messages", {
    * self-heal, not a migration: nothing in `drizzle/` creates this table.
    */
   via: text("via").$type<"cloud" | "device">(),
+  /**
+   * What Samwell did in the turn this reply ends, and the web pages behind it:
+   * a `TurnActivity` as JSON (`utils/turn-activity.ts`). Null for a reply
+   * that used no tools, and for every row from before it was kept. Added by
+   * the self-heal, like `via`.
+   */
+  activity: text("activity"),
 });
 
 /**

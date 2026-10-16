@@ -166,6 +166,9 @@ export function useSamwellStatus({
   } else if (cloudBlocker === 'needsPlan') {
     cloudRequirement = 'Choose a plan to continue this chat in Samwell Cloud.';
     cloudEscape = seePlansAction(onOpenPlans);
+  } else if (cloudBlocker === 'noConnection') {
+    // Nothing to press: it clears itself the moment the phone is back online.
+    cloudRequirement = 'Samwell Cloud needs a connection.';
   } else if (cloudBlocker === 'cloudUnreachable') {
     // No escape offered, for the same reason `checkingAccount` offers none:
     // nothing on this screen fixes a server that did not answer, and a button
@@ -224,6 +227,16 @@ export function useSamwellStatus({
       title: 'Samwell Cloud is not set up.',
       message: 'This build has no cloud server, so there is nothing to talk to yet.',
       actions: [{ label: 'OPEN SETTINGS', icon: Settings, onPress: onOpenSettings }],
+    };
+  }
+
+  // No network at all. Said before a message is sent rather than after it
+  // fails, and with nothing to press: it clears itself the moment the phone
+  // is back online.
+  if (mode === 'cloud' && cloudBlocker === 'noConnection') {
+    return {
+      title: 'You are offline.',
+      message: 'Samwell Cloud needs a connection. He will be here as soon as you are back.',
     };
   }
 

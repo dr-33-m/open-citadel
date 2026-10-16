@@ -14,6 +14,7 @@
 import { ACCOUNT_ENABLED } from '@/constants/logto';
 import { PURCHASES_ENABLED } from '@/constants/revenuecat';
 import { useCloudIdentity } from '@/hooks/use-cloud-identity';
+import { useOnline } from '@/hooks/use-online';
 import {
     getCloudBlocker,
     type CloudBlocker,
@@ -66,6 +67,9 @@ export function useSamwellReadiness(): SamwellReadiness {
   // The kind, not the account: an email or a name arriving would otherwise
   // re-render both chat surfaces for something neither of them draws.
   const identity = useCloudIdentity();
+  // The phone's network, from `expo-network` by way of the query cache's own
+  // online state (`lib/network`), so the cache and this agree.
+  const online = useOnline();
   // The status, not the balance: a credit spent mid-conversation must not
   // re-render every chat surface in the app.
   // Read only. Asking the server is `usePlanSync`'s job, at the root, so the
@@ -116,6 +120,7 @@ export function useSamwellReadiness(): SamwellReadiness {
     purchasable: PURCHASES_ENABLED,
     subscriptionStatus: planStatus,
     mode: isCloud ? 'cloud' : 'offline',
+    online,
   });
 
   return {

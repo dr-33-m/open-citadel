@@ -364,6 +364,10 @@
     "src/lib/native-host.tsx": {
       "item": "native",
       "digest": "sha256:c03292c099c4cf992798e6cde2b0628731f8e6f30f88a992b8f2b3c8e47a210e"
+    },
+    "src/components/ui/task.tsx": {
+      "item": "task",
+      "digest": "sha256:35ff4431e7fa3da5a3fcae723e431bfeeaefe1edb327b10e7c0f6ec79930c99c"
     }
   },
   "roots": {
@@ -702,6 +706,15 @@
       "native",
       "text",
       "use-back-handler"
+    ],
+    "task": [
+      "task",
+      "cn",
+      "collapse",
+      "icons",
+      "use-direction",
+      "shimmer",
+      "text"
     ]
   },
   "legacyFiles": [],

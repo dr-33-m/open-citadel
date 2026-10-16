@@ -16,6 +16,7 @@ import { CREDIT_PLANS, PLAN_ORDER, planIncludes, type CreditPlan, type PlanId, t
 
 import { planFacts, type PlanFactModel } from '@/features/billing/utils/plan-facts';
 import { formatHours } from '@/utils/format';
+import { brainName } from '@/utils/plan-name';
 
 export type PlanSpend = 'brains' | 'voices';
 
@@ -59,10 +60,6 @@ export interface PlanSpendSide {
 }
 
 const tierName = (plan: PlanId) => CREDIT_PLANS[plan].label.replace(/ Samwell$/, '');
-
-/** "Google: Gemini 2.5 Pro" is "Gemini 2.5 Pro" beside its maker. */
-const brainName = (model: PlanFactModel) =>
-  model.label.startsWith(`${model.provider}: `) ? model.label.slice(model.provider.length + 2).trim() : model.label;
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 

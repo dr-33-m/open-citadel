@@ -11,6 +11,8 @@ export interface VoiceListPickerProps extends VoiceListSheetProps {
   name: string;
   /** What the row does, for a screen reader: "Choose a Lite voice". */
   accessibilityLabel: string;
+  /** What the row calls the choice: "Voice" unless given ("Narrator"). */
+  label?: string;
   onOpen: () => void;
 }
 
@@ -27,12 +29,12 @@ export interface VoiceListPickerProps extends VoiceListSheetProps {
  * Something a sample has to say for itself (still loading, failed) shows in
  * the list while it is open, and under the row once it is closed.
  */
-export function VoiceListPicker({ name, accessibilityLabel, onOpen, ...sheet }: VoiceListPickerProps) {
+export function VoiceListPicker({ name, accessibilityLabel, label, onOpen, ...sheet }: VoiceListPickerProps) {
   const muted = useThemeTokens()['--color-muted-foreground'];
 
   return (
     <View className="gap-2">
-      <VoicePickerRow name={name} onPress={onOpen} accessibilityLabel={accessibilityLabel} />
+      <VoicePickerRow name={name} onPress={onOpen} accessibilityLabel={accessibilityLabel} label={label} />
       <VoiceListSheet {...sheet} />
       {sheet.note && !sheet.visible ? (
         <ThemedText type="bodySm" color={muted}>

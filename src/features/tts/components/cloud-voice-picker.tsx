@@ -30,7 +30,11 @@ export function CloudVoicePicker({ modelId, voices, selected, onPick }: CloudVoi
   return (
     <VoiceListPicker
       name={cloudVoiceLabel(selected)}
-      accessibilityLabel="Choose a cloud voice"
+      // A cloud voice box reads with one of its people, so the choice is
+      // who narrates rather than which voice.
+      label="Narrator"
+      title="Select Narrator"
+      accessibilityLabel="Choose a narrator"
       rows={rows}
       loading={false}
       selected={selected}

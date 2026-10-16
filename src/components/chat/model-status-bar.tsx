@@ -17,6 +17,7 @@ import { easing, motion } from "@/constants/theme";
 import { getCloudBlocker } from "@/features/chat/utils/cloud-access";
 import { PURCHASES_ENABLED } from "@/constants/revenuecat";
 import { useCloudIdentity } from "@/hooks/use-cloud-identity";
+import { useOnline } from "@/hooks/use-online";
 import { useModelStore } from "@/stores/model";
 import { useSettingsStore } from "@/stores/settings";
 import { useSubscriptionStore } from "@/stores/subscription";
@@ -43,6 +44,7 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
   const samwellMode = useSettingsStore((s) => s.samwellMode);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
   const identity = useCloudIdentity();
+  const online = useOnline();
   const subscriptionStatus = useSubscriptionStore((s) => s.status);
   const subscriptionPlan = useSubscriptionStore((s) => s.plan);
   const cloudReady =
@@ -52,6 +54,7 @@ export function ModelStatusBar({ onPress }: ModelStatusBarProps) {
       purchasable: PURCHASES_ENABLED,
       subscriptionStatus,
       mode: samwellMode,
+      online,
     }) === null;
 
   const activeModel = models.find((m) => m.id === activeModelId);

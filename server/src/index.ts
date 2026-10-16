@@ -17,6 +17,7 @@ import {
   SAMWELL_CLIENT_TOOL_DEFINITIONS,
   SAMWELL_JOURNEY_TOOL_PROMPT,
   SAMWELL_SYSTEM_PROMPT,
+  SAMWELL_WEB_SEARCH_TOOL_PROMPT,
   PLAN_ORDER,
   CREDIT_PLANS,
   FORECAST_WORKLOAD,
@@ -98,6 +99,9 @@ import {
   sweepStaleReservations,
 } from './billing.js';
 import { readIdentity } from './identity.js';
+import { asOneRun } from './one-run.js';
+import { offeredClientTools } from './offered-tools.js';
+import { WEB_SEARCH_FALLBACK_COST_USD, createWebSearchTool } from './web-search.js';
 import { ttsRoutes } from './tts-production.js';
 import { voiceCatalog } from './voice-catalog.js';
 import { startVoiceMetadataRefresh } from './voice-metadata.js';
@@ -106,6 +110,8 @@ type RunAgentInput = {
   threadId?: string;
   runId?: string;
   messages?: unknown[];
+  /** AG-UI: the tools the client registered and can run. See `offered-tools.ts`. */
+  tools?: unknown;
   forwardedProps?: Record<string, unknown>;
   data?: Record<string, unknown>;
 };
@@ -169,9 +175,16 @@ function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean): string[
   // Compass names search_journey in its own prompt, since Compass only
   // ever runs here. The reading persona is shared with the on-device
   // engine, so the journey paragraph is added on this route alone.
-  if (mode === 'compass') return [COMPASS_SYSTEM_PROMPT];
+  // The web is the cloud's alone, and onboarding has no use for it: see
+  // `SAMWELL_WEB_SEARCH_TOOL_PROMPT`.
+  if (mode === 'compass') return [COMPASS_SYSTEM_PROMPT, SAMWELL_WEB_SEARCH_TOOL_PROMPT];
   if (mode === 'onboarding') return [onboardingSystemPrompt({ feeds: onboardingFeeds })];
-  return [SAMWELL_SYSTEM_PROMPT, SAMWELL_JOURNEY_TOOL_PROMPT, SAMWELL_APP_GUIDE_TOOL_PROMPT];
+  return [
+    SAMWELL_SYSTEM_PROMPT,
+    SAMWELL_JOURNEY_TOOL_PROMPT,
+    SAMWELL_APP_GUIDE_TOOL_PROMPT,
+    SAMWELL_WEB_SEARCH_TOOL_PROMPT,
+  ];
 }
 
 /*
@@ -307,6 +320,8 @@ type MeteredBilling = {
   turnKey: string;
   /** What this turn may spend in total, set when it was admitted. */
   turnCeiling: number;
+  /** Dollars spent outside the model's own tokens (web searches), read at the settle. */
+  extraCostUsd: () => number;
 };
 
 async function* meterStream(
@@ -341,6 +356,7 @@ async function* meterStream(
             usage.cachedPromptTokens,
             CACHED_SHARE,
           );
+          const extraUsd = billing.extraCostUsd();
           const actual = costToCredits(
             modelCostUsd(
               billing.pricing,
@@ -349,7 +365,7 @@ async function* meterStream(
                 cachedInputTokens: cachedTokens,
                 outputTokens: completionTokens,
               },
-            ),
+            ) + extraUsd,
             billing.creditValue,
           );
           const spend = recordTurnSpend(
@@ -362,7 +378,8 @@ async function* meterStream(
           const settle = await settleCredits({
             usageEventId,
             actualCredits: actual,
-            usage,
+            // The recorded cost is everything the turn spent, searches too.
+            usage: extraUsd > 0 ? { ...usage, costUsd: (usage.costUsd ?? 0) + extraUsd } : usage,
             priceSnapshot: {
               inputPricePerMillion: billing.pricing.inputPricePerMillion,
               outputPricePerMillion: billing.pricing.outputPricePerMillion,
@@ -959,6 +976,17 @@ app.post('/chat/http', async (c) => {
    * (spec §14). A refusal here is a 402 with the numbers, which the app
    * turns into the reader-facing message.
    */
+  /*
+   * Web search, for reading and Compass. Built per request so what a search
+   * costs lands on this request's bill: the tool reports it, and the settle
+   * below adds it to the tokens.
+   */
+  const searchesWeb = mode !== 'onboarding';
+  let searchCostUsd = 0;
+  const webSearch = createWebSearchTool((usd) => {
+    searchCostUsd += usd;
+  });
+
   let metered: MeteredBilling | null = null;
   if (!onTheHouse) {
     /*
@@ -1009,7 +1037,11 @@ app.post('/chat/http', async (c) => {
           inputTokens: promptTokens,
           cachedInputTokens: cachedTokens,
           outputTokens: FORECAST_WORKLOAD.outputTokens,
-        }),
+        }) +
+          // Room for one web search where the turn can make one. The settle
+          // charges what was actually spent, searches included; this only
+          // keeps the hold honest about what the turn may do.
+          (searchesWeb ? WEB_SEARCH_FALLBACK_COST_USD : 0),
         creditValue,
       ) * RESERVE_SAFETY,
     );
@@ -1074,6 +1106,7 @@ app.post('/chat/http', async (c) => {
       creditValue,
       turnKey: turnKey(accountId, body.threadId),
       turnCeiling: turn.ceiling,
+      extraCostUsd: () => searchCostUsd,
     };
   }
 
@@ -1109,7 +1142,19 @@ app.post('/chat/http', async (c) => {
     ABSOLUTE_COMPACTION_CEILING,
   );
 
+  /*
+   * Stop means stop, here as well as on the phone. Without this a reader who
+   * pressed stop closed the connection and nothing else: the model went on
+   * writing, a server tool went on searching, and the hold sat until the
+   * sweep. TanStack aborts the adapter and every running server tool through
+   * this controller, and `toHttpResponse` fires it when the response stream
+   * is cancelled.
+   */
+  const abortController = new AbortController();
+  c.req.raw.signal?.addEventListener('abort', () => abortController.abort(), { once: true });
+
   const stream = chat({
+    abortController,
     adapter: openRouterText(modelId as any, {
       httpReferer: process.env.OPENROUTER_HTTP_REFERER,
       appTitle: process.env.OPENROUTER_APP_TITLE ?? 'Open Citadel',
@@ -1129,30 +1174,25 @@ app.post('/chat/http', async (c) => {
     // reader's bill, and it does not price in a cache write. See
     // `cachedOnboardingPrompt`.
     systemPrompts: [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts],
+    // The device's tools as definitions only (the app runs them), and the
+    // web search as a server tool TanStack runs here in its own agent loop.
     tools:
       mode === 'compass'
-        ? COMPASS_CLIENT_TOOL_DEFINITIONS
+        ? [...offeredClientTools(COMPASS_CLIENT_TOOL_DEFINITIONS, body.tools), webSearch]
         : mode === 'onboarding'
           ? onboardingClientToolDefinitions({ feeds: onboardingFeeds })
-          : SAMWELL_CLIENT_TOOL_DEFINITIONS,
+          : [...offeredClientTools(SAMWELL_CLIENT_TOOL_DEFINITIONS, body.tools), webSearch],
     threadId: body.threadId,
     runId: body.runId ?? usageEventId,
     /*
      * No `agentLoopStrategy` here on purpose.
      *
-     * It looks like the answer to a runaway turn and it is not. It bounds
-     * iterations INSIDE one server-side loop, and every tool Samwell has runs
-     * on the device, so the run ends at the first tool call and the number it
-     * would cap is always one. What actually bounds a turn is `tool-loop.ts`,
-     * counting requests across the whole run.
-     *
-     * Nor is there a hole to close: `@tanstack/ai` already defaults this to
-     * `maxIterations(5)`, which is a sensible bound for the day a server tool
-     * is added. Replacing a reasonable default with our own arbitrary number
-     * would be a change that reads as a safeguard while doing nothing, and
-     * pairing it with a message-count clause would leave a trap - a long
-     * thread silently losing its server-side continuation, on a line nobody
-     * would think to look at.
+     * It bounds iterations INSIDE one server-side loop. Every tool but one runs
+     * on the device and ends the run at its call; the exception is
+     * `web_search`, which TanStack runs here and then asks the model again.
+     * `@tanstack/ai` defaults to `maxIterations(5)`: four searches and an
+     * answer in one response, which is the day that bound was left for. What
+     * bounds a turn across requests is still `tool-loop.ts`.
      */
     middleware: [
       withCompaction({
@@ -1240,7 +1280,10 @@ app.post('/chat/http', async (c) => {
         : ` plan=${plan}`),
   );
 
-  return toHttpResponse(meterStream(stream, usageEventId, body.threadId, modelId, metered), {
+  // `asOneRun` joins the agent loop's steps (a search, then the answer) into
+  // the one run per response that the meter and the app both expect.
+  return toHttpResponse(meterStream(asOneRun(stream), usageEventId, body.threadId, modelId, metered), {
+    abortController,
     headers: {
       'Content-Type': 'application/x-ndjson',
       'Cache-Control': 'no-cache',
