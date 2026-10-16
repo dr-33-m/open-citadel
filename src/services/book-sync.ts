@@ -9,6 +9,9 @@ import {
 } from "expo-file-system/legacy";
 import JSZip from "jszip";
 
+import { openRangedZip } from "@/services/ranged-zip";
+import { base64ToBytes, bytesToBase64 } from "@/utils/bytes";
+
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
@@ -39,9 +42,96 @@ type EpubMetadata = {
   coverPath: string | null;
 };
 
+/** What metadata is read through: an entry's text, or its bytes. */
+interface EpubEntries {
+  text(name: string): Promise<string | null>;
+  bytes(name: string): Promise<Uint8Array | null>;
+}
+
+const NO_METADATA: EpubMetadata = { title: null, author: null, coverPath: null };
+
+/**
+ * Title, author and cover from an EPUB's OPF manifest, in a single pass:
+ * container.xml names the OPF, the OPF names the rest. Whichever way the
+ * archive is read, this is the one reading of it.
+ */
+async function metadataFrom(entries: EpubEntries, bookId: string): Promise<EpubMetadata> {
+  // 1. Find OPF via container.xml
+  const containerXml = await entries.text("META-INF/container.xml");
+  if (!containerXml) return NO_METADATA;
+  const opfMatch = containerXml.match(/full-path="([^"]+)"/);
+  if (!opfMatch) return NO_METADATA;
+
+  const opfPath = opfMatch[1];
+  const opfDir = opfPath.includes("/")
+    ? opfPath.substring(0, opfPath.lastIndexOf("/") + 1)
+    : "";
+
+  const opf = await entries.text(opfPath);
+  if (!opf) return NO_METADATA;
+
+  // 2. Extract title and author from Dublin Core metadata
+  const titleMatch = opf.match(/<dc:title[^>]*>([^<]+)<\/dc:title>/i);
+  const authorMatch = opf.match(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/i);
+  const title = titleMatch?.[1]?.trim() ?? null;
+  const author = authorMatch?.[1]?.trim() ?? null;
+
+  // 3. Find cover image href
+  let coverHref: string | null = null;
+
+  // epub3: <item properties="cover-image" href="..."/>
+  const epub3Match =
+    opf.match(/<item[^>]+properties="cover-image"[^>]+href="([^"]+)"/i) ||
+    opf.match(/<item[^>]+href="([^"]+)"[^>]+properties="cover-image"/i);
+  if (epub3Match) coverHref = epub3Match[1];
+
+  // epub2 / calibre: <meta name="cover" content="{itemId}"/>
+  if (!coverHref) {
+    const metaMatch =
+      opf.match(/<meta[^>]+name="cover"[^>]+content="([^"]+)"/i) ||
+      opf.match(/<meta[^>]+content="([^"]+)"[^>]+name="cover"/i);
+    if (metaMatch) {
+      const coverId = metaMatch[1];
+      const itemMatch =
+        opf.match(
+          new RegExp(`<item[^>]+id="${coverId}"[^>]+href="([^"]+)"`, "i"),
+        ) ||
+        opf.match(
+          new RegExp(`<item[^>]+href="([^"]+)"[^>]+id="${coverId}"`, "i"),
+        );
+      if (itemMatch) coverHref = itemMatch[1];
+    }
+  }
+
+  // Fallback: id="cover-image"
+  if (!coverHref) {
+    const fallback = opf.match(
+      /<item[^>]+id="cover-image"[^>]+href="([^"]+)"/i,
+    );
+    if (fallback) coverHref = fallback[1];
+  }
+
+  // 4. Extract and save cover image
+  let coverPath: string | null = null;
+  if (coverHref) {
+    const cover = await entries.bytes(opfDir + coverHref);
+    if (cover) {
+      await ensureDir(COVERS_DIR);
+      const ext = coverHref.split(".").pop()?.toLowerCase() || "jpg";
+      coverPath = `${COVERS_DIR}${bookId}.${ext}`;
+      await writeAsStringAsync(coverPath, bytesToBase64(cover), {
+        encoding: EncodingType.Base64,
+      });
+    }
+  }
+
+  return { title, author, coverPath };
+}
+
 /**
  * Parse the epub ZIP (as base64) to extract title, author, and cover image.
- * All three are derived from the OPF manifest in a single pass.
+ * Reads the whole archive: the fallback for one `readEpubMetadata` could not
+ * read in pieces. Never throws; a file it cannot parse answers with nulls.
  */
 export async function extractEpubMetadata(
   base64: string,
@@ -49,86 +139,45 @@ export async function extractEpubMetadata(
 ): Promise<EpubMetadata> {
   try {
     const zip = await JSZip.loadAsync(base64, { base64: true });
-
-    // 1. Find OPF via container.xml
-    const containerFile = zip.file("META-INF/container.xml");
-    if (!containerFile) return { title: null, author: null, coverPath: null };
-
-    const containerXml = await containerFile.async("string");
-    const opfMatch = containerXml.match(/full-path="([^"]+)"/);
-    if (!opfMatch) return { title: null, author: null, coverPath: null };
-
-    const opfPath = opfMatch[1];
-    const opfDir = opfPath.includes("/")
-      ? opfPath.substring(0, opfPath.lastIndexOf("/") + 1)
-      : "";
-
-    const opfFile = zip.file(opfPath);
-    if (!opfFile) return { title: null, author: null, coverPath: null };
-    const opf = await opfFile.async("string");
-
-    // 2. Extract title and author from Dublin Core metadata
-    const titleMatch = opf.match(/<dc:title[^>]*>([^<]+)<\/dc:title>/i);
-    const authorMatch = opf.match(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/i);
-    const title = titleMatch?.[1]?.trim() ?? null;
-    const author = authorMatch?.[1]?.trim() ?? null;
-
-    // 3. Find cover image href
-    let coverHref: string | null = null;
-
-    // epub3: <item properties="cover-image" href="..."/>
-    const epub3Match =
-      opf.match(/<item[^>]+properties="cover-image"[^>]+href="([^"]+)"/i) ||
-      opf.match(/<item[^>]+href="([^"]+)"[^>]+properties="cover-image"/i);
-    if (epub3Match) coverHref = epub3Match[1];
-
-    // epub2 / calibre: <meta name="cover" content="{itemId}"/>
-    if (!coverHref) {
-      const metaMatch =
-        opf.match(/<meta[^>]+name="cover"[^>]+content="([^"]+)"/i) ||
-        opf.match(/<meta[^>]+content="([^"]+)"[^>]+name="cover"/i);
-      if (metaMatch) {
-        const coverId = metaMatch[1];
-        const itemMatch =
-          opf.match(
-            new RegExp(`<item[^>]+id="${coverId}"[^>]+href="([^"]+)"`, "i"),
-          ) ||
-          opf.match(
-            new RegExp(`<item[^>]+href="([^"]+)"[^>]+id="${coverId}"`, "i"),
-          );
-        if (itemMatch) coverHref = itemMatch[1];
-      }
-    }
-
-    // Fallback: id="cover-image"
-    if (!coverHref) {
-      const fallback = opf.match(
-        /<item[^>]+id="cover-image"[^>]+href="([^"]+)"/i,
-      );
-      if (fallback) coverHref = fallback[1];
-    }
-
-    // 4. Extract and save cover image
-    let coverPath: string | null = null;
-    if (coverHref) {
-      const fullCoverPath = opfDir + coverHref;
-      const coverFile = zip.file(fullCoverPath);
-      if (coverFile) {
-        const coverBase64 = await coverFile.async("base64");
-        await ensureDir(COVERS_DIR);
-        const ext = coverHref.split(".").pop()?.toLowerCase() || "jpg";
-        coverPath = `${COVERS_DIR}${bookId}.${ext}`;
-        await writeAsStringAsync(coverPath, coverBase64, {
-          encoding: EncodingType.Base64,
-        });
-      }
-    }
-
-    return { title, author, coverPath };
+    return await metadataFrom(
+      {
+        text: async (name) => (await zip.file(name)?.async("string")) ?? null,
+        bytes: async (name) => (await zip.file(name)?.async("uint8array")) ?? null,
+      },
+      bookId,
+    );
   } catch (e) {
     console.warn("[book-sync] metadata extraction failed:", e);
-    return { title: null, author: null, coverPath: null };
+    return NO_METADATA;
   }
+}
+
+/**
+ * Title, author and cover of the EPUB at `uri`, reading only the entries they
+ * come from (`openRangedZip`): its end record, its directory, container.xml,
+ * the OPF and the cover. The whole file is read only for an archive the
+ * ranged reader declines (ZIP64, encryption, a damaged directory), or when
+ * the file's size cannot be learned.
+ *
+ * Like the whole-file read it replaces, a file that cannot be read at all
+ * throws (the sync retries it), and one that reads but holds no metadata
+ * answers with nulls.
+ */
+export async function readEpubMetadata(uri: string, bookId: string): Promise<EpubMetadata> {
+  const info = await getInfoAsync(uri).catch(() => null);
+  const size = info?.exists ? ((info as { size?: number }).size ?? 0) : 0;
+  if (size > 0) {
+    try {
+      const zip = await openRangedZip(size, async (position, length) =>
+        base64ToBytes(await readAsStringAsync(uri, { encoding: EncodingType.Base64, position, length })),
+      );
+      return await metadataFrom(zip, bookId);
+    } catch (e) {
+      console.warn("[book-sync] could not read in pieces, reading the whole file:", e);
+    }
+  }
+  const base64 = await readAsStringAsync(uri, { encoding: EncodingType.Base64 });
+  return extractEpubMetadata(base64, bookId);
 }
 
 export async function syncBooksFromDirectory(

@@ -211,6 +211,9 @@ importers:
       lucide-react-native:
         specifier: ^1.48.0
         version: 1.49.0(@types/react@19.2.14)(react-native-svg@15.15.4(patch_hash=f3fbeb5b3cb8dee42959bf32a5b943e4d6623e8d7ff28f764f9e272762f7ee0c)(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+      pako:
+        specifier: 1.0.11
+        version: 1.0.11
       react:
         specifier: 19.2.3
         version: 19.2.3
