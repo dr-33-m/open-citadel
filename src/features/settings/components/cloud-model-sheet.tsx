@@ -1,259 +1,101 @@
-import React from "react";
-import { StyleSheet, View, type TextStyle } from "react-native";
-import Animated from "react-native-reanimated";
+import React from 'react';
+import { View } from 'react-native';
+import type { PlanId } from 'samwell-shared';
 
-import { ChevronDown } from "@/components/icons";
-import { PageFade } from "@/components/scroll-fades";
-import { ThemedText } from "@/components/themed-text";
-import { COLLAPSE_DURATION, Collapse } from "@/components/ui/collapse";
-import { Sheet } from "@/components/ui/sheet";
-import { Touchable } from "@/components/ui/touchable";
-import { easingCss } from "@/constants/theme";
-import type { PlanModel } from "@/stores/subscription";
-import {
-    CREDIT_PLANS,
-    PLAN_ORDER,
-    formatMultiplier,
-    type PlanId,
-} from "samwell-shared";
+import { PageFade } from '@/components/scroll-fades';
+import { SwitchPanes } from '@/components/switch-panes';
+import { TextSwitch } from '@/components/text-switch';
+import { ThemedText } from '@/components/themed-text';
+import { Sheet } from '@/components/ui/sheet';
+import { spacing } from '@/constants/theme';
+import { BrainRow } from '@/features/settings/components/brain-row';
+import { brainTiers, openingTier } from '@/features/settings/utils/brain-tiers';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import type { PlanModel } from '@/stores/subscription';
+import { planShortName } from '@/utils/plan-name';
 
-/**
- * One model row.
- *
- * Memoized on primitives, so choosing a model re-renders the two affected
- * rows rather than every model in the list.
- */
-const ModelRow = React.memo(function ModelRow({
-  model,
-  isActive,
-  mutedForeground,
-  primary,
-  onSelect,
-}: {
-  model: PlanModel;
-  isActive: boolean;
-  mutedForeground?: string;
-  primary?: string;
-  onSelect: (id: string) => void;
-}) {
-  const unavailable = model.forecastCredits == null;
-
-  return (
-    <Touchable
-      className="flex-row items-center gap-3 border-b border-border px-6 py-3"
-      onPress={() => onSelect(model.id)}
-      haptic="select"
-      disabled={unavailable}
-      accessibilityRole="radio"
-      accessibilityLabel={`${model.label}, ${model.provider}`}
-      accessibilityState={{ selected: isActive, disabled: unavailable }}
-    >
-      <View className="flex-1 gap-0.5">
-        <View className="flex-row items-baseline justify-between gap-3">
-          <ThemedText type="bodyMd" numberOfLines={1} className="flex-1">
-            {model.label}
-          </ThemedText>
-          {/* How dear this one is against the cheapest in its own tier. A
-              nudge, never a charge: the credits below are the real cost, and
-              the server computes both so the app never sees a price. */}
-          <ThemedText type="labelSm" color={mutedForeground}>
-            {formatMultiplier(model.multiplier)}
-          </ThemedText>
-        </View>
-        <ThemedText type="labelSm" color={mutedForeground}>
-          {model.provider} · {model.capabilities.join(", ")}
-        </ThemedText>
-        <ThemedText
-          type="bodySm"
-          color={mutedForeground}
-          style={SMALL_TABULAR}
-          numberOfLines={1}
-        >
-          {model.forecastCredits == null
-            ? "Not available right now"
-            : `Typical message ≈ ${model.forecastCredits} neurons`}
-        </ThemedText>
-      </View>
-      {isActive && (
-        <ThemedText type="bodyMd" color={primary}>
-          ✓
-        </ThemedText>
-      )}
-    </Touchable>
-  );
-});
-
-const SMALL_TABULAR: TextStyle = {
-  fontSize: 11,
-  fontVariant: ["tabular-nums"],
-};
-
-/**
- * A lower tier, folded away.
- *
- * Access is cumulative, so a Grand Maester really can reach the Maester
- * models and there are months where that is the right call. But listing all
- * nine flat buries the three they are paying for among six they are not, and
- * the first row of a flat list is the cheapest model in the cheapest tier -
- * which is the last thing a plan should lead with. Their own three stand
- * open; everything below folds.
- */
-function TierSection({
-  plan,
-  models,
-  activeId,
-  mutedForeground,
-  primary,
-  onSelect,
-}: {
-  plan: PlanId;
-  models: PlanModel[];
-  activeId: string | null;
-  mutedForeground?: string;
-  primary?: string;
-  onSelect: (id: string) => void;
-}) {
-  // Lower tiers always begin folded so every plan opens with the same visual
-  // hierarchy. The active row keeps its checkmark when this section expands.
-  const [open, setOpen] = React.useState(false);
-
-  if (models.length === 0) return null;
-
-  return (
-    <View>
-      <Touchable
-        className="flex-row items-center justify-between gap-3 border-b border-border px-6 py-3"
-        onPress={() => setOpen((value) => !value)}
-        haptic="tap"
-        accessibilityRole="button"
-        accessibilityLabel={`${CREDIT_PLANS[plan].label} brains, ${open ? "collapse" : "expand"}`}
-        accessibilityState={{ expanded: open }}
-      >
-        <ThemedText type="labelSm" color={mutedForeground}>
-          {CREDIT_PLANS[plan].label.toUpperCase()} BRAINS
-        </ThemedText>
-        {/* Turned with a CSS transition rather than flipped: the panel below
-            takes 200ms to open, and a chevron that snaps while it slides
-            reads as two unrelated things happening. This is the house tool
-            for a two-state change - it runs on the UI thread with no worklet
-            and no shared value. */}
-        <Animated.View
-          style={[
-            styles.chevron,
-            open ? styles.chevronOpen : styles.chevronShut,
-          ]}
-        >
-          <ChevronDown size={16} color={mutedForeground} />
-        </Animated.View>
-      </Touchable>
-      <Collapse open={open}>
-        {models.map((model) => (
-          <ModelRow
-            key={model.id}
-            model={model}
-            isActive={model.id === activeId}
-            mutedForeground={mutedForeground}
-            primary={primary}
-            onSelect={onSelect}
-          />
-        ))}
-      </Collapse>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  chevron: {
-    transitionProperty: ["transform"],
-    transitionDuration: `${COLLAPSE_DURATION}ms`,
-    transitionTimingFunction: easingCss,
-  },
-  chevronShut: { transform: [{ rotate: "0deg" }] },
-  chevronOpen: { transform: [{ rotate: "180deg" }] },
-});
-
-/**
- * The models this plan reaches.
- *
- * Models above the reader's plan are not listed at all: the plan carousel is
- * where plans are sold, and a picker that mostly cannot be picked from is a
- * worse picker.
- */
-export function CloudModelSheet({
-  visible,
-  onClose,
-  onSelect,
-  activeId,
-  models,
-  plan,
-  mutedForeground,
-  primary,
-}: {
+export interface CloudModelSheetProps {
   visible: boolean;
   onClose: () => void;
   onSelect: (id: string) => void;
   activeId: string | null;
   models: PlanModel[];
-  /** The reader's plan, which decides what stands open. */
+  /** The reader's plan, which decides which tiers are listed and which leads. */
   plan: PlanId | null;
-  mutedForeground?: string;
-  primary?: string;
-}) {
-  const held = plan ?? "maester";
+}
 
-  // Their own tier, and the tiers underneath it, cheapest last.
-  const { own, below } = React.useMemo(() => {
-    const byPlan = new Map<PlanId, PlanModel[]>();
-    for (const model of models) {
-      const list = byPlan.get(model.minPlan) ?? [];
-      list.push(model);
-      byPlan.set(model.minPlan, list);
-    }
-    const lower = PLAN_ORDER.filter(
-      (candidate) => PLAN_ORDER.indexOf(candidate) < PLAN_ORDER.indexOf(held),
-    ).reverse();
-    return {
-      own: byPlan.get(held) ?? [],
-      below: lower.map(
-        (candidate) => [candidate, byPlan.get(candidate) ?? []] as const,
-      ),
-    };
-  }, [models, held]);
+/** About how many rows sit in the sheet unscrolled on a small phone. */
+const FITS_UNSCROLLED = 5;
+const HEIGHT = 0.78;
+const CONTENT = { paddingHorizontal: spacing[6], paddingBottom: spacing[4] };
+
+/**
+ * The cloud brains a plan reaches, to choose the one Samwell thinks with.
+ *
+ * A tier to a tab. Access is cumulative, so an Archmaester can reach the
+ * Grand Maester and Maester brains too, and some months those are the right
+ * call; but nine rows in one list bury the three being paid for. Folding the
+ * lower tiers under chevrons hid them behind a control that did not say what
+ * was inside, and an opened one pushed the list about. A switch says every
+ * tier at once, keeps the sheet one height, and opens on the tier holding the
+ * chosen brain, so the tick is always in view. A plan with one tier has no
+ * switch at all.
+ *
+ * The title, its line and the switch are pinned; only the rows move.
+ */
+export function CloudModelSheet({ visible, onClose, onSelect, activeId, models, plan }: CloudModelSheetProps) {
+  const muted = useThemeTokens()['--color-muted-foreground'];
+  const tiers = React.useMemo(() => brainTiers(models, plan), [models, plan]);
+  const [picked, setPicked] = React.useState<PlanId | null>(null);
+  // Every opening starts on the chosen brain's tier, not where browsing left off.
+  const [wasVisible, setWasVisible] = React.useState(visible);
+  if (wasVisible !== visible) {
+    setWasVisible(visible);
+    if (visible) setPicked(null);
+  }
+  const tier = tiers.some((candidate) => candidate.plan === picked) ? picked : openingTier(tiers, activeId);
+
+  const tabs = React.useMemo(() => tiers.map((candidate) => ({ value: candidate.plan, label: planShortName(candidate.plan) })), [tiers]);
+  const panes = {} as Record<PlanId, React.ReactNode>;
+  for (const candidate of tiers) {
+    panes[candidate.plan] = candidate.models.map((model, index) => (
+      <View key={model.id} className={index === 0 ? undefined : 'border-t border-border/70'}>
+        <BrainRow model={model} active={model.id === activeId} onSelect={onSelect} />
+      </View>
+    ));
+  }
+  // A sheet sized to its content never hands a list inside it the drag, so a
+  // tier that can outgrow it gets a fixed box to scroll in (see `SourcesSheet`).
+  // Judged on the longest tier, so switching never changes what kind of sheet it is.
+  const long = tiers.some((candidate) => candidate.models.length > FITS_UNSCROLLED);
+  const body = tier ? <SwitchPanes order={tabs.map((tab) => tab.value)} value={tier} panes={panes} /> : null;
 
   return (
-    // `maxHeightRatio` is the cap and the only cap - the sheet measures the
-    // content and stops there.
-    <Sheet visible={visible} onClose={onClose} maxHeightRatio={0.85} scrollable>
-      <PageFade edges="both" surface="popover">
-        <Sheet.ScrollView contentContainerClassName="pb-2">
-          <View className="px-6 pb-6">
-            <ThemedText type="headlineSm">Choose Brain</ThemedText>
-          </View>
-
-          {own.map((model) => (
-            <ModelRow
-              key={model.id}
-              model={model}
-              isActive={model.id === activeId}
-              mutedForeground={mutedForeground}
-              primary={primary}
-              onSelect={onSelect}
-            />
-          ))}
-
-          {below.map(([candidate, tierModels]) => (
-            <TierSection
-              key={candidate}
-              plan={candidate}
-              models={tierModels}
-              activeId={activeId}
-              mutedForeground={mutedForeground}
-              primary={primary}
-              onSelect={onSelect}
-            />
-          ))}
-        </Sheet.ScrollView>
-      </PageFade>
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      fixedHeightRatio={long ? HEIGHT : undefined}
+      maxHeightRatio={long ? undefined : HEIGHT}
+      scrollable={long}
+    >
+      <View className="gap-4 px-6 pb-2">
+        <View className="gap-1">
+          <ThemedText type="headlineSm">Choose Brain</ThemedText>
+          <ThemedText type="bodySm" color={muted}>
+            Stronger brains use more Neurons a message.
+          </ThemedText>
+        </View>
+        {tabs.length > 1 && tier ? <TextSwitch options={tabs} value={tier} onChange={setPicked} /> : null}
+      </View>
+      {long ? (
+        <PageFade edges="both" surface="popover">
+          <Sheet.ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={CONTENT}>
+            {body}
+          </Sheet.ScrollView>
+        </PageFade>
+      ) : (
+        <View style={CONTENT}>{body}</View>
+      )}
     </Sheet>
   );
 }

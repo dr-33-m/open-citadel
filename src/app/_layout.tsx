@@ -37,6 +37,7 @@ import { ApprovalSheet } from "@/components/approval-sheet";
 import { useGuestLink } from "@/features/billing/hooks/use-guest-link";
 import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
+import { useReadingIndex } from "@/hooks/use-reading-index";
 import { ToastProvider } from "@/components/toast/toast-provider";
 import { ThemeRelease } from "@/components/theme-scope";
 import { RootThemeTokens } from "@/hooks/use-theme-tokens";
@@ -144,6 +145,8 @@ function RootLayoutContent() {
   // episodes looked for on launch and on return.
   usePodcastLifecycle(dbReady);
   usePlayerNotificationTap(dbReady);
+  // Samwell's book text index, filled in the background once launch is over.
+  useReadingIndex(dbReady);
 
 
   // Free the on-device engine + image memory when the OS is under pressure or

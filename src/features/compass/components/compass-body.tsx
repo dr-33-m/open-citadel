@@ -11,17 +11,13 @@ import React from 'react';
 import { Compass, Info, LogIn, RefreshCw, Settings } from '@/components/icons';
 import { View, type ViewStyle } from 'react-native';
 
-import { ChatBubble } from '@/components/chat/chat-bubble';
-import { TranscriptFade } from '@/components/scroll-fades';
-import { MessageScroller } from '@/components/ui/message-scroller';
-import { TurnStatus } from '@/features/chat/components/turn-status';
 import { SamwellStatusEmptyState } from '@/features/chat/components/samwell-status';
+import { Transcript } from '@/features/chat/components/transcript';
 import {
   seePlansAction,
   type SamwellStatusAction,
 } from '@/features/chat/hooks/use-samwell-status';
 import { turnIndicator } from '@/features/chat/utils/agent-activity';
-import { transcriptContent } from '@/features/chat/utils/transcript-layout';
 import { CheckinDraftCard } from '@/features/compass/components/checkin-draft-card';
 import { GoalProposalCard } from '@/features/compass/components/goal-proposal-card';
 import type { CloudBlocker } from '@/features/chat/hooks/use-samwell-readiness';
@@ -58,6 +54,10 @@ const COMPASS_BLOCKED: Record<ShownBlocker, { title: string; message: string }> 
   needsPlan: {
     title: 'Compass works with a Samwell Cloud plan.',
     message: 'Choose a plan and let Samwell track and analyse your goals.',
+  },
+  noConnection: {
+    title: 'You are offline.',
+    message: 'Compass needs a connection. Your goals will be here as soon as you are back.',
   },
   cloudUnreachable: {
     title: 'Cannot reach Samwell Cloud.',
@@ -114,6 +114,9 @@ function blockedActions(
     // nothing to justify. The only useful move is to ask the server again.
     case 'cloudUnreachable':
       return [{ label: 'TRY AGAIN', icon: RefreshCw, onPress: escapes.onRetryCloud }];
+    // Nothing to press: it clears itself the moment the phone is back online.
+    case 'noConnection':
+      return undefined;
   }
 }
 
@@ -157,12 +160,14 @@ export function CompassBody({
     refine,
     submitting,
     streamingReply,
+    streamingActivity,
     streamingThinking,
     streamingThinkingSeconds,
     lastStreamedMessageId,
     toolStatus,
     toolName,
     committing,
+    resend,
   } = conversation;
 
   /*
@@ -174,6 +179,9 @@ export function CompassBody({
    * the reader to the bottom whether or not that is where they were.
    */
   const streaming = submitting && streamingReply.length > 0;
+  // The reply in flight is drawn once it has words or has started doing
+  // something: a search runs before a word of the answer exists.
+  const showLive = streaming || (submitting && (streamingActivity?.steps.length ?? 0) > 0);
   /*
    * The reasoning is live only until the reply starts, and only when no tool
    * is in flight — a tool call hands the row over to the tool's own orb and
@@ -201,13 +209,6 @@ export function CompassBody({
       streamingThinkingSeconds,
       streaming,
     ],
-  );
-
-  /* The same column the chat transcript uses, plus whatever the floating
-     input card is covering. */
-  const contentStyle = React.useMemo(
-    () => [transcriptContent, floatingClearance],
-    [floatingClearance],
   );
 
   /*
@@ -271,98 +272,48 @@ export function CompassBody({
     );
   }
 
-  return (
-    /* Keyed on the conversation: opening an earlier one should open it, not
-       inherit where the last one was left. */
-    <MessageScroller
-      key={activeSessionId ?? 'new'}
-      autoScroll
-      className="flex-1"
-      style={contentColumn}
-    >
-      <TranscriptFade edges="both">
-        <MessageScroller.Viewport>
-          <MessageScroller.Content style={contentStyle}>
-            {/* Only what was actually said. A Compass transcript can carry a
-                system row (the journey summary) and, once tools write to it,
-                tool rows; neither is a turn anybody had. The proposal turn's
-                own reply is held out here and rendered below its card. */}
-            {listMessages.map((m) =>
-              m.role === 'user' || m.role === 'assistant' ? (
-                <MessageScroller.Item
-                  key={m.id}
-                  messageId={m.id}
-                  scrollAnchor={m.role === 'user'}
-                >
-                  <ChatBubble
-                    role={m.role}
-                    content={m.content}
-                    // The just-streamed reply is already on screen; animating
-                    // its arrival is the flick the reader sees when a turn
-                    // finishes.
-                    animateEntry={m.id !== lastStreamedMessageId}
-                  />
-                </MessageScroller.Item>
-              ) : null,
-            )}
-
-            {draft?.kind === 'plan' && (
-              <View className="px-1 py-2">
-                <GoalProposalCard
-                  proposal={draft.proposal}
-                  onApprove={() => void approve()}
-                  onRefine={refine}
-                  disabled={committing}
-                />
-              </View>
-            )}
-
-            {draft?.kind === 'checkin' && (
-              <View className="px-1 py-2">
-                <CheckinDraftCard
-                  draft={draft.draft}
-                  titles={trackableTitles}
-                  onApprove={() => void approve()}
-                  onRefine={refine}
-                  disabled={committing}
-                />
-              </View>
-            )}
-
-            {/* The turn's reply, below its card: streaming bubble while it
-                arrives, the committed message once it lands. Without a draft
-                on screen this falls through and the normal flow above has
-                already drawn it. */}
-            {submitting && streaming ? (
-              <ChatBubble role="assistant" content={streamingReply} streaming />
-            ) : proposalReply ? (
-              <ChatBubble
-                key={proposalReply.id}
-                role="assistant"
-                content={proposalReply.content}
-                animateEntry={proposalReply.id !== lastStreamedMessageId}
-              />
-            ) : null}
-
-            {/* One row for the whole turn: a plain status line on a model that
-                does not reason, or the reasoning panel with tool work folded
-                into its trigger. The panel is never unmounted mid-turn, so a
-                tool call does not reset its "thought for how long" clock. */}
-            <TurnStatus indicator={indicator} />
-          </MessageScroller.Content>
-        </MessageScroller.Viewport>
-      </TranscriptFade>
-
-      {/* Lifted clear of the floating input card the transcript runs under.
-          See the same box in `ChatTranscript` for why it is a box and not a
-          style on the button. */}
-      <View
-        pointerEvents="box-none"
-        className="absolute inset-x-0 bottom-0 items-center"
-        style={floatingClearance}
-      >
-        <MessageScroller.Button className="relative bottom-0" />
+  /*
+   * The card a turn proposed, between the conversation and the line
+   * introducing it. Approving or refining it is Compass's own; the rest of the
+   * transcript is the one chat draws.
+   */
+  const aside =
+    draft?.kind === 'plan' ? (
+      <View className="px-1 py-2">
+        <GoalProposalCard
+          proposal={draft.proposal}
+          onApprove={() => void approve()}
+          onRefine={refine}
+          disabled={committing}
+        />
       </View>
-    </MessageScroller>
+    ) : draft?.kind === 'checkin' ? (
+      <View className="px-1 py-2">
+        <CheckinDraftCard
+          draft={draft.draft}
+          titles={trackableTitles}
+          onApprove={() => void approve()}
+          onRefine={refine}
+          disabled={committing}
+        />
+      </View>
+    ) : null;
+
+  return (
+    <Transcript
+      sessionId={activeSessionId}
+      turns={listMessages}
+      live={showLive}
+      streamingContent={streamingReply}
+      streamingActivity={streamingActivity}
+      isGenerating={submitting}
+      indicator={indicator}
+      lastStreamedMessageId={lastStreamedMessageId}
+      contentColumn={contentColumn}
+      floatingClearance={floatingClearance}
+      aside={aside}
+      trailingReply={proposalReply}
+      onResendMessage={resend}
+    />
   );
 }

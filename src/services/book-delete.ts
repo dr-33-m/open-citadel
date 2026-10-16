@@ -22,6 +22,7 @@ import {
   readingProgress,
   syncItems,
 } from "@/db/schema";
+import { forgetIndexedBook } from '@/services/book-text/indexer';
 
 /**
  * Delete all database rows and the cached cover image for a book.
@@ -48,6 +49,10 @@ export async function deleteBookData(bookId: string): Promise<void> {
 
   // Delete the book row
   await db.delete(books).where(eq(books.id, bookId));
+  // And its text from Samwell's search index, so he cannot quote a book that
+  // is gone. Not waited on: it queues behind any book being indexed, which
+  // can take seconds, and the search only ever looks in books still here.
+  void forgetIndexedBook(bookId);
 
   // Clean up cached cover image
   if (book?.coverUrl) {

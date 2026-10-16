@@ -19,3 +19,4 @@ export * from './tags';
 export * from './takeaway';
 export * from './tools';
 export * from './voices';
+export * from './web-search';

@@ -39,6 +39,10 @@ const TOOL_ORB: Record<string, ThinkingOrbState> = {
   list_chapters: 'searching',
   read_chapter: 'searching',
   list_collections: 'searching',
+  search_library: 'searching',
+  get_book_details: 'searching',
+  // Run on the server, but drawn the same: he is looking something up.
+  web_search: 'searching',
 
   // Weighing options rather than fetching a row.
   propose_goal: 'solving',
@@ -70,6 +74,17 @@ const TOOL_ORB: Record<string, ThinkingOrbState> = {
   // that says so.
   delete_highlight: 'listening',
   delete_thought: 'listening',
+  delete_note: 'listening',
+  delete_collection: 'listening',
+  delete_book: 'listening',
+  clear_queue: 'listening',
+
+  // Writing over what the reader wrote.
+  add_note_to_highlight: 'composing',
+  update_note: 'composing',
+  update_thought: 'composing',
+  rename_book: 'working',
+  start_reading: 'working',
 
   // Reading the app's own guide back is still reading something back.
   explain_app: 'searching',
@@ -202,7 +217,11 @@ export function turnIndicator(
 ): TurnIndicator | null {
   const { trace, traceSeconds, ...activityInput } = input;
 
-  if (!activityInput.isGenerating && !trace) return null;
+  // Live only. A finished turn's thought is kept with its reply and opened
+  // from the reply's own footer (`ThoughtButton`), so nothing is left behind
+  // here under a reply that is done: it used to stay as a folded "Thought
+  // for…" row below the reply's copy and sources, and only for the last one.
+  if (!activityInput.isGenerating) return null;
 
   // Titling starts after the answer has landed, so it must replace a
   // completed reasoning trace rather than hiding behind it.
@@ -227,6 +246,12 @@ export function turnIndicator(
     traceSeconds !== undefined ||
     (activityInput.isGenerating && activityInput.isThinking);
   if (reasoning) {
+    // The answer itself is on screen now, and it is the status. A "Thought
+    // for 12 seconds" row with a still orb under the words as they arrive
+    // only repeated what the reply's footer says once it lands (the brain
+    // and its time, `ThoughtButton`). A tool called after this brings the row
+    // back, with the tool's own words.
+    if (activityInput.isStreaming && !activityInput.isToolCalling) return null;
     return {
       kind: 'trace',
       trace,

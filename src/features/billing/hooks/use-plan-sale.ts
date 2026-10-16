@@ -95,9 +95,24 @@ export function usePlanSale({
     onAlreadyActive: onActivated,
   });
   const { start } = checkout;
+  /*
+   * A reader who already holds a plan is changing it, not buying a first one.
+   * The checkout's last step refuses a sale to anybody with an active plan
+   * ("You already have an active plan"), which is right for a first purchase
+   * and wrong here: a locked voice box or a plan wall raised for a reader on
+   * Grand Maester offers Archmaester, and choosing it must upgrade them. So a
+   * plan holder goes the way Manage plan's upgrade goes, straight to the
+   * store's purchase, which carries out the change of plan (the old product
+   * replaced, a downgrade deferred to the renewal). Who they are is already
+   * settled: a plan is held against them.
+   */
   const startPurchase = React.useCallback(
-    (plan: PlanId, packageToBuy: PurchasesPackage) => start({ kind: 'buy', plan, packageToBuy }),
-    [start],
+    (plan: PlanId, packageToBuy: PurchasesPackage) => {
+      const held = useSubscriptionStore.getState();
+      if (held.status === 'active' && held.plan !== null) return void onChoose(plan, packageToBuy);
+      return start({ kind: 'buy', plan, packageToBuy });
+    },
+    [start, onChoose],
   );
   const startRestore = React.useCallback(() => start({ kind: 'restore' }), [start]);
 

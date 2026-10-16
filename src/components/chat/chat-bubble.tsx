@@ -1,42 +1,50 @@
-import React, { useMemo } from "react";
-import { View } from "react-native";
-import { EnrichedMarkdownText } from "react-native-enriched-markdown";
-
+import React from "react";
+import type { View } from "react-native";
 import Animated, { FadeInUp, useReducedMotion } from "react-native-reanimated";
 import { useCSSVariable } from "uniwind";
 
-import { BookCard } from "@/components/chat/book-card";
-import { HighlightCard } from "@/components/chat/highlight-card";
-import { SuggestionCard } from "@/components/chat/suggestion-card";
+import { SamwellResponse } from "@/components/chat/samwell-response";
 import { ThemedText } from "@/components/themed-text";
 import { Message } from "@/components/ui/message";
-import { easing, fontFamily, motion, spacing } from "@/constants/theme";
-import { useMarkdownStyle } from "@/hooks/use-markdown-style";
+import { easing, fontFamily, motion } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
+import { haptics } from "@/utils/haptics";
+import type { HeldMessage } from "@/hooks/use-message-actions";
+import type { TurnActivity, TurnStep, TurnThought } from "@/utils/turn-activity";
+import type { WebSource } from "samwell-shared";
 
-/** New bubbles rise and fade in rather than popping into the list —
- * fires once per bubble instance, so it plays for a freshly-sent or
+/** New turns rise and fade in rather than popping into the list —
+ * fires once per instance, so it plays for a freshly-sent or
  * freshly-streamed-in message and for one scrolled into view for the
  * first time, not on every re-render. Only played where a caller opts
  * in (`animateEntry`) with Reduce Motion off — a recycled list row must
  * never replay an entrance. */
-const bubbleEntering = FadeInUp.duration(motion.base).easing(easing);
+const turnEntering = FadeInUp.duration(motion.base).easing(easing);
 
-// Splits on the marker protocol Samwell is instructed to emit:
-//   [[ref:highlight:hl-123]] / [[ref:thought:th-123]]  an existing entry, read-only
-//   [[suggest:highlight:sugg-1]] / [[suggest:thought:sugg-1]]  a proposal, approve/reject
-//   [[book:bk-123]]  a book from the library, shown with its cover
-function createMarkerPattern() {
-  return /\[\[(?:(ref|suggest):(highlight|thought)|(book)):([^\]]+)\]\]/g;
-}
+/** The row's own rhythm in the transcript, shared by both kinds of turn. */
+const ROW_CLASS = "mb-1 px-4";
 
 interface ChatBubbleProps {
   role: "user" | "assistant";
   content: string;
   streaming?: boolean;
+  /** Samwell's turns only: what he did on the way to the reply, and its sources. */
+  activity?: TurnActivity | null;
   onNavigateToHighlight?: (bookId: string, locator: string) => void;
   onNavigateToTimeline?: () => void;
   onNavigateToBook?: (bookId: string) => void;
+  /** Samwell's turns only: raises the conversation's sources sheet. */
+  onOpenSources?: (sources: readonly WebSource[]) => void;
+  /** Samwell's turns only: raises the conversation's thought sheet. */
+  onOpenThought?: (thought: TurnThought) => void;
+  /** Samwell's turns only: raises the conversation's tasks sheet. */
+  onOpenTasks?: (steps: readonly TurnStep[]) => void;
+  /** Samwell's cloud turns only: raises the conversation's privacy sheet. */
+  onOpenPrivacy?: () => void;
+  /** The reader's turns only: the message's id, handed back when it is held. */
+  messageId?: string;
+  /** The reader's turns only: a long press on the bubble (`useMessageActions`). */
+  onHold?: (message: HeldMessage) => void;
   /** Play the rise-and-fade entrance. Off by default: the per-session chat
    * renders bubbles in a recycled FlashList, where replaying the entrance
    * on recycled rows violates the no-entering-on-recycled-rows motion law —
@@ -45,215 +53,97 @@ interface ChatBubbleProps {
   animateEntry?: boolean;
 }
 
-function MarkdownSegment({
-  content,
-  streaming,
-}: {
-  content: string;
-  streaming?: boolean;
-}) {
-  const markdownStyle = useMarkdownStyle({
-    voice: "sans",
-    fontSize: 15,
-    lineHeight: 22,
-  });
-
-  return (
-    /*
-     * One native text view, not a tree of RN views.
-     *
-     * `streamingAnimation` fades only the tail — the characters beyond what
-     * was already rendered — which is why the old `content + ' ▍'` caret is
-     * gone. That caret existed to show the reply was still coming while the
-     * whole block re-rendered on every token; the library animates the
-     * arrival itself, so the block cursor was standing in for motion that now
-     * happens for real.
-     *
-     * `commonmark` rather than `github`: the GitHub flavour renders fenced
-     * code as a separate scrolling pane with a header bar and copy button,
-     * which is a lot of chrome for a reading companion who never emits code.
-     * CommonMark keeps a code block inside the same text view, where it wraps.
-     */
-    <EnrichedMarkdownText
-      markdown={content}
-      markdownStyle={markdownStyle}
-      flavor="commonmark"
-      streamingAnimation={streaming}
-      selectable
-    />
-  );
-}
-
-const AssistantContent = React.memo(function AssistantContent({
-  content,
-  streaming,
-  onNavigateToHighlight,
-  onNavigateToTimeline,
-  onNavigateToBook,
-}: {
-  content: string;
-  streaming?: boolean;
-  onNavigateToHighlight?: (bookId: string, locator: string) => void;
-  onNavigateToTimeline?: () => void;
-  onNavigateToBook?: (bookId: string) => void;
-}) {
-  // Split content into text segments and reference/suggestion markers
-  const segments = useMemo(() => {
-    if (
-      !content.includes("[[ref:") &&
-      !content.includes("[[suggest:") &&
-      !content.includes("[[book:")
-    ) {
-      return null; // Fast path: no markers, render as plain markdown
-    }
-
-    const parts: (
-      | { kind: "text"; text: string }
-      | { kind: "ref"; type: "highlight" | "thought"; id: string }
-      | { kind: "suggest"; type: "highlight" | "thought"; id: string }
-      | { kind: "book"; id: string }
-    )[] = [];
-    let lastIndex = 0;
-    const markerPattern = createMarkerPattern();
-
-    let match;
-    while ((match = markerPattern.exec(content)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({
-          kind: "text",
-          text: content.slice(lastIndex, match.index),
-        });
-      }
-      parts.push(
-        match[3] === "book"
-          ? { kind: "book", id: match[4] }
-          : {
-              kind: match[1] as "ref" | "suggest",
-              type: match[2] as "highlight" | "thought",
-              id: match[4],
-            },
-      );
-      lastIndex = markerPattern.lastIndex;
-    }
-    if (lastIndex < content.length) {
-      parts.push({ kind: "text", text: content.slice(lastIndex) });
-    }
-
-    return parts;
-  }, [content]);
-
-  // No refs — render plain markdown
-  if (!segments) {
-    return <MarkdownSegment content={content} streaming={streaming} />;
-  }
-
-  return (
-    <View>
-      {segments.map((seg, i) => {
-        if (seg.kind === "text") {
-          // The whitespace between two back-to-back cards is not a paragraph.
-          // Rendered, it drew an empty line of markdown height between them.
-          if (!seg.text.trim()) return null;
-          const isLast = i === segments.length - 1;
-          return (
-            <MarkdownSegment
-              key={i}
-              content={seg.text}
-              streaming={isLast ? streaming : false}
-            />
-          );
-        }
-        if (seg.kind === "book") {
-          return (
-            <BookCard
-              key={`book-${seg.id}`}
-              id={seg.id}
-              onNavigate={onNavigateToBook}
-            />
-          );
-        }
-        if (seg.kind === "suggest") {
-          return (
-            <SuggestionCard
-              key={`suggest-${seg.type}-${seg.id}`}
-              id={seg.id}
-              kind={seg.type}
-            />
-          );
-        }
-        return (
-          <HighlightCard
-            key={`${seg.type}-${seg.id}`}
-            id={seg.id}
-            type={seg.type}
-            onNavigate={onNavigateToHighlight}
-            onNavigateToTimeline={onNavigateToTimeline}
-          />
-        );
-      })}
-    </View>
-  );
-});
-
+/**
+ * One turn of a conversation.
+ *
+ * The reader's words sit in a bubble at the end of the row. Samwell's do not:
+ * a reply is laid out on the page at the column's full width, the way PanelUI's
+ * `Response` draws an answer, with what he did above it and the pages it drew
+ * on under it (`SamwellResponse`). A reply is something to read, often at
+ * length, and a tinted box two thirds of the screen wide made every long one a
+ * narrow column of text.
+ */
 export const ChatBubble = React.memo(function ChatBubble({
   role,
   content,
   streaming,
+  activity,
   onNavigateToHighlight,
   onNavigateToTimeline,
   onNavigateToBook,
+  onOpenSources,
+  onOpenThought,
+  onOpenTasks,
+  onOpenPrivacy,
+  messageId,
+  onHold,
   animateEntry,
 }: ChatBubbleProps) {
   // Literal colour for ThemedText's `color` prop — the streaming cursor only;
   // everything else reads its colour from Message's align-driven classes.
   const [mutedForeground] = useCSSVariable(["--color-muted-foreground"]);
-  const isUser = role === "user";
   // Reduce Motion collapses the spatial entrance to nothing — content just
   // appears (opacity-only cross-fades remain the reduced-motion vocabulary
   // elsewhere).
   const reduceMotion = useReducedMotion();
+  const entering = animateEntry && !reduceMotion ? turnEntering : undefined;
+
+  // Measured when held, not kept: the bubble moves as the transcript scrolls,
+  // and the actions rise out of wherever it is now. The bubble, not the row
+  // Message holds by, which is the column's full width.
+  const bubbleRef = React.useRef<View>(null);
+  const hold = React.useCallback(() => {
+    if (!onHold || !messageId) return;
+    // The thump is what says the hold registered, before anything rises.
+    haptics.commit();
+    bubbleRef.current?.measureInWindow((x, y, width, height) => onHold({ id: messageId, content, rect: { x, y, width, height } }));
+  }, [onHold, messageId, content]);
+  const holdable = onHold != null && messageId != null;
+
+  if (role === "assistant") {
+    return (
+      <Animated.View entering={entering} className={ROW_CLASS}>
+        <SamwellResponse
+          content={content}
+          streaming={streaming}
+          activity={activity}
+          onNavigateToHighlight={onNavigateToHighlight}
+          onNavigateToTimeline={onNavigateToTimeline}
+          onNavigateToBook={onNavigateToBook}
+          onOpenSources={onOpenSources}
+          onOpenThought={onOpenThought}
+          onOpenTasks={onOpenTasks}
+          onOpenPrivacy={onOpenPrivacy}
+        />
+      </Animated.View>
+    );
+  }
 
   return (
-    // The Reanimated wrapper keeps its inline layout style (the row padding
-    // and rhythm the transcript's ScrollView sits around); the bubble shell
-    // inside it is PanelUI Message, so its surfaces land there as classes.
-    <Animated.View
-      entering={animateEntry && !reduceMotion ? bubbleEntering : undefined}
-      style={{ marginBottom: spacing[1], paddingHorizontal: spacing[4] }}
-    >
-      <Message align={isUser ? "end" : "start"}>
+    <Animated.View entering={entering} className={ROW_CLASS}>
+      <Message
+        align="end"
+        onLongPress={holdable ? hold : undefined}
+        accessibilityHint={holdable ? "Hold to copy it, or to send it again if it failed" : undefined}
+      >
         <Message.Content>
-          <Message.Bubble
-            className={
-              isUser
-                ? "border-e-2 border-muted-foreground/50 bg-muted"
-                : "border-s-2 border-primary/60 bg-primary/10"
-            }
-          >
-            {isUser ? (
-              <Message.BubbleContent
-                className="text-foreground"
-                style={{ fontFamily: fontFamily.sans, lineHeight: 22 }}
-              >
-                {content}
-                {streaming && (
-                  <ThemedText type="bodyMd" color={asColor(mutedForeground)}>
-                    {" ▍"}
-                  </ThemedText>
-                )}
-              </Message.BubbleContent>
-            ) : (
-              <AssistantContent
-                content={content}
-                streaming={streaming}
-                onNavigateToHighlight={onNavigateToHighlight}
-                onNavigateToTimeline={onNavigateToTimeline}
-                onNavigateToBook={onNavigateToBook}
-              />
-            )}
+          <Message.Bubble ref={bubbleRef} className="border-e-2 border-muted-foreground/50 bg-muted">
+            <Message.BubbleContent
+              className="text-foreground"
+              style={USER_TEXT}
+            >
+              {content}
+              {streaming && (
+                <ThemedText type="bodyMd" color={asColor(mutedForeground)}>
+                  {" ▍"}
+                </ThemedText>
+              )}
+            </Message.BubbleContent>
           </Message.Bubble>
         </Message.Content>
       </Message>
     </Animated.View>
   );
 });
+
+const USER_TEXT = { fontFamily: fontFamily.sans, lineHeight: 22 };

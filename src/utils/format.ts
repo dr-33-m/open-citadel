@@ -5,6 +5,15 @@
  * `src/app/settings.tsx` and `src/stores/model.ts`.
  */
 
+/**
+ * 3412 as "3,412": counts this size are read at a glance, not parsed. Always
+ * a comma, whatever the phone's language: `toLocaleString` writes "3 412" or
+ * "3.412" in other locales, which a model reading a tool result can misread.
+ */
+export function formatCount(n: number): string {
+  return String(Math.max(0, Math.round(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 const KB = 1024;
 const MB = 1024 * KB;
 const GB = 1024 * MB;

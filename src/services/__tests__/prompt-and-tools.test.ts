@@ -15,7 +15,8 @@ vi.mock('@/stores/books', () => ({ useBooksStore: { getState: () => ({}) } }));
 vi.mock('@/stores/collections', () => ({ useCollectionsStore: { getState: () => ({}) } }));
 vi.mock('@/stores/reader', () => ({ useReaderStore: { getState: () => ({}) } }));
 vi.mock('@/stores/timeline', () => ({ useTimelineStore: { getState: () => ({}) } }));
-vi.mock('@/services/book-context', () => ({ extractReadSections: () => [] }));
+vi.mock('@/services/book-context', () => ({}));
+vi.mock('@/services/reading-tools', () => ({}));
 vi.mock('@/services/journey', () => ({ formatJourneyNotes: () => '', searchJourneyNotes: () => [] }));
 
 /** The windows the catalogue's exports come in: most at 2048, Gemma 4 E2B at 4048. */

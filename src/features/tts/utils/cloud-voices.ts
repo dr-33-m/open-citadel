@@ -7,7 +7,6 @@
  */
 import {
   CLOUD_VOICE_MAX_CHARACTERS,
-  CREDIT_PLANS,
   cloudVoiceKey,
   parseCloudVoiceKey,
   planIncludes,
@@ -77,11 +76,6 @@ export function cloudChoiceFor(
   };
 }
 
-/** "Grand Maester Samwell" as a label has room for it: "GRAND MAESTER". */
-export function planShortName(plan: PlanId): string {
-  return CREDIT_PLANS[plan].label.replace(/\s*Samwell$/, '').toUpperCase();
-}
-
 /**
  * The cheapest plan that reaches the voice a stored setting names, or null
  * when it names none the catalogue knows. Where the plans sheet rests when a
@@ -130,10 +124,64 @@ export function cloudPaneView({
   return canSell && !sampling ? 'plans' : 'voices';
 }
 
+/** How many past choices are kept: one a version is plenty, and the catalogue is small. */
+const MAX_CLOUD_PICKS = 24;
+
 /**
- * Where choosing a maker lands: the plan's own default when it is one of the
- * maker's, the maker's first model otherwise. The default is the voice that
- * lasts, so a reader exploring makers is not quietly moved onto the dearest.
+ * The remembered cloud choices with `key` now the latest: one a version (a
+ * model), most recent first. What lets each voice box come back to the voice
+ * chosen in it, instead of its default, after the reader has been to another.
+ */
+export function rememberCloudPick(picks: readonly string[], key: string): string[] {
+  const parsed = parseCloudVoiceKey(key);
+  if (!parsed) return [...picks];
+  const others = picks.filter((pick) => parseCloudVoiceKey(pick)?.modelId !== parsed.modelId);
+  return [key, ...others].slice(0, MAX_CLOUD_PICKS);
+}
+
+/** The voice last chosen on a version, when it still offers it. */
+export function rememberedVoice(picks: readonly string[], model: VoiceModelView): string | null {
+  for (const pick of picks) {
+    const parsed = parseCloudVoiceKey(pick);
+    if (parsed?.modelId === model.id && model.voices.includes(parsed.voice)) return parsed.voice;
+  }
+  return null;
+}
+
+/**
+ * Where choosing a voice box lands: the version and voice last chosen in it
+ * while the plan still reaches them, and the box's default otherwise
+ * (`modelForMaker`, on that version's default voice).
+ */
+export function landingForMaker(
+  models: readonly VoiceModelView[],
+  maker: string,
+  defaultModelId: string | null,
+  picks: readonly string[],
+): CloudSelection | null {
+  for (const pick of picks) {
+    const parsed = parseCloudVoiceKey(pick);
+    const model = models.find((m) => m.id === parsed?.modelId && m.maker === maker);
+    if (model && parsed && model.voices.includes(parsed.voice)) return { model, voice: parsed.voice };
+  }
+  const model = modelForMaker(models, maker, defaultModelId);
+  return model ? { model, voice: model.defaultVoice } : null;
+}
+
+/**
+ * Where moving to another version of the same box lands: the voice last
+ * chosen on it, else the voice in hand when that version has it too (Gemini's
+ * two models share their voices), else its default.
+ */
+export function landingForModel(model: VoiceModelView, current: string | null, picks: readonly string[]): string {
+  return rememberedVoice(picks, model) ?? (current && model.voices.includes(current) ? current : model.defaultVoice);
+}
+
+/**
+ * Where choosing a maker lands when nothing was chosen in it before: the
+ * plan's own default when it is one of the maker's, the maker's first model
+ * otherwise. The default is the voice that lasts, so a reader exploring
+ * makers is not quietly moved onto the dearest.
  */
 export function modelForMaker(
   models: readonly VoiceModelView[],

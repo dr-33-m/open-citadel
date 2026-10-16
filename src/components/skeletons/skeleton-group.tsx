@@ -14,8 +14,12 @@ import { cn } from '@/lib/cn';
 
 /** Milliseconds for one half of the pulse. */
 const PULSE_DURATION = 700;
-/** How far down the pulse goes. */
-const PULSE_FLOOR = 0.45;
+/**
+ * How far down the pulse goes. The skeleton colour is faint (a tenth of the
+ * ink on the dark ground), so a shallow breath barely moved it: at 0.45 a bar
+ * on the dark theme swung about ten levels of brightness and read as still.
+ */
+const PULSE_FLOOR = 0.25;
 /** Where the pulse rests when it is not running. */
 const RESTING_OPACITY = 0.7;
 

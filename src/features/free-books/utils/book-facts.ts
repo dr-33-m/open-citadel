@@ -1,4 +1,5 @@
-import { formatCount, type CatalogBookDetail } from '@/services/gutenberg/records';
+import type { CatalogBookDetail } from '@/services/gutenberg/records';
+import { formatCount } from '@/utils/format';
 
 export type BookFact = { label: string; value: string };
 

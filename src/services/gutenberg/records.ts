@@ -72,7 +72,3 @@ export function gutenbergIdFromUri(uri: string | null | undefined): number | nul
   return match ? Number(match[1]) : null;
 }
 
-/** `185596` as `185,596`. */
-export function formatCount(count: number): string {
-  return count.toLocaleString('en-US');
-}

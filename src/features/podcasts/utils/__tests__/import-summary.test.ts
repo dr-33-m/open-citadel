@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatCount, importOutcome, importProgressLabel, importStats } from '@/features/podcasts/utils/import-summary';
+import { importOutcome, importProgressLabel, importStats } from '@/features/podcasts/utils/import-summary';
+import { formatCount } from '@/utils/format';
 
 const summary = { shows: 24, episodes: 3412, inProgress: 0, played: 1200, favorites: 1, queued: 0, skipped: 0 };
 

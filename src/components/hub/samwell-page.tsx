@@ -24,6 +24,7 @@ import { useCSSVariable } from "uniwind";
 import {
     Archive,
     BookOpen,
+    BrainCircuit,
     CalendarDays,
     History,
     ListTodo,
@@ -44,6 +45,9 @@ import { contentColumn, spacing } from "@/constants/theme";
 import { PlansSheetHost, type PlansSheetHandle } from "@/features/billing/components/plans-sheet";
 import { CAN_SELL_PLANS } from "@/features/billing/utils/can-sell";
 import { ArticlePickerSheet } from "@/features/blogs/components/article-picker-sheet";
+import { BrainSheetHost } from "@/features/chat/components/brain-sheet-host";
+import { useBrainSheet } from "@/features/chat/hooks/use-brain-sheet";
+import { useBrainName } from "@/features/chat/hooks/use-brain-name";
 import { useArticleCover } from "@/features/blogs/hooks/use-article-cover";
 import { useArticlePicker } from "@/features/blogs/hooks/use-article-picker";
 import { BookPickerSheet } from "@/features/chat/components/book-picker-sheet";
@@ -154,6 +158,7 @@ export function SamwellPage() {
   const toolCallStatus = useChatStore((s) => s.toolCallStatus);
   const toolCallName = useChatStore((s) => s.toolCallName);
   const streamingContent = useChatStore((s) => s.streamingContent);
+  const streamingActivity = useChatStore((s) => s.streamingActivity);
   const thinkingContent = useChatStore((s) => s.thinkingContent);
   const thinkingSeconds = useChatStore((s) => s.thinkingSeconds);
   const titleRefreshing = useChatStore((s) => s.titleRefreshing);
@@ -543,6 +548,36 @@ export function SamwellPage() {
   const composerNewChatLabel =
     mode === "chat" ? "New chat" : "New conversation";
 
+  /*
+   * The brain he thinks with, chosen from the toolbox as from Settings. Chat
+   * follows the engine; Compass is always the cloud. Held mid-turn, as History
+   * is: a phone's brain cannot be swapped under a reply, and a cloud one
+   * changed then would answer a question it never saw asked.
+   */
+  const { ref: brainSheet, open: openBrains } = useBrainSheet();
+  const cloudBrains = mode === "compass" || readiness.mode === "cloud";
+  const brainOnOffer = cloudBrains || readiness.nativeSupported;
+  const brainDetail = useBrainName(cloudBrains) ?? "None yet";
+  const brainHeld =
+    mode === "chat"
+      ? isGenerating || chat.switching !== null
+      : compass.submitting || compass.switching !== null;
+  const brainTool: ToolboxItem[] = React.useMemo(
+    () =>
+      brainOnOffer
+        ? [
+            {
+              id: "brain",
+              icon: BrainCircuit,
+              label: "Brain",
+              detail: brainDetail,
+              onPress: brainHeld ? undefined : openBrains,
+            },
+          ]
+        : [],
+    [brainOnOffer, brainDetail, brainHeld, openBrains],
+  );
+
   const chatSessionCount = sessions.length;
   const compassSessionCount = compass.sessions.length;
   const dueCount = compassDue.length;
@@ -608,6 +643,7 @@ export function SamwellPage() {
                   } satisfies ToolboxItem,
                 ]
               : []),
+            ...brainTool,
             {
               id: "history",
               icon: History,
@@ -665,6 +701,7 @@ export function SamwellPage() {
                       )
                     : undefined,
               },
+              ...brainTool,
               {
                 id: "history",
                 icon: History,
@@ -714,6 +751,7 @@ export function SamwellPage() {
       pendingBook,
       setSession,
       chatSessionCount,
+      brainTool,
       // Compass
       cloudReady,
       activeGoal,
@@ -796,6 +834,7 @@ export function SamwellPage() {
                     sessionId={activeSession?.id ?? null}
                     messages={visibleChatMessages}
                     streamingContent={streamingContent}
+                    streamingActivity={streamingActivity}
                     isGenerating={isGenerating}
                     indicator={indicator}
                     lastStreamedMessageId={lastStreamedMessageId}
@@ -806,6 +845,7 @@ export function SamwellPage() {
                     onNavigateToHighlight={handleNavigateToHighlight}
                     onNavigateToTimeline={handleNavigateToTimeline}
                     onNavigateToBook={handleNavigateToBook}
+                    onResendMessage={chat.resend}
                   />
                 ) : null,
                 compass: modesOpened.compass ? (
@@ -1007,6 +1047,7 @@ export function SamwellPage() {
             line="Monthly Neurons for Samwell's cloud brains."
             onActivated={startInCloud}
           />
+          <BrainSheetHost ref={brainSheet} cloud={cloudBrains} />
           <AboutCompassSheet
             visible={showAboutCompass}
             onClose={() => setShowAboutCompass(false)}

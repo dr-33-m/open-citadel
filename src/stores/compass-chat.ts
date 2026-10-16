@@ -1,3 +1,4 @@
+import { onlineManager } from '@tanstack/react-query';
 import { create } from 'zustand';
 
 import { db } from '@/db/client';
@@ -7,6 +8,7 @@ import {
   isEmptySession,
   listSessions,
   readMessages,
+  removeMessage,
   removeSession,
   renameSession,
   touchSession,
@@ -20,6 +22,7 @@ import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
+import { settleActivity, withThought, type TurnActivity } from '@/utils/turn-activity';
 
 /**
  * Compass conversations.
@@ -78,6 +81,8 @@ type CompassChatState = {
 
   submitting: boolean;
   streamingReply: string;
+  /** The steps and sources of the turn in flight; null between turns. */
+  streamingActivity: TurnActivity | null;
   /**
    * The model's reasoning for the turn in flight.
    *
@@ -99,6 +104,10 @@ type CompassChatState = {
   openSession: (id: string) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   send: (text: string) => Promise<void>;
+  /** Sends one of the reader's messages again: one that never got a reply.
+   *  It moves to the end of the conversation. Says in a toast when it cannot
+   *  go, and then leaves the message where it is. */
+  resend: (id: string) => Promise<void>;
   /** Aborts the turn in flight. The reply keeps whatever streamed before the
    *  tap; no error is raised. */
   stop: () => void;
@@ -112,11 +121,25 @@ type CompassChatState = {
 const IDLE = {
   submitting: false,
   streamingReply: '',
+  streamingActivity: null,
   toolStatus: null,
   toolName: null,
   // Null by default; a successful commit sets it right after spreading IDLE.
   lastStreamedMessageId: null,
 } as const;
+
+/**
+ * Why a Compass turn cannot be sent right now, or null when it can. Compass
+ * is cloud-only and the cloud runs on accounts. The empty state already says
+ * so and offers the way out; this is the floor under it, and what a resend
+ * says when it cannot go.
+ */
+function sendBlocked(): string | null {
+  if (!useSettingsStore.getState().cloudBaseUrl) return 'Samwell Cloud is not set up in this build.';
+  if (!onlineManager.isOnline()) return 'You are offline. Compass needs a connection.';
+  if (useAccountStore.getState().status !== 'signedIn') return 'Sign in to talk to Grand Maester Samwell.';
+  return null;
+}
 
 export const useCompassChatStore = create<CompassChatState>((set, get) => ({
   sessions: [],
@@ -125,6 +148,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
   switching: null,
   submitting: false,
   streamingReply: '',
+  streamingActivity: null,
   streamingThinking: '',
   streamingThinkingSeconds: null,
   lastStreamedMessageId: null,
@@ -243,14 +267,9 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
     if (!sessionId) return;
 
     const { cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
-    if (!cloudBaseUrl) {
-      sayCloudTurnBlocked('Samwell Cloud is not set up in this build.');
-      return;
-    }
-    // Compass is cloud-only and the cloud runs on accounts. The empty state
-    // already says so and offers the way out; this is the floor under it.
-    if (useAccountStore.getState().status !== 'signedIn') {
-      sayCloudTurnBlocked('Sign in to talk to Grand Maester Samwell.');
+    const blocked = sendBlocked();
+    if (blocked) {
+      sayCloudTurnBlocked(blocked);
       return;
     }
 
@@ -273,6 +292,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       messages: [...history, userMessage],
       submitting: true,
       streamingReply: '',
+      streamingActivity: null,
       streamingThinking: '',
       streamingThinkingSeconds: null,
       lastStreamedMessageId: null,
@@ -295,6 +315,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         onStreamingContent: (content) => set({ streamingReply: content }),
         onThinkingContent: (content) => set({ streamingThinking: content }),
         onThinkingDone: (seconds) => set({ streamingThinkingSeconds: seconds }),
+        onActivity: (activity) => set({ streamingActivity: activity }),
         onToolStatus: (status, name) =>
           set({
             toolStatus: status,
@@ -337,6 +358,8 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         content: reply,
         createdAt: new Date().toISOString(),
         via: 'cloud',
+        // What he did and thought on the way to it, kept with what he said.
+        activity: withThought(settleActivity(get().streamingActivity), get().streamingThinking, get().streamingThinkingSeconds),
       };
       appendMessage(assistantMessage);
       touchSession(sessionId, assistantMessage.createdAt);
@@ -386,6 +409,23 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
     } finally {
       cloudAbort = null;
     }
+  },
+
+  resend: async (id) => {
+    const { submitting, messages } = get();
+    if (submitting) return;
+    const message = messages.find((m) => m.id === id && m.role === 'user');
+    if (!message) return;
+    // Checked before the message is taken out, so a resend that cannot go
+    // never loses it.
+    const blocked = sendBlocked();
+    if (blocked) {
+      sayCloudTurnBlocked(blocked);
+      return;
+    }
+    removeMessage(id);
+    set((state) => ({ messages: state.messages.filter((m) => m.id !== id) }));
+    await get().send(message.content);
   },
 
   stop: () => {

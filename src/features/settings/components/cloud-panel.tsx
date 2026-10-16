@@ -55,10 +55,7 @@ export function CloudPanel({
   // nothing about a balance needs asking while it is put away.
   const onScreen = useOnScreen();
   const focused = useIsFocused() && onScreen;
-  const [mutedForeground, primary] = useCSSVariable([
-    "--color-muted-foreground",
-    "--color-primary",
-  ]);
+  const [mutedForeground] = useCSSVariable(["--color-muted-foreground"]);
   const cloudBaseUrl = useSettingsStore((s) => s.cloudBaseUrl);
   const cloudModelId = useSettingsStore((s) => s.cloudModelId);
   const setCloudModelId = useSettingsStore((s) => s.setCloudModelId);
@@ -410,8 +407,6 @@ export function CloudPanel({
         activeId={cloudModelId}
         models={models}
         plan={plan}
-        mutedForeground={asColor(mutedForeground)}
-        primary={asColor(primary)}
       />
 
       <CloudTuneSheet
