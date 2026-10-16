@@ -3,6 +3,7 @@ import { View } from "react-native";
 
 import { AssistantContent } from "@/components/chat/assistant-content";
 import { CopyReplyButton } from "@/components/chat/copy-reply-button";
+import { PrivacyButton } from "@/components/chat/privacy-button";
 import { SourceStack } from "@/components/chat/source-stack";
 import { TasksButton } from "@/components/chat/tasks-button";
 import { ThoughtButton } from "@/components/chat/thought-button";
@@ -23,6 +24,8 @@ interface SamwellResponseProps {
   onOpenThought?: (thought: TurnThought) => void;
   /** Raises the sheet with every step he took. Without it, the finished steps are not shown. */
   onOpenTasks?: (steps: readonly TurnStep[]) => void;
+  /** Raises the sheet on zero data retention. Only a reply from the cloud gets it. */
+  onOpenPrivacy?: () => void;
 }
 
 /** The faint rule between the parts, so the answer reads apart from the work and the pages around it. */
@@ -43,7 +46,9 @@ const FOOTER_PLAIN = `${FOOTER} mt-2`;
  *   down the screen as the text grows above it): copy the reply
  *   (`CopyReplyButton`), what he thought on the way (`ThoughtButton`), the
  *   steps he took (`TasksButton`), then the web pages a search found
- *   (`SourceStack`). Each of the last three opens a sheet of its own.
+ *   (`SourceStack`). Each of the last three opens a sheet of its own. At
+ *   the far end, on a reply from the cloud, a green shield that says what
+ *   happens to what was said (`PrivacyButton`).
  *
  * A faint rule under the live step and another over a footer that carries
  * his work keep the answer apart from them, each only where there is
@@ -62,6 +67,7 @@ export const SamwellResponse = React.memo(function SamwellResponse({
   onOpenSources,
   onOpenThought,
   onOpenTasks,
+  onOpenPrivacy,
 }: SamwellResponseProps) {
   const steps = activity?.steps ?? NO_STEPS;
   const finished = !streaming;
@@ -72,7 +78,8 @@ export const SamwellResponse = React.memo(function SamwellResponse({
   const hasSources = sources.length > 0;
   const copyable = hasText && finished;
   const thought = finished && onOpenThought ? activity?.thought : undefined;
-  const hasFooter = copyable || hasSources || hasTasks || thought != null;
+  const shielded = finished && hasText && onOpenPrivacy != null;
+  const hasFooter = copyable || hasSources || hasTasks || thought != null || shielded;
   // Ruled over his work (the steps, the pages) when an answer sits above it;
   // a copy button or a thought alone is part of the reply, not a section.
   const footerClass = hasText ? ((hasSources || hasTasks) ? FOOTER_RULED : FOOTER_PLAIN) : FOOTER;
@@ -99,6 +106,7 @@ export const SamwellResponse = React.memo(function SamwellResponse({
           {thought && onOpenThought ? <ThoughtButton thought={thought} onOpen={onOpenThought} /> : null}
           {hasTasks && onOpenTasks ? <TasksButton steps={steps} onOpen={onOpenTasks} /> : null}
           {hasSources && onOpenSources ? <SourceStack sources={sources} onOpen={onOpenSources} /> : null}
+          {shielded && onOpenPrivacy ? <PrivacyButton onOpen={onOpenPrivacy} /> : null}
         </View>
       ) : null}
     </View>

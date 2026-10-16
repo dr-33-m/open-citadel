@@ -423,11 +423,20 @@ function textFromMessage(message: UIMessage | undefined): string {
     .join('');
 }
 
-/** Whether a message is still waiting on a tool it called. */
-function hasPendingToolCall(message: UIMessage): boolean {
-  return message.parts.some(
-    (part) => part.type === 'tool-call' && (part as { output?: unknown }).output === undefined,
-  );
+/**
+ * Whether a message is still waiting on a tool it called.
+ *
+ * A call the reader said no to never gets an output: nothing ran, so nothing
+ * came back. Counting it as still open held every turn with a refusal in it
+ * on the stop button after the answer had finished, until the quiet timeout
+ * gave up two minutes later. A failed call is over the same way.
+ */
+export function hasPendingToolCall(message: UIMessage): boolean {
+  return message.parts.some((part) => {
+    if (part.type !== 'tool-call') return false;
+    if (part.output !== undefined || part.state === 'error') return false;
+    return part.approval?.approved !== false;
+  });
 }
 
 /**

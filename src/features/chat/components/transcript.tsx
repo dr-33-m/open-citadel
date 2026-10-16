@@ -17,15 +17,15 @@
  * a `scrollToEnd` on every content-size change that dragged the reader back to
  * the live edge whatever they were half way through reading.
  *
- * It owns the conversation's one sources sheet, its one thought sheet, its one
- * tasks sheet and its one strip of message actions, so each is wired once for
- * every surface.
+ * It owns the conversation's sheets (sources, thought, tasks, privacy) and its
+ * one strip of message actions, so each is wired once for every surface.
  */
 import React from 'react';
 import { View, type ViewStyle } from 'react-native';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { MessageActions } from '@/components/chat/message-actions';
+import { PrivacySheet } from '@/components/chat/privacy-sheet';
 import { SourcesSheet } from '@/components/chat/sources-sheet';
 import { TasksSheet } from '@/components/chat/tasks-sheet';
 import { ThoughtSheet } from '@/components/chat/thought-sheet';
@@ -104,6 +104,9 @@ export function Transcript({
   const sourcesSheet = useHeldSheet<readonly WebSource[]>(NO_SOURCES);
   const thoughtSheet = useHeldSheet<TurnThought | null>(null);
   const tasksSheet = useHeldSheet<readonly TurnStep[]>(NO_STEPS);
+  const [privacyVisible, setPrivacyVisible] = React.useState(false);
+  const openPrivacy = React.useCallback(() => setPrivacyVisible(true), []);
+  const closePrivacy = React.useCallback(() => setPrivacyVisible(false), []);
   // The held-out reply still answers the message before it, and a message
   // still on its way to the store is being sent, not unanswered.
   const unanswered = React.useMemo(
@@ -127,6 +130,8 @@ export function Transcript({
         onOpenSources={sourcesSheet.open}
         onOpenThought={thoughtSheet.open}
         onOpenTasks={tasksSheet.open}
+        // Only a reply that went through the cloud was covered by its promise.
+        onOpenPrivacy={m.via === 'cloud' ? openPrivacy : undefined}
         messageId={m.id}
         onHold={messageActions.onHold}
       />
@@ -193,6 +198,7 @@ export function Transcript({
       </MessageScroller>
 
       <SourcesSheet visible={sourcesSheet.visible} onClose={sourcesSheet.onClose} sources={sourcesSheet.value} />
+      <PrivacySheet visible={privacyVisible} onClose={closePrivacy} />
       <TasksSheet visible={tasksSheet.visible} onClose={tasksSheet.onClose} steps={tasksSheet.value} />
       <ThoughtSheet visible={thoughtSheet.visible} onClose={thoughtSheet.onClose} thought={thoughtSheet.value} />
       <MessageActions {...messageActions.popover} />

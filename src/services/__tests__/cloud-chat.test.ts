@@ -33,7 +33,7 @@ vi.mock('@/stores/approval', () => ({
 vi.mock('@/stores/settings', () => ({ useSettingsStore: { getState: () => ({ cloudThinkingBudget: 'low' }) } }));
 
 const { showToast } = await import('@/components/toast/toast-provider');
-const { CloudUnreachable, sayCloudTurnFailed, sendCloudChatTurn } = await import('@/services/cloud-chat');
+const { CloudUnreachable, hasPendingToolCall, sayCloudTurnFailed, sendCloudChatTurn } = await import('@/services/cloud-chat');
 
 const started = { type: 'RUN_STARTED', runId: 'r1', threadId: 't', timestamp: at };
 const failed = { type: 'RUN_ERROR', runId: 'r1', message: 'Provider returned error', timestamp: at };
@@ -116,5 +116,23 @@ describe('how a failed turn is said', () => {
   it('keeps the transport out of anything else', () => {
     sayCloudTurnFailed(new Error('XHR error! status: 503 upstream connect error or disconnect/reset'));
     expect(lastToast()).toEqual({ key: 'cloud-turn-failed', message: 'Samwell could not answer just now. Try again.' });
+  });
+});
+
+describe('a tool call still being waited on', () => {
+  const call = (part: Record<string, unknown>) =>
+    ({ id: 'a1', role: 'assistant', parts: [{ type: 'tool-call', id: 't1', name: 'add_to_queue', arguments: '{}', ...part }] }) as never;
+
+  it('waits on a call with no result yet, and on one awaiting the reader', () => {
+    expect(hasPendingToolCall(call({ state: 'input-complete' }))).toBe(true);
+    expect(hasPendingToolCall(call({ state: 'approval-requested', approval: { id: 'p1', needsApproval: true } }))).toBe(true);
+    expect(hasPendingToolCall(call({ state: 'approval-responded', approval: { id: 'p1', needsApproval: true, approved: true } }))).toBe(true);
+  });
+
+  it('is done with a call that returned, failed, or was refused', () => {
+    expect(hasPendingToolCall(call({ state: 'complete', output: { ok: true } }))).toBe(false);
+    expect(hasPendingToolCall(call({ state: 'error' }))).toBe(false);
+    // Said no to: nothing will ever come back, and the turn must still end.
+    expect(hasPendingToolCall(call({ state: 'approval-responded', approval: { id: 'p1', needsApproval: true, approved: false } }))).toBe(false);
   });
 });

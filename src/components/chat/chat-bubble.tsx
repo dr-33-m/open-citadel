@@ -39,6 +39,8 @@ interface ChatBubbleProps {
   onOpenThought?: (thought: TurnThought) => void;
   /** Samwell's turns only: raises the conversation's tasks sheet. */
   onOpenTasks?: (steps: readonly TurnStep[]) => void;
+  /** Samwell's cloud turns only: raises the conversation's privacy sheet. */
+  onOpenPrivacy?: () => void;
   /** The reader's turns only: the message's id, handed back when it is held. */
   messageId?: string;
   /** The reader's turns only: a long press on the bubble (`useMessageActions`). */
@@ -72,6 +74,7 @@ export const ChatBubble = React.memo(function ChatBubble({
   onOpenSources,
   onOpenThought,
   onOpenTasks,
+  onOpenPrivacy,
   messageId,
   onHold,
   animateEntry,
@@ -110,6 +113,7 @@ export const ChatBubble = React.memo(function ChatBubble({
           onOpenSources={onOpenSources}
           onOpenThought={onOpenThought}
           onOpenTasks={onOpenTasks}
+          onOpenPrivacy={onOpenPrivacy}
         />
       </Animated.View>
     );
