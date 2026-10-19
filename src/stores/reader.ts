@@ -167,6 +167,9 @@ async function saveProgressToDb(bookId: string, locator: Locator, percentage: nu
  * found there.
  */
 async function finishRead(book: Book): Promise<void> {
+  // A transcript is read alongside listening, and an episode is finished by
+  // listening to it, never by reading its transcript to the end.
+  if (book.kind === "episode") return;
   if (book.kind === "article") {
     if (await finishArticleOfBook(book.id)) invalidateBlogLibrary();
     return;

@@ -7,6 +7,7 @@ import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
 import { extractChapterTextToLocator } from '@/services/book-context';
 import { articleChatPrompt, articleText } from '@/services/blogs/article-chat';
+import { episodeChatGrounding } from '@/services/podcasts/transcript/episode-chat';
 import {
     listSessions,
     messageRow,
@@ -689,13 +690,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           .get()
       : undefined;
     const readPct = progress ? Math.round(progress.percentage * 100) : null;
-    // A blog post opened in the reader is a book row too, but it has no plot
-    // to spoil, and the boundary's wording is about books.
-    const isArticle = bookId
-      ? db.select({ kind: books.kind }).from(books).where(eq(books.id, bookId)).get()?.kind === 'article'
-      : false;
+    // A blog post or a podcast transcript is a book row too, but neither has a
+    // plot to spoil, and the boundary's wording is about books.
+    const bookKind = bookId ? db.select({ kind: books.kind }).from(books).where(eq(books.id, bookId)).get()?.kind : undefined;
+    const isArticle = bookKind === 'article';
+    const isEpisode = bookKind === 'episode';
     const boundaryLine =
-      readPct !== null && !isArticle
+      readPct !== null && !isArticle && !isEpisode
         ? `The user has read ${readPct}% of this book${
             progress?.currentPage ? ` (up to page ${progress.currentPage})` : ''
           }. Hard rule: never reveal, discuss, or hint at plot events, characters, or ideas that appear beyond that point, not from the book text and not from your own knowledge of the book. If asked about later content, say you will discuss it once they have read that far.`
@@ -770,7 +771,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         .where(eq(books.id, bookId))
         .get();
 
-      if (bookRow && isArticle) {
+      const episodePrompt = bookRow && isEpisode ? await episodeChatGrounding(bookId) : null;
+      if (episodePrompt) {
+        // An episode is grounded in its whole transcript, its chapters and
+        // where the listener is (`services/podcasts/transcript/episode-chat.ts`).
+        db.insert(chatMessages)
+          .values({ id: uuid(), sessionId: id, role: 'system', content: episodePrompt, createdAt: ts })
+          .run();
+      } else if (bookRow && isArticle) {
         // A post is grounded in the whole post, from the top.
         const text = bookRow.filePath ? await articleText(bookRow.filePath) : null;
         db.insert(chatMessages)

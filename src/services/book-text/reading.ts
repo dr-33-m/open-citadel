@@ -15,7 +15,8 @@ import { ftsMatch, type SearchQuery } from '@/utils/search-terms';
 /**
  * How far into a book Samwell may read: `null` for all of it (a finished
  * book, or a blog post, which has no plot to spoil), `undefined` for none
- * (no saved position: fail closed), or the reader's position.
+ * (no saved position: fail closed), or the reader's position. A podcast
+ * transcript is whole too: an episode is grounded in all of it, by decision.
  *
  * Only a finished book is whole. A book still in the queue, or set aside
  * partway, keeps its saved position as the boundary.
@@ -26,7 +27,8 @@ export function readLocatorFor(book: Book): SpineLocator | null | undefined {
   return parseLocator(progress?.locator);
 }
 
-const isWhole = (book: Book) => book.kind === 'article' || book.status === 'archived';
+/** Posts and podcast transcripts have no plot to spoil: Samwell reads them whole. */
+const isWhole = (book: Book) => book.kind === 'article' || book.kind === 'episode' || book.status === 'archived';
 
 function parseLocator(locator: string | null | undefined): SpineLocator | undefined {
   if (!locator) return undefined;
@@ -50,7 +52,8 @@ function readLocatorsFor(list: readonly Book[]): Map<string, SpineLocator | null
 
 /**
  * Every book and post with something in it the reader has read: being read,
- * finished, set aside with a position, or a post opened in the reader. Most
+ * finished, set aside with a position, a post opened in the reader, or a
+ * podcast episode with a transcript. Most
  * recently read first, which is the order the index fills in and the order a
  * search reaches for when it cannot wait for them all.
  */
@@ -59,7 +62,7 @@ export function readableBooks(): Book[] {
   return db
     .select()
     .from(books)
-    .where(or(inArray(books.status, ['reading', 'archived']), eq(books.kind, 'article'), inArray(books.id, opened)))
+    .where(or(inArray(books.status, ['reading', 'archived']), inArray(books.kind, ['article', 'episode']), inArray(books.id, opened)))
     .orderBy(desc(sql`coalesce((select ${readingProgress.updatedAt} from ${readingProgress} where ${readingProgress.bookId} = ${books.id}), ${books.completedAt}, ${books.addedAt})`))
     .all()
     .filter((book) => book.filePath != null);

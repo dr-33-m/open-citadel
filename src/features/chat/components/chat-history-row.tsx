@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 
-import { BookOpen, MessageSquarePlus, Newspaper, PencilSparkles, Trash2 } from '@/components/icons';
+import { BookOpen, MessageSquarePlus, MicSignal, Newspaper, PencilSparkles, Trash2 } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Item } from '@/components/ui/item';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
@@ -75,8 +75,9 @@ export const ChatHistoryRow = React.memo(function ChatHistoryRow({
     void onRename(item).finally(() => swipeRef.current?.close());
   }, [onRename, item]);
 
-  // What the chat is about: a blog post, a book, or nothing in particular.
-  const kindIcon = item.bookKind === 'article' ? Newspaper : item.bookTitle ? BookOpen : MessageSquarePlus;
+  // What the chat is about: a podcast episode, a blog post, a book, or nothing in particular.
+  const kindIcon =
+    item.bookKind === 'episode' ? MicSignal : item.bookKind === 'article' ? Newspaper : item.bookTitle ? BookOpen : MessageSquarePlus;
   const renameIcon = renaming ? (
     // `size` set so the tile does not resize it as a glyph. The ring and its
     // arc are recoloured for the primary fill, where the default primary arc

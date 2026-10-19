@@ -10,7 +10,10 @@
  */
 import { parseDocument } from 'htmlparser2';
 
+import { escapeAttribute, escapeText } from '@/services/epub/parts';
 import { resolveUrl } from '@/utils/urls';
+
+export { escapeAttribute } from '@/services/epub/parts';
 
 /** The parts of htmlparser2's DOM this reads, typed here rather than through its nested domhandler. */
 type DomNode = {
@@ -43,14 +46,6 @@ const ATTRIBUTES: Record<string, string[]> = {
   th: ['colspan', 'rowspan'],
   abbr: ['title'],
 };
-
-function escapeText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-export function escapeAttribute(value: string): string {
-  return escapeText(value).replace(/"/g, '&quot;');
-}
 
 /** Characters XML forbids outright; one of them anywhere makes the chapter unreadable. */
 function stripInvalid(value: string): string {

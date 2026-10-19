@@ -118,6 +118,62 @@ export function defaultSpeakerName(index: number): string {
   return `Speaker ${index + 1}`;
 }
 
+// -- Utterances ---------------------------------------------------------------
+
+/** Past this a block is cut at the next sentence end. */
+export const SOFT_CUT_SECONDS = 30;
+/** Past this a block is cut at the next piece, sentence or not. */
+export const HARD_CUT_SECONDS = 40;
+
+const SENTENCE_END = /[.!?…]["'”’)\]]*$/;
+const NO_SPACE_BEFORE = /^[,.!?;:…%)\]}”’'-]/;
+
+/** Words to text: a space between them unless the word brings its own or is punctuation. */
+export function joinWords(words: readonly string[]): string {
+  let text = '';
+  for (const raw of words) {
+    if (!raw) continue;
+    if (text === '' || /^\s/.test(raw) || NO_SPACE_BEFORE.test(raw) || /\s$/.test(text)) text += raw;
+    else text += ` ${raw}`;
+  }
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Timed pieces (a word from Scribe, a phrase from a show's own transcript)
+ * merged into utterances a phone reads: one block while the same person
+ * keeps talking, cut at a sentence end once it has run half a minute, and
+ * cut regardless at forty seconds so a monologue is still a list a finger
+ * can move through. Pure; the server and the app both cut by it.
+ */
+export function mergeTimedText(pieces: readonly TranscriptSegment[]): TranscriptSegment[] {
+  type Block = { start: number; end: number; speaker: number | null; words: string[] };
+  const segments: TranscriptSegment[] = [];
+  const push = (block: Block | null) => {
+    if (!block) return;
+    const text = joinWords(block.words);
+    if (text) segments.push({ start: block.start, end: block.end, speaker: block.speaker, text });
+  };
+
+  let open: Block | null = null;
+  for (const piece of pieces) {
+    if (!piece.text.trim()) continue;
+    if (open && (piece.speaker !== open.speaker || piece.start - open.start >= HARD_CUT_SECONDS)) {
+      push(open);
+      open = null;
+    }
+    if (!open) open = { start: piece.start, end: piece.end, speaker: piece.speaker, words: [] };
+    open.words.push(piece.text);
+    open.end = Math.max(open.end, piece.end);
+    if (open.end - open.start >= SOFT_CUT_SECONDS && SENTENCE_END.test(piece.text.trim())) {
+      push(open);
+      open = null;
+    }
+  }
+  push(open);
+  return segments;
+}
+
 // -- The job, as the app sees it ---------------------------------------------
 
 export type TranscribeJobStatus = 'queued' | 'transcribing' | 'ready' | 'failed';

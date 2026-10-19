@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { HARD_CUT_SECONDS, joinWords, shapeScribeReply, type ScribeWord } from '../transcript-shape.js';
+import { HARD_CUT_SECONDS, joinWords } from 'samwell-shared';
+
+import { shapeScribeReply, type ScribeWord } from '../transcript-shape.js';
 
 const w = (word: string, start: number, speaker: string | null = 'speaker_0', end = start + 0.4): ScribeWord => ({
   word,
