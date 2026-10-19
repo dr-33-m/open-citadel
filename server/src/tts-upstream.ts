@@ -134,6 +134,36 @@ export interface GenerationRecord {
    * down to either.
    */
   provider: string | null;
+  /**
+   * How long OpenRouter says the maker took, and every maker it tried on the
+   * way (a failed first try shows here and nowhere else). Set beside the
+   * server's own wait for the first byte, the difference is time spent
+   * before any maker was asked: OpenRouter, or the road to it.
+   */
+  latencyMs: number | null;
+  attempts: { provider: string; status: number; latencyMs: number | null }[];
+}
+
+interface GenerationBody {
+  total_cost?: unknown;
+  usage?: unknown;
+  provider_name?: unknown;
+  latency?: unknown;
+  provider_responses?: unknown;
+}
+
+const finiteOrNull = (value: unknown): number | null => {
+  const n = Number(value);
+  return value != null && Number.isFinite(n) ? n : null;
+};
+
+function readAttempts(raw: unknown): GenerationRecord['attempts'] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry: Record<string, unknown>) => ({
+    provider: typeof entry?.provider_name === 'string' ? entry.provider_name : 'unknown',
+    status: finiteOrNull(entry?.status) ?? 0,
+    latencyMs: finiteOrNull(entry?.latency),
+  }));
 }
 
 /**
@@ -163,13 +193,16 @@ export async function lookupGeneration(
         signal: AbortSignal.timeout(10_000),
       });
       if (!response.ok) continue;
-      const body = (await response.json().catch(() => null)) as
-        | { data?: { total_cost?: unknown; usage?: unknown; provider_name?: unknown } }
-        | null;
+      const body = (await response.json().catch(() => null)) as { data?: GenerationBody } | null;
       const cost = Number(body?.data?.total_cost ?? body?.data?.usage);
       if (Number.isFinite(cost) && cost >= 0) {
         const provider = body?.data?.provider_name;
-        return { costUsd: cost, provider: typeof provider === 'string' && provider ? provider : null };
+        return {
+          costUsd: cost,
+          provider: typeof provider === 'string' && provider ? provider : null,
+          latencyMs: finiteOrNull(body?.data?.latency),
+          attempts: readAttempts(body?.data?.provider_responses),
+        };
       }
     } catch {
       // Try again after the next pause.

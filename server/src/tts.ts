@@ -191,10 +191,17 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
       });
       // Which price was charged is the one thing about a piece that cannot be
       // seen from outside. Never the text: it is a page of somebody's book.
+      // The generation id is there to look a slow piece up at OpenRouter.
+      const earlierTries = (record?.attempts ?? [])
+        .slice(0, -1)
+        .map((attempt) => `${attempt.provider} ${attempt.status} in ${attempt.latencyMs ?? '?'}ms`);
       console.log(
         `[TTS] ${modelId} ${text.length} characters: $${costUsd.toFixed(6)} ` +
           `(${actual != null ? 'OpenRouter' : reported === 0 ? 'listed, OpenRouter said 0' : 'listed'}), ` +
-          `${debited} Neurons debited, first byte ${firstByteMs}ms via ${record?.provider ?? 'unknown'}`,
+          `${debited} Neurons debited, first byte ${firstByteMs}ms ` +
+          `(maker ${record?.latencyMs ?? '?'}ms) via ${record?.provider ?? 'unknown'}` +
+          (earlierTries.length > 0 ? ` after ${earlierTries.join(', ')}` : '') +
+          ` ${generationId ?? 'no-id'}`,
       );
     }
 
