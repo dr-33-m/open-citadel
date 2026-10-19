@@ -115,8 +115,9 @@ describe('/transcribe', () => {
     expect(estimate).toBe(transcriptionCredits(5_400));
     await worker.settled(jobId);
 
-    expect(scribeCalls[0]).toMatchObject({ input_audio: { url: episode.audioUrl, format: 'mp3' }, diarize: true });
-    expect(scribeCalls[0].keyterms).toEqual(expect.arrayContaining(['Sam Altman', 'Lex Fridman']));
+    expect(scribeCalls[0]).toMatchObject({ input_audio: { url: episode.audioUrl, format: 'mp3' }, provider: { options: { elevenlabs: { diarize: true } } } });
+    const sent = scribeCalls[0] as { provider: { options: { elevenlabs: { keyterms: string[] } } } };
+    expect(sent.provider.options.elevenlabs.keyterms).toEqual(expect.arrayContaining(['Sam Altman', 'Lex Fridman']));
     expect(await credits()).toMatchObject({ balance: 2_500, reserved: estimate });
 
     const status = (await (await get(`/${jobId}`)).json()) as { status: string; progress: number };

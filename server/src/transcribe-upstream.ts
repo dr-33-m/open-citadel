@@ -29,6 +29,10 @@ export const TRANSCRIPTION_URL = 'https://openrouter.ai/api/v1/audio/transcripti
 export const TRANSCRIBE_TIMEOUT_MS = 20 * 60_000;
 
 const MAX_KEYTERMS = 50;
+/** ElevenLabs takes a key term of at most 50 characters. */
+const MAX_KEYTERM_CHARS = 50;
+/** The provider's slug on OpenRouter: the key its own options go under. */
+export const SCRIBE_PROVIDER = 'elevenlabs';
 
 // -- What may be sent --------------------------------------------------------
 
@@ -99,7 +103,7 @@ export function keytermsFrom(...texts: (string | null | undefined)[]): string[] 
     for (const match of (text ?? '').matchAll(run)) {
       const term = match[0].replace(/[.’']+$/, '').trim();
       const words = term.split(/\s+/).length;
-      if (words < 2 || words > 4 || term.length > 100) continue;
+      if (words < 2 || words > 4 || term.length > MAX_KEYTERM_CHARS) continue;
       found.add(term);
       if (found.size >= MAX_KEYTERMS) return [...found];
     }
@@ -109,15 +113,24 @@ export function keytermsFrom(...texts: (string | null | undefined)[]): string[] 
 
 // -- The call ----------------------------------------------------------------
 
+/**
+ * The request. Speaker labels and key terms are ElevenLabs' own options, so
+ * they go under `provider.options.elevenlabs` in its field names: OpenRouter
+ * refuses them at the top level for Scribe ("does not support diarize or
+ * keyterms", seen on the PR 12 preview), where only normalised fields belong.
+ */
 export function transcriptionBody(args: { audioUrl: string; format: string; keyterms: string[] }): Record<string, unknown> {
+  const elevenlabs: Record<string, unknown> = { diarize: true };
+  if (args.keyterms.length > 0) elevenlabs.keyterms = args.keyterms;
   return {
     model: TRANSCRIPTION_MODEL.id,
     input_audio: { url: args.audioUrl, format: args.format },
     response_format: 'verbose_json',
     timestamp_granularities: ['word', 'segment'],
-    diarize: true,
-    ...(args.keyterms.length > 0 ? { keyterms: args.keyterms } : {}),
-    provider: process.env.TRANSCRIBE_ALLOW_RETENTION === '1' ? {} : PROVIDER_PREFERENCES,
+    provider: {
+      ...(process.env.TRANSCRIBE_ALLOW_RETENTION === '1' ? {} : PROVIDER_PREFERENCES),
+      options: { [SCRIBE_PROVIDER]: elevenlabs },
+    },
   };
 }
 
@@ -125,8 +138,23 @@ export type TranscribeOutcome =
   | { ok: true; reply: ScribeReply }
   | { ok: false; reason: 'audio_unreachable' | 'provider_failed' | 'cancelled'; detail: string };
 
-/** One episode to Scribe. Never throws: every failure is an outcome the job can record. */
+/**
+ * One episode to Scribe. If the provider refuses the key terms, it is asked
+ * once more without them: they only help with spelling, and Samwell names
+ * the speakers from the show notes either way.
+ */
 export async function requestTranscription(
+  args: { audioUrl: string; format: string; keyterms: string[] },
+  options: { apiKey: string; fetchImpl?: typeof fetch; signal?: AbortSignal; timeoutMs?: number },
+): Promise<TranscribeOutcome> {
+  const first = await requestOnce(args, options);
+  if (first.ok || args.keyterms.length === 0 || !/keyterm/i.test(first.detail)) return first;
+  console.warn('[Transcribe] Key terms refused; asking again without them');
+  return requestOnce({ ...args, keyterms: [] }, options);
+}
+
+/** One request. Never throws: every failure is an outcome the job can record. */
+async function requestOnce(
   args: { audioUrl: string; format: string; keyterms: string[] },
   options: { apiKey: string; fetchImpl?: typeof fetch; signal?: AbortSignal; timeoutMs?: number },
 ): Promise<TranscribeOutcome> {

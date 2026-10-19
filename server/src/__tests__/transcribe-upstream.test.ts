@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { audioFormatFor, isPublicAudioUrl, keytermsFrom, transcriptionBody } from '../transcribe-upstream.js';
+import { audioFormatFor, isPublicAudioUrl, keytermsFrom, requestTranscription, transcriptionBody } from '../transcribe-upstream.js';
 
 describe('isPublicAudioUrl', () => {
   it('takes a public http or https URL', () => {
@@ -47,15 +47,47 @@ describe('keytermsFrom', () => {
 });
 
 describe('transcriptionBody', () => {
-  it('asks for speakers, times and zero retention, by URL', () => {
-    const body = transcriptionBody({ audioUrl: 'https://x.com/a.mp3', format: 'mp3', keyterms: [] });
+  it("asks for times and zero retention, with speakers and key terms in ElevenLabs' own options", () => {
+    const body = transcriptionBody({ audioUrl: 'https://x.com/a.mp3', format: 'mp3', keyterms: ['Lex Fridman'] });
     expect(body).toMatchObject({
       model: 'elevenlabs/scribe-v2',
       input_audio: { url: 'https://x.com/a.mp3', format: 'mp3' },
       response_format: 'verbose_json',
-      diarize: true,
-      provider: { zdr: true },
+      provider: { zdr: true, options: { elevenlabs: { diarize: true, keyterms: ['Lex Fridman'] } } },
     });
+    expect(body).not.toHaveProperty('diarize');
     expect(body).not.toHaveProperty('keyterms');
+  });
+
+  it('leaves key terms out when there are none', () => {
+    const body = transcriptionBody({ audioUrl: 'https://x.com/a.mp3', format: 'mp3', keyterms: [] }) as { provider: { options: { elevenlabs: object } } };
+    expect(body.provider.options.elevenlabs).toEqual({ diarize: true });
+  });
+});
+
+describe('requestTranscription', () => {
+  it('asks again without key terms when the provider refuses them', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      bodies.push(body);
+      return body.provider.options.elevenlabs.keyterms
+        ? new Response('{"error":{"message":"keyterms not supported"}}', { status: 400 })
+        : Response.json({ text: 'ok', usage: { cost: 0.01, seconds: 10 } });
+    }) as unknown as typeof fetch;
+    const outcome = await requestTranscription({ audioUrl: 'https://x.com/a.mp3', format: 'mp3', keyterms: ['Ada Lovelace'] }, { apiKey: 'k', fetchImpl });
+    expect(outcome.ok).toBe(true);
+    expect(bodies).toHaveLength(2);
+  });
+
+  it('does not retry any other refusal', async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return new Response('{"error":{"message":"Failed to download audio from URL"}}', { status: 400 });
+    }) as unknown as typeof fetch;
+    const outcome = await requestTranscription({ audioUrl: 'https://x.com/a.mp3', format: 'mp3', keyterms: ['Ada Lovelace'] }, { apiKey: 'k', fetchImpl });
+    expect(outcome).toMatchObject({ ok: false, reason: 'audio_unreachable' });
+    expect(calls).toBe(1);
   });
 });
