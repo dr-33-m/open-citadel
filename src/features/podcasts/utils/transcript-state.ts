@@ -58,16 +58,17 @@ export type ConfirmFigure = {
 /**
  * The confirm sheet's figure. A feed that gives no length is priced at two
  * hours (what the server holds) and said to be "up to" that, since the real
- * cost, charged after, is what the episode turns out to be.
+ * cost, charged after, is what the episode turns out to be. A balance not yet
+ * known (the server has not answered) is left unsaid, never read as zero.
  */
-export function confirmFigure(durationSec: number, available: number): ConfirmFigure {
+export function confirmFigure(durationSec: number, available: number | null): ConfirmFigure {
   const known = durationSec > 0;
   const credits = Math.max(1, transcriptionCredits(transcriptionSeconds(durationSec)));
-  const short = credits > available ? credits - available : null;
+  const short = available != null && credits > available ? credits - available : null;
   const length = known ? formatDuration(durationSec) : 'Length not given';
   return {
     figure: short != null ? `${formatCount(short)} Neurons short` : `${known ? '' : 'Up to '}${formatCount(credits)} Neurons`,
-    line: `${length}. You have ${formatCount(available)}.`,
+    line: available != null ? `${length}. You have ${formatCount(available)}.` : `${length}.`,
     credits,
     short,
   };

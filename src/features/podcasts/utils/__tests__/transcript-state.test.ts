@@ -50,6 +50,10 @@ describe('confirmFigure', () => {
     expect(confirmFigure(5_400, 100)).toMatchObject({ figure: '313 Neurons short', short: 313 });
   });
 
+  it('leaves a balance not yet known unsaid, and never short', () => {
+    expect(confirmFigure(5_400, null)).toMatchObject({ figure: '413 Neurons', line: '1 hr 30 min.', short: null });
+  });
+
   it('says "up to" for a feed that gives no length', () => {
     expect(confirmFigure(0, 5_000)).toMatchObject({ figure: 'Up to 550 Neurons', line: 'Length not given. You have 5,000.' });
   });

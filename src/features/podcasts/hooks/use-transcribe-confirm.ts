@@ -31,7 +31,11 @@ export function useTranscribeConfirm(
   { running, progress, onStarted }: { running: boolean; progress: number; onStarted: (reason: ConfirmReason) => void },
 ) {
   const plan = useSubscriptionStore((s) => s.plan);
+  const status = useSubscriptionStore((s) => s.status);
   const available = useSubscriptionStore((s) => s.balance.available);
+  // Only a server that has answered "no plan" puts the plans up first. Before
+  // it answers, the confirm sheet opens and the server's refusal decides.
+  const noPlan = plan == null && (status === 'none' || status === 'unavailable');
   const [reason, setReason] = React.useState<ConfirmReason | null>(null);
   const [plansOpen, setPlansOpen] = React.useState(false);
   const [infoOpen, setInfoOpen] = React.useState(false);
@@ -40,10 +44,10 @@ export function useTranscribeConfirm(
   const open = React.useCallback(
     (why: ConfirmReason) => {
       // A job already running shows its progress whoever has a plan now.
-      if (!plan && !running) setPlansOpen(true);
+      if (noPlan && !running) setPlansOpen(true);
       else setReason(why);
     },
-    [plan, running],
+    [noPlan, running],
   );
 
   const start = useMutation({
@@ -75,7 +79,7 @@ export function useTranscribeConfirm(
     onSettled: () => setReason(null),
   });
 
-  const figure = confirmFigure(episode?.durationSec ?? 0, available);
+  const figure = confirmFigure(episode?.durationSec ?? 0, status === 'active' ? available : null);
   const onAction = () => {
     if (!episode) return;
     if (figure.short != null) setPlansOpen(true);

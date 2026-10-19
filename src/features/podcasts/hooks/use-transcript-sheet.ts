@@ -78,7 +78,8 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
   return {
     rows,
     loading: preparing || (query.isPending && visible),
-    empty: !preparing && query.isSuccess && doc === null,
+    // Not while a just-saved transcript is being read back.
+    empty: !preparing && query.isSuccess && !query.isFetching && doc === null,
     lit,
     match,
     listRef: list,
