@@ -39,12 +39,21 @@ export async function transcribeEpisode(episodeId: string): Promise<{ jobId: str
 
 export type CollectedTranscript = { episodeId: string; title: string; bookId: string; credits: number };
 
+/** Collections under way, so the watcher and the launch pick-up asking at once share one. */
+const collecting = new Map<string, Promise<CollectedTranscript>>();
+
 /** Collects a finished job's transcript and keeps it. The reader is charged by this, once. */
-export async function collectEpisodeTranscript(episodeId: string, jobId: string): Promise<CollectedTranscript> {
-  const { doc, credits } = await collectTranscript(jobId);
-  const bookId = await saveTranscript(episodeId, doc);
-  const title = db.select({ title: podcastEpisodes.title }).from(podcastEpisodes).where(eq(podcastEpisodes.id, episodeId)).get()?.title ?? '';
-  return { episodeId, title, bookId, credits };
+export function collectEpisodeTranscript(episodeId: string, jobId: string): Promise<CollectedTranscript> {
+  const running = collecting.get(jobId);
+  if (running) return running;
+  const job = (async () => {
+    const { doc, credits } = await collectTranscript(jobId);
+    const bookId = await saveTranscript(episodeId, doc);
+    const title = db.select({ title: podcastEpisodes.title }).from(podcastEpisodes).where(eq(podcastEpisodes.id, episodeId)).get()?.title ?? '';
+    return { episodeId, title, bookId, credits };
+  })().finally(() => collecting.delete(jobId));
+  collecting.set(jobId, job);
+  return job;
 }
 
 export async function stopEpisodeTranscription(episodeId: string, jobId: string): Promise<void> {

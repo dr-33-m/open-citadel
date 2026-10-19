@@ -13,6 +13,7 @@ import { contentColumn, iconSize, layout } from "@/constants/theme";
 import { EpisodeDetails } from "@/features/podcasts/components/episode-details";
 import { EpisodeDetailsSkeleton } from "@/features/podcasts/components/episode-details-skeleton";
 import { EpisodeHero } from "@/features/podcasts/components/episode-hero";
+import { EpisodeTranscriptBar } from "@/features/podcasts/components/episode-transcript-bar";
 import { EpisodePageSkeleton } from "@/features/podcasts/components/episode-page-skeleton";
 import { MiniPlayer } from "@/features/podcasts/components/mini-player";
 import { useEpisodeScreen } from "@/features/podcasts/hooks/use-episode-screen";
@@ -59,6 +60,7 @@ export default function EpisodeScreen() {
             onRemoveDownload={hero.removeDownload}
             onToggleFavorite={hero.toggleFavorite}
             onTogglePlayed={hero.togglePlayed}
+            transcript={<EpisodeTranscriptBar episode={episode} line={screen.transcriptLine} live={landed} />}
           />
         </View>
         {screen.hasDetails ? (

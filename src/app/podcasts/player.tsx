@@ -9,6 +9,7 @@ import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { contentColumn, iconSize } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
+import { EpisodeTranscriptBar } from "@/features/podcasts/components/episode-transcript-bar";
 import { PlayerArtwork } from "@/features/podcasts/components/player-artwork";
 import { PlayerControls } from "@/features/podcasts/components/player-controls";
 import { PlayerSheets } from "@/features/podcasts/components/player-sheets";
@@ -16,6 +17,7 @@ import { PlayerTitle } from "@/features/podcasts/components/player-title";
 import { useEpisodeActions } from "@/features/podcasts/hooks/use-episode-actions";
 import { usePlayerControls } from "@/features/podcasts/hooks/use-player-controls";
 import { usePlayerScreen } from "@/features/podcasts/hooks/use-player-screen";
+import { formatDuration } from "@/features/podcasts/utils/format";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
@@ -25,7 +27,8 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
  *
  * Top to bottom, in the order a listener's eye asks: what is this (artwork,
  * title, show), where am I in it (chapter, scrubber), and what can I do (the
- * transport, then speed, sleep, Up Next and chapters). Nothing else.
+ * transport, then speed, sleep, Up Next and chapters, then the transcript
+ * and Samwell). Nothing else.
  */
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -41,6 +44,7 @@ export default function PlayerScreen() {
   // Big, but leaving the controls their room on a short phone.
   const art = Math.min(width - 48, height * 0.42, 380);
   const openMenu = episode ? () => episodeActions.openMenu(episode) : undefined;
+  const transcriptLine = [current.showTitle, formatDuration(current.durationSec)].filter(Boolean).join(" · ");
   const gradient = [tokens["--color-card"] ?? "transparent", tokens["--color-background"] ?? "transparent"] as const;
 
   return (
@@ -75,7 +79,12 @@ export default function PlayerScreen() {
           {/* Drawn from the first frame, with the values they will keep, so
               nothing is swapped when the player lands: only the scrubber's
               drag waits for that. */}
-          <PlayerControls player={player} controls={controls} live={landed} />
+          <PlayerControls
+            player={player}
+            controls={controls}
+            live={landed}
+            transcript={<EpisodeTranscriptBar episode={episode} line={transcriptLine} live={landed} />}
+          />
         </View>
       </View>
       {landed ? (

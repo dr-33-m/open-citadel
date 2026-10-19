@@ -18,13 +18,19 @@ export type EpisodeChatInput = {
   doc: TranscriptDoc | null;
 };
 
-/** The transcript as Samwell reads it: `[12:04] Lex Fridman: words`, one line a segment. */
+/** One segment as Samwell reads it: `[12:04] Lex Fridman: words`. */
+export function segmentLine(doc: TranscriptDoc, index: number): string {
+  const segment = doc.segments[index];
+  const name = segment.speaker != null ? doc.speakers[segment.speaker] : null;
+  const time = segment.end > 0 || segment.start > 0 ? `[${formatClock(segment.start)}] ` : '';
+  return `${time}${name ? `${name}: ` : ''}${segment.text}`;
+}
+
+/** The transcript as Samwell reads it, one line a segment, up to a budget. */
 export function transcriptLines(doc: TranscriptDoc, maxChars: number): { text: string; cut: boolean } {
   let text = '';
-  for (const segment of doc.segments) {
-    const name = segment.speaker != null ? doc.speakers[segment.speaker] : null;
-    const time = segment.end > 0 || segment.start > 0 ? `[${formatClock(segment.start)}] ` : '';
-    const line = `${time}${name ? `${name}: ` : ''}${segment.text}\n`;
+  for (let i = 0; i < doc.segments.length; i++) {
+    const line = `${segmentLine(doc, i)}\n`;
     if (text.length + line.length > maxChars) return { text: text || line.slice(0, maxChars), cut: true };
     text += line;
   }

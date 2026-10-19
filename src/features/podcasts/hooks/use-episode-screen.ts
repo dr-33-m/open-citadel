@@ -7,6 +7,7 @@ import { Share } from 'react-native';
 import { openShowPage } from '@/features/podcasts/hooks/open-podcast-page';
 import { useEpisode } from '@/features/podcasts/hooks/use-episode';
 import { playOrToggle } from '@/features/podcasts/hooks/use-episode-actions';
+import { formatDuration } from '@/features/podcasts/utils/format';
 import * as actions from '@/services/podcasts/actions';
 import { localCoverUri } from '@/services/podcasts/download-paths';
 import { playEpisode, seekTo } from '@/services/podcasts/player';
@@ -59,11 +60,14 @@ export function useEpisodeScreen(id: string, landed: boolean) {
   };
 
   const view: EpisodeView = episode ? 'episode' : loaded ? 'gone' : 'loading';
+  const showTitle = show ? showName(show) : (listed?.showTitle ?? '');
 
   return {
     view,
     episode,
-    showTitle: show ? showName(show) : (listed?.showTitle ?? ''),
+    showTitle,
+    /** Under the transcript's title: "The Show · 1 hr 30 min". */
+    transcriptLine: [showTitle, formatDuration(episode?.durationSec ?? 0)].filter(Boolean).join(' · '),
     // The same picture either way, so the cover is not asked for twice. The
     // copy saved with a download comes first, as it does in every list.
     artworkUrl:

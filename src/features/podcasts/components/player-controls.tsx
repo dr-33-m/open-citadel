@@ -17,10 +17,15 @@ type PlayerControlsProps = {
    * turning it on changes no pixel.
    */
   live: boolean;
+  /** Under the options: the episode's Transcript and Ask Samwell boxes. */
+  transcript?: React.ReactNode;
 };
 
-/** Where the listener is and what they can do: the scrubber, the transport, then speed, sleep, Up Next and chapters. */
-export function PlayerControls({ player, controls, live }: PlayerControlsProps) {
+/**
+ * Where the listener is and what they can do: the scrubber, the transport,
+ * then speed, sleep, Up Next and chapters, then the transcript and Samwell.
+ */
+export function PlayerControls({ player, controls, live, transcript }: PlayerControlsProps) {
   return (
     <View className="gap-8">
       <PlayerProgress
@@ -41,16 +46,19 @@ export function PlayerControls({ player, controls, live }: PlayerControlsProps) 
         onBack={controls.back}
         onForward={controls.forward}
       />
-      <PlayerOptions
-        speedLabel={player.speedLabel}
-        sleepLabel={player.sleepLabel}
-        upNextCount={player.queue.length}
-        hasChapters={player.chapters.length > 0}
-        onSpeed={controls.open('speed')}
-        onSleep={controls.open('sleep')}
-        onUpNext={controls.open('upnext')}
-        onChapters={controls.open('chapters')}
-      />
+      <View className="gap-3">
+        <PlayerOptions
+          speedLabel={player.speedLabel}
+          sleepLabel={player.sleepLabel}
+          upNextCount={player.queue.length}
+          hasChapters={player.chapters.length > 0}
+          onSpeed={controls.open('speed')}
+          onSleep={controls.open('sleep')}
+          onUpNext={controls.open('upnext')}
+          onChapters={controls.open('chapters')}
+        />
+        {transcript}
+      </View>
     </View>
   );
 }
