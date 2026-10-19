@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 
+import { disposeAudioPlayer } from '@/lib/audio-player';
 import { sampleUrl } from '@/services/cloud-tts/request';
 
 /** Longer than any sample takes to start. Past it the sample is said to be unavailable. */
@@ -24,7 +25,7 @@ export function useCloudSamplePreview(modelId: string | null) {
   const stopPlayer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = null;
-    playerRef.current?.remove();
+    disposeAudioPlayer(playerRef.current);
     playerRef.current = null;
   }, []);
 

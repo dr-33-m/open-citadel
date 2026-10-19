@@ -21,7 +21,7 @@ import { z } from 'zod';
 import type { BillingService } from './billing.js';
 import type { SpeechCharging } from './tts-billing.js';
 import type { SpeechGuards } from './tts-guards.js';
-import { lookupGenerationCost, parseAudioFormat, requestSpeech } from './tts-upstream.js';
+import { lookupGeneration, parseAudioFormat, requestSpeech } from './tts-upstream.js';
 import type { UsageEventUpdate } from './db.js';
 
 export interface TtsDeps {
@@ -114,6 +114,9 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
     }
 
     let upstream: Response;
+    // Until the maker's answer starts. The number the phone waits on, and the
+    // one that tells a slow maker from a slow anything else.
+    const askedAt = Date.now();
     try {
       upstream = await requestSpeech(
         // Speed goes to a maker that takes it, and only when it is not 1.
@@ -121,6 +124,9 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
         { apiKey, fetchImpl: deps.fetchImpl, signal: c.req.raw.signal },
       );
     } catch (error) {
+      // Said with how long it took: a timeout and a refusal are different
+      // problems, and only the time tells them apart from here.
+      console.warn(`[TTS] ${modelId} no answer after ${Date.now() - askedAt}ms: ${String(error).slice(0, 200)}`);
       await deps.billing.releaseReservation({ usageEventId, error: `Maker unreachable: ${String(error)}` });
       admitted.release(true);
       return c.json({ error: 'maker_failed' }, 502);
@@ -135,6 +141,7 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
       return c.json({ error: upstream.status === 429 ? 'maker_busy' : 'maker_failed', status: upstream.status }, upstream.status === 429 ? 503 : 502);
     }
 
+    const firstByteMs = Date.now() - askedAt;
     const format = parseAudioFormat(upstream.headers.get('content-type'));
     const generationId = upstream.headers.get('x-generation-id');
     const reader = upstream.body.getReader();
@@ -165,9 +172,10 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
      * well not have charged for it.
      */
     async function settlePiece(outcome: 'complete' | 'cancelled' | 'failed'): Promise<void> {
-      const reported = generationId
-        ? await lookupGenerationCost(generationId, { apiKey: apiKey as string, fetchImpl: deps.fetchImpl, wait: deps.wait })
+      const record = generationId
+        ? await lookupGeneration(generationId, { apiKey: apiKey as string, fetchImpl: deps.fetchImpl, wait: deps.wait })
         : null;
+      const reported = record?.costUsd ?? null;
       const actual = reported != null && (reported > 0 || outcome !== 'complete') ? reported : null;
       if (actual == null && bytes === 0) {
         await deps.billing.releaseReservation({ usageEventId, error: `Piece ${outcome} before any audio` });
@@ -186,7 +194,7 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
       console.log(
         `[TTS] ${modelId} ${text.length} characters: $${costUsd.toFixed(6)} ` +
           `(${actual != null ? 'OpenRouter' : reported === 0 ? 'listed, OpenRouter said 0' : 'listed'}), ` +
-          `${debited} Neurons debited`,
+          `${debited} Neurons debited, first byte ${firstByteMs}ms via ${record?.provider ?? 'unknown'}`,
       );
     }
 

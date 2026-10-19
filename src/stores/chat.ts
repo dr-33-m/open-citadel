@@ -31,7 +31,7 @@ import {
     type ToolCallContext,
 } from '@/services/chat-tools';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
-import { sayCloudTurnFailed, sendCloudChatTurn } from '@/services/cloud-chat';
+import { KEEP_GOING_MESSAGE, sayCloudTurnFailed, sayTurnPaused, sendCloudChatTurn } from '@/services/cloud-chat';
 import {
     estimateTokens,
     planReplay,
@@ -980,6 +980,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             useSubscriptionStore.getState().applyCreditsFromTurn(available);
           },
           onActivity: (activity) => set({ streamingActivity: activity }),
+          // Carrying on is the reader's next message, in the chat it paused in.
+          onPaused: (reason) =>
+            sayTurnPaused(reason, () => {
+              if (get().activeSession?.id === activeSession.id) void get().sendMessage(KEEP_GOING_MESSAGE);
+            }),
         });
       } catch (err) {
         // In a toast, not a bubble written into the transcript: a failure is

@@ -125,14 +125,25 @@ export function parseAudioFormat(contentType: string | null): AudioFormat {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** What OpenRouter recorded about one generation. */
+export interface GenerationRecord {
+  costUsd: number;
+  /**
+   * Which provider served it. Kokoro is routed to DeepInfra or Together, and
+   * the server could not say which, so a run of slow pieces could not be put
+   * down to either.
+   */
+  provider: string | null;
+}
+
 /**
- * What OpenRouter charged for one generation, in dollars, or null.
+ * What OpenRouter recorded for one generation, or null.
  *
  * Asked up to four times, a second, two and four apart: the record is written
  * a moment after the audio finishes and an early ask answers 404. Null means
  * it never came, and the caller falls back to the listed price.
  */
-export async function lookupGenerationCost(
+export async function lookupGeneration(
   generationId: string,
   options: {
     apiKey: string;
@@ -140,7 +151,7 @@ export async function lookupGenerationCost(
     delaysMs?: readonly number[];
     wait?: (ms: number) => Promise<void>;
   },
-): Promise<number | null> {
+): Promise<GenerationRecord | null> {
   const doFetch = options.fetchImpl ?? fetch;
   const delays = options.delaysMs ?? [1_000, 2_000, 4_000, 8_000];
   const wait = options.wait ?? sleep;
@@ -153,13 +164,24 @@ export async function lookupGenerationCost(
       });
       if (!response.ok) continue;
       const body = (await response.json().catch(() => null)) as
-        | { data?: { total_cost?: unknown; usage?: unknown } }
+        | { data?: { total_cost?: unknown; usage?: unknown; provider_name?: unknown } }
         | null;
       const cost = Number(body?.data?.total_cost ?? body?.data?.usage);
-      if (Number.isFinite(cost) && cost >= 0) return cost;
+      if (Number.isFinite(cost) && cost >= 0) {
+        const provider = body?.data?.provider_name;
+        return { costUsd: cost, provider: typeof provider === 'string' && provider ? provider : null };
+      }
     } catch {
       // Try again after the next pause.
     }
   }
   return null;
+}
+
+/** What OpenRouter charged for one generation, in dollars, or null. See `lookupGeneration`. */
+export async function lookupGenerationCost(
+  generationId: string,
+  options: Parameters<typeof lookupGeneration>[1],
+): Promise<number | null> {
+  return (await lookupGeneration(generationId, options))?.costUsd ?? null;
 }
