@@ -7,12 +7,13 @@ import { SkeletonBar, SkeletonGroup } from '@/components/skeletons/skeleton-grou
 const TITLE_WIDTHS = ['w-4/5', 'w-3/5', 'w-5/6', 'w-1/2', 'w-3/4', 'w-2/3'] as const;
 
 /**
- * Stand-in for the post picker's rows: the square picture, the blog line and
- * a title, in one `SkeletonGroup` so the list pulses as one node.
+ * Stand-in for a picker's square-picture rows (a post, an episode): the
+ * picture, the small line and a title, in one `SkeletonGroup` so the list
+ * pulses as one node.
  */
-export function ArticlePickerSkeleton({ count = 6 }: { count?: number }) {
+export function PickerRowsSkeleton({ label, count = 6 }: { label: string; count?: number }) {
   return (
-    <SkeletonGroup label="Loading posts">
+    <SkeletonGroup label={label}>
       {Array.from({ length: count }, (_, i) => (
         <View key={i} className="flex-row items-center gap-3 px-6 py-3">
           <View className="bg-skeleton" style={{ width: 56, height: 56 }} />

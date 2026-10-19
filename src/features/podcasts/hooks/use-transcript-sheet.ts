@@ -71,7 +71,7 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
     jump(matches[next], 0.2);
   };
 
-  const actions = useTranscriptActions({ episodeId, doc, isCurrent });
+  const actions = useTranscriptActions({ episodeId, doc });
   const lit = current;
   const match = matches.length > 0 ? matches[at] : -1;
 

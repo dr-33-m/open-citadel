@@ -116,3 +116,11 @@ describe('rowPassage', () => {
     expect(context.split('\n')).toHaveLength(3);
   });
 });
+
+describe('pickerEmptyText', () => {
+  it('names the window it is empty for', async () => {
+    const { pickerEmptyText } = await import('@/features/podcasts/utils/episode-picker');
+    expect(pickerEmptyText('week')).toBe('No transcripts this week. Open an episode and tap Transcribe.');
+    expect(pickerEmptyText('all')).toBe('No transcripts yet. Open an episode and tap Transcribe.');
+  });
+});

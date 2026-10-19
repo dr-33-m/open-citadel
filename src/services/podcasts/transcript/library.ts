@@ -50,3 +50,21 @@ export function listTranscribedEpisodes(window: TranscriptWindow, now = new Date
     .all();
   return rows.map(({ status, ...row }) => ({ ...row, ready: status === 'ready' }));
 }
+
+export type EpisodeOfBook = { episodeId: string; showTitle: string; durationSec: number };
+
+/** The episode whose transcript is this book, for a chat about it. Null for any other book. */
+export function episodeForBook(bookId: string): EpisodeOfBook | null {
+  return (
+    db
+      .select({
+        episodeId: podcastEpisodes.id,
+        showTitle: sql<string>`coalesce(nullif(trim(${podcasts.customTitle}), ''), ${podcasts.title})`,
+        durationSec: podcastEpisodes.durationSec,
+      })
+      .from(podcastEpisodes)
+      .innerJoin(podcasts, eq(podcasts.id, podcastEpisodes.podcastId))
+      .where(eq(podcastEpisodes.transcriptBookId, bookId))
+      .get() ?? null
+  );
+}

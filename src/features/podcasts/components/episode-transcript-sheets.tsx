@@ -27,16 +27,26 @@ type EpisodeTranscriptSheetsProps = {
   line: string;
 };
 
-/** The transcript sheet with its row menu and rename. A container: its hook re-renders this, not the screen. */
-function TranscriptSheetHost({ transcript, line }: EpisodeTranscriptSheetsProps) {
-  const { listRef, ...state } = useTranscriptSheet({
-    episodeId: transcript.transcript.episodeId,
-    visible: transcript.transcript.visible,
-    preparing: transcript.transcript.preparing,
-  });
+type TranscriptViewerProps = {
+  episodeId: string | null;
+  visible: boolean;
+  onClose: () => void;
+  /** The show's transcript being fetched for the first open: the skeleton stays. */
+  preparing?: boolean;
+  /** Under the transcript's title: "The Show · 1 hr 30 min". */
+  line: string;
+};
+
+/**
+ * The transcript sheet with its row menu and rename, wherever a transcript
+ * is opened: the player, the episode page, an episode chat's badge. A
+ * container: its hook re-renders this, not the screen.
+ */
+export function TranscriptViewer({ episodeId, visible, onClose, preparing = false, line }: TranscriptViewerProps) {
+  const { listRef, ...state } = useTranscriptSheet({ episodeId, visible, preparing });
   return (
     <>
-      <TranscriptSheet visible={transcript.transcript.visible} onClose={transcript.transcript.onClose} line={line} state={state} listRef={listRef} />
+      <TranscriptSheet visible={visible} onClose={onClose} line={line} state={state} listRef={listRef} />
       <TranscriptMenuSheet {...state.menu} />
       <SpeakerNameSheet {...state.rename} />
     </>
@@ -54,7 +64,7 @@ export function EpisodeTranscriptSheets({ transcript, line }: EpisodeTranscriptS
       <TranscribeSheet {...transcript.confirm} />
       <InfoSheet {...transcript.info} info={TRANSCRIBE_INFO} nested />
       <PlansSheet {...transcript.plans} line="Transcripts come with every plan." />
-      <TranscriptSheetHost transcript={transcript} line={line} />
+      <TranscriptViewer {...transcript.transcript} line={line} />
     </>
   );
 }

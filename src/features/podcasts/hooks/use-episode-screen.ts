@@ -10,9 +10,9 @@ import { playOrToggle } from '@/features/podcasts/hooks/use-episode-actions';
 import { formatDuration } from '@/features/podcasts/utils/format';
 import * as actions from '@/services/podcasts/actions';
 import { localCoverUri } from '@/services/podcasts/download-paths';
-import { playEpisode, seekTo } from '@/services/podcasts/player';
+import { playEpisodeFrom } from '@/services/podcasts/player';
 import { showName } from '@/services/podcasts/records';
-import { useEpisodePlayback, usePodcastPlayer } from '@/stores/podcast-player';
+import { useEpisodePlayback } from '@/stores/podcast-player';
 
 /** What an episode's page draws: its skeleton, the episode, or word that it is gone. */
 export type EpisodeView = 'loading' | 'episode' | 'gone';
@@ -31,15 +31,8 @@ export function useEpisodeScreen(id: string, landed: boolean) {
   const show = detail?.show ?? null;
   const link = episode?.link ?? show?.link ?? null;
 
-  /** A timestamp or chapter: jump there if this is the episode playing, otherwise start it there. */
-  const playFrom = React.useCallback(
-    (seconds: number) => {
-      const player = usePodcastPlayer.getState();
-      if (player.current?.episodeId === id && player.loaded) seekTo(seconds);
-      else void playEpisode(id, seconds);
-    },
-    [id],
-  );
+  /** A timestamp or chapter: play from there (`playEpisodeFrom`). */
+  const playFrom = React.useCallback((seconds: number) => void playEpisodeFrom(id, seconds), [id]);
   // Web links in the in-app browser; mail links to the mail app, which the
   // browser cannot open.
   const openLink = React.useCallback((url: string) => {

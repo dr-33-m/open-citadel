@@ -20,6 +20,21 @@ export async function playEpisode(episodeId: string, startAt: number | null = nu
 }
 
 /**
+ * Plays an episode from a moment: a timestamp in its notes, a line of its
+ * transcript, a time Samwell cited. A seek, and play if paused, when it is
+ * the episode already in the player; otherwise the episode started there.
+ */
+export async function playEpisodeFrom(episodeId: string, seconds: number): Promise<void> {
+  const { current, loaded } = store();
+  if (current?.episodeId !== episodeId || !loaded) {
+    await playEpisode(episodeId, seconds);
+    return;
+  }
+  seekTo(seconds);
+  if (!selectPlaying(store())) await togglePlayback();
+}
+
+/**
  * Play or pause, answering the press at once: pausing flips the state now
  * rather than when the native player reports it, and playing marks the
  * player as starting, so the control shows its loader through a seek or a

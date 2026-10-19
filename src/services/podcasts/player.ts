@@ -18,6 +18,7 @@
  */
 export {
   playEpisode,
+  playEpisodeFrom,
   seekTo,
   setSleepTimer,
   setSpeed,

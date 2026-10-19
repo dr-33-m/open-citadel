@@ -6,11 +6,10 @@ import type { TranscriptDoc } from 'samwell-shared';
 import { showToast } from '@/components/toast/toast-provider';
 import { rowPassage } from '@/features/podcasts/utils/transcript-rows';
 import { invalidatePodcastLibrary } from '@/query-manager/podcasts';
-import { playEpisode, seekTo, togglePlayback } from '@/services/podcasts/player';
+import { playEpisodeFrom } from '@/services/podcasts/player';
 import { ensureEpisodeBook, renameSpeaker } from '@/services/podcasts/transcript/store';
 import { showChatOnSamwellPage } from '@/services/samwell-handoff';
 import { useChatStore } from '@/stores/chat';
-import { usePodcastPlayer } from '@/stores/podcast-player';
 
 export type TranscriptMenuKey = 'ask' | 'copy' | 'reader';
 
@@ -27,7 +26,7 @@ export const TRANSCRIPT_MENU: { key: TranscriptMenuKey; label: string }[] = [
  * for every line they have, which rewrites the JSON and the episode's EPUB so
  * Samwell and search see the right name too.
  */
-export function useTranscriptActions({ episodeId, doc, isCurrent }: { episodeId: string | null; doc: TranscriptDoc | null; isCurrent: boolean }) {
+export function useTranscriptActions({ episodeId, doc }: { episodeId: string | null; doc: TranscriptDoc | null }) {
   const router = useRouter();
   const [menuRow, setMenuRow] = React.useState<number | null>(null);
   const [renaming, setRenaming] = React.useState<number | null>(null);
@@ -35,15 +34,9 @@ export function useTranscriptActions({ episodeId, doc, isCurrent }: { episodeId:
   const onRow = React.useCallback(
     (index: number) => {
       const start = doc?.segments[index]?.start;
-      if (!episodeId || start == null) return;
-      if (!isCurrent) {
-        void playEpisode(episodeId, start);
-        return;
-      }
-      seekTo(start);
-      if (!usePodcastPlayer.getState().isPlaying) void togglePlayback();
+      if (episodeId && start != null) void playEpisodeFrom(episodeId, start);
     },
-    [doc, episodeId, isCurrent],
+    [doc, episodeId],
   );
   const onLongPress = React.useCallback((index: number) => setMenuRow(index), []);
   const onSpeaker = React.useCallback(
