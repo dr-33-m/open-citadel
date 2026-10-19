@@ -36,6 +36,11 @@ describe('speechBody', () => {
     const body = speechBody({ modelId: 'm/x', voice: 'v', text: 't', format: 'pcm' });
     expect(body).toEqual({ model: 'm/x', input: 't', voice: 'v', response_format: 'pcm', provider: { zdr: true } });
   });
+
+  it('asks for Together first for Kokoro, falling back to whoever else hosts it', () => {
+    const body = speechBody({ modelId: 'hexgrad/kokoro-82m', voice: 'af_heart', text: 't', format: 'pcm' });
+    expect(body.provider).toEqual({ zdr: true, order: ['together'], allow_fallbacks: true });
+  });
 });
 
 describe('lookupGenerationCost', () => {
