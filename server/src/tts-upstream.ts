@@ -32,33 +32,16 @@ export interface SpeechRequest {
   format: SpeechFormat;
 }
 
-/**
- * Makers to ask first, by model, ahead of OpenRouter's own choice.
- *
- * Kokoro has two hosts. OpenRouter sends it to the cheaper one, DeepInfra
- * ($0.62 a million characters), and on 2026-10-19 held those requests for up
- * to 30 seconds before DeepInfra saw them (DeepInfra itself answered in about
- * 250ms, by OpenRouter's own record); Together ($4) answered in under a second
- * in the same minutes. A reader hears every second of that wait as the voice
- * stopping. OpenRouter's speech docs say `order` is not applied to speech, so
- * this is sent to be tried, and the TTS log line ("via ...") is where to see
- * whether it was honoured. Fallbacks stay on: a Together outage reads on
- * through DeepInfra rather than not at all.
- */
-const PREFERRED_MAKERS: Record<string, readonly string[]> = {
-  'hexgrad/kokoro-82m': ['together'],
-};
-
 export function speechBody(request: SpeechRequest): Record<string, unknown> {
-  const order = PREFERRED_MAKERS[request.modelId];
   return {
     model: request.modelId,
     input: request.text,
     voice: request.voice,
     response_format: request.format,
     // Zero retention on speech as on chat: the page being read is sent to the
-    // maker and must not be kept.
-    provider: order ? { ...PROVIDER_PREFERENCES, order, allow_fallbacks: true } : PROVIDER_PREFERENCES,
+    // maker and must not be kept. Routing preferences beyond this one are not
+    // applied to speech by OpenRouter, so none are sent.
+    provider: PROVIDER_PREFERENCES,
     ...(request.speed != null ? { speed: request.speed } : {}),
   };
 }
