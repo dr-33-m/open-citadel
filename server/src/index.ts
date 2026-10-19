@@ -103,6 +103,7 @@ import { asOneRun } from './one-run.js';
 import { offeredClientTools } from './offered-tools.js';
 import { WEB_SEARCH_FALLBACK_COST_USD, createWebSearchTool } from './web-search.js';
 import { ttsRoutes } from './tts-production.js';
+import { transcribeRoutes, transcribeWorker } from './transcribe-production.js';
 import { voiceCatalog } from './voice-catalog.js';
 import { startVoiceMetadataRefresh } from './voice-metadata.js';
 import { voiceAdminRoutes, voiceSampleRoutes } from './voice-routes.js';
@@ -544,6 +545,21 @@ const reservationSweeper = setInterval(() => {
 }, 5 * 60_000);
 reservationSweeper.unref?.();
 
+/*
+ * Transcription jobs a deploy interrupted are picked up again, and the
+ * transcripts nobody collected in a day are released uncharged. Not awaited,
+ * for the reason the refreshes above are not.
+ */
+transcribeWorker.resume().catch((error) => {
+  console.error('[Transcribe] Resuming unfinished jobs failed:', error);
+});
+const transcribeSweeper = setInterval(() => {
+  transcribeWorker.sweep().catch((error) => {
+    console.error('[Transcribe] Sweep failed:', error);
+  });
+}, 10 * 60_000);
+transcribeSweeper.unref?.();
+
 const insiderRegrantSweeper = setInterval(() => {
   sweepInsiderRegrants().catch((error) => {
     console.error('[Samwell Cloud] Insider regrant sweep failed:', error);
@@ -817,6 +833,9 @@ app.route('/admin/insider', insiderAdminRoutes);
 app.route('/tts', ttsRoutes);
 app.route('/tts', voiceSampleRoutes);
 app.route('/admin/voices', voiceAdminRoutes);
+// A podcast episode turned into a transcript, as a job the phone starts and
+// collects. Scribe fetches the audio by URL; the server never handles it.
+app.route('/transcribe', transcribeRoutes);
 // Deleting an account, which App Review requires the app to offer and only
 // this side can carry out: the Logto user goes with the rows.
 app.route('/account', accountRoutes);

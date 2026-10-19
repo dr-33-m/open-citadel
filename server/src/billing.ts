@@ -77,6 +77,15 @@ import { db } from './db.js';
  */
 export const STALE_RESERVATION_MS = 15 * 60_000;
 
+/**
+ * The same, for a podcast transcript. Its hold is meant to outlive a turn's:
+ * the job runs for minutes and the transcript then waits up to a day for the
+ * phone to collect it, which is when it settles (`transcribe-worker.ts`). The
+ * job sweep releases an uncollected one at 24 hours; this is the backstop for
+ * a hold whose job row is gone.
+ */
+export const TRANSCRIPT_RESERVATION_MS = 26 * 3_600_000;
+
 /** How long `readEntitlement` trusts its own answer before looking again. */
 export const ENTITLEMENT_CACHE_TTL_MS = 60_000;
 
@@ -1404,8 +1413,8 @@ export function createBillingService(options: BillingOptions): BillingService {
             WHERE status = 'started'
               AND credits_reserved IS NOT NULL
               AND credits_reserved > 0
-              AND created_at_ms <= ?`,
-      args: [atMs - STALE_RESERVATION_MS],
+              AND created_at_ms <= CASE WHEN kind = 'transcribe' THEN ? ELSE ? END`,
+      args: [atMs - TRANSCRIPT_RESERVATION_MS, atMs - STALE_RESERVATION_MS],
     });
 
     let swept = 0;
