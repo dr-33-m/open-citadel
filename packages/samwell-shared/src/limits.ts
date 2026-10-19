@@ -8,7 +8,7 @@
  */
 
 /**
- * Tool calls one message may make.
+ * Tool calls one message may make: a backstop, not the thing that ends turns.
  *
  * Samwell's tools run on the device, so each call is a full round trip that
  * re-sends the conversation and every result so far - the cost of a turn grows
@@ -16,12 +16,19 @@
  * worst single message went round 112 times and accumulated 14.6 million
  * prompt tokens, and turns like it were 91% of all spend.
  *
- * Twelve is generous against what a real answer needs. The onboarding script
- * is the longest scripted run in the app and lands around fifteen requests in
- * total; ordinary reading chat is one or two. Past a dozen the model has
- * stopped making progress and started circling.
+ * It was twelve, and twelve cut off honest work: seven video scripts from a
+ * reader's books needs more looks into the library than that, and the turn
+ * stopped mid-job. What ends a runaway turn now is the app noticing him ask
+ * for the same thing a third time (`tool-circling.ts` in the app), and what
+ * bounds its cost is the per-message credit ceiling (`credit-turn.ts` on the
+ * server), which a frontier model on a growing conversation meets long before
+ * forty round trips. Forty is for the loop neither of those catches.
+ *
+ * The server must be at least the app's number, and is deployed first: an app
+ * that stops at forty talking to a server that refuses past twelve gets the
+ * refusal instead of the answer so far.
  */
-export const TOOL_LOOP_CEILING = 12;
+export const TOOL_LOOP_CEILING = 40;
 
 /**
  * How long a turn stays open before its count is forgotten.
