@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { estimatedPlayback, readPlayback } from '@/features/podcasts/hooks/use-playback-clock';
+import { estimatedPlayback, playbackPosition } from '@/features/podcasts/hooks/use-playback-clock';
 import { segmentIndexAt } from '@/features/podcasts/utils/transcript-rows';
 import { usePodcastPlayer } from '@/stores/podcast-player';
 
@@ -36,7 +36,9 @@ const BORROW_MS = 600;
 export function useCurrentSegment(starts: readonly number[], active: boolean): number {
   const isPlaying = usePodcastPlayer((s) => s.isPlaying);
   const speed = usePodcastPlayer((s) => s.speed);
-  const seed = () => segmentIndexAt(starts, (estimatedPlayback()?.position ?? 0) + LEAD_SEC);
+  // Without asking the player: this runs while rendering.
+  const seed = () =>
+    segmentIndexAt(starts, (estimatedPlayback()?.position ?? usePodcastPlayer.getState().current?.positionSec ?? 0) + LEAD_SEC);
   const [index, setIndex] = React.useState(seed);
   // Opened again: from where the audio is now, not where it was last time.
   const [wasActive, setWasActive] = React.useState(active);
@@ -49,9 +51,7 @@ export function useCurrentSegment(starts: readonly number[], active: boolean): n
     if (!active || starts.length === 0) return;
     let timer: ReturnType<typeof setTimeout>;
     const read = () => {
-      // A seek still landing is only known by asking (`readPlayback` holds its target).
-      const borrowed = usePodcastPlayer.getState().seekHold ? null : estimatedPlayback(BORROW_MS);
-      const position = (borrowed ?? readPlayback()).position + LEAD_SEC;
+      const position = playbackPosition(BORROW_MS) + LEAD_SEC;
       const at = segmentIndexAt(starts, position);
       setIndex(at);
       const next = starts[at + 1];

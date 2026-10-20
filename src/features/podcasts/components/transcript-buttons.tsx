@@ -6,6 +6,8 @@ import { ScrollText, ZodiacPisces } from '@/components/icons';
 import { ProgressOutline } from '@/components/progress-outline';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
+import { iconSize } from '@/constants/theme';
+import { PlayerTool } from '@/features/podcasts/components/player-tool';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 export type TranscriptButtonsProps = {
@@ -16,19 +18,38 @@ export type TranscriptButtonsProps = {
   samwellDimmed: boolean;
   onTranscript: () => void;
   onAskSamwell: () => void;
+  /** In the player's row of tools: the two as bare icons, the words left to the screen reader. */
+  tools?: boolean;
 };
 
 /**
- * Two equal boxes side by side: the transcript, and Samwell on this episode.
- * Compact, with gold icons, under the player's options row and in the
- * episode page's hero. What each says comes from `transcriptButtons`.
+ * The transcript, and Samwell on this episode. In the episode page's hero,
+ * two equal boxes side by side, compact, with gold icons; in the player's
+ * row of tools, two bare icons, the transcript's square filling in round it
+ * while one is made. What each says comes from `transcriptButtons`.
  */
-export function TranscriptButtons({ transcriptLabel, progress, samwellLabel, samwellDimmed, onTranscript, onAskSamwell }: TranscriptButtonsProps) {
+export function TranscriptButtons({ transcriptLabel, progress, samwellLabel, samwellDimmed, onTranscript, onAskSamwell, tools = false }: TranscriptButtonsProps) {
   const tokens = useThemeTokens();
   const gold = tokens['--color-primary'];
   const fill = useSharedValue(progress ?? 0);
   React.useEffect(() => fill.set(progress ?? 0), [fill, progress]);
   const samwellColor = samwellDimmed ? tokens['--color-muted-foreground'] : tokens['--color-foreground'];
+
+  if (tools) {
+    return (
+      <>
+        <PlayerTool label={transcriptLabel} onPress={onTranscript}>
+          <View className="h-8 w-8 items-center justify-center">
+            {progress != null ? <ProgressOutline progress={fill} /> : null}
+            <ScrollText size={iconSize.default} color={gold} />
+          </View>
+        </PlayerTool>
+        <PlayerTool label={samwellLabel} onPress={onAskSamwell} disabled={samwellDimmed}>
+          <ZodiacPisces size={iconSize.default} color={gold} />
+        </PlayerTool>
+      </>
+    );
+  }
 
   return (
     <View className="flex-row gap-2">

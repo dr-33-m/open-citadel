@@ -27,8 +27,8 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
  *
  * Top to bottom, in the order a listener's eye asks: what is this (artwork,
  * title, show), where am I in it (chapter, scrubber), and what can I do (the
- * transport, then speed, sleep, Up Next and chapters, then the transcript
- * and Samwell). Nothing else.
+ * transport, then one quiet row: speed, sleep, the transcript, Samwell and
+ * Up Next). Nothing else.
  */
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -83,7 +83,7 @@ export default function PlayerScreen() {
             player={player}
             controls={controls}
             live={landed}
-            transcript={<EpisodeTranscriptBar episode={episode} line={transcriptLine} live={landed} />}
+            transcript={<EpisodeTranscriptBar episode={episode} line={transcriptLine} live={landed} tools />}
           />
         </View>
       </View>

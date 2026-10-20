@@ -54,6 +54,20 @@ export function estimatedPlayback(maxAgeMs = FRESH_MS): { position: number; dura
   return { position: positionSince(lastRead, now), duration: lastRead.duration };
 }
 
+/**
+ * Where the episode in the player is, for something that times itself by it:
+ * a reading newer than `maxAgeMs` carried forward, else the player asked.
+ * Before the player has the episode (restored after a restart, not yet
+ * played) it is where it was left, as the scrubber shows: the player would
+ * say zero. A seek still landing is only known by asking.
+ */
+export function playbackPosition(maxAgeMs = FRESH_MS): number {
+  const { loaded, current, seekHold } = usePodcastPlayer.getState();
+  if (!loaded) return current?.positionSec ?? 0;
+  const borrowed = seekHold ? null : estimatedPlayback(maxAgeMs);
+  return (borrowed ?? readPlayback()).position;
+}
+
 export type PlaybackClock = {
   /** Seconds, animated linearly between polls so a bar glides rather than steps. */
   position: SharedValue<number>;

@@ -9,6 +9,8 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 type PlayerProgressProps = {
   chapterTitle: string | null;
+  /** The chapter list opens from here, so it is said even before the first chapter starts. */
+  hasChapters: boolean;
   position: SharedValue<number>;
   duration: SharedValue<number>;
   error: string | null;
@@ -19,14 +21,15 @@ type PlayerProgressProps = {
 };
 
 /** Where the listener is: the chapter playing (which opens the list), the scrubber, and why playback stopped, if it did. */
-export function PlayerProgress({ chapterTitle, position, duration, error, onChapters, onSeek, live }: PlayerProgressProps) {
+export function PlayerProgress({ chapterTitle, hasChapters, position, duration, error, onChapters, onSeek, live }: PlayerProgressProps) {
   const tokens = useThemeTokens();
+  const chapter = chapterTitle ?? (hasChapters ? 'Chapters' : null);
   return (
     <View className="gap-1">
-      {chapterTitle ? (
+      {chapter ? (
         <Touchable onPress={onChapters} accessibilityRole="button" accessibilityLabel="Chapters">
           <ThemedText type="labelSm" color={tokens['--color-primary']} numberOfLines={1}>
-            {chapterTitle}
+            {chapter}
           </ThemedText>
         </Touchable>
       ) : null}
