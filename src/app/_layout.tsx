@@ -67,6 +67,7 @@ import {
     setupTTSMediaSession,
 } from "@/services/tts-media-session";
 import { usePlayerNotificationTap } from "@/features/podcasts/hooks/use-player-notification-tap";
+import { TranscriptionWatch } from "@/features/podcasts/components/transcription-watch";
 import { usePodcastLifecycle } from "@/features/podcasts/hooks/use-podcast-lifecycle";
 import { registerPodcastBackgroundHandler } from "@/services/podcasts/player";
 import { usePodcastPrefs } from "@/stores/podcast-prefs";
@@ -314,6 +315,10 @@ function RootLayoutContent() {
             <BottomSheetModalProvider>
               <ThemeProvider value={navTheme}>
                 <ThemeStatusBar />
+                {/* Cloud transcripts this phone is waiting on, collected the
+                moment they are ready. Its own node, so its poll re-renders
+                nothing else. */}
+                <TranscriptionWatch ready={dbReady} />
                 {/* Hub and spokes. The hub is one route — Timeline, Library and
                 Samwell are pages of a pager inside it (`components/hub/hub-pager`),
                 because they are peers and a swipe between peers should track the

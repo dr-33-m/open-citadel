@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import { db } from "@/db/client";
 import { books, highlights, notes, thoughts } from "@/db/schema";
+import { deleteHighlight as removeHighlight } from "@/services/highlights";
 import { useSettingsStore } from "@/stores/settings";
 import { localDayString } from "@/utils/day";
 import { keepUnchanged } from "@/utils/keep-unchanged";
@@ -15,6 +16,8 @@ export type TimelineItem = {
   bookAuthor: string;
   bookCoverUrl: string | null;
   bookCategory: string | null;
+  /** What the highlight was lifted from: a book, a post, or an episode's transcript (which plays from its moment). */
+  bookKind: string | null;
   highlightText: string;
   highlightLocator: string | null;
   chatSessionId: string | null;
@@ -129,6 +132,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookAuthor: books.author,
         bookCoverUrl: books.coverUrl,
         bookCategory: books.category,
+        bookKind: books.kind,
         noteId: notes.id,
         noteText: notes.text,
       })
@@ -148,6 +152,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookAuthor: string;
         bookCoverUrl: string | null;
         bookCategory: string | null;
+        bookKind: string | null;
         highlightText: string;
         highlightLocator: string | null;
         highlightColor: string;
@@ -167,6 +172,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
           bookAuthor: row.bookAuthor,
           bookCoverUrl: row.bookCoverUrl,
           bookCategory: row.bookCategory ?? null,
+          bookKind: row.bookKind ?? null,
           highlightText: row.highlightText,
           highlightLocator: row.highlightLocator,
           highlightColor: row.highlightColor || "#f2ca50",
@@ -192,6 +198,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookAuthor: h.bookAuthor,
         bookCoverUrl: h.bookCoverUrl,
         bookCategory: h.bookCategory,
+        bookKind: h.bookKind,
         highlightText: h.highlightText,
         highlightLocator: h.highlightLocator,
         chatSessionId: h.chatSessionId,
@@ -224,6 +231,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         bookAuthor: "",
         bookCoverUrl: null,
         bookCategory: null,
+        bookKind: null,
         highlightText: t.text,
         highlightLocator: null,
         chatSessionId: t.chatSessionId ?? null,
@@ -307,8 +315,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   deleteHighlight: async (id: string) => {
-    await db.delete(notes).where(eq(notes.highlightId, id));
-    await db.delete(highlights).where(eq(highlights.id, id));
+    await removeHighlight(id);
     await get().loadTimeline();
   },
 }));

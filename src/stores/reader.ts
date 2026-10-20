@@ -15,6 +15,14 @@ import {
 import { invalidateBlogLibrary } from "@/query-manager/blogs/invalidate";
 import { finishArticleOfBook } from "@/services/blogs/articles";
 import { extractSurroundingText } from "@/services/book-context";
+import {
+  addHighlightNote,
+  deleteHighlight as removeHighlight,
+  deleteHighlightNote,
+  insertHighlight,
+  updateHighlight as writeHighlight,
+  updateHighlightNote,
+} from "@/services/highlights";
 import { countableProgress } from "@/services/reading-day";
 import { useBooksStore } from "@/stores/books";
 import { localDayString } from "@/utils/day";
@@ -167,6 +175,9 @@ async function saveProgressToDb(bookId: string, locator: Locator, percentage: nu
  * found there.
  */
 async function finishRead(book: Book): Promise<void> {
+  // A transcript is read alongside listening, and an episode is finished by
+  // listening to it, never by reading its transcript to the end.
+  if (book.kind === "episode") return;
   if (book.kind === "article") {
     if (await finishArticleOfBook(book.id)) invalidateBlogLibrary();
     return;
@@ -366,21 +377,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     const bookId = bookIdOverride ?? currentBook?.id;
     if (!bookId) return "";
 
-    // A random suffix alongside the timestamp avoids id collisions when two
-    // highlights are created within the same millisecond.
-    const id = `hl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const now = new Date().toISOString();
-
-    await db.insert(highlights).values({
-      id,
-      bookId,
-      text,
-      locator: JSON.stringify(locator),
-      color: color || "#f2ca50",
-      chatSessionId: chatSessionId ?? null,
-      createdAt: now,
-      createdDay: localDayString(new Date(now)),
-    });
+    const id = await insertHighlight({ bookId, text, locator, color, chatSessionId });
 
     // Capture the surrounding chapter text in the background so the highlight
     // keeps the progression it was lifted from (chats, tags, Compass context).
@@ -420,7 +417,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     // The write itself doesn't need currentBook — only refreshing this
     // store's own highlight list afterward does. Gating the write on it too
     // silently dropped updates whenever called from outside the reader.
-    await db.update(highlights).set(updates).where(eq(highlights.id, id));
+    await writeHighlight(id, updates);
 
     const { currentBook } = get();
     if (currentBook) {
@@ -437,9 +434,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   deleteHighlight: async (id: string) => {
-    // Delete associated notes first
-    await db.delete(notes).where(eq(notes.highlightId, id));
-    await db.delete(highlights).where(eq(highlights.id, id));
+    await removeHighlight(id);
 
     const { currentBook } = get();
     if (!currentBook) return;
@@ -453,22 +448,10 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   addNote: async (highlightId: string, text: string) => {
-    const { currentBook, highlightNotes } = get();
+    const { currentBook } = get();
     if (!currentBook) return;
-
-    const id = `note-${Date.now()}`;
-    const now = new Date().toISOString();
-    const noteRow: Note = {
-      id,
-      highlightId,
-      bookId: currentBook.id,
-      text,
-      createdAt: now,
-      updatedAt: null,
-    };
-
-    await db.insert(notes).values(noteRow);
-
+    const noteRow = await addHighlightNote(highlightId, currentBook.id, text);
+    const { highlightNotes } = get();
     const existing = highlightNotes[highlightId] ?? [];
     set({
       highlightNotes: {
@@ -479,11 +462,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   updateNote: async (noteId: string, highlightId: string, text: string) => {
-    const now = new Date().toISOString();
-    await db
-      .update(notes)
-      .set({ text, updatedAt: now })
-      .where(eq(notes.id, noteId));
+    const now = await updateHighlightNote(noteId, text);
 
     const { highlightNotes } = get();
     const existing = highlightNotes[highlightId] ?? [];
@@ -498,7 +477,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   deleteNote: async (noteId: string, highlightId: string) => {
-    await db.delete(notes).where(eq(notes.id, noteId));
+    await deleteHighlightNote(noteId);
 
     const { highlightNotes } = get();
     const existing = highlightNotes[highlightId] ?? [];

@@ -1,0 +1,159 @@
+1
+00:00:00,960 --> 00:00:06,679
+Podcasting 2.0 for October 16th, 2026, episode 275, Off the
+
+2
+00:00:06,679 --> 00:00:12,140
+Rails. Hello everybody, it's cold in Texas, but that doesn't
+
+3
+00:00:12,140 --> 00:00:14,900
+matter because it's time for the board meeting The official
+
+4
+00:00:14,900 --> 00:00:18,530
+podcasting 2.0 board meeting where we let you know what
+
+5
+00:00:18,530 --> 00:00:20,910
+we're up to And we also find out what we're
+
+6
+00:00:20,910 --> 00:00:22,800
+up to It's great We're kind of crazy that way.
+
+7
+00:00:23,079 --> 00:00:25,850
+However, we are the only board meeting that can flip
+
+8
+00:00:25,850 --> 00:00:28,320
+upside down from the halfpipe, that's for sure. I'm Adam
+
+9
+00:00:28,320 --> 00:00:30,649
+Curry here in the heart of the Texas Hill Country,
+
+10
+00:00:30,649 --> 00:00:33,820
+and in Alabama, the man who is mentally exhausted from
+
+11
+00:00:33,820 --> 00:00:37,179
+chaperoning his robots. Say hello to my friend on the
+
+12
+00:00:37,179 --> 00:00:44,109
+other end, the one, the only, Mr. Dave Jones! Why
+
+13
+00:00:44,109 --> 00:00:47,079
+you laughing? Why you laughing? Why you roughing? Why you
+
+14
+00:00:47,079 --> 00:00:51,280
+roughing? Why you roughing? Why you roughing? Don't roughing. Shut
+
+15
+00:00:51,280 --> 00:00:54,070
+up. Don't roughing. Shut up. Don't roughing. You're going to
+
+16
+00:00:54,070 --> 00:00:56,229
+have to play that clip so that at some point
+
+17
+00:00:56,229 --> 00:00:59,420
+people understand what the heck we're even referencing. Roughing. Let
+
+18
+00:00:59,420 --> 00:01:05,500
+me see if I have a roughing. I'm laughing because...
+
+19
+00:01:05,670 --> 00:01:10,019
+the uh what what are you like why are you
+
+20
+00:01:10,019 --> 00:01:13,920
+laughing man why are you laughing um the you know
+
+21
+00:01:13,920 --> 00:01:16,040
+that thing that i was showing you the last week
+
+22
+00:01:16,040 --> 00:01:18,010
+that was like looking up stuff for me in real
+
+23
+00:01:18,010 --> 00:01:21,750
+time based on the transcripts like yeah like the it's
+
+24
+00:01:21,750 --> 00:01:25,120
+my real time jamie yeah oh yeah that thing yes
+
+25
+00:01:25,120 --> 00:01:30,469
+yes yes Now, for some reason it says, Dave, I
+
+26
+00:01:30,469 --> 00:01:35,200
+don't even know what it's referencing. It says, Dave, that's
+
+27
+00:01:35,200 --> 00:01:39,019
+just AI agent scope creep. Oh, no. You ask it
+
+28
+00:01:39,019 --> 00:01:40,980
+to delete your junk mail, and next thing you know,
+
+29
+00:01:40,980 --> 00:01:44,200
+it's managing your 401k and your relationship with your mother-in-law.
+
+30
+00:01:44,379 --> 00:01:46,849
+Yeah. What does that even mean? Where did it get
+
+31
+00:01:46,849 --> 00:01:49,379
+that from? I have no idea what that means. It's
+
+32
+00:01:49,379 --> 00:01:53,620
+bad. I don't know. That doesn't sound right. Let me
+
+33
+00:01:53,620 --> 00:01:56,340
+see. What am I doing? What is it trying to
+
+34
+00:01:56,340 --> 00:02:02,459
+tell me? No, this is your running thing? That's what
+
+35
+00:02:02,459 --> 00:02:05,599
+this is? Yes. Yes, it's supposed to be like looking
+
+36
+00:02:05,599 --> 00:02:08,870
+up things that I say. If I make a reference,
+
+37
+00:02:08,870 --> 00:02:10,819
+just trying to figure out if like go look us
+
+38
+00:02:10,819 --> 00:02:13,620
+up something on the Internet and see, you know, because
+
+39
+00:02:13,620 --> 00:02:15,120
+if I say like Trump said so and so and
+
+40
+00:02:15,120 --> 00:02:17,830
+you're like, no, he didn't. It's supposed to be like,

@@ -17,14 +17,20 @@ type PlayerControlsProps = {
    * turning it on changes no pixel.
    */
   live: boolean;
+  /** In the row of tools: the episode's transcript and Samwell. */
+  transcript?: React.ReactNode;
 };
 
-/** Where the listener is and what they can do: the scrubber, the transport, then speed, sleep, Up Next and chapters. */
-export function PlayerControls({ player, controls, live }: PlayerControlsProps) {
+/**
+ * Where the listener is and what they can do: the scrubber, the transport,
+ * then one quiet row of tools: speed, sleep, the transcript, Samwell, Up Next.
+ */
+export function PlayerControls({ player, controls, live, transcript }: PlayerControlsProps) {
   return (
     <View className="gap-8">
       <PlayerProgress
         chapterTitle={player.currentChapter?.title ?? null}
+        hasChapters={player.chapters.length > 0}
         position={player.clock.position}
         duration={player.clock.duration}
         error={player.error}
@@ -45,11 +51,10 @@ export function PlayerControls({ player, controls, live }: PlayerControlsProps) 
         speedLabel={player.speedLabel}
         sleepLabel={player.sleepLabel}
         upNextCount={player.queue.length}
-        hasChapters={player.chapters.length > 0}
         onSpeed={controls.open('speed')}
         onSleep={controls.open('sleep')}
         onUpNext={controls.open('upnext')}
-        onChapters={controls.open('chapters')}
+        transcript={transcript}
       />
     </View>
   );

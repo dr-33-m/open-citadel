@@ -12,14 +12,7 @@
  * readable after the blog drops it from its feed, or goes offline.
  */
 import { eq } from 'drizzle-orm';
-import {
-  EncodingType,
-  documentDirectory,
-  getInfoAsync,
-  makeDirectoryAsync,
-  writeAsStringAsync,
-} from 'expo-file-system/legacy';
-import JSZip from 'jszip';
+import { documentDirectory, getInfoAsync } from 'expo-file-system/legacy';
 
 import { db } from '@/db/client';
 import { blogArticles, books } from '@/db/schema';
@@ -27,6 +20,7 @@ import { getArticle, type ArticleDetail } from '@/services/blogs/articles';
 import { articleEpubFiles } from '@/services/blogs/epub/package';
 import { toXhtmlBody } from '@/services/blogs/epub/xhtml';
 import { extractArticle, isTeaser } from '@/services/blogs/full-text';
+import { writeEpubFile } from '@/services/epub/write';
 import { fetchPage } from '@/services/feeds/fetch';
 import { newId, nowIso } from '@/services/rows';
 
@@ -51,19 +45,6 @@ async function readableHtml({ article }: ArticleDetail, signal?: AbortSignal): P
   }
   if (fromFeed?.trim()) return fromFeed;
   throw new ArticleOpenError('This post could not be loaded. Open the original to read it on the web.');
-}
-
-async function writeEpub(articleId: string, files: Record<string, string>): Promise<string> {
-  const zip = new JSZip();
-  for (const [name, body] of Object.entries(files)) {
-    // The marker must be first and uncompressed, or the reader rejects the package.
-    zip.file(name, body, { compression: name === 'mimetype' ? 'STORE' : 'DEFLATE' });
-  }
-  const base64 = await zip.generateAsync({ type: 'base64', mimeType: 'application/epub+zip' });
-  await makeDirectoryAsync(ARTICLES_DIR, { intermediates: true }).catch(() => {});
-  const path = `${ARTICLES_DIR}${articleId}.epub`;
-  await writeAsStringAsync(path, base64, { encoding: EncodingType.Base64 });
-  return path;
 }
 
 /** The copy already written, when there is one and its file is still there. */
@@ -100,7 +81,7 @@ export async function openArticleBook(articleId: string, signal?: AbortSignal): 
     link: article.link,
     bodyXhtml: toXhtmlBody(html, article.link),
   });
-  const filePath = await writeEpub(article.id, files);
+  const filePath = await writeEpubFile(ARTICLES_DIR, article.id, files);
 
   const bookId = article.bookId ?? newId();
   const now = nowIso();

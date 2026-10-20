@@ -10,9 +10,11 @@ import { View } from "react-native";
 import { EnrichedMarkdownText } from "react-native-enriched-markdown";
 
 import { BookCard } from "@/components/chat/book-card";
+import { EpisodeTimesContext } from "@/components/chat/episode-times-context";
 import { HighlightCard } from "@/components/chat/highlight-card";
 import { SuggestionCard } from "@/components/chat/suggestion-card";
 import { useMarkdownStyle } from "@/hooks/use-markdown-style";
+import { linkEpisodeTimes, timeFromLink } from "@/features/chat/utils/episode-times";
 import { replyMarkerPattern } from "@/utils/reply-markers";
 
 
@@ -23,6 +25,19 @@ function MarkdownSegment({
   content: string;
   streaming?: boolean;
 }) {
+  // In an episode chat, a cited "[12:04]" is a gold link that plays from there.
+  const playTime = React.useContext(EpisodeTimesContext);
+  const markdown = useMemo(() => (playTime ? linkEpisodeTimes(content) : content), [content, playTime]);
+  const onLinkPress = useMemo(
+    () =>
+      playTime
+        ? ({ url }: { url: string }) => {
+            const seconds = timeFromLink(url);
+            if (seconds != null) playTime(seconds);
+          }
+        : undefined,
+    [playTime],
+  );
   const markdownStyle = useMarkdownStyle({
     voice: "sans",
     fontSize: 15,
@@ -46,8 +61,9 @@ function MarkdownSegment({
      * CommonMark keeps a code block inside the same text view, where it wraps.
      */
     <EnrichedMarkdownText
-      markdown={content}
+      markdown={markdown}
       markdownStyle={markdownStyle}
+      onLinkPress={onLinkPress}
       flavor="commonmark"
       streamingAnimation={streaming}
       selectable

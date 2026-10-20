@@ -5,6 +5,7 @@ import {
   CircleCheckBig,
   Download,
   ExternalLink,
+  Highlighter,
   Inbox,
   ListEnd,
   ListStart,
@@ -41,6 +42,7 @@ const ICONS: Record<EpisodeAction, LucideIcon> = {
   share: Share,
   website: ExternalLink,
   show: MicSignal,
+  highlights: Highlighter,
 };
 
 type EpisodeActionSheetProps = {
@@ -50,6 +52,8 @@ type EpisodeActionSheetProps = {
   showLink?: boolean;
   /** The episode in the player: no queueing, it is already what plays now. */
   isCurrent: boolean;
+  /** The screen can open the episode's highlights, and it has some. */
+  highlights?: boolean;
   onClose: () => void;
   onAction: (action: EpisodeAction, episode: EpisodeItem) => void;
 };
@@ -59,7 +63,7 @@ type EpisodeActionSheetProps = {
  * appears. The same menu on every surface, so an action is always where the
  * listener last found it. Which rows appear is `episodeMenu`'s decision.
  */
-export function EpisodeActionSheet({ visible, episode, showLink = true, isCurrent, onClose, onAction }: EpisodeActionSheetProps) {
+export function EpisodeActionSheet({ visible, episode, showLink = true, isCurrent, highlights = false, onClose, onAction }: EpisodeActionSheetProps) {
   const tokens = useThemeTokens();
   // Held content through the close: the shell keeps the last children while
   // it animates away (see components/ui/sheet), so this renders nothing rather
@@ -82,7 +86,7 @@ export function EpisodeActionSheet({ visible, episode, showLink = true, isCurren
             {episode.title}
           </ThemedText>
         </View>
-        <MenuList rows={episodeMenu(episode, { showLink, isCurrent })} icons={ICONS} onSelect={select} />
+        <MenuList rows={episodeMenu(episode, { showLink, isCurrent, highlights })} icons={ICONS} onSelect={select} />
       </View>
     </Sheet>
   );

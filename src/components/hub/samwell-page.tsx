@@ -23,14 +23,14 @@ import { useCSSVariable } from "uniwind";
 
 import {
     Archive,
-    BookOpen,
     BrainCircuit,
     CalendarDays,
     History,
     ListTodo,
-    Newspaper,
+    MicSignal,
     TrendingUp,
 } from "@/components/icons";
+import { EpisodeTimesContext } from "@/components/chat/episode-times-context";
 import { DeferredBody } from "@/components/navigation/deferred-body";
 import { Reveal } from "@/components/navigation/reveal";
 import { SamwellControlCenter } from "@/components/samwell/samwell-control-center";
@@ -48,9 +48,15 @@ import { ArticlePickerSheet } from "@/features/blogs/components/article-picker-s
 import { BrainSheetHost } from "@/features/chat/components/brain-sheet-host";
 import { useBrainSheet } from "@/features/chat/hooks/use-brain-sheet";
 import { useBrainName } from "@/features/chat/hooks/use-brain-name";
-import { useArticleCover } from "@/features/blogs/hooks/use-article-cover";
 import { useArticlePicker } from "@/features/blogs/hooks/use-article-picker";
 import { BookPickerSheet } from "@/features/chat/components/book-picker-sheet";
+import { useChatToolbox } from "@/features/chat/hooks/use-chat-toolbox";
+import { EpisodePickerSheet } from "@/features/podcasts/components/episode-picker-sheet";
+import { TranscriptViewer } from "@/features/podcasts/components/episode-transcript-sheets";
+import { useEpisodeOfBook } from "@/features/podcasts/hooks/use-episode-of-book";
+import { useEpisodePicker } from "@/features/podcasts/hooks/use-episode-picker";
+import { useBookCover } from "@/hooks/use-book-cover";
+import { playEpisodeFrom } from "@/services/podcasts/player";
 import { ChatHeader } from "@/features/chat/components/chat-header";
 import { ChatHistorySheet } from "@/features/chat/components/chat-history-sheet";
 import { ChatTranscript } from "@/features/chat/components/chat-transcript";
@@ -357,28 +363,42 @@ export function SamwellPage() {
     : pendingBook
       ? (allBooks.find((b) => b.id === pendingBook.id)?.coverUrl ?? null)
       : null;
-  // A chat holds one book or one blog post, and each has its own tool. Once
-  // a session exists, what it holds is fixed context, so only the tool for
-  // that is worth showing then; a bookless session's would be inert with
-  // nothing to say.
+  // What the chat holds: the session's book, post or episode, or the pick
+  // waiting for the first message. A book's cover comes from the library; a
+  // post's or an episode's from its own `books` row.
   const attachedKind = activeSession
     ? activeSession.bookKind
     : (pendingBook?.kind ?? null);
-  const articleCover = useArticleCover(
-    attachedKind === "article"
+  const attachedCopyCover = useBookCover(
+    attachedKind && attachedKind !== "book"
       ? (activeSession?.bookId ?? pendingBook?.id ?? null)
       : null,
   );
-  const showBookButton = !activeSession || attachedKind === "book";
-  const showPostButton = !activeSession || attachedKind === "article";
-  const attachedBook = attachedKind === "book" ? displayedBookTitle : null;
-  const attachedPost = attachedKind === "article" ? displayedBookTitle : null;
-  const pickPost = React.useCallback(
-    (post: { id: string; title: string; kind: "article" }) =>
-      setSession({ pendingBook: post }),
+  const attachedCover =
+    attachedKind === "book" ? displayedBookCover : attachedCopyCover;
+  // An episode chat: its transcript opens from the header's badge, and the
+  // times Samwell cites play the episode from there.
+  const attachedEpisode = useEpisodeOfBook(
+    attachedKind === "episode"
+      ? (activeSession?.bookId ?? pendingBook?.id ?? null)
+      : null,
+  );
+  const [showTranscript, setShowTranscript] = React.useState(false);
+  const closeTranscript = React.useCallback(() => setShowTranscript(false), []);
+  const playEpisodeTime = React.useMemo(
+    () =>
+      attachedEpisode
+        ? (seconds: number) => void playEpisodeFrom(attachedEpisode.episodeId, seconds)
+        : null,
+    [attachedEpisode],
+  );
+  const pickAttachment = React.useCallback(
+    (picked: { id: string; title: string; kind: "article" | "episode" }) =>
+      setSession({ pendingBook: picked }),
     [setSession],
   );
-  const postPicker = useArticlePicker(pickPost);
+  const postPicker = useArticlePicker(pickAttachment);
+  const episodePicker = useEpisodePicker(pickAttachment);
 
   // `isGenerating` alone drives the activity indicator; it must never show
   // just because the model isn't ready, since there is nothing to wait for
@@ -585,80 +605,42 @@ export function SamwellPage() {
   const activeGoalCount = compassActiveGoals.length;
   const pastGoalCount = compassPastGoals.length;
 
+  // The chat drawer: Book, Blog post and Podcast from one table, then the
+  // brain and History (`useChatToolbox`).
+  const attachmentPickers = React.useMemo(
+    () => ({
+      book: fromToolbox(setShowBookPicker),
+      article: fromToolbox(postPicker.setVisible),
+      episode: fromToolbox(episodePicker.setVisible),
+    }),
+    [fromToolbox, postPicker.setVisible, episodePicker.setVisible],
+  );
+  const dropAttachment = React.useCallback(
+    () => setSession({ pendingBook: null }),
+    [setSession],
+  );
+  const openChatHistory = React.useMemo(
+    () => fromToolbox(setShowHistory),
+    [fromToolbox],
+  );
+  const chatTools = useChatToolbox({
+    hasSession: activeSession != null,
+    attachedKind,
+    pendingKind: pendingBook?.kind ?? null,
+    attachedTitle: displayedBookTitle,
+    attachedCover,
+    busy: isGenerating || chat.switching != null,
+    pickers: attachmentPickers,
+    onDrop: dropAttachment,
+    brainTool,
+    sessionCount: chatSessionCount,
+    onHistory: openChatHistory,
+  });
+
   const toolboxItems: ToolboxItem[] = React.useMemo(
     () =>
       mode === "chat"
-        ? [
-            // The book this chat is pinned to. Its cover stands in for the icon
-            // once one is picked, which is the whole answer to "which book is
-            // Samwell reading with me" without a line of text for it.
-            ...(showBookButton
-              ? [
-                  {
-                    id: "book",
-                    icon: BookOpen,
-                    label: "Book",
-                    lead: true,
-                    detail: attachedBook ?? "None yet",
-                    image: attachedBook ? displayedBookCover : null,
-                    active: attachedBook != null,
-                    onPress:
-                      activeSession || isGenerating || chat.switching
-                        ? undefined
-                        : fromToolbox(setShowBookPicker),
-                    // Long-press to drop it, only before a session exists: once
-                    // a chat has started, its book is fixed context.
-                    onLongPress:
-                      activeSession ||
-                      pendingBook?.kind !== "book" ||
-                      isGenerating ||
-                      chat.switching
-                        ? undefined
-                        : () => setSession({ pendingBook: null }),
-                  } satisfies ToolboxItem,
-                ]
-              : []),
-            // The book's sibling for a blog post: picking one attaches it the
-            // same way, in place of any book.
-            ...(showPostButton
-              ? [
-                  {
-                    id: "post",
-                    icon: Newspaper,
-                    label: "Blog post",
-                    detail: attachedPost ?? "None yet",
-                    image: attachedPost ? articleCover : null,
-                    active: attachedPost != null,
-                    onPress:
-                      activeSession || isGenerating || chat.switching
-                        ? undefined
-                        : fromToolbox(postPicker.setVisible),
-                    onLongPress:
-                      activeSession ||
-                      pendingBook?.kind !== "article" ||
-                      isGenerating ||
-                      chat.switching
-                        ? undefined
-                        : () => setSession({ pendingBook: null }),
-                  } satisfies ToolboxItem,
-                ]
-              : []),
-            ...brainTool,
-            {
-              id: "history",
-              icon: History,
-              label: "History",
-              detail:
-                chatSessionCount > 0
-                  ? `${chatSessionCount} saved`
-                  : "Nothing yet",
-              // Picking a conversation mid-turn is what used to race the engine.
-              onPress:
-                isGenerating || chat.switching
-                  ? undefined
-                  : fromToolbox(setShowHistory),
-            },
-          ]
+        ? chatTools
         : cloudReady
           ? [
               {
@@ -737,20 +719,7 @@ export function SamwellPage() {
     [
       mode,
       fromToolbox,
-      // Chat
-      showBookButton,
-      showPostButton,
-      displayedBookCover,
-      articleCover,
-      attachedBook,
-      attachedPost,
-      postPicker.setVisible,
-      activeSession,
-      isGenerating,
-      chat.switching,
-      pendingBook,
-      setSession,
-      chatSessionCount,
+      chatTools,
       brainTool,
       // Compass
       cloudReady,
@@ -791,10 +760,13 @@ export function SamwellPage() {
             // book rides in the badge underneath.
             title={activeSession?.title ?? null}
             bookTitle={displayedBookTitle}
+            bookIcon={attachedEpisode ? MicSignal : undefined}
             onBack={() => goTo(HUB.library)}
             backLabel="Library"
             onOpenBook={
-              activeSession?.bookId && activeSession.contextLocator
+              attachedEpisode
+                ? () => setShowTranscript(true)
+                : activeSession?.bookId && activeSession.contextLocator
                 ? () =>
                     router.push({
                       pathname: "/reader/[id]",
@@ -830,23 +802,26 @@ export function SamwellPage() {
               value={mode}
               sides={{
                 chat: modesOpened.chat ? (
-                  <ChatTranscript
-                    sessionId={activeSession?.id ?? null}
-                    messages={visibleChatMessages}
-                    streamingContent={streamingContent}
-                    streamingActivity={streamingActivity}
-                    isGenerating={isGenerating}
-                    indicator={indicator}
-                    lastStreamedMessageId={lastStreamedMessageId}
-                    status={status}
-                    pendingUserMessage={chat.pendingUserMessage}
-                    contentColumn={contentColumn}
-                    floatingClearance={floatingClearance}
-                    onNavigateToHighlight={handleNavigateToHighlight}
-                    onNavigateToTimeline={handleNavigateToTimeline}
-                    onNavigateToBook={handleNavigateToBook}
-                    onResendMessage={chat.resend}
-                  />
+                  // In an episode chat, the times Samwell cites play the episode.
+                  <EpisodeTimesContext.Provider value={playEpisodeTime}>
+                    <ChatTranscript
+                      sessionId={activeSession?.id ?? null}
+                      messages={visibleChatMessages}
+                      streamingContent={streamingContent}
+                      streamingActivity={streamingActivity}
+                      isGenerating={isGenerating}
+                      indicator={indicator}
+                      lastStreamedMessageId={lastStreamedMessageId}
+                      status={status}
+                      pendingUserMessage={chat.pendingUserMessage}
+                      contentColumn={contentColumn}
+                      floatingClearance={floatingClearance}
+                      onNavigateToHighlight={handleNavigateToHighlight}
+                      onNavigateToTimeline={handleNavigateToTimeline}
+                      onNavigateToBook={handleNavigateToBook}
+                      onResendMessage={chat.resend}
+                    />
+                  </EpisodeTimesContext.Provider>
                 ) : null,
                 compass: modesOpened.compass ? (
                   <CompassBody
@@ -957,6 +932,7 @@ export function SamwellPage() {
           />
 
           <ArticlePickerSheet {...postPicker.sheet} />
+          <EpisodePickerSheet {...episodePicker.sheet} />
 
           <ChatHistorySheet
             visible={showHistory}
@@ -1051,6 +1027,12 @@ export function SamwellPage() {
           <AboutCompassSheet
             visible={showAboutCompass}
             onClose={() => setShowAboutCompass(false)}
+          />
+          <TranscriptViewer
+            episodeId={attachedEpisode?.episodeId ?? null}
+            visible={showTranscript && attachedEpisode != null}
+            onClose={closeTranscript}
+            line={attachedEpisode?.line ?? ""}
           />
         </>
       </DeferredBody>

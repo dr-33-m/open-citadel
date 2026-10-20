@@ -39,7 +39,12 @@ export const books = sqliteTable("books", {
   kind: text("kind").$type<BookKind>().notNull().default("book"),
 });
 
-export type BookKind = "book" | "article";
+/**
+ * What a `books` row holds. A blog post or a podcast transcript is written
+ * as a generated EPUB so the reader, Samwell's search, highlights and Compass
+ * reach it with no code of their own; book lists filter `kind = 'book'`.
+ */
+export type BookKind = "book" | "article" | "episode";
 
 export const readingProgress = sqliteTable("reading_progress", {
   id: text("id").primaryKey(),
@@ -579,6 +584,8 @@ export type EpisodeDownloadStatus =
   | "downloading"
   | "downloaded"
   | "failed";
+/** Whether an episode's transcript is on this phone, or being made in the cloud. */
+export type EpisodeTranscriptStatus = "none" | "transcribing" | "ready";
 
 export const podcasts = sqliteTable(
   "podcasts",
@@ -692,6 +699,21 @@ export const podcastEpisodes = sqliteTable(
     downloadCover: text("download_cover"),
     downloadedAt: text("downloaded_at"),
     downloadError: text("download_error"),
+    /** Whether this phone holds a transcript, or a cloud job is making one. */
+    transcriptStatus: text("transcript_status")
+      .$type<EpisodeTranscriptStatus>()
+      .notNull()
+      .default("none"),
+    /** Where the transcript came from: the show's own feed, or Scribe. */
+    transcriptSource: text("transcript_source").$type<"feed" | "scribe">(),
+    /** The transcript's JSON file NAME, resolved on use for the reason `downloadFile` gives. */
+    transcriptFile: text("transcript_file"),
+    /** The Samwell Cloud job making it, while `transcribing`. */
+    transcriptJobId: text("transcript_job_id"),
+    /** The `books` row (kind `episode`) the transcript is written into for Samwell. */
+    transcriptBookId: text("transcript_book_id"),
+    /** When the transcript arrived, for the composer's Today / This week filters. */
+    transcriptAt: text("transcript_at"),
     /** Cleared once a download is deleted, so auto-download does not fetch it again. */
     autoDownloadEligible: integer("auto_download_eligible").notNull().default(1),
     addedAt: text("added_at").notNull(),
@@ -703,6 +725,7 @@ export const podcastEpisodes = sqliteTable(
     index("podcast_episodes_queue_idx").on(table.queuePosition),
     index("podcast_episodes_last_played_idx").on(table.lastPlayedAt),
     index("podcast_episodes_download_idx").on(table.downloadStatus),
+    index("podcast_episodes_transcript_idx").on(table.transcriptStatus, table.transcriptAt),
   ],
 );
 

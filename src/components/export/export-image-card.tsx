@@ -13,6 +13,8 @@ type ExportImageCardProps = {
   authorName: string;
   coverUri: string | null;
   category: string | null;
+  /** A podcast's cover, square, rather than a book's. */
+  squareCover?: boolean;
   viewRef: React.RefObject<View | null>;
   onReady?: () => void;
 };
@@ -31,6 +33,7 @@ export function ExportImageCard({
   authorName,
   coverUri,
   category,
+  squareCover = false,
   viewRef,
   onReady,
 }: ExportImageCardProps) {
@@ -111,7 +114,7 @@ export function ExportImageCard({
         {coverUri && (
           <Image
             source={{ uri: coverUri }}
-            className="h-[170px] w-[120px] rounded-[6px] border"
+            className={squareCover ? "h-[150px] w-[150px] border" : "h-[170px] w-[120px] rounded-[6px] border"}
             style={{ borderColor: `${asColor(primary)}26` }}
             fadeDuration={0}
             onLoad={() => {

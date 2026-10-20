@@ -21,7 +21,7 @@
  * outside it on a fixed "Compass" bar, from back when a Compass conversation
  * was not something you could name or return to.
  */
-import { ChevronLeft, Settings } from '@/components/icons';
+import { ChevronLeft, Settings, type LucideIcon } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
@@ -40,6 +40,8 @@ export interface ChatHeaderProps {
   fallbackTitle?: string;
   /** The book this chat is grounded in, if any. */
   bookTitle?: string | null;
+  /** Drawn before the book's title: the podcast mark for an episode. */
+  bookIcon?: LucideIcon;
   /** Where back goes, named for the screen reader. */
   onBack: () => void;
   backLabel: string;
@@ -55,6 +57,7 @@ export function ChatHeader({
   title,
   fallbackTitle = 'Chat',
   bookTitle,
+  bookIcon,
   onBack,
   backLabel,
   onOpenBook,
@@ -89,7 +92,7 @@ export function ChatHeader({
         <View className="w-full flex-row flex-wrap items-center justify-start gap-2">
           <ModelStatusBar onPress={onWakeSamwell} />
           {bookTitle ? (
-            <BookBadge title={bookTitle} onPress={onOpenBook} color={asColor(primary)} />
+            <BookBadge title={bookTitle} icon={bookIcon} onPress={onOpenBook} color={asColor(primary)} />
           ) : null}
         </View>
       ) : null}
@@ -102,17 +105,22 @@ export function ChatHeader({
  *  than a label. */
 function BookBadge({
   title,
+  icon: Icon,
   onPress,
   color,
 }: {
   title: string;
+  icon?: LucideIcon;
   onPress?: () => void;
   color: string | undefined;
 }) {
   const label = (
-    <ThemedText type="labelSm" color={color} numberOfLines={1}>
-      {title}
-    </ThemedText>
+    <View className="flex-row items-center gap-1.5">
+      {Icon ? <Icon size={12} color={color} /> : null}
+      <ThemedText type="labelSm" color={color} numberOfLines={1} className="shrink">
+        {title}
+      </ThemedText>
+    </View>
   );
 
   if (!onPress) {

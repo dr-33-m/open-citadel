@@ -58,7 +58,7 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
 import { extractChapterTextToLocator } from "@/services/book-context";
 import { sessionExists } from "@/services/chat-sessions";
 import { showChatOnSamwellPage } from "@/services/samwell-handoff";
-import { suggestTags } from "@/services/tag-suggest";
+import { highlightSurrounding, suggestTags } from "@/services/tag-suggest";
 import {
   startMediaSession,
   stopMediaSession,
@@ -1085,18 +1085,7 @@ export default function ReaderScreen() {
             const row = useReaderStore
               .getState()
               .highlights.find((h) => h.id === menuHighlight.id);
-            let surrounding: string | undefined;
-            if (row?.context) {
-              try {
-                const { before, after } = JSON.parse(row.context) as {
-                  before?: string;
-                  after?: string;
-                };
-                surrounding = [before, after].filter(Boolean).join(" … ") || undefined;
-              } catch {
-                // Suggest from the highlight text alone.
-              }
-            }
+            const surrounding = highlightSurrounding(row?.context);
             const noteText = (highlightNotes[menuHighlight.id] ?? [])
               .map((n) => n.text)
               .join("\n");

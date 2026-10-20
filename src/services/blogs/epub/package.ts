@@ -11,7 +11,7 @@
  * original, so a highlight read later, or a chat started from it, always
  * leads back to the writer.
  */
-import { escapeAttribute } from '@/services/blogs/epub/xhtml';
+import { EPUB_CONTAINER, epubModified, escapeAttribute, languageTag } from '@/services/epub/parts';
 
 export type ArticleEpubInput = {
   /** Stable, so the same post always makes the same book identifier. */
@@ -28,20 +28,7 @@ export type ArticleEpubInput = {
 
 const DAY_MONTH_YEAR = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 
-const CONTAINER = `<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>`;
-
 const esc = escapeAttribute;
-
-/** A language tag XML accepts, from whatever the feed said ("en-US", "EN", nothing). */
-function languageTag(language: string | null): string {
-  const tag = (language ?? '').trim().replace(/_/g, '-');
-  return /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/.test(tag) ? tag : 'en';
-}
 
 function byline(input: ArticleEpubInput): string {
   const date = new Date(input.publishedAt);
@@ -55,7 +42,7 @@ function hostName(link: string): string {
 export function articleEpubFiles(input: ArticleEpubInput): Record<string, string> {
   const lang = languageTag(input.language);
   const identifier = `urn:open-citadel:article:${input.id}`;
-  const modified = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const modified = epubModified();
   const credit = byline(input);
 
   const opf = `<?xml version="1.0" encoding="UTF-8"?>
@@ -102,7 +89,7 @@ ${credit ? `<p><em>${esc(credit)}</em></p>\n` : ''}${input.bodyXhtml}
 
   return {
     mimetype: 'application/epub+zip',
-    'META-INF/container.xml': CONTAINER,
+    'META-INF/container.xml': EPUB_CONTAINER,
     'OEBPS/content.opf': opf,
     'OEBPS/nav.xhtml': nav,
     'OEBPS/article.xhtml': article,

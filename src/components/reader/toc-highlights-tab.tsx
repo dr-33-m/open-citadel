@@ -18,6 +18,10 @@ import { PageFade } from "@/components/scroll-fades";
 import { ThemedText } from "@/components/themed-text";
 import { Item } from "@/components/ui/item";
 import { Sheet } from "@/components/ui/sheet";
+import { formatClock } from "@/utils/clock";
+import { locatorSeconds } from "@/utils/locator-time";
+
+const MOMENT = { fontVariant: ["tabular-nums" as const] };
 
 type HighlightRowData = {
   id: string;
@@ -25,6 +29,8 @@ type HighlightRowData = {
   color: string | null;
   tags: string[];
   locator: Locator | null;
+  /** "12:04": where an episode's highlight is said; null for a book's. */
+  moment: string | null;
   createdAt: string;
 };
 
@@ -45,21 +51,29 @@ const HighlightRow = React.memo(function HighlightRow({
   data,
   colors,
   onPress,
+  onLongPress,
 }: {
   data: HighlightRowData;
   colors: RowColors;
   onPress: (locator: Locator) => void;
+  onLongPress?: (id: string) => void;
 }) {
   return (
     <Item
       className="items-stretch border-b border-surface-tertiary px-6 py-4"
       onPress={() => data.locator && onPress(data.locator)}
+      onLongPress={onLongPress ? () => onLongPress(data.id) : undefined}
     >
       <Item.Media
         className="w-1 min-h-[20px] self-stretch rounded-[2px]"
         style={{ backgroundColor: data.color ?? colors.primary }}
       />
       <Item.Content className="gap-2">
+        {data.moment && (
+          <ThemedText type="labelSm" color={colors.mutedForeground} style={MOMENT}>
+            {data.moment}
+          </ThemedText>
+        )}
         <ThemedText type="bodySm">{data.text}</ThemedText>
         {data.tags.length > 0 && (
           <View className="flex-row flex-wrap gap-2">
@@ -83,10 +97,13 @@ const HighlightRow = React.memo(function HighlightRow({
 export function HighlightsTab({
   highlights,
   onHighlightPress,
+  onHighlightLongPress,
   colors,
 }: {
   highlights: Highlight[];
   onHighlightPress: (locator: Locator) => void;
+  /** Opens the highlight's own sheet (colour, tags, notes), where the list is not in the reader. */
+  onHighlightLongPress?: (id: string) => void;
   colors: RowColors;
 }) {
   const [activeColor, setActiveColor] = useState<string | null>(null);
@@ -108,8 +125,13 @@ export function HighlightsTab({
       color: h.color,
       tags: parseJson<string[]>(h.tags, []),
       locator: parseJson<Locator | null>(h.locator, null),
+      moment: null as string | null,
       createdAt: h.createdAt,
     }));
+    for (const row of rows) {
+      const seconds = locatorSeconds(row.locator);
+      if (seconds !== null) row.moment = formatClock(seconds);
+    }
     rows.sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -125,9 +147,9 @@ export function HighlightsTab({
 
   const renderItem = useCallback(
     ({ item }: { item: HighlightRowData }) => (
-      <HighlightRow data={item} colors={colors} onPress={onHighlightPress} />
+      <HighlightRow data={item} colors={colors} onPress={onHighlightPress} onLongPress={onHighlightLongPress} />
     ),
-    [colors, onHighlightPress],
+    [colors, onHighlightLongPress, onHighlightPress],
   );
 
   if (highlights.length === 0) {
