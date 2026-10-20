@@ -8,17 +8,18 @@
  * when a line is said twice ("Exactly.").
  */
 import type { TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
-import type { EpisodeHighlight } from '@/services/podcasts/transcript/highlights';
-import { formatClock } from '@/utils/clock';
+import { DEFAULT_HIGHLIGHT_COLOR } from '@/constants/highlights';
+import { highlightSeconds } from '@/services/podcasts/transcript/highlight-locator';
 
 /** How much of the talk either side of a line is kept with its highlight. */
 const AROUND_LINES = 2;
 
-type Kept = { id: string; text: string; seconds: number | null };
+type Kept = { id: string; text: string; locator: string | null; color: string | null };
+export type Mark = { id: string; color: string };
 
-/** Each highlighted line's index, with the highlight on it. */
-export function markedLines(lines: readonly TranscriptLine[], highlights: readonly Kept[]): Map<number, string> {
-  const marked = new Map<number, string>();
+/** Each highlighted line's index, with the highlight on it and its colour. */
+export function markedLines(lines: readonly TranscriptLine[], highlights: readonly Kept[]): Map<number, Mark> {
+  const marked = new Map<number, Mark>();
   if (highlights.length === 0) return marked;
   const byText = new Map<string, TranscriptLine[]>();
   for (const line of lines) {
@@ -29,12 +30,12 @@ export function markedLines(lines: readonly TranscriptLine[], highlights: readon
   for (const highlight of highlights) {
     const candidates = byText.get(highlight.text);
     if (!candidates) continue;
-    const at = highlight.seconds;
+    const at = highlightSeconds(highlight.locator);
     const best =
       at === null
         ? candidates[0]
         : candidates.reduce((near, line) => (Math.abs(line.start - at) < Math.abs(near.start - at) ? line : near));
-    marked.set(best.index, highlight.id);
+    marked.set(best.index, { id: highlight.id, color: highlight.color || DEFAULT_HIGHLIGHT_COLOR });
   }
   return marked;
 }
@@ -47,24 +48,6 @@ export function lineSurrounding(lines: readonly TranscriptLine[], index: number)
       .map((line) => line.text)
       .join(' ') || undefined;
   return { before: join(index - AROUND_LINES, index), after: join(index + 1, index + 1 + AROUND_LINES) };
-}
-
-/**
- * An episode's highlights as lines to draw with the transcript's own row, in
- * the order they are said: one made in the reader, with no moment, last.
- */
-export function highlightLines(highlights: readonly EpisodeHighlight[]): { lines: TranscriptLine[]; byIndex: EpisodeHighlight[] } {
-  const byIndex = [...highlights].sort((a, b) => (a.seconds ?? Infinity) - (b.seconds ?? Infinity));
-  const lines = byIndex.map((highlight, index) => ({
-    index,
-    segment: 0,
-    start: highlight.seconds ?? 0,
-    time: highlight.seconds === null ? null : formatClock(highlight.seconds),
-    text: highlight.text,
-    speaker: null,
-    heading: null,
-  }));
-  return { lines, byIndex };
 }
 
 /** "1 highlight", "12 highlights". */

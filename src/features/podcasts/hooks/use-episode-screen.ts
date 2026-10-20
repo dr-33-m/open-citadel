@@ -59,7 +59,7 @@ export function useEpisodeScreen(id: string, landed: boolean) {
   // copy saved with a download comes first, as it does in every list.
   const artworkUrl =
     (episode ? localCoverUri(episode) : null) ?? episode?.imageUrl ?? show?.imageUrl ?? listed?.showImageUrl ?? null;
-  const highlights = useEpisodeHighlights({ episodeId: episode ? id : null, title: episode?.title ?? '', showTitle, coverUri: artworkUrl });
+  const highlights = useEpisodeHighlights({ episodeId: episode ? id : null, title: episode?.title ?? '' });
 
   return {
     view,

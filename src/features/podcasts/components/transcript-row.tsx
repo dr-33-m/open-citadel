@@ -7,6 +7,8 @@ import { haptics } from '@/utils/haptics';
 
 /** A line not being spoken, while the transcript follows the audio. */
 const DIMMED = 0.42;
+/** The marker lets the page through, as the reader's highlights do. */
+const MARKER_ALPHA = '4D';
 /** The house press dim. */
 const PRESSED = 0.6;
 
@@ -15,8 +17,6 @@ export type TranscriptRowColors = {
   gold: string | undefined;
   muted: string | undefined;
   band: string | undefined;
-  /** The highlighter behind a kept line's words. */
-  mark: string;
 };
 
 type TranscriptRowProps = {
@@ -27,8 +27,8 @@ type TranscriptRowProps = {
   dim: boolean;
   /** The search match in hand: a band behind it so the eye finds it. */
   match: boolean;
-  /** Highlighted: the marker behind its words, line by line, as in the reader. */
-  marked?: boolean;
+  /** Highlighted: its colour, drawn as the marker behind its words, line by line, as in the reader. */
+  mark?: string | null;
   /** Width of the time column, wide enough for "1:02:04" in a long episode. */
   gutter: number;
   colors: TranscriptRowColors;
@@ -54,7 +54,7 @@ export const TranscriptRow = React.memo(function TranscriptRow({
   lit,
   dim,
   match,
-  marked = false,
+  mark = null,
   gutter,
   colors,
   onPress,
@@ -85,7 +85,7 @@ export const TranscriptRow = React.memo(function TranscriptRow({
     match && { backgroundColor: colors.band },
     pressed && styles.pressed,
   ];
-  const label = `${line.time ? `${line.time}. ` : ''}${marked ? 'Highlighted. ' : ''}${line.text}`;
+  const label = `${line.time ? `${line.time}. ` : ''}${mark ? 'Highlighted. ' : ''}${line.text}`;
 
   return (
     <View>
@@ -118,7 +118,7 @@ export const TranscriptRow = React.memo(function TranscriptRow({
           <Text style={[typography.labelSm, styles.time, { width: gutter, color: lit ? colors.gold : colors.muted }]}>{line.time}</Text>
         ) : null}
         <Text style={[styles.words, { color: colors.ink }, dim && !lit && styles.dimmed]}>
-          {marked ? <Text style={{ backgroundColor: colors.mark }}>{line.text}</Text> : line.text}
+          {mark ? <Text style={{ backgroundColor: `${mark}${MARKER_ALPHA}` }}>{line.text}</Text> : line.text}
         </Text>
       </Pressable>
     </View>

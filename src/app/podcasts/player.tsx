@@ -40,12 +40,7 @@ export default function PlayerScreen() {
   const player = usePlayerScreen(landed);
   const controls = usePlayerControls(player);
   const { current, episode } = player;
-  const highlights = useEpisodeHighlights({
-    episodeId: current?.episodeId ?? null,
-    title: current?.title ?? "",
-    showTitle: current?.showTitle ?? "",
-    coverUri: current?.artworkUrl ?? null,
-  });
+  const highlights = useEpisodeHighlights({ episodeId: current?.episodeId ?? null, title: current?.title ?? "" });
   const episodeActions = useEpisodeActions({ onHighlights: highlights.count > 0 ? highlights.open : undefined });
 
   if (!current) return <ThemedView className="flex-1" />;

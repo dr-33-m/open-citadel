@@ -43,6 +43,10 @@ type HighlightMenuProps = {
   authorName: string;
   bookCoverUri: string | null;
   bookCategory: string | null;
+  /** A podcast's cover on the shared image, square rather than a book's. */
+  squareCover?: boolean;
+  /** Opened over another sheet (an episode's transcript or highlights), which stays beneath it. */
+  stacked?: boolean;
   onAddNote: (highlightId: string, text: string) => void;
   onUpdateNote: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
@@ -69,6 +73,8 @@ export function HighlightMenu({
   authorName,
   bookCoverUri,
   bookCategory,
+  squareCover = false,
+  stacked = false,
   onAddNote,
   onUpdateNote,
   onDeleteNote,
@@ -256,6 +262,7 @@ export function HighlightMenu({
       author: authorName,
       coverUri: bookCoverUri,
       detail: bookCategory,
+      squareCover,
     });
 
   return (
@@ -265,7 +272,7 @@ export function HighlightMenu({
           height, which is what the sheet sizes itself from. Keyboard
           clearance is the sheet's — it lifts as a whole for whichever field
           below takes focus (see components/ui/sheet). */}
-      <Sheet visible={visible} onClose={onClose} scrollable>
+      <Sheet visible={visible} onClose={onClose} scrollable stackBehavior={stacked ? "push" : undefined}>
         <Sheet.ScrollView
           contentContainerStyle={{
             paddingHorizontal: spacing[6],

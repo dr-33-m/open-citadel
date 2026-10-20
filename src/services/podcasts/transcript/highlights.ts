@@ -15,31 +15,18 @@ import { playEpisodeFrom } from '@/services/podcasts/player';
 import { episodeHighlightLocator, highlightSeconds, type EpisodeHighlightPlace } from '@/services/podcasts/transcript/highlight-locator';
 import { ensureEpisodeBook } from '@/services/podcasts/transcript/store';
 
-export type EpisodeHighlight = {
-  id: string;
-  text: string;
-  /** Seconds into the episode, or null for one made in the reader. */
-  seconds: number | null;
-  color: string;
-  createdAt: string;
-};
+export type EpisodeHighlight = typeof highlights.$inferSelect;
 
-/** An episode's highlights, newest first. Empty when it has no transcript book. */
+/** An episode's highlights, newest first, as rows: what the reader's highlight list and menu take. Empty when it has no transcript book. */
 export function listEpisodeHighlights(episodeId: string): EpisodeHighlight[] {
   return db
-    .select({ id: highlights.id, text: highlights.text, locator: highlights.locator, color: highlights.color, createdAt: highlights.createdAt })
+    .select({ highlight: highlights })
     .from(highlights)
     .innerJoin(podcastEpisodes, eq(podcastEpisodes.transcriptBookId, highlights.bookId))
     .where(eq(podcastEpisodes.id, episodeId))
     .orderBy(desc(highlights.createdAt))
     .all()
-    .map((row) => ({
-      id: row.id,
-      text: row.text,
-      seconds: highlightSeconds(row.locator),
-      color: row.color ?? '',
-      createdAt: row.createdAt,
-    }));
+    .map((row) => row.highlight);
 }
 
 /** Keeps a line of an episode's transcript as a highlight. Null when the episode's book cannot be made. */

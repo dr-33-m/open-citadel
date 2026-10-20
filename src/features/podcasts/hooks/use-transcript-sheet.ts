@@ -2,15 +2,18 @@ import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
 import { useCurrentSegment } from '@/features/podcasts/hooks/use-current-segment';
+import { useEpisodeHighlightEditor } from '@/features/podcasts/hooks/use-episode-highlight-editor';
 import { useTranscriptActions } from '@/features/podcasts/hooks/use-transcript-actions';
 import { useTranscriptFollow } from '@/features/podcasts/hooks/use-transcript-follow';
 import { markedLines } from '@/features/podcasts/utils/transcript-highlights';
 import { followLines, lineMatches, type TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
 import { isTimed, matchLabel } from '@/features/podcasts/utils/transcript-rows';
 import { createEpisodeHighlightsQueryOptions, createTranscriptQueryOptions } from '@/query-manager/transcripts';
+import type { EpisodeHighlight } from '@/services/podcasts/transcript/highlights';
 import { usePodcastPlayer } from '@/stores/podcast-player';
 
 const NO_LINES: TranscriptLine[] = [];
+const NO_HIGHLIGHTS: EpisodeHighlight[] = [];
 /** Where a search match is brought to: near the top, under the field. */
 const MATCH_AT = 0.2;
 /** The time column: "12:04", or "1:02:04" in an episode of an hour or more. */
@@ -66,7 +69,8 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
     jump(matches[next], MATCH_AT);
   };
 
-  const actions = useTranscriptActions({ episodeId, doc, lines, marked });
+  const editor = useEpisodeHighlightEditor(visible ? episodeId : null, kept ?? NO_HIGHLIGHTS);
+  const actions = useTranscriptActions({ episodeId, doc, lines, marked, onEditHighlight: editor.open });
   const { onRow: play } = actions;
   // A tap on a line plays from it, and the list follows from there.
   const onRow = React.useCallback(
@@ -88,6 +92,8 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
     lit,
     match,
     marked,
+    /** The reader's highlight sheet for a highlighted line, once one has been opened. */
+    editor: editor.menu,
     dim: following && current >= 0,
     gutter: !timed ? 0 : lastStart >= 3600 ? GUTTER_HOURS : GUTTER,
     listRef,

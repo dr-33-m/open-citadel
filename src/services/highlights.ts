@@ -1,11 +1,9 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 
 import { db } from '@/db/client';
+import { DEFAULT_HIGHLIGHT_COLOR } from '@/constants/highlights';
 import { highlights, notes } from '@/db/schema';
 import { localDayString } from '@/utils/day';
-
-/** The colour a highlight gets when none is chosen. */
-export const DEFAULT_HIGHLIGHT_COLOR = '#f2ca50';
 
 export type NewHighlight = {
   bookId: string;
@@ -42,6 +40,36 @@ export async function insertHighlight(highlight: NewHighlight): Promise<string> 
     createdDay: localDayString(new Date(now)),
   });
   return id;
+}
+
+/** A highlight's colour, its tags (a JSON list) or the chat it opened. */
+export async function updateHighlight(id: string, updates: { color?: string; tags?: string; chatSessionId?: string }): Promise<void> {
+  await db.update(highlights).set(updates).where(eq(highlights.id, id));
+}
+
+export type HighlightNoteRow = typeof notes.$inferSelect;
+
+/** The notes written on a highlight, oldest first. */
+export function listHighlightNotes(highlightId: string): HighlightNoteRow[] {
+  return db.select().from(notes).where(eq(notes.highlightId, highlightId)).orderBy(asc(notes.createdAt)).all();
+}
+
+/** Writes a note on a highlight. Returns the row as kept. */
+export async function addHighlightNote(highlightId: string, bookId: string, text: string): Promise<HighlightNoteRow> {
+  const row: HighlightNoteRow = { id: `note-${Date.now()}`, highlightId, bookId, text, createdAt: new Date().toISOString(), updatedAt: null };
+  await db.insert(notes).values(row);
+  return row;
+}
+
+/** Rewrites a note. Returns when it was changed. */
+export async function updateHighlightNote(noteId: string, text: string): Promise<string> {
+  const now = new Date().toISOString();
+  await db.update(notes).set({ text, updatedAt: now }).where(eq(notes.id, noteId));
+  return now;
+}
+
+export async function deleteHighlightNote(noteId: string): Promise<void> {
+  await db.delete(notes).where(eq(notes.id, noteId));
 }
 
 /** Removes a highlight and the notes written on it. */

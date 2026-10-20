@@ -4,26 +4,23 @@ import React from 'react';
 import type { TranscriptDoc } from 'samwell-shared';
 
 import { showToast } from '@/components/toast/toast-provider';
-import { lineSurrounding } from '@/features/podcasts/utils/transcript-highlights';
+import { lineSurrounding, type Mark } from '@/features/podcasts/utils/transcript-highlights';
 import type { TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
 import { linePassage } from '@/features/podcasts/utils/transcript-rows';
 import { queryClient } from '@/lib/query-client';
 import { invalidatePodcastLibrary } from '@/query-manager/podcasts';
 import { transcriptKeys } from '@/query-manager/transcripts';
-import { deleteHighlight } from '@/services/highlights';
 import { playEpisodeFrom } from '@/services/podcasts/player';
 import { addEpisodeHighlight } from '@/services/podcasts/transcript/highlights';
 import { ensureEpisodeBook, renameSpeaker } from '@/services/podcasts/transcript/store';
 import { showChatOnSamwellPage } from '@/services/samwell-handoff';
 import { useChatStore } from '@/stores/chat';
 
-/** A transcript line's menu, and a kept highlight's (`useEpisodeHighlights`): the same sheet, drawn once. */
-export type TranscriptMenuKey = 'play' | 'highlight' | 'unhighlight' | 'ask' | 'share' | 'copy' | 'rename' | 'reader';
+export type TranscriptMenuKey = 'highlight' | 'ask' | 'copy' | 'rename' | 'reader';
 type MenuRow = { key: TranscriptMenuKey; label: string };
 
-const HIGHLIGHT: MenuRow = { key: 'highlight', label: 'Highlight' };
-const UNHIGHLIGHT: MenuRow = { key: 'unhighlight', label: 'Remove the highlight' };
 const MENU: MenuRow[] = [
+  { key: 'highlight', label: 'Highlight' },
   { key: 'ask', label: 'Ask Samwell about this' },
   { key: 'copy', label: 'Copy' },
   { key: 'rename', label: 'Rename the speaker' },
@@ -32,16 +29,13 @@ const MENU: MenuRow[] = [
 /** A line nobody is named on has no speaker to rename. */
 const UNNAMED_MENU = MENU.filter((row) => row.key !== 'rename');
 
-/** The long-pressed line's menu: keeping it (or letting it go) first, as the reader's selection does. */
-function menuRows(line: TranscriptLine | null, marked: boolean): MenuRow[] {
-  return [marked ? UNHIGHLIGHT : HIGHLIGHT, ...(line?.speaker != null ? MENU : UNNAMED_MENU)];
-}
-
 /**
  * What a transcript's lines do. A tap plays from the line's time: a seek in
  * the episode already playing, or the episode started there. A long press
  * opens a small menu: highlight the line (kept on the episode's book, so it
- * reaches the Timeline like a book's), ask Samwell, copy, and so on. A tap
+ * reaches the Timeline like a book's), ask Samwell, copy, and so on; on a
+ * line already highlighted it opens the highlight's own sheet (colour, tags,
+ * notes), the reader's, as tapping a highlight in a book does. A tap
  * on a speaker's name (or Rename in the menu) lets the reader correct it for
  * every line they have, which rewrites the JSON and the episode's EPUB so
  * Samwell and search see the right name too.
@@ -51,12 +45,15 @@ export function useTranscriptActions({
   doc,
   lines,
   marked,
+  onEditHighlight,
 }: {
   episodeId: string | null;
   doc: TranscriptDoc | null;
   lines: readonly TranscriptLine[];
   /** The highlighted lines, by index, with each one's highlight. */
-  marked: ReadonlyMap<number, string>;
+  marked: ReadonlyMap<number, Mark>;
+  /** Opens a highlight's sheet. */
+  onEditHighlight: (id: string) => void;
 }) {
   const router = useRouter();
   const [menuLine, setMenuLine] = React.useState<TranscriptLine | null>(null);
@@ -69,7 +66,14 @@ export function useTranscriptActions({
     },
     [episodeId],
   );
-  const onLongPress = React.useCallback((line: TranscriptLine) => setMenuLine(line), []);
+  const onLongPress = React.useCallback(
+    (line: TranscriptLine) => {
+      const mark = marked.get(line.index);
+      if (mark) onEditHighlight(mark.id);
+      else setMenuLine(line);
+    },
+    [marked, onEditHighlight],
+  );
   const onHeading = React.useCallback((line: TranscriptLine) => {
     if (line.speaker != null) setRenaming(line.speaker);
   }, []);
@@ -106,19 +110,12 @@ export function useTranscriptActions({
     void queryClient.invalidateQueries({ queryKey: transcriptKeys.highlights(episodeId) });
     showToast({ message: 'Highlighted', tone: 'success', key: 'transcript-highlight' });
   };
-  const unhighlight = async (line: TranscriptLine) => {
-    const id = marked.get(line.index);
-    if (!episodeId || !id) return;
-    await deleteHighlight(id);
-    void queryClient.invalidateQueries({ queryKey: transcriptKeys.highlights(episodeId) });
-  };
 
   const onMenu = (key: TranscriptMenuKey) => {
     const line = menuLine;
     setMenuLine(null);
     if (!line) return;
     if (key === 'highlight') void highlight(line);
-    else if (key === 'unhighlight') void unhighlight(line);
     else if (key === 'ask') void askAbout(line);
     else if (key === 'reader') void readInReader();
     else if (key === 'rename') onHeading(line);
@@ -143,7 +140,7 @@ export function useTranscriptActions({
     readInReader,
     menu: {
       visible: menuLine !== null,
-      rows: menuRows(menuLine, menuLine !== null && marked.has(menuLine.index)),
+      rows: menuLine?.speaker != null ? MENU : UNNAMED_MENU,
       onClose: () => setMenuLine(null),
       onSelect: onMenu,
     },

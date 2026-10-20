@@ -14,7 +14,6 @@ import { TranscriptTransport } from '@/features/podcasts/components/transcript-t
 import type { TranscriptSheetState } from '@/features/podcasts/hooks/use-transcript-sheet';
 import type { TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { DEFAULT_HIGHLIGHT_COLOR } from '@/services/highlights';
 
 type TranscriptSheetProps = {
   visible: boolean;
@@ -28,8 +27,6 @@ type TranscriptSheetProps = {
 
 const FILL = { flex: 1 } as const;
 const keyOf = (line: TranscriptLine) => String(line.index);
-/** The highlighter behind a kept line's words: the reader's gold, let through. */
-const MARKER = `${DEFAULT_HIGHLIGHT_COLOR}4D`;
 /** Room under the last line, so it can still be brought up to where the spoken line sits. */
 const LIST_END = { paddingBottom: 160 } as const;
 
@@ -49,7 +46,7 @@ export function TranscriptSheet({ visible, onClose, line, state, listRef }: Tran
   const muted = tokens['--color-muted-foreground'];
   const ink = tokens['--color-foreground'];
   const band = tokens['--color-muted'];
-  const colors = React.useMemo<TranscriptRowColors>(() => ({ ink, gold, muted, band, mark: MARKER }), [band, gold, ink, muted]);
+  const colors = React.useMemo<TranscriptRowColors>(() => ({ ink, gold, muted, band }), [band, gold, ink, muted]);
   const { lit, match, marked, dim, gutter, onRow, onLongPress, onHeading } = state;
 
   const renderItem = React.useCallback(
@@ -59,7 +56,7 @@ export function TranscriptSheet({ visible, onClose, line, state, listRef }: Tran
         lit={item.index === lit}
         dim={dim}
         match={item.index === match}
-        marked={marked.has(item.index)}
+        mark={marked.get(item.index)?.color}
         gutter={gutter}
         colors={colors}
         onPress={onRow}

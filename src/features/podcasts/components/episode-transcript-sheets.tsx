@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { InfoSheet, type InfoContent } from '@/components/info-sheet';
+import { HighlightMenu } from '@/components/reader/highlight-menu';
 import { PlansSheet } from '@/features/billing/components/plans-sheet';
 import { SpeakerNameSheet } from '@/features/podcasts/components/speaker-name-sheet';
 import { TranscribeSheet } from '@/features/podcasts/components/transcribe-sheet';
@@ -48,6 +49,7 @@ export function TranscriptViewer({ episodeId, visible, onClose, preparing = fals
     <>
       <TranscriptSheet visible={visible} onClose={onClose} line={line} state={state} listRef={listRef} />
       <TranscriptMenuSheet {...state.menu} />
+      {state.editor ? <HighlightMenu {...state.editor} /> : null}
       <SpeakerNameSheet {...state.rename} />
     </>
   );

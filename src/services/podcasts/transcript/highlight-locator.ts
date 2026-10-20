@@ -11,8 +11,7 @@
 import type { TranscriptDoc } from 'samwell-shared';
 
 import { episodeParts, partFile, type EpisodeEpubInput } from '@/services/podcasts/transcript/episode-epub';
-
-const TIME = /^t=(\d+(?:\.\d+)?)$/;
+import { locatorSeconds } from '@/utils/locator-time';
 
 export type EpisodeHighlightPlace = {
   /** The transcript block the words come from. */
@@ -57,17 +56,11 @@ export function episodeHighlightLocator(
   };
 }
 
-/** The moment a highlight's locator plays from, or null when it carries none (a book's highlight, a bad row). */
+/** The moment a stored highlight's locator plays from, or null when it carries none (a book's highlight, a bad row). */
 export function highlightSeconds(locator: string | null): number | null {
   if (!locator) return null;
   try {
-    const fragments: unknown = JSON.parse(locator)?.locations?.fragments;
-    if (!Array.isArray(fragments)) return null;
-    for (const fragment of fragments) {
-      const match = typeof fragment === 'string' ? TIME.exec(fragment) : null;
-      if (match) return Number(match[1]);
-    }
-    return null;
+    return locatorSeconds(JSON.parse(locator));
   } catch {
     return null;
   }
