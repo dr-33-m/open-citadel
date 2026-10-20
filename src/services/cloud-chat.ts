@@ -63,11 +63,15 @@ import {
   type ToolCallContext,
 } from '@/services/chat-tools';
 import type { ChapterListing, ReadingSearchResult } from '@/services/reading-tools';
+import { ArrowRight } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
 import { cloudHeaders } from '@/services/cloud-identity';
 import { createSmoothReveal } from '@/services/smooth-reveal';
 import { createReplySequence, replySegments } from '@/services/reply-sequence';
 import { createStreamTiming } from '@/services/stream-timing';
+import { createRequestResume } from '@/services/cloud-turn-resume';
+import { reportCloudReached, reportCloudUnreached } from '@/lib/network';
+import { createCircleWatch } from '@/utils/tool-circling';
 import { createOnboardingClientTools } from '@/services/onboarding-tools/client-tools';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { buildJourneySnapshot } from '@/services/journey';
@@ -119,6 +123,69 @@ export function isCloudUnreachable(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? '');
   return /XHR request failed|Network request failed/i.test(message);
 }
+
+/** What a stream that closed before its end is reported as. See `isEarlyClose`. */
+const DROPPED_MESSAGE = 'XHR request failed: the stream closed before the run finished';
+
+/**
+ * A request that failed in a way worth sending again: it got no answer, its
+ * stream was cut, or a gateway in front of the server could not reach it.
+ * Never a refusal (402, 429) or the server's own failure: sending those again
+ * gets the same answer.
+ */
+function isWorthResuming(error: unknown): boolean {
+  if (isCloudUnreachable(error)) return true;
+  if (error instanceof Error && error.name === 'StreamTruncatedError') return true;
+  const status = readStatus(error);
+  return status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * The connection closed, cleanly, before the server said the run was over.
+ *
+ * TanStack's transport covers for that with a finish of its own, marked
+ * `connect-wrapper` and saying "stop", so a stream cut off mid-answer read as
+ * an answer that had finished: the orb went out, the send button came back
+ * and nothing was said. It is a dropped connection and is treated as one.
+ */
+function isEarlyClose(chunk: StreamChunk): boolean {
+  return chunk.type === 'RUN_FINISHED' && (chunk as { model?: unknown }).model === 'connect-wrapper';
+}
+
+/** One key for the notice that a long turn paused, so a second writes over the first. */
+const TURN_PAUSED_TOAST = 'cloud-turn-paused';
+
+/** Why a turn stopped before Samwell had finished. */
+export type TurnPause = 'circling' | 'ceiling' | 'quiet';
+
+const PAUSE_MESSAGES: Record<TurnPause, string> = {
+  circling: 'Samwell was going over the same ground, so he paused.',
+  ceiling: 'Samwell paused after a long run of work.',
+  quiet: 'Samwell went quiet, so he paused.',
+};
+
+/**
+ * Says that a turn stopped before he had finished, and offers to carry on.
+ *
+ * It used to end in silence: the orb went out, the send button came back and
+ * nothing was said, which on a long job looks exactly like a crash. Carrying
+ * on is a new message, so the turn's counts start again and the server
+ * checks the credit ceiling afresh, which is the honest place for a long job
+ * to ask for more.
+ */
+export function sayTurnPaused(reason: TurnPause, keepGoing: () => void): void {
+  showToast({
+    key: TURN_PAUSED_TOAST,
+    message: PAUSE_MESSAGES[reason],
+    actionIcon: ArrowRight,
+    actionLabel: 'Keep going',
+    onActionPress: keepGoing,
+    persistent: true,
+  });
+}
+
+/** What carrying on sends, as the reader's own message. */
+export const KEEP_GOING_MESSAGE = 'Keep going.';
 
 /**
  * Samwell Cloud refused the turn, and why.
@@ -333,6 +400,13 @@ export interface CloudChatTurnOptions {
    * `createReplySequence`.
    */
   onReplyPart?: (text: string) => void;
+  /**
+   * The turn stopped before he had finished: he was circling, reached the
+   * backstop ceiling, or went quiet. The caller says so and offers to carry
+   * on (`sayTurnPaused`). Not called for stop, which the reader chose, or for
+   * a failure, which is said as one.
+   */
+  onPaused?: (reason: TurnPause) => void;
   /**
    * Aborts the turn. `stop()` on the two chat surfaces routes here; the turn
    * returns whatever text had streamed so far and no error is raised.
@@ -957,6 +1031,7 @@ export async function sendCloudChatTurn({
   onOnboardingAction,
   onReplyPart,
   onActivity,
+  onPaused,
   signal,
 }: CloudChatTurnOptions): Promise<string> {
   // The last activity handed over, so an unchanged one is not handed over again.
@@ -1020,6 +1095,20 @@ export async function sendCloudChatTurn({
    * said, which is a far better thing to leave a reader holding than an error.
    */
   let continuationsThisTurn = 0;
+  // He asked for the same thing again having been given it. See `tool-circling.ts`.
+  const circles = createCircleWatch();
+  let circling = false;
+  // A request that dropped goes again from where it started. See `cloud-turn-resume.ts`.
+  const resume = createRequestResume();
+  /*
+   * Between a dropped request and the first chunk of its second try. The
+   * messages were put back to before the drop, and drawing that would show a
+   * finished part again in the streaming bubble; what was on screen stays
+   * until the new words arrive.
+   */
+  let resuming = false;
+  // Said once per request, not per chunk: the stream is proof the server answers.
+  let reachedThisRequest = false;
   let lastToolName: string | null = null;
   /*
    * What he had already said when the tool was called, and what he has said
@@ -1117,9 +1206,15 @@ export async function sendCloudChatTurn({
    * "got stuck" while the model was still working. Chunks push the deadline
    * out; a pending approval counts as progress too, since there the turn is
    * waiting on a person, who may take as long as they like.
+   *
+   * There is no wall clock at all any more. Ten minutes in total was the
+   * other half of this, and it cut off long jobs that were making progress
+   * the whole time: seven scripts from seven books, on a model that thinks
+   * for a minute a step, does not fit in ten. What bounds a turn now is the
+   * quiet below, circling (`tool-circling.ts`), the backstop ceiling, and on
+   * the server the share of the balance one message may spend.
    */
   const SETTLE_INACTIVITY_MS = inactivityMs ?? 120_000;
-  const SETTLE_ABSOLUTE_MS = 600_000;
   let lastProgressAt = Date.now();
 
   const flushThinking = createThrottle(onThinkingContent, 120);
@@ -1192,11 +1287,28 @@ export async function sendCloudChatTurn({
         : mode === 'compass'
           ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
           : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
+    // Each request, as it goes out: the first, and every continuation.
+    onResponse: () => {
+      reachedThisRequest = false;
+      resume.markStart(client.getMessages());
+    },
     onError: (error) => {
       streamError = error;
     },
     onChunk: (chunk) => {
       lastProgressAt = Date.now();
+      if (chunk.type === 'RUN_FINISHED' || chunk.type === 'RUN_ERROR') resume.markSettled();
+      if (isEarlyClose(chunk)) {
+        streamError ??= new Error(DROPPED_MESSAGE);
+        return;
+      }
+      if (chunk.type !== 'RUN_ERROR') {
+        resuming = false;
+        if (!reachedThisRequest) {
+          reachedThisRequest = true;
+          reportCloudReached();
+        }
+      }
 
       const approval = collectApproval(chunk);
       if (approval) approvals.push(approval);
@@ -1236,7 +1348,13 @@ export async function sendCloudChatTurn({
          * `RUN_FINISHED` carrying `tool_calls` is exactly one continuation,
          * which is also the unit the server counts.
          */
-        if (finishReason === 'tool_calls') continuationsThisTurn += 1;
+        if (finishReason === 'tool_calls') {
+          continuationsThisTurn += 1;
+          for (const part of lastAssistantToolCalls(client.getMessages())) {
+            if (circles.record(part.id, part.name, part.arguments)) circling = true;
+          }
+        }
+        resume.markFinished();
       }
 
       const toolName = readToolName(chunk);
@@ -1261,6 +1379,7 @@ export async function sendCloudChatTurn({
       }
     },
     onMessagesChange: (messages) => {
+      if (resuming) return;
       // Before the text check: a step starts before he says a word about it.
       reportActivity(messages);
       const text = assistantTextSinceUser(messages);
@@ -1338,9 +1457,24 @@ export async function sendCloudChatTurn({
     // so the tool never runs and the turn stalls. Keep the client alive until
     // the conversation has fully settled: drain approval requests as they
     // arrive and wait for a final assistant text answer with nothing loading.
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < SETTLE_ABSOLUTE_MS) {
+    let paused: TurnPause | null = null;
+    for (;;) {
       if (aborted) break;
+      if (streamError && !aborted && isWorthResuming(streamError) && resume.canResume()) {
+        // The connection dropped, not the server refusing: go again from
+        // where that request started, once the phone is back online.
+        if (isCloudUnreachable(streamError)) reportCloudUnreached();
+        const dropped = streamError;
+        streamError = null;
+        resuming = true;
+        showToolStatus('Reconnecting…', lastToolName);
+        if (await resume.resume(client, signal)) {
+          lastProgressAt = Date.now();
+          continue;
+        }
+        resuming = false;
+        streamError = aborted ? null : dropped;
+      }
       // Failed inside the stream: nothing more is coming. Below, what he had
       // already said is kept and the failure is said after it.
       if (streamError) break;
@@ -1359,21 +1493,29 @@ export async function sendCloudChatTurn({
         }
         break;
       }
+      if (circling) {
+        // He asked for something he had already been given, a third time.
+        // Measured on real traffic, the worst turn went round 112 times;
+        // nobody wanted the hundredth answer.
+        console.warn('[Samwell Cloud] Turn repeated the same tool call; pausing it here.');
+        paused = 'circling';
+        break;
+      }
       if (continuationsThisTurn >= TOOL_LOOP_CEILING) {
-        // Past this the model has stopped making progress and started
-        // circling. Measured on real traffic, the worst turn went round 112
-        // times; nobody wanted the hundredth answer. Stopping a beat before
-        // the server's own refusal means the reader gets the answer so far
-        // rather than an error.
+        // The backstop, for a run that never repeats itself exactly but never
+        // ends either. Stopping a beat before the server's own refusal means
+        // the reader gets the answer so far rather than an error.
         console.warn(
-          `[Samwell Cloud] Turn reached ${TOOL_LOOP_CEILING} continuations; stopping it here.`,
+          `[Samwell Cloud] Turn reached ${TOOL_LOOP_CEILING} continuations; pausing it here.`,
         );
+        paused = 'ceiling';
         break;
       }
 
       if (approvals.length > 0) lastProgressAt = Date.now();
       if (Date.now() - lastProgressAt > SETTLE_INACTIVITY_MS) {
         console.warn('[Samwell Cloud] Turn went quiet; returning partial content.');
+        paused = 'quiet';
         break;
       }
 
@@ -1429,10 +1571,10 @@ export async function sendCloudChatTurn({
     }
 
     reportThinkingDone();
-    // Whatever streamed, and nothing else. A turn that did not finish leaves
-    // the reader where they were, free to send again or stop it themselves —
-    // a canned "he got stuck" bubble dropped into the transcript reads worse
-    // than the quiet, and it is the reader's call, not the app's.
+    // Whatever streamed, and nothing else in the transcript: a canned "he got
+    // stuck" bubble reads worse than the reply as far as it got. What is said
+    // about a turn that stopped early is said in a toast (`onPaused`), with a
+    // way to carry on, because silence on a long job looks like a crash.
     // The goodbye, when he ended onboarding, is the last of what he said.
     // The goodbye arrives in a tool call rather than as text, so it is
     // revealed here like any other reply, after the rest.
@@ -1448,6 +1590,8 @@ export async function sendCloudChatTurn({
       sayCloudTurnFailed(
         new Error(`Inside the stream: ${streamError.message} (POST ${endpointFor(mode, baseUrl, metered)})`),
       );
+    } else if (paused && !aborted) {
+      onPaused?.(paused);
     } else if (!partial) {
       console.warn(
         `[Samwell Cloud] Turn produced no answer (finishReason=${finishReason ?? 'none'}, aborted=${aborted}).`,
@@ -1465,6 +1609,13 @@ export async function sendCloudChatTurn({
     await sequence.idle();
     client.dispose();
   }
+}
+
+/** The tool calls in his latest message, for `tool-circling.ts` to count. */
+function lastAssistantToolCalls(messages: UIMessage[]): { id: string; name: string; arguments: string }[] {
+  const message = messages.findLast((candidate) => candidate.role === 'assistant');
+  if (!message) return [];
+  return message.parts.flatMap((part) => (part.type === 'tool-call' ? [part] : []));
 }
 
 function hasUnresolvedToolCalls(messages: UIMessage[]): boolean {

@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CLOUD_VOICE_CATALOG } from 'samwell-shared';
 
 import { createSpeechGuards } from '../tts-guards.js';
-import { lookupGenerationCost, parseAudioFormat, speechBody } from '../tts-upstream.js';
+import { lookupGeneration, lookupGenerationCost, parseAudioFormat, speechBody } from '../tts-upstream.js';
 import { createVoiceCatalog, VOICE_MODELS_DDL } from '../voice-catalog.js';
 import { voiceFigures } from '../voice-figures.js';
 import { readVoicePrice, refreshVoiceMetadata, toVoiceModel } from '../voice-metadata.js';
@@ -58,6 +58,33 @@ describe('lookupGenerationCost', () => {
     const fetchImpl = vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch;
     expect(await lookupGenerationCost('gen-1', { apiKey: 'k', fetchImpl, wait: async () => undefined })).toBeNull();
     expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('lookupGeneration', () => {
+  it('reads which maker answered, how long it took, and the tries before it', async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        data: {
+          total_cost: 0.0001,
+          provider_name: 'Together',
+          latency: 900,
+          provider_responses: [
+            { provider_name: 'DeepInfra', status: 502, latency: 20_000 },
+            { provider_name: 'Together', status: 200, latency: 900 },
+          ],
+        },
+      }),
+    ) as unknown as typeof fetch;
+    expect(await lookupGeneration('gen-1', { apiKey: 'k', fetchImpl, wait: async () => undefined })).toEqual({
+      costUsd: 0.0001,
+      provider: 'Together',
+      latencyMs: 900,
+      attempts: [
+        { provider: 'DeepInfra', status: 502, latencyMs: 20_000 },
+        { provider: 'Together', status: 200, latencyMs: 900 },
+      ],
+    });
   });
 });
 
