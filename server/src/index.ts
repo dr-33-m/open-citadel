@@ -884,7 +884,7 @@ app.post('/chat/http', async (c) => {
    * and a request that is about to be refused must not spend one of the
    * house's onboarding turns on its way to being refused.
    *
-   * See `tool-loop.ts` for why twelve.
+   * See `limits.ts` in samwell-shared for why forty, and why it is a backstop.
    */
   const loop = admitRequest(
     openTurns,
@@ -1170,7 +1170,29 @@ app.post('/chat/http', async (c) => {
    * is cancelled.
    */
   const abortController = new AbortController();
+  /*
+   * Which turn, and which step of it, every line about this request is.
+   *
+   * The thread is cut to eight characters: enough to tell one reader's turn
+   * from another in a log, not an identifier worth keeping. Without it the
+   * logs could not say whether a run of requests was one turn or three, which
+   * is the first question about any turn that stopped early.
+   */
+  const turnLabel = `thread=${(body.threadId ?? 'none').slice(0, 8)} step=${loop.continuations}`;
   c.req.raw.signal?.addEventListener('abort', () => abortController.abort(), { once: true });
+  /*
+   * The reader's side closed the connection before the reply was done: stop
+   * pressed, the app stopping a turn itself, or the network dropping. Nothing
+   * else aborts this controller (the request's own signal above, or the
+   * response stream being cancelled). TanStack logs it as a "fatal" error
+   * from the model's stream, which reads like the server failing; it is not,
+   * and this line says what it is.
+   */
+  abortController.signal.addEventListener(
+    'abort',
+    () => console.log(`[Samwell Cloud] Reader disconnected mid-reply: ${turnLabel}`),
+    { once: true },
+  );
 
   const stream = chat({
     abortController,
@@ -1293,7 +1315,7 @@ app.post('/chat/http', async (c) => {
   });
 
   console.log(
-    `[Samwell Cloud] ${mode} turn: model=${modelId} thinkingBudget=${thinkingBudget}` +
+    `[Samwell Cloud] ${mode} turn: ${turnLabel} model=${modelId} thinkingBudget=${thinkingBudget}` +
       (mode === 'onboarding'
         ? ` billed=${onTheHouse ? 'house' : 'reader'}`
         : ` plan=${plan}`),

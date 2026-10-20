@@ -49,10 +49,10 @@ focusManager.setEventListener((handleFocus) => {
 });
 
 /*
- * "Online" is the phone having a connection. Without this the cache assumed
- * it always did, so a chart that failed on the train stayed failed until its
- * screen was reopened. With it, coming back online refetches what is on
- * screen and failed or stale. The library's queries are never stale on their
- * own, so they are left alone.
+ * "Online" is `lib/network`'s answer: the phone has a network and Samwell
+ * Cloud answers. Without this the cache assumed it always did, so a chart that
+ * failed on the train stayed failed until its screen was reopened. With it,
+ * coming back online refetches what is on screen and failed or stale. The
+ * library's queries are never stale on their own, so they are left alone.
  */
 onlineManager.setEventListener((setOnline) => watchConnection(setOnline));

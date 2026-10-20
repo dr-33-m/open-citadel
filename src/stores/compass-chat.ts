@@ -16,7 +16,13 @@ import {
   type ChatSession,
 } from '@/services/chat-sessions';
 import { conversationForTitle, RetitleError, suggestChatTitle } from '@/services/chat-title';
-import { sayCloudTurnBlocked, sayCloudTurnFailed, sendCloudChatTurn } from '@/services/cloud-chat';
+import {
+  KEEP_GOING_MESSAGE,
+  sayCloudTurnBlocked,
+  sayCloudTurnFailed,
+  sayTurnPaused,
+  sendCloudChatTurn,
+} from '@/services/cloud-chat';
 import { useApprovalStore } from '@/stores/approval';
 import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
@@ -316,6 +322,11 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         onThinkingContent: (content) => set({ streamingThinking: content }),
         onThinkingDone: (seconds) => set({ streamingThinkingSeconds: seconds }),
         onActivity: (activity) => set({ streamingActivity: activity }),
+        // Carrying on is the reader's next message, in the chat it paused in.
+        onPaused: (reason) =>
+          sayTurnPaused(reason, () => {
+            if (get().activeSessionId === sessionId) void get().send(KEEP_GOING_MESSAGE);
+          }),
         onToolStatus: (status, name) =>
           set({
             toolStatus: status,

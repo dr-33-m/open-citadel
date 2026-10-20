@@ -14,6 +14,7 @@
 import { fetch as streamingFetch } from 'expo/fetch';
 
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
+import { isConnected, reportCloudReached, reportCloudUnreached } from '@/lib/network';
 import { cloudJsonHeaders } from '@/services/cloud-identity';
 
 export type CloudVoiceFailure =
@@ -23,7 +24,7 @@ export type CloudVoiceFailure =
   | 'plan_lapsed'
   /** A plan that does not reach this voice. Only a bigger one helps. */
   | 'plan_required'
-  /** The phone could not reach the server. */
+  /** The phone has no connection: `lib/network` says so, not a single failed request. */
   | 'offline'
   /** The server or the maker answered, but not with audio. */
   | 'maker_failed';
@@ -48,8 +49,27 @@ export interface PieceFormat {
   channels: number;
 }
 
-/** How long to wait for the first byte. A sentence that takes longer has failed. */
-const FIRST_BYTE_TIMEOUT_MS = 20_000;
+/**
+ * How long to wait for the first byte. A sentence that takes longer has failed.
+ *
+ * Longer than the server's own limit on the maker (`SPEECH_TIMEOUT_MS`, 30s),
+ * so a slow maker is reported by the server, with a status, rather than cut
+ * off here with none. It was 20s, under the server's, and every Kokoro piece
+ * the logs show failing failed at exactly 20s: the maker was slow, the phone
+ * hung up, and called it "no connection".
+ */
+const FIRST_BYTE_TIMEOUT_MS = 35_000;
+
+/**
+ * A request that got no answer, or lost it partway: "offline" only when the
+ * phone really is (`lib/network`, which asks again rather than trusting one
+ * failure). Otherwise it is the voice not answering, which the session tries
+ * once more without a word before saying anything.
+ */
+function noAnswer(): CloudVoiceFailure {
+  reportCloudUnreached();
+  return isConnected() ? 'maker_failed' : 'offline';
+}
 
 function classify(status: number, error: string | undefined): CloudVoiceFailure {
   if (status === 402) return error === 'insufficient_credits' ? 'out_of_credits' : 'plan_lapsed';
@@ -76,10 +96,25 @@ export async function streamPiece(options: {
   const base = SAMWELL_CLOUD_BASE_URL.trim().replace(/\/+$/, '');
   if (!base) throw new CloudVoiceError('maker_failed', 'Samwell Cloud is not configured for this build.');
 
+  // Before the clock starts: signing in can take its own time, and that is
+  // not the voice being slow.
+  let headers: Record<string, string>;
+  try {
+    headers = await cloudJsonHeaders();
+  } catch (error) {
+    throw new CloudVoiceError(noAnswer(), error instanceof Error ? error.message : 'Could not sign in.');
+  }
+  // Called off while signing in. The queue checks its own signal, not this.
+  if (options.signal.aborted) throw new Error('Aborted before the request went out.');
+
   // A controller and a timer, as everywhere in this app: Hermes has neither
   // `AbortSignal.timeout` nor `AbortSignal.any`.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FIRST_BYTE_TIMEOUT_MS);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, FIRST_BYTE_TIMEOUT_MS);
   const cancel = () => controller.abort();
   options.signal.addEventListener('abort', cancel, { once: true });
 
@@ -88,7 +123,7 @@ export async function streamPiece(options: {
     try {
       response = await streamingFetch(`${base}/tts/speak`, {
         method: 'POST',
-        headers: await cloudJsonHeaders(),
+        headers,
         body: JSON.stringify({
           modelId: options.modelId,
           voice: options.voice,
@@ -100,9 +135,11 @@ export async function streamPiece(options: {
       });
     } catch (error) {
       if (options.signal.aborted) throw error;
-      // No answer at all: the connection, or a wait past the timeout.
-      throw new CloudVoiceError('offline', error instanceof Error ? error.message : 'No connection.');
+      // Past the timeout the server was reached and the maker was slow.
+      if (timedOut) throw new CloudVoiceError('maker_failed', 'The voice took too long to start.');
+      throw new CloudVoiceError(noAnswer(), error instanceof Error ? error.message : 'No connection.');
     }
+    reportCloudReached();
 
     if (!response.ok) {
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -130,7 +167,8 @@ export async function streamPiece(options: {
         chunk = await reader.read();
       } catch (error) {
         if (options.signal.aborted) throw error;
-        throw new CloudVoiceError('offline', 'The connection dropped mid-sentence.');
+        if (timedOut) throw new CloudVoiceError('maker_failed', 'The voice took too long to start.');
+        throw new CloudVoiceError(noAnswer(), 'The connection dropped mid-sentence.');
       }
       if (first) {
         clearTimeout(timer);

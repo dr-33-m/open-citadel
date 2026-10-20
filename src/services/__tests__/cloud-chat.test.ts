@@ -9,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const at = Date.now();
 let runs: unknown[][] = [];
+/** In a scripted run: the connection fails at this point, as XHR reports it. */
+const DROP = Symbol('drop');
 
 vi.mock('@tanstack/ai-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/ai-client')>();
@@ -17,11 +19,22 @@ vi.mock('@tanstack/ai-client', async (importOriginal) => {
     // The real client, fed a scripted stream instead of the network.
     xhrHttpStream: () =>
       actual.stream(async function* () {
-        for (const chunk of runs.shift() ?? []) yield chunk as never;
+        for (const chunk of runs.shift() ?? []) {
+          if (chunk === DROP) throw new Error('XHR request failed');
+          yield chunk as never;
+        }
       }),
   };
 });
 vi.mock('@/components/toast/toast-provider', () => ({ showToast: vi.fn() }));
+vi.mock('@/components/icons', () => ({ ArrowRight: () => null }));
+vi.mock('@/lib/network', () => ({
+  reportCloudReached: () => {},
+  reportCloudUnreached: () => {},
+  waitForConnection: async () => true,
+}));
+// Retried at once: the waits are `backoff.ts`'s business and tested there.
+vi.mock('@/utils/backoff', () => ({ retryDelayMs: () => 0 }));
 vi.mock('@/services/cloud-identity', () => ({ cloudHeaders: async () => ({}) }));
 vi.mock('@/services/chat-tools', () => ({}));
 vi.mock('@/services/compass-tools', () => ({}));
@@ -61,6 +74,7 @@ beforeEach(() => {
   vi.mocked(showToast).mockClear();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.stubGlobal('fetch', async () => ({ ok: true, status: 200 }));
 });
 
@@ -90,6 +104,40 @@ describe('a turn that fails inside its stream', () => {
     ];
     await expect(turn()).resolves.toBe('All done.');
     expect(showToast).not.toHaveBeenCalled();
+  });
+});
+
+describe('a turn whose connection drops', () => {
+  const finished = [
+    { type: 'TEXT_MESSAGE_END', messageId: 'm1', timestamp: at },
+    { type: 'RUN_FINISHED', runId: 'r1', threadId: 't', finishReason: 'stop', timestamp: at },
+  ];
+
+  it('sends the request again and carries on', async () => {
+    runs = [[started, ...said('Half a'), DROP], [started, ...said('All done.'), ...finished]];
+    await expect(turn()).resolves.toBe('All done.');
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('treats a stream that closed before the run finished as dropped, not done', async () => {
+    runs = [[started, ...said('Half a')], [started, ...said('All done.'), ...finished]];
+    await expect(turn()).resolves.toBe('All done.');
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('gives up after three tries and says the connection is the problem', async () => {
+    runs = [[started, DROP], [started, DROP], [started, DROP], [started, DROP]];
+    await expect(turn()).resolves.toBe('');
+    expect(runs).toHaveLength(0);
+    expect(showToast).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'cloud-turn-failed', message: expect.stringContaining('could not be reached') }),
+    );
+  });
+
+  it('does not send a refusal again', async () => {
+    runs = [[started, failed], [started, ...said('Should not be asked for.'), ...finished]];
+    await expect(turn()).resolves.toBe('');
+    expect(runs).toHaveLength(1);
   });
 });
 
