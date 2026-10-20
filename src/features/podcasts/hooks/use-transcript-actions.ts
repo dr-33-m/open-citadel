@@ -4,48 +4,48 @@ import React from 'react';
 import type { TranscriptDoc } from 'samwell-shared';
 
 import { showToast } from '@/components/toast/toast-provider';
-import { rowPassage } from '@/features/podcasts/utils/transcript-rows';
+import type { TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
+import { linePassage } from '@/features/podcasts/utils/transcript-rows';
 import { invalidatePodcastLibrary } from '@/query-manager/podcasts';
 import { playEpisodeFrom } from '@/services/podcasts/player';
 import { ensureEpisodeBook, renameSpeaker } from '@/services/podcasts/transcript/store';
 import { showChatOnSamwellPage } from '@/services/samwell-handoff';
 import { useChatStore } from '@/stores/chat';
 
-export type TranscriptMenuKey = 'ask' | 'copy' | 'reader';
+export type TranscriptMenuKey = 'ask' | 'copy' | 'rename' | 'reader';
 
-export const TRANSCRIPT_MENU: { key: TranscriptMenuKey; label: string }[] = [
+const MENU: { key: TranscriptMenuKey; label: string }[] = [
   { key: 'ask', label: 'Ask Samwell about this' },
   { key: 'copy', label: 'Copy' },
+  { key: 'rename', label: 'Rename the speaker' },
   { key: 'reader', label: 'Read in the reader' },
 ];
+/** A line nobody is named on has no speaker to rename. */
+const UNNAMED_MENU = MENU.filter((row) => row.key !== 'rename');
 
 /**
- * What a transcript's rows do. A tap plays from the row's start: a seek in
+ * What a transcript's lines do. A tap plays from the line's time: a seek in
  * the episode already playing, or the episode started there. A long press
- * opens a small menu; a tap on a speaker's name lets the reader correct it
- * for every line they have, which rewrites the JSON and the episode's EPUB so
- * Samwell and search see the right name too.
+ * opens a small menu; a tap on a speaker's name (or Rename in the menu) lets
+ * the reader correct it for every line they have, which rewrites the JSON and
+ * the episode's EPUB so Samwell and search see the right name too.
  */
 export function useTranscriptActions({ episodeId, doc }: { episodeId: string | null; doc: TranscriptDoc | null }) {
   const router = useRouter();
-  const [menuRow, setMenuRow] = React.useState<number | null>(null);
+  const [menuLine, setMenuLine] = React.useState<TranscriptLine | null>(null);
   const [renaming, setRenaming] = React.useState<number | null>(null);
 
   const onRow = React.useCallback(
-    (index: number) => {
-      const start = doc?.segments[index]?.start;
-      if (episodeId && start != null) void playEpisodeFrom(episodeId, start);
+    (line: TranscriptLine) => {
+      // A transcript without times has nowhere to play from.
+      if (episodeId && line.time !== null) void playEpisodeFrom(episodeId, line.start);
     },
-    [doc, episodeId],
+    [episodeId],
   );
-  const onLongPress = React.useCallback((index: number) => setMenuRow(index), []);
-  const onSpeaker = React.useCallback(
-    (index: number) => {
-      const speaker = doc?.segments[index]?.speaker;
-      if (speaker != null) setRenaming(speaker);
-    },
-    [doc],
-  );
+  const onLongPress = React.useCallback((line: TranscriptLine) => setMenuLine(line), []);
+  const onHeading = React.useCallback((line: TranscriptLine) => {
+    if (line.speaker != null) setRenaming(line.speaker);
+  }, []);
 
   const readInReader = React.useCallback(async () => {
     if (!episodeId) return;
@@ -53,14 +53,14 @@ export function useTranscriptActions({ episodeId, doc }: { episodeId: string | n
     if (bookId) router.push({ pathname: '/reader/[id]', params: { id: bookId } });
   }, [episodeId, router]);
 
-  const askAbout = async (index: number) => {
+  const askAbout = async (line: TranscriptLine) => {
     if (!episodeId || !doc) return;
     const bookId = await ensureEpisodeBook(episodeId);
     if (!bookId) return;
-    const { passage, context } = rowPassage(doc, index);
+    const { passage, context } = linePassage(doc, line);
     const sessionId = await useChatStore.getState().createSession({
       bookId,
-      title: doc.segments[index].text.slice(0, 60),
+      title: line.text.slice(0, 60),
       contextText: context,
       passageText: passage,
     });
@@ -69,13 +69,14 @@ export function useTranscriptActions({ episodeId, doc }: { episodeId: string | n
   };
 
   const onMenu = (key: TranscriptMenuKey) => {
-    const index = menuRow;
-    setMenuRow(null);
-    if (index == null || !doc) return;
-    if (key === 'ask') void askAbout(index);
+    const line = menuLine;
+    setMenuLine(null);
+    if (!line) return;
+    if (key === 'ask') void askAbout(line);
     else if (key === 'reader') void readInReader();
+    else if (key === 'rename') onHeading(line);
     else {
-      void Clipboard.setStringAsync(doc.segments[index].text);
+      void Clipboard.setStringAsync(line.text);
       showToast({ message: 'Copied', tone: 'success', key: 'transcript-copy' });
     }
   };
@@ -91,9 +92,14 @@ export function useTranscriptActions({ episodeId, doc }: { episodeId: string | n
   return {
     onRow,
     onLongPress,
-    onSpeaker,
+    onHeading,
     readInReader,
-    menu: { visible: menuRow !== null, onClose: () => setMenuRow(null), onSelect: onMenu },
+    menu: {
+      visible: menuLine !== null,
+      rows: menuLine?.speaker != null ? MENU : UNNAMED_MENU,
+      onClose: () => setMenuLine(null),
+      onSelect: onMenu,
+    },
     rename: {
       visible: renaming !== null,
       name: renaming != null ? (doc?.speakers[renaming] ?? '') : '',

@@ -1,14 +1,8 @@
 import type { TranscriptDoc } from 'samwell-shared';
 import { describe, expect, it } from 'vitest';
 
-import {
-  matchLabel,
-  rowPassage,
-  segmentIndexAt,
-  startsBlock,
-  transcriptMatches,
-  transcriptRows,
-} from '@/features/podcasts/utils/transcript-rows';
+import { followLines, lineMatches } from '@/features/podcasts/utils/transcript-lines';
+import { linePassage, matchLabel, segmentIndexAt } from '@/features/podcasts/utils/transcript-rows';
 import { confirmFigure, jobFailureToast, refusalToast, transcriptButtons, transcriptView } from '@/features/podcasts/utils/transcript-state';
 
 const doc: TranscriptDoc = {
@@ -82,11 +76,12 @@ describe('segmentIndexAt', () => {
 });
 
 describe('search', () => {
-  it('matches words and speakers, ignoring case and accents', () => {
-    expect(transcriptMatches(doc, 'compound')).toEqual([1, 2]);
-    expect(transcriptMatches(doc, 'cafe')).toEqual([2]);
-    expect(transcriptMatches(doc, 'lex')).toEqual([0, 1]);
-    expect(transcriptMatches(doc, 'c')).toEqual([]);
+  it('matches words and the name heading a turn, ignoring case and accents', () => {
+    const lines = followLines(doc);
+    expect(lineMatches(lines, 'compound')).toEqual([1, 2]);
+    expect(lineMatches(lines, 'cafe')).toEqual([2]);
+    expect(lineMatches(lines, 'lex')).toEqual([0]);
+    expect(lineMatches(lines, 'c')).toEqual([]);
   });
 
   it('labels the place in the matches', () => {
@@ -96,26 +91,10 @@ describe('search', () => {
   });
 });
 
-describe('startsBlock', () => {
-  it('labels a speaker only when they start talking', () => {
-    expect([0, 1, 2].map((i) => startsBlock(doc, i))).toEqual([true, false, true]);
-  });
-});
-
-describe('transcriptRows', () => {
-  it("labels each speaker's block once, in small caps with the time", () => {
-    expect(transcriptRows(doc).map((r) => r.label)).toEqual(['LEX FRIDMAN · 0:00', null, 'SPEAKER 2 · 0:20']);
-  });
-
-  it('gives every row its time when nobody is named', () => {
-    const anonymous = { ...doc, speakers: [], segments: doc.segments.map((s) => ({ ...s, speaker: null })) };
-    expect(transcriptRows(anonymous).map((r) => r.label)).toEqual(['0:00', '0:10', '0:20']);
-  });
-});
-
-describe('rowPassage', () => {
-  it('hands Samwell the row and its neighbours, timed and named', () => {
-    const { passage, context } = rowPassage(doc, 1, 1);
+describe('linePassage', () => {
+  it('hands Samwell the line, timed and named, with the blocks around it', () => {
+    const lines = followLines(doc);
+    const { passage, context } = linePassage(doc, lines[1]);
     expect(passage).toBe('[0:10] Lex Fridman: On compound interest.');
     expect(context.split('\n')).toHaveLength(3);
   });
