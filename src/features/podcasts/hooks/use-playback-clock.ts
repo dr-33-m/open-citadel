@@ -44,13 +44,13 @@ export function readPlayback(): { position: number; duration: number } {
 
 /**
  * Where the audio is right now without asking: the last reading, carried
- * forward. Null when there is no recent reading of the episode in the player,
- * and the player has to be asked after all.
+ * forward. Null when there is no reading of the episode in the player newer
+ * than `maxAgeMs`, and the player has to be asked after all.
  */
-export function estimatedPlayback(): { position: number; duration: number } | null {
+export function estimatedPlayback(maxAgeMs = FRESH_MS): { position: number; duration: number } | null {
   const { loaded, current } = usePodcastPlayer.getState();
   const now = Date.now();
-  if (!loaded || !lastRead || lastRead.episodeId !== current?.episodeId || now - lastRead.at > FRESH_MS) return null;
+  if (!loaded || !lastRead || lastRead.episodeId !== current?.episodeId || now - lastRead.at > maxAgeMs) return null;
   return { position: positionSince(lastRead, now), duration: lastRead.duration };
 }
 

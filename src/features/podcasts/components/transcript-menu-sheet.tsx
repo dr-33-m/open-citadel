@@ -1,11 +1,11 @@
 import React from 'react';
 
-import { BookOpen, Copy, Pencil, ZodiacPisces, type LucideIcon } from '@/components/icons';
+import { Copy, Pencil, ScrollText, ZodiacPisces, type LucideIcon } from '@/components/icons';
 import { MenuList } from '@/components/menu-list';
 import { Sheet } from '@/components/ui/sheet';
 import type { TranscriptMenuKey } from '@/features/podcasts/hooks/use-transcript-actions';
 
-const ICONS: Record<TranscriptMenuKey, LucideIcon> = { ask: ZodiacPisces, copy: Copy, rename: Pencil, reader: BookOpen };
+const ICONS: Record<TranscriptMenuKey, LucideIcon> = { ask: ZodiacPisces, copy: Copy, rename: Pencil, reader: ScrollText };
 
 type TranscriptMenuSheetProps = {
   visible: boolean;

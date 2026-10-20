@@ -1,31 +1,27 @@
-import type { FlashListRef } from '@shopify/flash-list';
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
 import { useCurrentSegment } from '@/features/podcasts/hooks/use-current-segment';
 import { useTranscriptActions } from '@/features/podcasts/hooks/use-transcript-actions';
+import { useTranscriptFollow } from '@/features/podcasts/hooks/use-transcript-follow';
 import { followLines, lineMatches, type TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
 import { isTimed, matchLabel } from '@/features/podcasts/utils/transcript-rows';
 import { createTranscriptQueryOptions } from '@/query-manager/transcripts';
 import { usePodcastPlayer } from '@/stores/podcast-player';
 
 const NO_LINES: TranscriptLine[] = [];
-/** Where the lit line sits while following: about a third down the sheet. */
-const FOLLOW_AT = 0.33;
-/** How long the opening scroll to the spoken line is given before the list is shown. */
-const PLACE_MS = 450;
+/** Where a search match is brought to: near the top, under the field. */
+const MATCH_AT = 0.2;
 /** The time column: "12:04", or "1:02:04" in an episode of an hour or more. */
 const GUTTER = 52;
 const GUTTER_HOURS = 68;
 
 /**
  * The transcript sheet, read like lyrics: the lines, the one being spoken,
- * following the audio, and search. While its episode plays, the list keeps
- * the spoken line about a third down and the others step back; dragging the
- * list stops that (every line comes up to full strength, for reading), and
- * "Back to now" or a tap on a line starts it again. Search counts its matches
- * in the header and jumps between them without filtering, so the lines
- * around each stay in view.
+ * following the audio (`useTranscriptFollow`), and search. While following,
+ * the other lines step back; once the list is dragged every line comes up to
+ * full strength, for reading. Search counts its matches in the header and
+ * jumps between them without filtering, so the lines around each stay in view.
  */
 export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeId: string | null; visible: boolean; preparing: boolean }) {
   const query = useQuery(createTranscriptQueryOptions(episodeId ?? '', { enabled: visible && episodeId !== null }));
@@ -36,34 +32,9 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
   const timed = doc ? isTimed(doc) : false;
   const current = useCurrentSegment(starts, visible && isCurrent && timed);
 
-  const list = React.useRef<FlashListRef<TranscriptLine>>(null);
-  const [following, setFollowing] = React.useState(true);
-  const [placed, setPlaced] = React.useState(false);
-  const jump = React.useCallback((index: number, viewPosition = FOLLOW_AT) => {
-    if (index >= 0) list.current?.scrollToIndex({ index, viewPosition, animated: true });
-  }, []);
-  React.useEffect(() => {
-    if (following && current >= 0) jump(current);
-  }, [current, following, jump]);
-  // The list mounts once the sheet has risen, after the line was first asked
-  // for, so it is brought there once it has laid out, under the skeleton:
-  // the rows it passes on the way are never seen. Animated, because the
-  // sheet's scroll view holds an instant scroll at the top (it left the list
-  // blank until the next line); a scroll it watches happen is kept.
-  const onListLoad = () => {
-    if (!following || current < 0) return setPlaced(true);
-    jump(current);
-    setTimeout(() => setPlaced(true), PLACE_MS);
-  };
-  // Every opening starts by following.
-  const [wasVisible, setWasVisible] = React.useState(visible);
-  if (wasVisible !== visible) {
-    setWasVisible(visible);
-    if (visible) {
-      setFollowing(true);
-      setPlaced(false);
-    }
-  }
+  const { listRef, from, epoch, placing, following, jump, cover, onListLoad, onStartReached, follow, stopFollowing, onDrag } =
+    useTranscriptFollow({ visible, current });
+  const data = React.useMemo(() => (from > 0 ? lines.slice(from) : lines), [lines, from]);
 
   const [search, setSearch] = React.useState('');
   const deferred = React.useDeferredValue(search);
@@ -74,17 +45,21 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
   if (seen !== matches) {
     setSeen(matches);
     setAt(0);
-    if (matches.length > 0) setFollowing(false);
+    if (matches.length > 0) {
+      stopFollowing();
+      cover(matches[0], MATCH_AT);
+    }
   }
   React.useEffect(() => {
-    if (matches.length > 0) jump(matches[0], 0.2);
+    if (matches.length > 0) jump(matches[0], MATCH_AT);
   }, [jump, matches]);
   const step = (by: number) => {
     if (matches.length === 0) return;
     const next = (at + by + matches.length) % matches.length;
     setAt(next);
-    setFollowing(false);
-    jump(matches[next], 0.2);
+    stopFollowing();
+    cover(matches[next], MATCH_AT);
+    jump(matches[next], MATCH_AT);
   };
 
   const actions = useTranscriptActions({ episodeId, doc });
@@ -92,31 +67,32 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
   // A tap on a line plays from it, and the list follows from there.
   const onRow = React.useCallback(
     (line: TranscriptLine) => {
-      setFollowing(true);
+      follow();
       play(line);
     },
-    [play],
+    [follow, play],
   );
   const lit = current;
   const match = matches.length > 0 ? matches[at] : -1;
   const lastStart = starts.at(-1) ?? 0;
 
   return {
-    lines,
-    loading: preparing || (query.isPending && visible),
+    lines: data,
+    loading: preparing || (query.isPending && visible) || (placing && isCurrent && timed),
     // Not while a just-saved transcript is being read back.
     empty: !preparing && query.isSuccess && !query.isFetching && doc === null,
     lit,
     match,
     dim: following && current >= 0,
     gutter: !timed ? 0 : lastStart >= 3600 ? GUTTER_HOURS : GUTTER,
-    listRef: list,
+    listRef,
     playing: isCurrent,
     showBackToNow: isCurrent && timed && !following && current >= 0,
-    onBackToNow: () => setFollowing(true),
-    onDrag: () => setFollowing(false),
+    onBackToNow: follow,
+    onDrag,
     onListLoad,
-    placed,
+    onStartReached,
+    listKey: String(epoch),
     search: { onChange: setSearch, label: matchLabel(matches.length, at, deferred), onNext: () => step(1), onPrev: () => step(-1) },
     ...actions,
     onRow,

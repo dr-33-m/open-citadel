@@ -15,6 +15,13 @@ const RESYNC_MS = 1500;
 const MIN_WAIT_MS = 60;
 /** Paused, still asked now and then, so a tap on a line moves the light at once. */
 const PAUSED_MS = 750;
+/**
+ * A reading another surface took this recently (the scrubber under the list
+ * reads twice a second) is carried forward rather than asking the player
+ * again: every ask blocks this thread until the main thread answers, which a
+ * list being flung cannot spare.
+ */
+const BORROW_MS = 600;
 
 /**
  * The transcript line being spoken, for the lit line.
@@ -29,13 +36,22 @@ const PAUSED_MS = 750;
 export function useCurrentSegment(starts: readonly number[], active: boolean): number {
   const isPlaying = usePodcastPlayer((s) => s.isPlaying);
   const speed = usePodcastPlayer((s) => s.speed);
-  const [index, setIndex] = React.useState(() => segmentIndexAt(starts, (estimatedPlayback()?.position ?? 0) + LEAD_SEC));
+  const seed = () => segmentIndexAt(starts, (estimatedPlayback()?.position ?? 0) + LEAD_SEC);
+  const [index, setIndex] = React.useState(seed);
+  // Opened again: from where the audio is now, not where it was last time.
+  const [wasActive, setWasActive] = React.useState(active);
+  if (wasActive !== active) {
+    setWasActive(active);
+    if (active) setIndex(seed());
+  }
 
   React.useEffect(() => {
     if (!active || starts.length === 0) return;
     let timer: ReturnType<typeof setTimeout>;
     const read = () => {
-      const position = readPlayback().position + LEAD_SEC;
+      // A seek still landing is only known by asking (`readPlayback` holds its target).
+      const borrowed = usePodcastPlayer.getState().seekHold ? null : estimatedPlayback(BORROW_MS);
+      const position = (borrowed ?? readPlayback()).position + LEAD_SEC;
       const at = segmentIndexAt(starts, position);
       setIndex(at);
       const next = starts[at + 1];

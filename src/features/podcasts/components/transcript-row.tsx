@@ -1,18 +1,16 @@
 import React from 'react';
-import { View, type TextStyle } from 'react-native';
-import Animated from 'react-native-reanimated';
+import { Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
-import { Touchable } from '@/components/ui/touchable';
-import { fontFamily } from '@/constants/theme';
-import { useLineFade } from '@/features/podcasts/hooks/use-line-fade';
+import { fontFamily, typography } from '@/constants/theme';
 import type { TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
+import { haptics } from '@/utils/haptics';
 
 /** A line not being spoken, while the transcript follows the audio. */
 const DIMMED = 0.42;
-/** The words: the serif, a size up from body, with room between the lines. */
-const WORDS = { fontFamily: fontFamily.serif, fontSize: 19, lineHeight: 29 } as const;
-const TIME: TextStyle = { fontVariant: ['tabular-nums'] };
+/** The house press dim. */
+const PRESSED = 0.6;
+
+export type TranscriptRowColors = { ink: string | undefined; gold: string | undefined; muted: string | undefined; band: string | undefined };
 
 type TranscriptRowProps = {
   line: TranscriptLine;
@@ -24,8 +22,7 @@ type TranscriptRowProps = {
   match: boolean;
   /** Width of the time column, wide enough for "1:02:04" in a long episode. */
   gutter: number;
-  gold: string | undefined;
-  muted: string | undefined;
+  colors: TranscriptRowColors;
   onPress: (line: TranscriptLine) => void;
   onLongPress: (line: TranscriptLine) => void;
   onHeading: (line: TranscriptLine) => void;
@@ -36,6 +33,12 @@ type TranscriptRowProps = {
  * own, then the words in the serif. Where a speaker's turn begins, their name
  * heads it in gold; a tap there renames them. A tap on the line plays from
  * it; a long press opens its menu.
+ *
+ * Plain React Native on purpose: a list a finger flings through mounts these
+ * by the dozen, so there is no animated node in a row (the app's `Touchable`
+ * carries a UI-thread spring each, and three of them a line made a fast swipe
+ * outrun the list and draw blank), no class names to parse, and every style
+ * is made once. The spoken line changes instantly, as the list moves to it.
  */
 export const TranscriptRow = React.memo(function TranscriptRow({
   line,
@@ -43,53 +46,75 @@ export const TranscriptRow = React.memo(function TranscriptRow({
   dim,
   match,
   gutter,
-  gold,
-  muted,
+  colors,
   onPress,
   onLongPress,
   onHeading,
 }: TranscriptRowProps) {
-  const fade = useLineFade(line.index, dim && !lit ? DIMMED : 1);
-  const timeColor = lit ? gold : muted;
+  // A long press must not also play the line when the finger lifts.
+  const held = React.useRef(false);
+  const press = () => {
+    if (held.current) {
+      held.current = false;
+      return;
+    }
+    haptics.select();
+    onPress(line);
+  };
+  const longPress = () => {
+    held.current = true;
+    haptics.commit();
+    onLongPress(line);
+  };
+  const rowStyle = ({ pressed }: PressableStateCallbackType) => [
+    styles.row,
+    match && { backgroundColor: colors.band },
+    pressed && styles.pressed,
+  ];
   const label = line.time ? `${line.time}. ${line.text}` : line.text;
 
   return (
     <View>
       {line.heading ? (
-        <View className="flex-row px-6 pb-1 pt-6" style={{ paddingLeft: 24 + gutter }}>
-          <Touchable
+        <View style={[styles.heading, { paddingLeft: styles.row.paddingHorizontal + gutter }]}>
+          <Pressable
             disabled={line.speaker == null}
             onPress={() => onHeading(line)}
             hitSlop={8}
+            style={({ pressed }) => pressed && styles.pressed}
             accessibilityRole="button"
             accessibilityLabel={`${line.heading}. Rename`}
           >
-            <ThemedText type="labelSm" color={gold}>
-              {line.heading}
-            </ThemedText>
-          </Touchable>
+            <Text style={[typography.labelSm, { color: colors.gold }]}>{line.heading}</Text>
+          </Pressable>
         </View>
       ) : null}
-      <Touchable
-        className={match ? 'flex-row items-baseline bg-muted px-6 py-2' : 'flex-row items-baseline px-6 py-2'}
-        onPress={() => onPress(line)}
-        onLongPress={() => onLongPress(line)}
-        haptic="select"
+      <Pressable
+        style={rowStyle}
+        onPress={press}
+        onLongPress={longPress}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityHint="Plays from here"
         accessibilityState={{ selected: lit }}
       >
-        {lit ? <View className="absolute bottom-2 left-0 top-2 w-[3px] bg-primary" /> : null}
+        {lit ? <View style={[styles.rule, { backgroundColor: colors.gold }]} /> : null}
         {line.time ? (
-          <ThemedText type="labelSm" color={timeColor} style={[TIME, { width: gutter }]}>
-            {line.time}
-          </ThemedText>
+          <Text style={[typography.labelSm, styles.time, { width: gutter, color: lit ? colors.gold : colors.muted }]}>{line.time}</Text>
         ) : null}
-        <Animated.View className="flex-1" style={fade}>
-          <ThemedText style={WORDS}>{line.text}</ThemedText>
-        </Animated.View>
-      </Touchable>
+        <Text style={[styles.words, { color: colors.ink }, dim && !lit && styles.dimmed]}>{line.text}</Text>
+      </Pressable>
     </View>
   );
+});
+
+const styles = StyleSheet.create({
+  heading: { flexDirection: 'row', paddingRight: 24, paddingTop: 24, paddingBottom: 4 },
+  row: { flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 24, paddingVertical: 8 },
+  pressed: { opacity: PRESSED },
+  rule: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 3 },
+  time: { fontVariant: ['tabular-nums'] },
+  // The serif, a size up from body, with room between the lines.
+  words: { flex: 1, fontFamily: fontFamily.serif, fontSize: 19, lineHeight: 29 },
+  dimmed: { opacity: DIMMED },
 });
