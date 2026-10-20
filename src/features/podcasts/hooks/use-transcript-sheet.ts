@@ -37,7 +37,7 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
   const marked = React.useMemo(() => markedLines(lines, kept ?? []), [lines, kept]);
   const isCurrent = usePodcastPlayer((s) => s.current?.episodeId === episodeId);
   const timed = doc ? isTimed(doc) : false;
-  const current = useCurrentSegment(starts, visible && isCurrent && timed);
+  const { current, place } = useCurrentSegment(starts, visible && isCurrent && timed);
 
   const { listRef, from, epoch, placing, following, jump, cover, onListLoad, onStartReached, follow, stopFollowing, onDrag } =
     useTranscriptFollow({ visible, current });
@@ -72,13 +72,15 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
   const editor = useEpisodeHighlightEditor(visible ? episodeId : null, kept ?? NO_HIGHLIGHTS);
   const actions = useTranscriptActions({ episodeId, doc, lines, marked, onEditHighlight: editor.open });
   const { onRow: play } = actions;
-  // A tap on a line plays from it, and the list follows from there.
+  // A tap on a line plays from it, and the list follows from there: lit at
+  // the tap, so following goes straight to it and not first to the old line.
   const onRow = React.useCallback(
     (line: TranscriptLine) => {
+      if (isCurrent && line.time !== null) place(line.index);
       follow();
       play(line);
     },
-    [follow, play],
+    [follow, isCurrent, place, play],
   );
   const lit = current;
   const match = matches.length > 0 ? matches[at] : -1;

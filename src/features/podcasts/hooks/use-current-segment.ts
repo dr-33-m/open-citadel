@@ -22,6 +22,12 @@ const PAUSED_MS = 750;
  * list being flung cannot spare.
  */
 const BORROW_MS = 600;
+/**
+ * How long a line lit by `place` outlasts a reading that disagrees: an
+ * episode still loading reports its old place until it has landed on the
+ * new one, and the light would go back there and the list with it.
+ */
+const PLACE_HOLD_MS = 2500;
 
 /**
  * The transcript line being spoken, for the lit line.
@@ -30,16 +36,18 @@ const BORROW_MS = 600;
  * every reading works out when the next line starts at the current speed and
  * asks again just then, and at least every second and a half anyway. It
  * renders again only when the line changes: the clock never reaches the
- * list, only a new index does. `active` is false when the sheet is closed,
+ * list, only a new index does. A seek the transcript makes itself (a tap on
+ * a line) is lit straight away with `place`. `active` is false when the sheet is closed,
  * the episode is not the one in the player, or the transcript has no times.
  */
-export function useCurrentSegment(starts: readonly number[], active: boolean): number {
+export function useCurrentSegment(starts: readonly number[], active: boolean) {
   const isPlaying = usePodcastPlayer((s) => s.isPlaying);
   const speed = usePodcastPlayer((s) => s.speed);
   // Without asking the player: this runs while rendering.
   const seed = () =>
     segmentIndexAt(starts, (estimatedPlayback()?.position ?? usePodcastPlayer.getState().current?.positionSec ?? 0) + LEAD_SEC);
   const [index, setIndex] = React.useState(seed);
+  const placed = React.useRef<{ line: number; at: number } | null>(null);
   // Opened again: from where the audio is now, not where it was last time.
   const [wasActive, setWasActive] = React.useState(active);
   if (wasActive !== active) {
@@ -53,7 +61,13 @@ export function useCurrentSegment(starts: readonly number[], active: boolean): n
     const read = () => {
       const position = playbackPosition(BORROW_MS) + LEAD_SEC;
       const at = segmentIndexAt(starts, position);
-      setIndex(at);
+      // Until the audio is there, the line it was sent to stays lit.
+      const held = placed.current;
+      const arriving = held !== null && at !== held.line && Date.now() - held.at < PLACE_HOLD_MS;
+      if (!arriving) {
+        placed.current = null;
+        setIndex(at);
+      }
       const next = starts[at + 1];
       const wait = !isPlaying
         ? PAUSED_MS
@@ -66,5 +80,15 @@ export function useCurrentSegment(starts: readonly number[], active: boolean): n
     return () => clearTimeout(timer);
   }, [active, isPlaying, speed, starts]);
 
-  return active ? index : -1;
+  /**
+   * A line the audio has just been sent to, lit at once rather than when the
+   * player next says so: the list follows the lit line, and lit late it
+   * glided back to the line that was playing before going on to this one.
+   */
+  const place = React.useCallback((line: number) => {
+    placed.current = { line, at: Date.now() };
+    setIndex(line);
+  }, []);
+
+  return { current: active ? index : -1, place };
 }
