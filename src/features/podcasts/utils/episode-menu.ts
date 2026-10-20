@@ -16,7 +16,8 @@ export type EpisodeAction =
   | 'reset'
   | 'share'
   | 'website'
-  | 'show';
+  | 'show'
+  | 'highlights';
 
 type Row = MenuRow<EpisodeAction>;
 
@@ -38,8 +39,13 @@ function queueRows(episode: EpisodeItem): Row[] {
  * Which actions make sense for an episode in the state it is in, in menu
  * order. `isCurrent` is the episode in the player, playing or paused.
  */
-export function episodeMenu(episode: EpisodeItem, options: { showLink: boolean; isCurrent?: boolean }): Row[] {
+export function episodeMenu(
+  episode: EpisodeItem,
+  options: { showLink: boolean; isCurrent?: boolean; highlights?: boolean },
+): Row[] {
   const rows: Row[] = [{ key: 'play', label: episode.positionSec > 0 && episode.playState !== 'played' ? 'Resume' : 'Play' }];
+  // Only where the screen can open them (the player), and only once there are some.
+  if (options.highlights) rows.push({ key: 'highlights', label: 'Highlights' });
   // The episode in the player is already what plays now: Up Next is for what comes after it.
   if (!options.isCurrent) rows.push(...queueRows(episode));
   if (episode.downloadStatus === 'downloaded' || episode.downloadStatus === 'downloading' || episode.downloadStatus === 'queued') {

@@ -10,7 +10,14 @@ const DIMMED = 0.42;
 /** The house press dim. */
 const PRESSED = 0.6;
 
-export type TranscriptRowColors = { ink: string | undefined; gold: string | undefined; muted: string | undefined; band: string | undefined };
+export type TranscriptRowColors = {
+  ink: string | undefined;
+  gold: string | undefined;
+  muted: string | undefined;
+  band: string | undefined;
+  /** The highlighter behind a kept line's words. */
+  mark: string;
+};
 
 type TranscriptRowProps = {
   line: TranscriptLine;
@@ -20,6 +27,8 @@ type TranscriptRowProps = {
   dim: boolean;
   /** The search match in hand: a band behind it so the eye finds it. */
   match: boolean;
+  /** Highlighted: the marker behind its words, line by line, as in the reader. */
+  marked?: boolean;
   /** Width of the time column, wide enough for "1:02:04" in a long episode. */
   gutter: number;
   colors: TranscriptRowColors;
@@ -45,14 +54,19 @@ export const TranscriptRow = React.memo(function TranscriptRow({
   lit,
   dim,
   match,
+  marked = false,
   gutter,
   colors,
   onPress,
   onLongPress,
   onHeading,
 }: TranscriptRowProps) {
-  // A long press must not also play the line when the finger lifts.
+  // A long press must not also play the line when the finger lifts. Cleared
+  // as the next touch lands, or the first tap after a long press was lost.
   const held = React.useRef(false);
+  const pressIn = () => {
+    held.current = false;
+  };
   const press = () => {
     if (held.current) {
       held.current = false;
@@ -71,7 +85,7 @@ export const TranscriptRow = React.memo(function TranscriptRow({
     match && { backgroundColor: colors.band },
     pressed && styles.pressed,
   ];
-  const label = line.time ? `${line.time}. ${line.text}` : line.text;
+  const label = `${line.time ? `${line.time}. ` : ''}${marked ? 'Highlighted. ' : ''}${line.text}`;
 
   return (
     <View>
@@ -91,6 +105,7 @@ export const TranscriptRow = React.memo(function TranscriptRow({
       ) : null}
       <Pressable
         style={rowStyle}
+        onPressIn={pressIn}
         onPress={press}
         onLongPress={longPress}
         accessibilityRole="button"
@@ -102,7 +117,9 @@ export const TranscriptRow = React.memo(function TranscriptRow({
         {line.time ? (
           <Text style={[typography.labelSm, styles.time, { width: gutter, color: lit ? colors.gold : colors.muted }]}>{line.time}</Text>
         ) : null}
-        <Text style={[styles.words, { color: colors.ink }, dim && !lit && styles.dimmed]}>{line.text}</Text>
+        <Text style={[styles.words, { color: colors.ink }, dim && !lit && styles.dimmed]}>
+          {marked ? <Text style={{ backgroundColor: colors.mark }}>{line.text}</Text> : line.text}
+        </Text>
       </Pressable>
     </View>
   );

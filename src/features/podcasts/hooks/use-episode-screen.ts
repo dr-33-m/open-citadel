@@ -7,6 +7,7 @@ import { Share } from 'react-native';
 import { openShowPage } from '@/features/podcasts/hooks/open-podcast-page';
 import { useEpisode } from '@/features/podcasts/hooks/use-episode';
 import { playOrToggle } from '@/features/podcasts/hooks/use-episode-actions';
+import { useEpisodeHighlights } from '@/features/podcasts/hooks/use-episode-highlights';
 import { formatDuration } from '@/features/podcasts/utils/format';
 import * as actions from '@/services/podcasts/actions';
 import { localCoverUri } from '@/services/podcasts/download-paths';
@@ -54,6 +55,11 @@ export function useEpisodeScreen(id: string, landed: boolean) {
 
   const view: EpisodeView = episode ? 'episode' : loaded ? 'gone' : 'loading';
   const showTitle = show ? showName(show) : (listed?.showTitle ?? '');
+  // The same picture either way, so the cover is not asked for twice. The
+  // copy saved with a download comes first, as it does in every list.
+  const artworkUrl =
+    (episode ? localCoverUri(episode) : null) ?? episode?.imageUrl ?? show?.imageUrl ?? listed?.showImageUrl ?? null;
+  const highlights = useEpisodeHighlights({ episodeId: episode ? id : null, title: episode?.title ?? '', showTitle, coverUri: artworkUrl });
 
   return {
     view,
@@ -61,10 +67,7 @@ export function useEpisodeScreen(id: string, landed: boolean) {
     showTitle,
     /** Under the transcript's title: "The Show · 1 hr 30 min". */
     transcriptLine: [showTitle, formatDuration(episode?.durationSec ?? 0)].filter(Boolean).join(' · '),
-    // The same picture either way, so the cover is not asked for twice. The
-    // copy saved with a download comes first, as it does in every list.
-    artworkUrl:
-      (episode ? localCoverUri(episode) : null) ?? episode?.imageUrl ?? show?.imageUrl ?? listed?.showImageUrl ?? null,
+    artworkUrl,
     playback,
     chapters,
     notes,
@@ -73,6 +76,9 @@ export function useEpisodeScreen(id: string, landed: boolean) {
     playFrom,
     openLink,
     hero,
+    highlights,
+    /** The Highlights box under the transcript's, once the episode has any. */
+    highlightsBox: highlights.count > 0 ? { label: highlights.label, onOpen: highlights.open } : null,
     back,
     /** Sharing needs somewhere to send people: the episode's page, or the show's. */
     share: link && episode ? () => void Share.share({ message: `${episode.title}\n${link}` }).catch(() => {}) : null,

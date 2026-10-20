@@ -13,6 +13,8 @@ export const transcriptKeys = {
   transcript: (episodeId: string) => [...podcastKeys.library(), 'transcript', episodeId] as const,
   transcribed: (window: TranscriptWindow) => [...podcastKeys.library(), 'transcribed', window] as const,
   transcribing: () => [...podcastKeys.library(), 'transcribing'] as const,
+  /** Invalidated on its own after a highlight is kept or removed: the transcript itself is not read again. */
+  highlights: (episodeId: string) => [...podcastKeys.library(), 'highlights', episodeId] as const,
 
   job: (jobId: string) => ['transcripts', 'job', jobId] as const,
 };

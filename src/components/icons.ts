@@ -57,6 +57,7 @@ export { default as Copy } from 'lucide-react-native/icons/copy';
 export { default as Crown } from 'lucide-react-native/icons/crown';
 export { default as Download } from 'lucide-react-native/icons/download';
 export { default as Ellipsis } from 'lucide-react-native/icons/ellipsis';
+export { default as Eraser } from 'lucide-react-native/icons/eraser';
 export { default as ExternalLink } from 'lucide-react-native/icons/external-link';
 export { default as Feather } from 'lucide-react-native/icons/feather';
 export { default as FolderPlus } from 'lucide-react-native/icons/folder-plus';

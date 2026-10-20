@@ -15,8 +15,8 @@ import { Reveal } from '@/components/navigation/reveal';
 import { CalendarPicker } from '@/components/timeline/calendar-picker';
 import { useFabBottom } from '@/hooks/use-fab-bottom';
 import { useToday } from '@/hooks/use-today';
-import { ExportImageCard } from '@/components/export/export-image-card';
-import { captureAndShare } from '@/utils/export-image';
+import { QuoteExportCard } from '@/components/export/quote-export-card';
+import { useQuoteExport } from '@/hooks/use-quote-export';
 import { NewThoughtSheet } from '@/components/timeline/new-thought-sheet';
 import type { ThoughtEditData } from '@/components/timeline/new-thought-sheet';
 import { ThemedText } from '@/components/themed-text';
@@ -30,6 +30,7 @@ import { contentColumn, iconSize, layout } from '@/constants/theme';
 import { db } from '@/db/client';
 import { highlights, thoughts } from '@/db/schema';
 import { sessionExists } from '@/services/chat-sessions';
+import { playHighlight } from '@/services/podcasts/transcript/highlights';
 import { highlightChatContext } from '@/services/highlight-context';
 import { showChatOnSamwellPage } from '@/services/samwell-handoff';
 import { fetchAllTags } from '@/stores/reader';
@@ -86,10 +87,7 @@ export function TimelinePage() {
   /** The entry whose action sheet is open — long-press on a row opens it. */
   const [longPressEntry, setLongPressEntry] = useState<TimelineItem | null>(null);
 
-  // Export state
-  const exportViewRef = useRef<View>(null);
-  const [exportEntry, setExportEntry] = useState<TimelineItem | null>(null);
-  const [showExportCard, setShowExportCard] = useState(false);
+  const quoteExport = useQuoteExport();
 
   // Load on mount, and again whenever the hub comes back to the front, once
   // the screen that was on top has finished leaving: reloading on the frame
@@ -145,6 +143,15 @@ export function TimelinePage() {
       return;
     }
     if (!entry.bookId) return;
+    // An episode's highlight plays from its moment, in the player (this page
+    // has no mini player, so the audio would otherwise start unseen), rather
+    // than opening the transcript's book.
+    if (entry.bookKind === 'episode') {
+      void playHighlight(entry.bookId, entry.highlightLocator).then((played) =>
+        router.push(played ? '/podcasts/player' : (`/reader/${entry.bookId}` as any)),
+      );
+      return;
+    }
     if (entry.highlightLocator) {
       router.push(
         `/reader/${entry.bookId}?locator=${encodeURIComponent(entry.highlightLocator)}` as any
@@ -200,20 +207,16 @@ export function TimelinePage() {
     }
   };
 
-  const [isExporting, setIsExporting] = useState(false);
-
-  const handleExport = (entry: TimelineItem) => {
-    setExportEntry(entry);
-    setShowExportCard(true);
-    setIsExporting(true);
-  };
-
-  const handleExportReady = React.useCallback(async () => {
-    await captureAndShare(exportViewRef);
-    setShowExportCard(false);
-    setExportEntry(null);
-    setIsExporting(false);
-  }, []);
+  const isExporting = quoteExport.exporting;
+  const handleExport = (entry: TimelineItem) =>
+    quoteExport.share({
+      text: entry.highlightText,
+      title: entry.type === 'thought' ? 'A Thought' : entry.bookTitle,
+      author: entry.bookAuthor,
+      coverUri: entry.bookCoverUrl,
+      detail: entry.bookCategory,
+      squareCover: entry.bookKind === 'episode',
+    });
 
   const hasEntries = groups.length > 0 && groups[0].entries.length > 0;
 
@@ -415,20 +418,7 @@ export function TimelinePage() {
         </Item.Group>
       </Sheet>
 
-      {/* Off-screen export card */}
-      {showExportCard && exportEntry && (
-        <View style={{ position: 'absolute', left: -9999, top: -9999 }}>
-          <ExportImageCard
-            viewRef={exportViewRef}
-            quoteText={exportEntry.highlightText}
-            bookTitle={exportEntry.type === 'thought' ? 'A Thought' : exportEntry.bookTitle}
-            authorName={exportEntry.bookAuthor}
-            coverUri={exportEntry.bookCoverUrl}
-            category={exportEntry.bookCategory}
-            onReady={handleExportReady}
-          />
-        </View>
-      )}
+      <QuoteExportCard {...quoteExport.card} />
         </>
       </DeferredBody>
     </ThemedView>

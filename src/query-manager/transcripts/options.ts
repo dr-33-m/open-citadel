@@ -3,6 +3,7 @@ import type { TranscribeJobView, TranscriptDoc } from 'samwell-shared';
 
 import { transcriptKeys } from '@/query-manager/transcripts/keys';
 import { transcribeJobStatus } from '@/services/podcasts/transcript/cloud';
+import { listEpisodeHighlights, type EpisodeHighlight } from '@/services/podcasts/transcript/highlights';
 import { transcribingEpisodes } from '@/services/podcasts/transcript/jobs';
 import { listTranscribedEpisodes, type TranscribedEpisode } from '@/services/podcasts/transcript/library';
 import { readTranscript } from '@/services/podcasts/transcript/store';
@@ -21,6 +22,16 @@ export function createTranscriptQueryOptions(episodeId: string, options?: Option
     queryKey: transcriptKeys.transcript(episodeId),
     queryFn: () => readTranscript(episodeId),
   } satisfies UseQueryOptions<TranscriptDoc | null>;
+}
+
+/** The highlights kept from an episode's transcript, newest first. */
+export function createEpisodeHighlightsQueryOptions(episodeId: string, options?: Options<EpisodeHighlight[]>) {
+  return {
+    ...LOCAL,
+    ...options,
+    queryKey: transcriptKeys.highlights(episodeId),
+    queryFn: async () => listEpisodeHighlights(episodeId),
+  } satisfies UseQueryOptions<EpisodeHighlight[]>;
 }
 
 /** Episodes with a transcript whose latest moment falls in the window, newest first. */

@@ -27,7 +27,7 @@ export function playOrToggle(episodeId: string): void {
  * that lists episodes. One implementation, so "Play next" on a shelf and
  * "Play next" on a show's page cannot come to mean different things.
  */
-export function useEpisodeActions() {
+export function useEpisodeActions({ onHighlights }: { onHighlights?: () => void } = {}) {
   const router = useRouter();
   const [menuEpisode, setMenuEpisode] = React.useState<EpisodeItem | null>(null);
 
@@ -93,9 +93,12 @@ export function useEpisodeActions() {
         case 'show':
           openShow(episode.podcastId);
           return;
+        case 'highlights':
+          onHighlights?.();
+          return;
       }
     },
-    [openShow],
+    [onHighlights, openShow],
   );
 
   const currentId = usePodcastPlayer((s) => s.current?.episodeId ?? null);
@@ -113,6 +116,7 @@ export function useEpisodeActions() {
       visible: menuEpisode !== null,
       episode: menuEpisode,
       isCurrent: menuEpisode !== null && menuEpisode.id === currentId,
+      highlights: onHighlights !== undefined,
       onClose: closeMenu,
       onAction,
     },

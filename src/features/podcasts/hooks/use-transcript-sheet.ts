@@ -4,9 +4,10 @@ import React from 'react';
 import { useCurrentSegment } from '@/features/podcasts/hooks/use-current-segment';
 import { useTranscriptActions } from '@/features/podcasts/hooks/use-transcript-actions';
 import { useTranscriptFollow } from '@/features/podcasts/hooks/use-transcript-follow';
+import { markedLines } from '@/features/podcasts/utils/transcript-highlights';
 import { followLines, lineMatches, type TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
 import { isTimed, matchLabel } from '@/features/podcasts/utils/transcript-rows';
-import { createTranscriptQueryOptions } from '@/query-manager/transcripts';
+import { createEpisodeHighlightsQueryOptions, createTranscriptQueryOptions } from '@/query-manager/transcripts';
 import { usePodcastPlayer } from '@/stores/podcast-player';
 
 const NO_LINES: TranscriptLine[] = [];
@@ -22,12 +23,15 @@ const GUTTER_HOURS = 68;
  * the other lines step back; once the list is dragged every line comes up to
  * full strength, for reading. Search counts its matches in the header and
  * jumps between them without filtering, so the lines around each stay in view.
+ * Highlighted lines carry the marker behind their words.
  */
 export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeId: string | null; visible: boolean; preparing: boolean }) {
   const query = useQuery(createTranscriptQueryOptions(episodeId ?? '', { enabled: visible && episodeId !== null }));
   const doc = query.data ?? null;
   const lines = React.useMemo(() => (doc ? followLines(doc) : NO_LINES), [doc]);
   const starts = React.useMemo(() => lines.map((line) => line.start), [lines]);
+  const kept = useQuery(createEpisodeHighlightsQueryOptions(episodeId ?? '', { enabled: visible && episodeId !== null })).data;
+  const marked = React.useMemo(() => markedLines(lines, kept ?? []), [lines, kept]);
   const isCurrent = usePodcastPlayer((s) => s.current?.episodeId === episodeId);
   const timed = doc ? isTimed(doc) : false;
   const current = useCurrentSegment(starts, visible && isCurrent && timed);
@@ -62,7 +66,7 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
     jump(matches[next], MATCH_AT);
   };
 
-  const actions = useTranscriptActions({ episodeId, doc });
+  const actions = useTranscriptActions({ episodeId, doc, lines, marked });
   const { onRow: play } = actions;
   // A tap on a line plays from it, and the list follows from there.
   const onRow = React.useCallback(
@@ -83,6 +87,7 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
     empty: !preparing && query.isSuccess && !query.isFetching && doc === null,
     lit,
     match,
+    marked,
     dim: following && current >= 0,
     gutter: !timed ? 0 : lastStart >= 3600 ? GUTTER_HOURS : GUTTER,
     listRef,

@@ -90,11 +90,14 @@ ${paragraphs}
 </html>`;
 }
 
+/** A part's file inside `OEBPS/`; with that prefix, the `href` Readium gives a place in it. */
+export const partFile = (i: number) => `part${i + 1}.xhtml`;
+
 export function episodeEpubFiles(input: EpisodeEpubInput): Record<string, string> {
   const lang = languageTag(input.doc.language);
   const parts = episodeParts(input.doc, input.chapters);
   const esc = (value: string) => escapeAttribute(clean(value));
-  const file = (i: number) => `part${i + 1}.xhtml`;
+  const file = partFile;
 
   const opf = `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid" xml:lang="${lang}">

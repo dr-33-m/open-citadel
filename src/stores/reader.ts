@@ -15,6 +15,7 @@ import {
 import { invalidateBlogLibrary } from "@/query-manager/blogs/invalidate";
 import { finishArticleOfBook } from "@/services/blogs/articles";
 import { extractSurroundingText } from "@/services/book-context";
+import { deleteHighlight as removeHighlight, insertHighlight } from "@/services/highlights";
 import { countableProgress } from "@/services/reading-day";
 import { useBooksStore } from "@/stores/books";
 import { localDayString } from "@/utils/day";
@@ -369,21 +370,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     const bookId = bookIdOverride ?? currentBook?.id;
     if (!bookId) return "";
 
-    // A random suffix alongside the timestamp avoids id collisions when two
-    // highlights are created within the same millisecond.
-    const id = `hl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const now = new Date().toISOString();
-
-    await db.insert(highlights).values({
-      id,
-      bookId,
-      text,
-      locator: JSON.stringify(locator),
-      color: color || "#f2ca50",
-      chatSessionId: chatSessionId ?? null,
-      createdAt: now,
-      createdDay: localDayString(new Date(now)),
-    });
+    const id = await insertHighlight({ bookId, text, locator, color, chatSessionId });
 
     // Capture the surrounding chapter text in the background so the highlight
     // keeps the progression it was lifted from (chats, tags, Compass context).
@@ -440,9 +427,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   deleteHighlight: async (id: string) => {
-    // Delete associated notes first
-    await db.delete(notes).where(eq(notes.highlightId, id));
-    await db.delete(highlights).where(eq(highlights.id, id));
+    await removeHighlight(id);
 
     const { currentBook } = get();
     if (!currentBook) return;

@@ -9,12 +9,14 @@ import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { contentColumn, iconSize } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
+import { EpisodeHighlightsSheet } from "@/features/podcasts/components/episode-highlights-sheet";
 import { EpisodeTranscriptBar } from "@/features/podcasts/components/episode-transcript-bar";
 import { PlayerArtwork } from "@/features/podcasts/components/player-artwork";
 import { PlayerControls } from "@/features/podcasts/components/player-controls";
 import { PlayerSheets } from "@/features/podcasts/components/player-sheets";
 import { PlayerTitle } from "@/features/podcasts/components/player-title";
 import { useEpisodeActions } from "@/features/podcasts/hooks/use-episode-actions";
+import { useEpisodeHighlights } from "@/features/podcasts/hooks/use-episode-highlights";
 import { usePlayerControls } from "@/features/podcasts/hooks/use-player-controls";
 import { usePlayerScreen } from "@/features/podcasts/hooks/use-player-screen";
 import { formatDuration } from "@/features/podcasts/utils/format";
@@ -37,9 +39,15 @@ export default function PlayerScreen() {
   const landed = useSettledOnce();
   const player = usePlayerScreen(landed);
   const controls = usePlayerControls(player);
-  const episodeActions = useEpisodeActions();
-
   const { current, episode } = player;
+  const highlights = useEpisodeHighlights({
+    episodeId: current?.episodeId ?? null,
+    title: current?.title ?? "",
+    showTitle: current?.showTitle ?? "",
+    coverUri: current?.artworkUrl ?? null,
+  });
+  const episodeActions = useEpisodeActions({ onHighlights: highlights.count > 0 ? highlights.open : undefined });
+
   if (!current) return <ThemedView className="flex-1" />;
   // Big, but leaving the controls their room on a short phone.
   const art = Math.min(width - 48, height * 0.42, 380);
@@ -91,6 +99,7 @@ export default function PlayerScreen() {
         <>
           <PlayerSheets player={player} controls={controls} />
           <EpisodeActionSheet {...episodeActions.sheet} />
+          <EpisodeHighlightsSheet highlights={highlights} />
         </>
       ) : null}
     </ThemedView>

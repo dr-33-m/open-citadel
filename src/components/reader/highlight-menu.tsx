@@ -1,12 +1,12 @@
 import { Check, MessageSquare, Share, Trash2, X, ZodiacPisces } from "@/components/icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Keyboard, TextInput, View } from "react-native";
 import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useCSSVariable } from "uniwind";
 
-import { ExportImageCard } from "@/components/export/export-image-card";
-import { captureAndShare } from "@/utils/export-image";
+import { QuoteExportCard } from "@/components/export/quote-export-card";
+import { useQuoteExport } from "@/hooks/use-quote-export";
 
 import { Input } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
@@ -118,9 +118,7 @@ export function HighlightMenu({
   const noteFieldRef = useRef<TextInput>(null);
   const tagFieldRef = useRef<TextInput>(null);
 
-  // Export state
-  const exportViewRef = useRef<View>(null);
-  const [showExport, setShowExport] = useState(false);
+  const quoteExport = useQuoteExport();
 
   // Reset every time the menu opens, not only when the highlight changes:
   // the sheet now stays mounted across a close (its content has to survive
@@ -250,18 +248,15 @@ export function HighlightMenu({
     onClose();
   };
 
-  const [isExporting, setIsExporting] = useState(false);
-
-  const handleExport = () => {
-    setShowExport(true);
-    setIsExporting(true);
-  };
-
-  const handleExportReady = useCallback(async () => {
-    await captureAndShare(exportViewRef);
-    setShowExport(false);
-    setIsExporting(false);
-  }, []);
+  const isExporting = quoteExport.exporting;
+  const handleExport = () =>
+    quoteExport.share({
+      text: highlightText,
+      title: bookTitle,
+      author: authorName,
+      coverUri: bookCoverUri,
+      detail: bookCategory,
+    });
 
   return (
     <>
@@ -572,19 +567,7 @@ export function HighlightMenu({
       {/* Off-screen export card — a sibling of the sheet, not inside it: this
           is a headless capture target, never meant to be visible, and doesn't
           need the sheet's presentation at all. */}
-      {showExport && (
-        <View style={{ position: "absolute", left: -9999, top: -9999 }}>
-          <ExportImageCard
-            viewRef={exportViewRef}
-            quoteText={highlightText}
-            bookTitle={bookTitle}
-            authorName={authorName}
-            coverUri={bookCoverUri}
-            category={bookCategory}
-            onReady={handleExportReady}
-          />
-        </View>
-      )}
+      <QuoteExportCard {...quoteExport.card} />
 
       {wakeDialog}
     </>
