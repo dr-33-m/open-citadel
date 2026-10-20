@@ -85,7 +85,7 @@ export function TranscriptSheet({ visible, onClose, line, state, listRef }: Tran
         </View>
         <TranscriptSearch {...state.search} />
       </View>
-      <View className="flex-1">
+      <View className="flex-1 overflow-hidden">
         <Sheet.Deferred skeleton={<TranscriptSkeleton />}>
           {state.loading ? (
             <TranscriptSkeleton />
@@ -102,11 +102,19 @@ export function TranscriptSheet({ visible, onClose, line, state, listRef }: Tran
                   renderItem={renderItem}
                   keyboardShouldPersistTaps="handled"
                   onScrollBeginDrag={state.onDrag}
+                  onLoad={state.onListLoad}
+                  showsVerticalScrollIndicator={false}
                 />
               </PageFade>
             )
           )}
         </Sheet.Deferred>
+        {/* Over the list while it scrolls to the spoken line, so the rows it passes are never seen. */}
+        {state.loading || state.placed ? null : (
+          <View pointerEvents="none" className="absolute inset-0 bg-popover">
+            <TranscriptSkeleton />
+          </View>
+        )}
         {state.showBackToNow ? (
           <View pointerEvents="box-none" className="absolute bottom-4 left-0 right-0 items-center">
             <Touchable

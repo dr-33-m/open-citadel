@@ -87,6 +87,23 @@ describe('followLines', () => {
     expect(lines.map((l) => l.index)).toEqual([0, 1, 2, 3]);
   });
 
+  it('carries a sentence a block cut in two across into the next block', () => {
+    const cut: TranscriptDoc = {
+      ...doc,
+      segments: [
+        { start: 0, end: 40, speaker: 0, text: 'He absented himself from the sessions during the Cuban' },
+        { start: 40, end: 60, speaker: 0, text: 'Missile Crisis. Then he went home to his family.' },
+      ],
+    };
+    const lines = followLines(cut);
+    expect(lines.map((l) => l.text)).toEqual([
+      'He absented himself from the sessions during the Cuban Missile Crisis.',
+      'Then he went home to his family.',
+    ]);
+    expect(lines.map((l) => l.segment)).toEqual([0, 1]);
+    expect(lines[1].start).toBeCloseTo(40 + (20 * 16) / 48);
+  });
+
   it('names a speaker where their turn begins, the first line included', () => {
     expect(followLines(doc).map((l) => l.heading)).toEqual(['David Senra', null, null, 'Speaker 2']);
   });

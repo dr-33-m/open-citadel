@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Keyboard, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
@@ -29,6 +29,12 @@ export function SpeakerNameSheet({ visible, name, onClose, onSave }: SpeakerName
     setDraft(name);
   }
   const clean = draft.trim();
+  // The keyboard goes with the sheet: left up, it sat over the transcript.
+  const save = () => {
+    if (!clean) return;
+    Keyboard.dismiss();
+    onSave(clean);
+  };
 
   return (
     <Sheet visible={visible} onClose={onClose} stackBehavior="push">
@@ -46,10 +52,10 @@ export function SpeakerNameSheet({ visible, name, onClose, onSave }: SpeakerName
           autoCapitalize="words"
           autoCorrect={false}
           returnKeyType="done"
-          onSubmitEditing={() => clean && onSave(clean)}
+          onSubmitEditing={save}
           accessibilityLabel="Speaker's name"
         />
-        <GoldButton label="SAVE" onPress={() => onSave(clean)} disabled={!clean || clean === name} />
+        <GoldButton label="SAVE" onPress={save} disabled={!clean || clean === name} />
       </View>
     </Sheet>
   );

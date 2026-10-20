@@ -12,6 +12,8 @@ import { usePodcastPlayer } from '@/stores/podcast-player';
 const NO_LINES: TranscriptLine[] = [];
 /** Where the lit line sits while following: about a third down the sheet. */
 const FOLLOW_AT = 0.33;
+/** How long the opening scroll to the spoken line is given before the list is shown. */
+const PLACE_MS = 450;
 /** The time column: "12:04", or "1:02:04" in an episode of an hour or more. */
 const GUTTER = 52;
 const GUTTER_HOURS = 68;
@@ -36,17 +38,31 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
 
   const list = React.useRef<FlashListRef<TranscriptLine>>(null);
   const [following, setFollowing] = React.useState(true);
+  const [placed, setPlaced] = React.useState(false);
   const jump = React.useCallback((index: number, viewPosition = FOLLOW_AT) => {
     if (index >= 0) list.current?.scrollToIndex({ index, viewPosition, animated: true });
   }, []);
   React.useEffect(() => {
     if (following && current >= 0) jump(current);
   }, [current, following, jump]);
+  // The list mounts once the sheet has risen, after the line was first asked
+  // for, so it is brought there once it has laid out, under the skeleton:
+  // the rows it passes on the way are never seen. Animated, because the
+  // sheet's scroll view holds an instant scroll at the top (it left the list
+  // blank until the next line); a scroll it watches happen is kept.
+  const onListLoad = () => {
+    if (!following || current < 0) return setPlaced(true);
+    jump(current);
+    setTimeout(() => setPlaced(true), PLACE_MS);
+  };
   // Every opening starts by following.
   const [wasVisible, setWasVisible] = React.useState(visible);
   if (wasVisible !== visible) {
     setWasVisible(visible);
-    if (visible) setFollowing(true);
+    if (visible) {
+      setFollowing(true);
+      setPlaced(false);
+    }
   }
 
   const [search, setSearch] = React.useState('');
@@ -99,6 +115,8 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
     showBackToNow: isCurrent && timed && !following && current >= 0,
     onBackToNow: () => setFollowing(true),
     onDrag: () => setFollowing(false),
+    onListLoad,
+    placed,
     search: { onChange: setSearch, label: matchLabel(matches.length, at, deferred), onNext: () => step(1), onPrev: () => step(-1) },
     ...actions,
     onRow,

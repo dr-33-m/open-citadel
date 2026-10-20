@@ -2,13 +2,14 @@
  * A transcript as lines to follow, the way lyrics are: a sentence or so each,
  * every one with its own time. Pure.
  *
- * A transcript is kept in blocks of up to forty seconds (a speaker's turn,
- * cut at a sentence end), which is the right size for the reader and for
- * Samwell but a wall of words to follow by ear. Here each block is cut into
- * its sentences, a long sentence at a clause near its middle and a stray
- * "Right." joined to its neighbour. A line's time is placed by how far into
- * the block its first word is: speech keeps a steady enough pace inside one
- * turn that this lands within a second or two of the word.
+ * A transcript is kept in blocks of up to forty seconds, which is the right
+ * size for the reader and for Samwell but a wall of words to follow by ear.
+ * Here each speaker's turn is read as one run of words (a block cut at forty
+ * seconds can end mid-sentence, and the sentence carries on into the next)
+ * and cut into its sentences, a long sentence at a clause near its middle
+ * and a stray "Right." joined to its neighbour. A line's time is placed by
+ * how far into its block its first word is: speech keeps a steady enough
+ * pace inside one block that this lands within a second or two of the word.
  */
 import type { TranscriptDoc } from 'samwell-shared';
 
@@ -33,7 +34,7 @@ function sentenceEnds(text: string): number[] {
     const at = match.index ?? 0;
     const next = text[at + match[0].length];
     if (next.toLowerCase() === next && next.toUpperCase() !== next) continue;
-    const word = /([\p{L}.]+)$/u.exec(text.slice(0, at + 1))?.[1] ?? '';
+    const word = /([\p{L}.]+)$/u.exec(text.slice(Math.max(0, at - 24), at + 1))?.[1] ?? '';
     const bare = word.replace(/\./g, '').toLowerCase();
     // "J. K. Rowling", "Mr. Smith", "e.g. this".
     if (text[at] === '.' && (bare.length === 1 || ABBREVIATIONS.has(bare))) continue;
@@ -121,26 +122,44 @@ export type TranscriptLine = {
 
 /** The transcript as lines to follow. (Samwell reads it by block: `transcriptLines` in episode-prompt.) */
 export function followLines(doc: TranscriptDoc): TranscriptLine[] {
-  const timed = doc.segments.some((segment) => segment.end > 0);
+  const { segments } = doc;
+  const timed = segments.some((segment) => segment.end > 0);
   const lines: TranscriptLine[] = [];
-  doc.segments.forEach((segment, index) => {
-    const previous = index > 0 ? doc.segments[index - 1].speaker : undefined;
-    const name = segment.speaker != null ? (doc.speakers[segment.speaker] ?? null) : null;
-    const span = Math.max(0, segment.end - segment.start);
-    const length = Math.max(1, segment.text.length);
-    splitLines(segment.text).forEach((piece, n) => {
-      const start = timed ? segment.start + (span * piece.from) / length : 0;
+  let first = 0;
+  while (first < segments.length) {
+    const speaker = segments[first].speaker;
+    let last = first;
+    while (last + 1 < segments.length && segments[last + 1].speaker === speaker) last++;
+
+    // The turn as one run of words, remembering where each block starts in it.
+    const texts = segments.slice(first, last + 1).map((segment) => segment.text.trim());
+    const starts: number[] = [];
+    let run = '';
+    for (const text of texts) {
+      if (run && text) run += ' ';
+      starts.push(run.length);
+      run += text;
+    }
+
+    const name = speaker != null ? (doc.speakers[speaker] ?? null) : null;
+    let block = 0;
+    splitLines(run).forEach((piece, n) => {
+      while (block + 1 < starts.length && starts[block + 1] <= piece.from) block++;
+      const segment = segments[first + block];
+      const into = (piece.from - starts[block]) / Math.max(1, texts[block].length);
+      const start = timed ? segment.start + Math.max(0, segment.end - segment.start) * Math.min(1, into) : 0;
       lines.push({
         index: lines.length,
-        segment: index,
+        segment: first + block,
         start,
         time: timed ? formatClock(start) : null,
         text: piece.text,
-        speaker: segment.speaker,
-        heading: n === 0 && name && segment.speaker !== previous ? name : null,
+        speaker,
+        heading: n === 0 && name ? name : null,
       });
     });
-  });
+    first = last + 1;
+  }
   return lines;
 }
 
