@@ -23,8 +23,10 @@ const VALUE = { fontFamily: fontFamily.sansSemiBold, fontSize: 15, lineHeight: 2
 
 /**
  * The player's one row of tools, the way Apple Music ends its player with
- * lyrics, AirPlay and the queue: bare gold icons spread across the column, no
- * boxes and no words, so the transport above stays the thing the eye finds.
+ * lyrics, AirPlay and the queue: bare icons spread across the column, no
+ * boxes and no words, in the muted ink so the transport above stays the
+ * thing the eye finds. One turns gold only while it is changing how the
+ * episode plays (a speed other than 1×, a timer running): gold says "on".
  * How it is played sits on the left (speed, the sleep timer), where to go
  * from it on the right (the transcript, Samwell, Up Next). A value shows only
  * when it says something: the speed always, the timer while it runs, Up
@@ -34,18 +36,21 @@ const VALUE = { fontFamily: fontFamily.sansSemiBold, fontSize: 15, lineHeight: 2
 export function PlayerOptions({ speedLabel, sleepLabel, upNextCount, onSpeed, onSleep, onUpNext, transcript }: PlayerOptionsProps) {
   const tokens = useThemeTokens();
   const gold = tokens['--color-primary'];
+  const muted = tokens['--color-muted-foreground'];
+  const speedColor = speedLabel !== '1×' ? gold : muted;
+  const sleepColor = sleepLabel ? gold : muted;
   const sleepName = sleepLabel ? `Sleep timer, ${sleepLabel}` : 'Sleep timer';
   const upNextName = upNextCount > 0 ? `Up Next, ${upNextCount}` : 'Up Next';
 
   return (
     <View className="flex-row items-center justify-between">
       <PlayerTool label={`Speed, ${speedLabel}`} onPress={onSpeed}>
-        <ThemedText color={gold} style={VALUE}>
+        <ThemedText color={speedColor} style={VALUE}>
           {speedLabel}
         </ThemedText>
       </PlayerTool>
       <PlayerTool label={sleepName} onPress={onSleep}>
-        <Moon size={iconSize.default} color={gold} fill={sleepLabel ? gold : 'none'} />
+        <Moon size={iconSize.default} color={sleepColor} fill={sleepLabel ? gold : 'none'} />
         {sleepLabel ? (
           <ThemedText color={gold} style={VALUE}>
             {sleepLabel}
@@ -54,9 +59,9 @@ export function PlayerOptions({ speedLabel, sleepLabel, upNextCount, onSpeed, on
       </PlayerTool>
       {transcript}
       <PlayerTool label={upNextName} onPress={onUpNext}>
-        <ListMusic size={iconSize.default} color={gold} />
+        <ListMusic size={iconSize.default} color={muted} />
         {upNextCount > 0 ? (
-          <ThemedText color={gold} style={VALUE}>
+          <ThemedText color={muted} style={VALUE}>
             {upNextCount}
           </ThemedText>
         ) : null}

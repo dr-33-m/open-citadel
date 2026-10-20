@@ -25,8 +25,9 @@ export type TranscriptButtonsProps = {
 /**
  * The transcript, and Samwell on this episode. In the episode page's hero,
  * two equal boxes side by side, compact, with gold icons; in the player's
- * row of tools, two bare icons, the transcript's square filling in round it
- * while one is made. What each says comes from `transcriptButtons`.
+ * row of tools, two bare icons in the muted ink like the rest of the row,
+ * the transcript's gold square filling in round it while one is made. What
+ * each says comes from `transcriptButtons`.
  */
 export function TranscriptButtons({ transcriptLabel, progress, samwellLabel, samwellDimmed, onTranscript, onAskSamwell, tools = false }: TranscriptButtonsProps) {
   const tokens = useThemeTokens();
@@ -36,16 +37,17 @@ export function TranscriptButtons({ transcriptLabel, progress, samwellLabel, sam
   const samwellColor = samwellDimmed ? tokens['--color-muted-foreground'] : tokens['--color-foreground'];
 
   if (tools) {
+    const muted = tokens['--color-muted-foreground'];
     return (
       <>
         <PlayerTool label={transcriptLabel} onPress={onTranscript}>
           <View className="h-8 w-8 items-center justify-center">
             {progress != null ? <ProgressOutline progress={fill} /> : null}
-            <ScrollText size={iconSize.default} color={gold} />
+            <ScrollText size={iconSize.default} color={muted} />
           </View>
         </PlayerTool>
         <PlayerTool label={samwellLabel} onPress={onAskSamwell} disabled={samwellDimmed}>
-          <ZodiacPisces size={iconSize.default} color={gold} />
+          <ZodiacPisces size={iconSize.default} color={muted} />
         </PlayerTool>
       </>
     );
