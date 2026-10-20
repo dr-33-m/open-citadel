@@ -31,6 +31,9 @@ export async function transcribeEpisode(episodeId: string): Promise<{ jobId: str
     title: episode.title.slice(0, 500),
     showTitle: showName(show).slice(0, 500),
     notes: showNotesToText(episode.description)?.slice(0, 20_000) ?? undefined,
+    // Where the host is named: the episode's notes are about its subject.
+    showAuthor: show.author?.slice(0, 500) || undefined,
+    showDescription: showNotesToText(show.description)?.slice(0, 4_000) || undefined,
     mimeType: episode.mimeType,
   });
   setTranscribing(episodeId, started.jobId);

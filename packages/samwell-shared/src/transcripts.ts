@@ -203,6 +203,14 @@ export const TranscribeRequestSchema = z.object({
   showTitle: z.string().max(500),
   /** Show notes as plain text, for speaker names and Scribe's key terms. */
   notes: z.string().max(20_000).optional(),
+  /**
+   * The feed's author ("David Senra"): usually the host, and often the only
+   * place the host is named, since a show's title ("Founders") and an
+   * episode's notes are about the subject.
+   */
+  showAuthor: z.string().max(500).optional(),
+  /** The show's own description, as plain text: where a host introduces themself. */
+  showDescription: z.string().max(4_000).optional(),
 });
 
 export type TranscribeRequest = z.infer<typeof TranscribeRequestSchema>;

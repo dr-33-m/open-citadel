@@ -47,4 +47,17 @@ describe('speakerNamesInput', () => {
     expect(input).toContain('Speaker 2:\n- Thanks for having me.');
     expect(input).toContain('Lex talks to Ada.');
   });
+
+  it("gives the feed's author and the show's description, where a solo host is named", () => {
+    const input = speakerNamesInput(doc, {
+      title: 'Mark Zuckerberg',
+      showTitle: 'Founders',
+      notes: 'What I learned from reading a profile of Mark Zuckerberg.',
+      showAuthor: 'David Senra',
+      showDescription: "Every week I read a biography of an entrepreneur.",
+    });
+    expect(input).toContain('Feed author: David Senra');
+    expect(input).toContain('Show description:\nEvery week I read a biography');
+    expect(speakerNamesInput(doc, { title: 'Ep', showTitle: 'Show' })).toContain('Feed author: (none)');
+  });
 });

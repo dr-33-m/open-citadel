@@ -21,7 +21,10 @@ import { keytermsFrom, requestTranscription } from './transcribe-upstream.js';
 import { shapeScribeReply } from './transcript-shape.js';
 
 export interface NameSpeakers {
-  (doc: TranscriptDoc, context: { accountId: string; title: string; showTitle: string; notes?: string }): Promise<{
+  (
+    doc: TranscriptDoc,
+    context: { accountId: string; title: string; showTitle: string; notes?: string; showAuthor?: string; showDescription?: string },
+  ): Promise<{
     doc: TranscriptDoc;
     costUsd: number;
   }>;
@@ -55,7 +58,7 @@ export function createTranscribeWorker(deps: TranscribeWorkerDeps) {
 
     const { request } = job;
     const outcome = await requestTranscription(
-      { audioUrl: request.audioUrl, format: request.format, keyterms: keytermsFrom(request.title, request.showTitle, request.notes) },
+      { audioUrl: request.audioUrl, format: request.format, keyterms: keytermsFrom(request.showAuthor, request.title, request.showTitle, request.notes) },
       { apiKey, fetchImpl: deps.fetchImpl, signal },
     );
     if (signal.aborted) return;
@@ -72,7 +75,14 @@ export function createTranscribeWorker(deps: TranscribeWorkerDeps) {
     let namingCost = 0;
     if (doc.speakers.length > 0) {
       try {
-        const named = await deps.nameSpeakers(doc, { accountId: job.accountId, title: request.title, showTitle: request.showTitle, notes: request.notes });
+        const named = await deps.nameSpeakers(doc, {
+          accountId: job.accountId,
+          title: request.title,
+          showTitle: request.showTitle,
+          notes: request.notes,
+          showAuthor: request.showAuthor,
+          showDescription: request.showDescription,
+        });
         doc = named.doc;
         namingCost = named.costUsd;
       } catch (error) {
