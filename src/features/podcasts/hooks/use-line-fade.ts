@@ -19,7 +19,7 @@ export function useLineFade(index: number, opacity: number) {
       shown.set(opacity);
       return;
     }
-    shown.set(withTiming(opacity, { duration: motion.slow, easing, reduceMotion: ReduceMotion.System }));
+    shown.set(withTiming(opacity, { duration: motion.base, easing, reduceMotion: ReduceMotion.System }));
   }, [index, opacity, shown]);
 
   return useAnimatedStyle(() => ({ opacity: shown.get() }));

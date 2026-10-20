@@ -13,7 +13,7 @@ import { useTranscriptTransport } from '@/features/podcasts/hooks/use-transcript
 export function TranscriptTransport() {
   const { scrubber, transport } = useTranscriptTransport();
   return (
-    <View className="gap-1 border-t border-border px-6 pt-2">
+    <View className="gap-1 px-6 pt-2">
       <PlayerScrubber {...scrubber} />
       <PlayerTransport {...transport} compact />
     </View>
