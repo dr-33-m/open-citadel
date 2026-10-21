@@ -39,9 +39,6 @@ export const CLOUD_WITH_A_PLAN = 'WITH A PLAN';
 /** The line over the plans, where Cloud without a plan is what brought them up. */
 export const CLOUD_PLANS_LINE = 'Cloud voices come with every plan.';
 
-/** Over the voice sheet opened from a book being heard, which offers no voices on the phone. */
-export const BOOKS_CLOUD_ONLY = 'Books are heard in a cloud voice. Read-aloud in the reader can still use one on this phone.';
-
 /** Where plans cannot be sold in the app, the Cloud card says why it stays shut. */
 export const CLOUD_PLANS_ELSEWHERE = 'Cloud voices come with a plan. Choose one in Settings, under Samwell.';
 

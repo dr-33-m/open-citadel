@@ -18,7 +18,7 @@ import { CloudSourcePane } from '@/features/tts/components/cloud-source-pane';
 import { useCloudVoicePane } from '@/features/tts/hooks/use-cloud-voice-pane';
 import { useVoiceSource } from '@/features/tts/hooks/use-voice-source';
 import { PlansSheet } from '@/features/billing/components/plans-sheet';
-import { BOOKS_CLOUD_ONLY, CLOUD_INFO, ENHANCED_UNSUPPORTED, LITE_SPEED_FIXED, ON_DEVICE_KINDS, onDeviceHint, type VoiceSource } from '@/features/tts/utils/voice-copy';
+import { CLOUD_INFO, ENHANCED_UNSUPPORTED, LITE_SPEED_FIXED, ON_DEVICE_KINDS, onDeviceHint, type VoiceSource } from '@/features/tts/utils/voice-copy';
 import { Touchable } from '@/components/ui/touchable';
 import {
   AI_VOICES_SUPPORTED,
@@ -50,7 +50,7 @@ export interface TtsSettingsPanelProps {
   /** The ground the panel sits on, for what fades into it: the reader's voice sheet is `popover`. */
   surface?: 'background' | 'popover';
   /**
-   * Only the cloud's voices, with no On-device card: opened from a book
+   * Only the cloud's voices, with no source cards: opened from a book
    * being heard, which only a cloud voice can read. Choosing one is still
    * the reader's cloud voice; the phone's voices stay as they were.
    */
@@ -156,11 +156,7 @@ export function TtsSettingsPanel({ onDone, warm = false, surface = 'background',
         </View>
       ) : null}
 
-      {cloudOnly ? (
-        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
-          {BOOKS_CLOUD_ONLY}
-        </ThemedText>
-      ) : (
+      {cloudOnly ? null : (
         <VoiceSourceCards
           source={voiceSource.shown}
           cloudLocked={voiceSource.cloudLocked}
