@@ -3,6 +3,8 @@ import type { Book } from '@/stores/books';
 
 export type BookMenuAction =
   | 'open'
+  | 'listen'
+  | 'listen-locked'
   | 'favorite'
   | 'unfavorite'
   | 'collection'
@@ -14,13 +16,27 @@ export type BookMenuAction =
   | 'rename'
   | 'delete';
 
-type BookMenuOptions = { collections: boolean; rename: boolean; delete: boolean };
+type BookMenuOptions = {
+  collections: boolean;
+  rename: boolean;
+  delete: boolean;
+  /** Listening in a cloud voice: open with a plan that reaches one, locked without. Left out where not offered. */
+  listen?: 'open' | 'locked' | null;
+};
+
+/** A book that can be heard: an EPUB being read, with its file on the phone. */
+export function canListen(book: Book): boolean {
+  return book.status === 'reading' && (book.kind ?? 'book') === 'book' && !!book.filePath;
+}
 
 /** What can be done to a book in the state it is in, in menu order. */
 export function bookMenu(book: Book, options: BookMenuOptions): MenuRow<BookMenuAction>[] {
   const archived = book.status === 'archived';
   const queued = book.status === 'queued';
   const rows: MenuRow<BookMenuAction>[] = [{ key: 'open', label: 'Open' }];
+  if (options.listen && canListen(book)) {
+    rows.push(options.listen === 'open' ? { key: 'listen', label: 'Listen' } : { key: 'listen-locked', label: 'Listen', tone: 'muted' });
+  }
   rows.push(
     book.isFavorite === 1
       ? { key: 'unfavorite', label: 'Remove from Favorites' }

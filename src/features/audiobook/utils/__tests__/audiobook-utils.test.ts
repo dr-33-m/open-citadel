@@ -240,3 +240,24 @@ describe('paragraphRows', () => {
     expect(rowOf(rows, null)).toBe(-1);
   });
 });
+
+describe('listenStats', () => {
+  it('draws the time left and the Neurons, and leaves out an unpriced voice', async () => {
+    const { listenStats } = await import('@/features/audiobook/utils/listen-estimate');
+    expect(listenStats({ seconds: 22_200, neurons: 2_600 })).toEqual([
+      { key: 'time', value: '6 h 10 m', label: 'ABOUT LEFT' },
+      { key: 'neurons', value: '2,600', label: 'ABOUT NEURONS' },
+    ]);
+    expect(listenStats({ seconds: 600, neurons: null }).map((s) => s.key)).toEqual(['time']);
+  });
+});
+
+describe('failureToast', () => {
+  it('waits out the network, retries a voice, and sells a plan where it can', async () => {
+    const { failureToast } = await import('@/features/audiobook/utils/failure-toast');
+    expect(failureToast('offline', true).wayOut).toBe('wait');
+    expect(failureToast('maker_failed', true)).toEqual({ message: 'That voice is not answering.', wayOut: 'retry' });
+    expect(failureToast('out_of_credits', true)).toEqual({ message: 'Out of Neurons', wayOut: 'plans' });
+    expect(failureToast('plan_lapsed', false).wayOut).toBe('retry');
+  });
+});

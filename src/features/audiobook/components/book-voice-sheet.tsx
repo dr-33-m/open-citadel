@@ -12,13 +12,14 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 /**
  * Who reads the book: the voice boxes, their versions and narrators, exactly
  * as the reader chooses them (`CloudVoicePane`). The title and its line are
- * pinned; the pane scrolls under them.
+ * pinned; the pane scrolls under them. `nested` when it rises over another
+ * sheet (the Listen sheet) rather than over the player.
  */
-export function BookVoiceSheet({ state }: { state: BookVoiceState }) {
+export function BookVoiceSheet({ state, nested = false }: { state: BookVoiceState; nested?: boolean }) {
   const muted = useThemeTokens()['--color-muted-foreground'];
   return (
     <>
-      <Sheet {...state.sheet} snapRatios={[0.78]} scrollable>
+      <Sheet {...state.sheet} snapRatios={[0.78]} scrollable stackBehavior={nested ? 'push' : undefined}>
         <View className="gap-1 px-6 pb-3">
           <ThemedText type="headlineSm">Voice</ThemedText>
           <ThemedText type="bodySm" color={muted}>

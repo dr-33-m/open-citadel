@@ -53,6 +53,7 @@ const FOREGROUND_EVENTS = [
   Event.RemoteSeek,
   Event.RemoteSkipForward,
   Event.RemoteSkipBackward,
+  Event.RemoteHighlight,
 ] as const;
 
 /**

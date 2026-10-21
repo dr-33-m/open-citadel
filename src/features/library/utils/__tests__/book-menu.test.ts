@@ -30,4 +30,13 @@ describe('bookMenu', () => {
   it('leaves out what the screen does not offer', () => {
     expect(keys(book({}), { collections: false, rename: false, delete: false })).toEqual(['open', 'favorite', 'queue', 'finish']);
   });
+
+  it('offers listening to a book being read, locked without a plan, and never to a post', () => {
+    const reading = book({ status: 'reading', kind: 'book', filePath: '/b.epub' });
+    expect(keys(reading, { ...all, listen: 'open' })[1]).toBe('listen');
+    expect(keys(reading, { ...all, listen: 'locked' })[1]).toBe('listen-locked');
+    expect(keys(reading)).not.toContain('listen');
+    expect(keys(book({ status: 'queued', filePath: '/b.epub' }), { ...all, listen: 'open' })).not.toContain('listen');
+    expect(keys(book({ status: 'reading', kind: 'article', filePath: '/a.epub' }), { ...all, listen: 'open' })).not.toContain('listen');
+  });
 });

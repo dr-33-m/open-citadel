@@ -39,6 +39,7 @@ import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
 import { useReadingIndex } from "@/hooks/use-reading-index";
 import { ToastProvider } from "@/components/toast/toast-provider";
+import { AudiobookWalls } from "@/features/audiobook/components/audiobook-walls";
 import { ThemeRelease } from "@/components/theme-scope";
 import { RootThemeTokens } from "@/hooks/use-theme-tokens";
 import { ThemeStatusBar } from "@/components/theme-status-bar";
@@ -430,6 +431,9 @@ function RootLayoutContent() {
                   />
                 </TransitionStack>
                 <ApprovalSheet />
+                {/* A book heard in a cloud voice: back in the mini player after
+                a restart, and the plans in place when the voice stops for want of one. */}
+                <AudiobookWalls ready={dbReady} />
                 {/* Over-the-air updates: checked on return as well as launch,
                 and asked for in a dialog once one is downloaded. */}
                 <AppUpdates />

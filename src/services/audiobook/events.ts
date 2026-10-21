@@ -16,12 +16,13 @@ import { adopt, publish, stopBook } from '@/services/audiobook/lifecycle';
 import { isBookItem, parseBookMediaId } from '@/services/audiobook/media-id';
 import { saveBookPlace } from '@/services/audiobook/position';
 import { produce, setProducerHooks } from '@/services/audiobook/producer';
+import { toggleHighlightNow } from '@/services/audiobook/highlight-now';
 import { followTransition } from '@/services/audiobook/queue';
 import { current, type BookSession } from '@/services/audiobook/session';
 import { addPlayerHandler } from '@/services/player/events';
 import { clearStarting, markStarting, store } from '@/services/player/session';
 import { finishRead } from '@/services/reading-position';
-import { useAudiobook } from '@/stores/audiobook';
+import { selectSentenceHighlighted, useAudiobook } from '@/stores/audiobook';
 import { selectBook } from '@/stores/player';
 
 /** The session for a book item, taking the book up first if this runtime is not holding it. */
@@ -59,6 +60,8 @@ async function handleBookEvent(event: BackgroundEvent): Promise<void> {
       if (!s || !id || followTransition(s, id.sentenceId) < 0) return;
       s.waiting = false;
       publish(s);
+      // The notification's button starts each sentence unfilled; one heard again may already be highlighted.
+      if (selectSentenceHighlighted(useAudiobook.getState())) showHighlighted(true);
       armChapterSleep(s);
       void produce(s);
       await saveBookPlace(s);
@@ -100,10 +103,29 @@ async function handleBookEvent(event: BackgroundEvent): Promise<void> {
     case Event.RemoteSkipBackward:
       if (selectBook(store())) skipBook(-event.interval);
       return;
+    case Event.RemoteHighlight:
+      // The notification's one button: highlight the sentence, or take it back.
+      if (current() || (await sessionFor(TrackPlayer.getActiveMediaItem()?.mediaId))) await toggleHighlightNow();
+      return;
     default:
       return;
   }
 }
+
+/** The notification's Highlight button, filled or not. A build without it is left alone. */
+function showHighlighted(highlighted: boolean): void {
+  try {
+    TrackPlayer.setHighlighted(highlighted);
+  } catch {
+    // An older binary has no such button.
+  }
+}
+
+// Highlighting from anywhere (the player, the mini player, the notification) fills the button.
+useAudiobook.subscribe((next, previous) => {
+  const now = selectSentenceHighlighted(next);
+  if (now !== selectSentenceHighlighted(previous)) showHighlighted(now);
+});
 
 let unwatch: (() => void) | null = null;
 

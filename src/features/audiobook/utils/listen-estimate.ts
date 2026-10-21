@@ -50,3 +50,17 @@ export function formatListenTime(seconds: number): string {
 export function timeLeftLabel(seconds: number): string {
   return seconds > 0 ? `About ${formatListenTime(seconds)} left` : '';
 }
+
+/** A figure for the Listen sheet: the number, and what it counts. The shape `StatGrid` draws. */
+export interface ListenStat {
+  key: string;
+  value: string;
+  label: string;
+}
+
+/** The Listen sheet's figures: the time left, and the Neurons it costs when the voice has a price. Nothing that is zero. */
+export function listenStats(estimate: ListenEstimate): ListenStat[] {
+  const stats: ListenStat[] = [{ key: 'time', value: formatListenTime(estimate.seconds), label: 'ABOUT LEFT' }];
+  if (estimate.neurons) stats.push({ key: 'neurons', value: estimate.neurons.toLocaleString('en-US'), label: 'ABOUT NEURONS' });
+  return stats;
+}

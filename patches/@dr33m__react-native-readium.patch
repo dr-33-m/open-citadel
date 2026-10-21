@@ -43,7 +43,7 @@ index d980fe94a06e00f78e758aac92b4c99dcd433abc..2af4352f0be80cfbb244c6bb28d07d57
    // other deps
    implementation "androidx.core:core-ktx:1.13.1"
 diff --git a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt b/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
-index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b215ba916b0 100644
+index 67d86a62e7b8a80070aa55f8a259079649b37aaf..f64ca21eb32b047233ce8e2261826de76c524aaf 100644
 --- a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
 +++ b/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
 @@ -6,6 +6,7 @@ import android.view.View
@@ -64,7 +64,17 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b21
  
    private fun ensureService() {
      if (svc == null) {
-@@ -188,6 +192,27 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -179,7 +183,8 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+     fragment?.ttsStart(
+       rate = config.rate?.toFloat(),
+       language = config.language,
+-      voice = config.voice
++      voice = config.voice,
++      fromLocatorJson = config.fromLocator
+     )
+   }
+   override fun ttsStop() { fragment?.ttsStop() }
+@@ -188,6 +193,27 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
    override fun ttsSetRate(rate: Double) { fragment?.ttsSetRate(rate.toFloat()) }
    override fun ttsSkipNext() { fragment?.ttsSkipNext() }
    override fun ttsSkipPrevious() { fragment?.ttsSkipPrevious() }
@@ -92,7 +102,7 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b21
    override fun destroy() {
      if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
        cleanup()
-@@ -395,6 +420,24 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -395,6 +421,24 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
          is ReaderViewModel.Event.TTSError -> {
            onTTSError?.invoke(event.message)
          }
@@ -118,10 +128,29 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b21
      }
    }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-index 4ebb74c21c404bba938d72982e6cfd41492c935c..432d6642929cd1b9f24a9ee190e35646fbd13624 100644
+index 4ebb74c21c404bba938d72982e6cfd41492c935c..e58079e548d09c39b67a1149900e1bd5f3aecdf9 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-@@ -247,6 +247,15 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -232,7 +232,17 @@ abstract class BaseReaderFragment : Fragment() {
+ 
+   // MARK: - TTS
+ 
+-  fun ttsStart(rate: Float?, language: String?, voice: String?) {
++  fun ttsStart(rate: Float?, language: String?, voice: String?, fromLocatorJson: String? = null) {
++    // PATCHED (Open Citadel): a place to start from, handed over by the
++    // audiobook (the sentence being heard when the book was opened). Read
++    // here, so a locator that cannot be read falls back to the screen's.
++    val handedOver = fromLocatorJson?.let {
++      try {
++        Locator.fromJSON(org.json.JSONObject(it))
++      } catch (e: Exception) {
++        null
++      }
++    }
+     val viewScope = viewLifecycleOwner.lifecycleScope
+     if (ttsManager == null) {
+       val app = requireActivity().application
+@@ -247,6 +257,15 @@ abstract class BaseReaderFragment : Fragment() {
          },
          onUtterance = { locator, text ->
            applyTTSDecoration(locator) // Apply decoration natively — no JS round-trip
@@ -137,7 +166,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..432d6642929cd1b9f24a9ee190e35646
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSUtterance(locator, text, null, null))
            }
-@@ -255,6 +264,21 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -255,6 +274,21 @@ abstract class BaseReaderFragment : Fragment() {
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSError(message))
            }
@@ -159,7 +188,16 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..432d6642929cd1b9f24a9ee190e35646
          }
        )
      }
-@@ -281,6 +305,15 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -264,7 +298,7 @@ abstract class BaseReaderFragment : Fragment() {
+       // currentLocator may still point to the resource start when the book
+       // is first opened from a saved position.
+       if (ttsManager?.isRunning() != true) delay(400)
+-      val startLocator = if (isNavigatorReady) {
++      val startLocator = handedOver ?: if (isNavigatorReady) {
+         (navigator as? VisualNavigator)?.firstVisibleElementLocator()
+           ?: navigator.currentLocator.value
+       } else null
+@@ -281,6 +315,15 @@ abstract class BaseReaderFragment : Fragment() {
    fun ttsSetRate(rate: Float) { ttsManager?.setRate(rate) }
    fun ttsSkipNext() { ttsManager?.skipNext() }
    fun ttsSkipPrevious() { ttsManager?.skipPrevious() }
@@ -1583,7 +1621,7 @@ index 0000000000000000000000000000000000000000..f46fe9eeae873a3be4e44cb65bf9a457
 +    }
 +}
 diff --git a/ios/HybridReadiumView.swift b/ios/HybridReadiumView.swift
-index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd2ffe192a 100644
+index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..170e02d45ddbe0607468d75b46bba94e1ec2d753 100644
 --- a/ios/HybridReadiumView.swift
 +++ b/ios/HybridReadiumView.swift
 @@ -55,6 +55,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
@@ -1645,7 +1683,28 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd
        vc.ttsManager = manager
      }
      return vc.ttsManager
-@@ -410,6 +436,37 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -348,6 +374,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
+     let rate = config.rate.map { Float($0) }
+     let language = config.language
+     let voice = config.voice
++    // PATCHED (Open Citadel): a place to start from, handed over by the
++    // audiobook (the sentence being heard when the book was opened).
++    let handedOver: RLocator? = config.fromLocator.flatMap { try? RLocator(jsonString: $0) }
+ 
+     Task { @MainActor [weak self] in
+       guard let self = self else { return }
+@@ -359,8 +388,8 @@ class HybridReadiumView: HybridReadiumViewSpec {
+       // firstVisibleElementLocator() is anchored to an actual DOM element.
+       // Without either, iOS passed nil and TTSManager fell back to
+       // synth.start() (from the start of the publication).
+-      var fromLocator: RLocator? = nil
+-      if let visual = self.readerViewController?.navigator as? VisualNavigator {
++      var fromLocator: RLocator? = handedOver
++      if fromLocator == nil, let visual = self.readerViewController?.navigator as? VisualNavigator {
+         fromLocator = await visual.firstVisibleElementLocator()
+       }
+       if fromLocator == nil {
+@@ -410,6 +439,37 @@ class HybridReadiumView: HybridReadiumViewSpec {
        self?.readerViewController?.ttsManager?.skipPrevious()
      }
    }
@@ -21212,10 +21271,18 @@ index 4e1e8943c2bcabe032e7fb6ab13fec4b82239588..d064d58af11d482d7d01ae42a5818a2c
 -export type { TTSConfig, TTSState, TTSUtteranceEvent, } from '../specs/ReadiumView.nitro';
 +export type { TTSConfig, TTSState, TTSUtteranceEvent, TTSSynthesisRequest, TTSUpcomingEvent, } from '../specs/ReadiumView.nitro';
 diff --git a/lib/src/specs/ReadiumView.nitro.d.ts b/lib/src/specs/ReadiumView.nitro.d.ts
-index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..1272b633d1c40a27179ef6f5c08cf25ffe303e18 100644
+index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..3d22e3cdffeccefa1636db8633f9950ffc8ed731 100644
 --- a/lib/src/specs/ReadiumView.nitro.d.ts
 +++ b/lib/src/specs/ReadiumView.nitro.d.ts
-@@ -191,6 +191,21 @@ export interface TTSUtteranceEvent {
+@@ -179,6 +179,7 @@ export interface TTSConfig {
+     rate?: number;
+     language?: string;
+     voice?: string;
++    fromLocator?: string;
+ }
+ export interface TTSState {
+     isPlaying: boolean;
+@@ -191,6 +192,21 @@ export interface TTSUtteranceEvent {
      rangeStart?: number;
      rangeLength?: number;
  }
@@ -21237,7 +21304,7 @@ index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..1272b633d1c40a27179ef6f5c08cf25f
  export interface ReadiumFile {
      url: string;
      initialLocation?: Locator;
-@@ -209,6 +224,9 @@ export interface ReadiumViewProps extends HybridViewProps {
+@@ -209,6 +225,9 @@ export interface ReadiumViewProps extends HybridViewProps {
      onTTSStateChange?: (state: TTSState) => void;
      onTTSUtterance?: (event: TTSUtteranceEvent) => void;
      onTTSError?: (error: string) => void;
@@ -21247,7 +21314,7 @@ index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..1272b633d1c40a27179ef6f5c08cf25f
  }
  export interface ReadiumViewMethods extends HybridViewMethods {
      goTo(locator: Locator): void;
-@@ -222,5 +240,9 @@ export interface ReadiumViewMethods extends HybridViewMethods {
+@@ -222,5 +241,9 @@ export interface ReadiumViewMethods extends HybridViewMethods {
      ttsSetRate(rate: number): void;
      ttsSkipNext(): void;
      ttsSkipPrevious(): void;
@@ -23007,7 +23074,7 @@ index f66e2ef3db2b68faf3fe5ae67380d4ec1b8aa3d2..21bf1ffe19463f87a502c8bd821fc2f6
    public:
      /**
 diff --git a/nitrogen/generated/android/c++/JTTSConfig.hpp b/nitrogen/generated/android/c++/JTTSConfig.hpp
-index dd85069b7ebdaff087c0273694f0d7ff50ccfc42..ef23784fa3e4e455d34fa273d85b42340cbaefe1 100644
+index dd85069b7ebdaff087c0273694f0d7ff50ccfc42..66ad7fdc975e3f195077bcf76699e07a35820927 100644
 --- a/nitrogen/generated/android/c++/JTTSConfig.hpp
 +++ b/nitrogen/generated/android/c++/JTTSConfig.hpp
 @@ -22,7 +22,7 @@ namespace margelo::nitro::readium {
@@ -23019,6 +23086,39 @@ index dd85069b7ebdaff087c0273694f0d7ff50ccfc42..ef23784fa3e4e455d34fa273d85b4234
  
    public:
      /**
+@@ -38,10 +38,13 @@ namespace margelo::nitro::readium {
+       jni::local_ref<jni::JString> language = this->getFieldValue(fieldLanguage);
+       static const auto fieldVoice = clazz->getField<jni::JString>("voice");
+       jni::local_ref<jni::JString> voice = this->getFieldValue(fieldVoice);
++      static const auto fieldFromLocator = clazz->getField<jni::JString>("fromLocator");
++      jni::local_ref<jni::JString> fromLocator = this->getFieldValue(fieldFromLocator);
+       return TTSConfig(
+         rate != nullptr ? std::make_optional(rate->value()) : std::nullopt,
+         language != nullptr ? std::make_optional(language->toStdString()) : std::nullopt,
+-        voice != nullptr ? std::make_optional(voice->toStdString()) : std::nullopt
++        voice != nullptr ? std::make_optional(voice->toStdString()) : std::nullopt,
++        fromLocator != nullptr ? std::make_optional(fromLocator->toStdString()) : std::nullopt
+       );
+     }
+ 
+@@ -51,14 +54,15 @@ namespace margelo::nitro::readium {
+      */
+     [[maybe_unused]]
+     static jni::local_ref<JTTSConfig::javaobject> fromCpp(const TTSConfig& value) {
+-      using JSignature = JTTSConfig(jni::alias_ref<jni::JDouble>, jni::alias_ref<jni::JString>, jni::alias_ref<jni::JString>);
++      using JSignature = JTTSConfig(jni::alias_ref<jni::JDouble>, jni::alias_ref<jni::JString>, jni::alias_ref<jni::JString>, jni::alias_ref<jni::JString>);
+       static const auto clazz = javaClassStatic();
+       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
+       return create(
+         clazz,
+         value.rate.has_value() ? jni::JDouble::valueOf(value.rate.value()) : nullptr,
+         value.language.has_value() ? jni::make_jstring(value.language.value()) : nullptr,
+-        value.voice.has_value() ? jni::make_jstring(value.voice.value()) : nullptr
++        value.voice.has_value() ? jni::make_jstring(value.voice.value()) : nullptr,
++        value.fromLocator.has_value() ? jni::make_jstring(value.fromLocator.value()) : nullptr
+       );
+     }
+   };
 diff --git a/nitrogen/generated/android/c++/JTTSState.hpp b/nitrogen/generated/android/c++/JTTSState.hpp
 index 03330c54d8639d3202ce7d1a6b04a932ec82cfe3..30bc9226c54da7bee4fdf4a403829f6cc2d529e3 100644
 --- a/nitrogen/generated/android/c++/JTTSState.hpp
@@ -24426,7 +24526,7 @@ index 8bbc1e304f88b308a6f8169c8be215376bebec68..589a8056d3fe6d9719ba2ff040a05081
      /**
       * Constructor called from C++
 diff --git a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSConfig.kt b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSConfig.kt
-index 5ff53491b8b567ff6f0e7d8e0f0b80b4d1b36286..ce106f1e1986484f7e727b267de648321fb3bf82 100644
+index 5ff53491b8b567ff6f0e7d8e0f0b80b4d1b36286..2f358d82a8cafde7bd70b4bd7b6c2170acb6b7e3 100644
 --- a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSConfig.kt
 +++ b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSConfig.kt
 @@ -9,6 +9,7 @@ package com.margelo.nitro.reactnativereadium
@@ -24437,7 +24537,15 @@ index 5ff53491b8b567ff6f0e7d8e0f0b80b4d1b36286..ce106f1e1986484f7e727b267de64832
  
  
  /**
-@@ -29,6 +30,22 @@ data class TTSConfig(
+@@ -25,10 +26,31 @@ data class TTSConfig(
+   val language: String?,
+   @DoNotStrip
+   @Keep
+-  val voice: String?
++  val voice: String?,
++  @DoNotStrip
++  @Keep
++  val fromLocator: String?
  ) {
    /* primary constructor */
  
@@ -24447,19 +24555,32 @@ index 5ff53491b8b567ff6f0e7d8e0f0b80b4d1b36286..ce106f1e1986484f7e727b267de64832
 +    return Objects.deepEquals(this.rate, other.rate)
 +      && Objects.deepEquals(this.language, other.language)
 +      && Objects.deepEquals(this.voice, other.voice)
++      && Objects.deepEquals(this.fromLocator, other.fromLocator)
 +  }
 +
 +  override fun hashCode(): Int {
 +    return arrayOf<Any?>(
 +      rate,
 +      language,
-+      voice
++      voice,
++      fromLocator
 +    ).contentDeepHashCode()
 +  }
 +
    companion object {
      /**
       * Constructor called from C++
+@@ -37,8 +59,8 @@ data class TTSConfig(
+     @Keep
+     @Suppress("unused")
+     @JvmStatic
+-    private fun fromCpp(rate: Double?, language: String?, voice: String?): TTSConfig {
+-      return TTSConfig(rate, language, voice)
++    private fun fromCpp(rate: Double?, language: String?, voice: String?, fromLocator: String?): TTSConfig {
++      return TTSConfig(rate, language, voice, fromLocator)
+     }
+   }
+ }
 diff --git a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSState.kt b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSState.kt
 index 30e0ea18f0793cc48f7a03af4de1eba2f730745a..f30d3a363bd81eb3d9ba22d044668d20edae22a8 100644
 --- a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSState.kt
@@ -25352,6 +25473,49 @@ index 49b44099332a85865196d6146e9d6a8ecdfb7c18..d7f95062b9c5fc1a15b396d838f1ce84
 +    __implementation.onDropView()
 +  }
  }
+diff --git a/nitrogen/generated/ios/swift/TTSConfig.swift b/nitrogen/generated/ios/swift/TTSConfig.swift
+index 7d4343023b42c836e856a31efee685168d40edd9..bc8be08cd83b424fabb54c04372dd95dd1ce093c 100644
+--- a/nitrogen/generated/ios/swift/TTSConfig.swift
++++ b/nitrogen/generated/ios/swift/TTSConfig.swift
+@@ -18,7 +18,7 @@ public extension TTSConfig {
+   /**
+    * Create a new instance of `TTSConfig`.
+    */
+-  init(rate: Double?, language: String?, voice: String?) {
++  init(rate: Double?, language: String?, voice: String?, fromLocator: String?) {
+     self.init({ () -> bridge.std__optional_double_ in
+       if let __unwrappedValue = rate {
+         return bridge.create_std__optional_double_(__unwrappedValue)
+@@ -37,6 +37,12 @@ public extension TTSConfig {
+       } else {
+         return .init()
+       }
++    }(), { () -> bridge.std__optional_std__string_ in
++      if let __unwrappedValue = fromLocator {
++        return bridge.create_std__optional_std__string_(std.string(__unwrappedValue))
++      } else {
++        return .init()
++      }
+     }())
+   }
+ 
+@@ -75,4 +81,16 @@ public extension TTSConfig {
+       }
+     }()
+   }
++  
++  @inline(__always)
++  var fromLocator: String? {
++    return { () -> String? in
++      if bridge.has_value_std__optional_std__string_(self.__fromLocator) {
++        let __unwrapped = bridge.get_std__optional_std__string_(self.__fromLocator)
++        return String(__unwrapped)
++      } else {
++        return nil
++      }
++    }()
++  }
+ }
 diff --git a/nitrogen/generated/ios/swift/TTSSynthesisRequest.swift b/nitrogen/generated/ios/swift/TTSSynthesisRequest.swift
 new file mode 100644
 index 0000000000000000000000000000000000000000..ce7660f403cde4645156ed177351c920d9b2f242
@@ -25570,6 +25734,49 @@ index 46b00aff3941c6335235f5933759955a4d94797b..5a6bf8fec1b9c5a76e8b54efa888d923
  
      protected:
        // Hybrid Setup
+diff --git a/nitrogen/generated/shared/c++/TTSConfig.hpp b/nitrogen/generated/shared/c++/TTSConfig.hpp
+index 0686d8b055d70fa571f7b05e39aa834bb8d08fd9..c739f637b946e763e3b8808ccbdf9bca9164cfe6 100644
+--- a/nitrogen/generated/shared/c++/TTSConfig.hpp
++++ b/nitrogen/generated/shared/c++/TTSConfig.hpp
+@@ -43,10 +43,11 @@ namespace margelo::nitro::readium {
+     std::optional<double> rate     SWIFT_PRIVATE;
+     std::optional<std::string> language     SWIFT_PRIVATE;
+     std::optional<std::string> voice     SWIFT_PRIVATE;
++    std::optional<std::string> fromLocator     SWIFT_PRIVATE;
+ 
+   public:
+     TTSConfig() = default;
+-    explicit TTSConfig(std::optional<double> rate, std::optional<std::string> language, std::optional<std::string> voice): rate(rate), language(language), voice(voice) {}
++    explicit TTSConfig(std::optional<double> rate, std::optional<std::string> language, std::optional<std::string> voice, std::optional<std::string> fromLocator): rate(rate), language(language), voice(voice), fromLocator(fromLocator) {}
+ 
+   public:
+     friend bool operator==(const TTSConfig& lhs, const TTSConfig& rhs) = default;
+@@ -64,7 +65,8 @@ namespace margelo::nitro {
+       return margelo::nitro::readium::TTSConfig(
+         JSIConverter<std::optional<double>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "rate"))),
+         JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "language"))),
+-        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "voice")))
++        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "voice"))),
++        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "fromLocator")))
+       );
+     }
+     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::readium::TTSConfig& arg) {
+@@ -72,6 +74,7 @@ namespace margelo::nitro {
+       obj.setProperty(runtime, PropNameIDCache::get(runtime, "rate"), JSIConverter<std::optional<double>>::toJSI(runtime, arg.rate));
+       obj.setProperty(runtime, PropNameIDCache::get(runtime, "language"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.language));
+       obj.setProperty(runtime, PropNameIDCache::get(runtime, "voice"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.voice));
++      obj.setProperty(runtime, PropNameIDCache::get(runtime, "fromLocator"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.fromLocator));
+       return obj;
+     }
+     static inline bool canConvert(jsi::Runtime& runtime, const jsi::Value& value) {
+@@ -85,6 +88,7 @@ namespace margelo::nitro {
+       if (!JSIConverter<std::optional<double>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "rate")))) return false;
+       if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "language")))) return false;
+       if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "voice")))) return false;
++      if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "fromLocator")))) return false;
+       return true;
+     }
+   };
 diff --git a/nitrogen/generated/shared/c++/TTSSynthesisRequest.hpp b/nitrogen/generated/shared/c++/TTSSynthesisRequest.hpp
 new file mode 100644
 index 0000000000000000000000000000000000000000..7cd3428694cc1e52e0df43efa7d90e0be13f99d0
@@ -25965,10 +26172,23 @@ index 06b8fd65a525584fcf9a27548dd4d418ee4b2e60..ad85c433e7368b0b861787cd07d3aa91
 +  TTSUpcomingEvent,
  } from '../specs/ReadiumView.nitro';
 diff --git a/src/specs/ReadiumView.nitro.ts b/src/specs/ReadiumView.nitro.ts
-index 27d61c141971f707c4a249ef9f25c62570d2fd83..189cde1ccf2323e79bcfb00bdd793a640df32380 100644
+index 27d61c141971f707c4a249ef9f25c62570d2fd83..ba659843ff85c3eaa8df98050437a1125bab37f2 100644
 --- a/src/specs/ReadiumView.nitro.ts
 +++ b/src/specs/ReadiumView.nitro.ts
-@@ -239,6 +239,35 @@ export interface TTSUtteranceEvent {
+@@ -224,6 +224,12 @@ export interface TTSConfig {
+   rate?: number;
+   language?: string;
+   voice?: string;
++  /**
++   * PATCHED (Open Citadel): a locator, as JSON, to start reading at: the
++   * sentence an audiobook was at when the book was opened. The first element
++   * on screen otherwise.
++   */
++  fromLocator?: string;
+ }
+ 
+ export interface TTSState {
+@@ -239,6 +245,35 @@ export interface TTSUtteranceEvent {
    rangeLength?: number;
  }
  
@@ -26004,7 +26224,7 @@ index 27d61c141971f707c4a249ef9f25c62570d2fd83..189cde1ccf2323e79bcfb00bdd793a64
  // ── File ─────────────────────────────────────────────────────────────────────
  
  export interface ReadiumFile {
-@@ -262,6 +291,11 @@ export interface ReadiumViewProps extends HybridViewProps {
+@@ -262,6 +297,11 @@ export interface ReadiumViewProps extends HybridViewProps {
    onTTSStateChange?: (state: TTSState) => void;
    onTTSUtterance?: (event: TTSUtteranceEvent) => void;
    onTTSError?: (error: string) => void;
@@ -26016,7 +26236,7 @@ index 27d61c141971f707c4a249ef9f25c62570d2fd83..189cde1ccf2323e79bcfb00bdd793a64
  }
  
  export interface ReadiumViewMethods extends HybridViewMethods {
-@@ -276,6 +310,18 @@ export interface ReadiumViewMethods extends HybridViewMethods {
+@@ -276,6 +316,18 @@ export interface ReadiumViewMethods extends HybridViewMethods {
    ttsSetRate(rate: number): void;
    ttsSkipNext(): void;
    ttsSkipPrevious(): void;
