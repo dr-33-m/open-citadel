@@ -18,7 +18,7 @@ import { CloudSourcePane } from '@/features/tts/components/cloud-source-pane';
 import { useCloudVoicePane } from '@/features/tts/hooks/use-cloud-voice-pane';
 import { useVoiceSource } from '@/features/tts/hooks/use-voice-source';
 import { PlansSheet } from '@/features/billing/components/plans-sheet';
-import { CLOUD_INFO, ENHANCED_UNSUPPORTED, LITE_SPEED_FIXED, ON_DEVICE_KINDS, onDeviceHint, type VoiceSource } from '@/features/tts/utils/voice-copy';
+import { BOOKS_CLOUD_ONLY, CLOUD_INFO, ENHANCED_UNSUPPORTED, LITE_SPEED_FIXED, ON_DEVICE_KINDS, onDeviceHint, type VoiceSource } from '@/features/tts/utils/voice-copy';
 import { Touchable } from '@/components/ui/touchable';
 import {
   AI_VOICES_SUPPORTED,
@@ -49,6 +49,12 @@ export interface TtsSettingsPanelProps {
   warm?: boolean;
   /** The ground the panel sits on, for what fades into it: the reader's voice sheet is `popover`. */
   surface?: 'background' | 'popover';
+  /**
+   * Only the cloud's voices, with no On-device card: opened from a book
+   * being heard, which only a cloud voice can read. Choosing one is still
+   * the reader's cloud voice; the phone's voices stay as they were.
+   */
+  cloudOnly?: boolean;
 }
 
 /**
@@ -84,19 +90,19 @@ export interface TtsSettingsPanelProps {
  * reader's own long-press quick-settings sheet can both mount it and always
  * show the same state.
  */
-export function TtsSettingsPanel({ onDone, warm = false, surface = 'background' }: TtsSettingsPanelProps) {
+export function TtsSettingsPanel({ onDone, warm = false, surface = 'background', cloudOnly = false }: TtsSettingsPanelProps) {
   const [mutedForeground, primary] = useCSSVariable(['--color-muted-foreground', '--color-primary']);
 
   const { source, mode, liteVoiceId, selectKind, selectDevice: backToDevice, selectPhoneVoice } = useVoiceKind();
   const ai = useAiVoiceEngine();
   const voiceSource = useVoiceSource({ source, selectDevice: backToDevice });
-  const cloud = useCloudVoicePane({ onLockedMaker: voiceSource.openPlansFor, sample: voiceSource.sample });
+  const cloud = useCloudVoicePane({ onLockedMaker: voiceSource.openPlansFor, sample: voiceSource.sample, cloudOnly });
 
   React.useEffect(() => {
     // The phone's first answer is the slow one, so it is asked for now,
     // whichever kind of voice is chosen, not when the list is opened.
-    if (NATIVE_VOICE_AVAILABLE) prefetchDeviceVoices();
-  }, []);
+    if (NATIVE_VOICE_AVAILABLE && !cloudOnly) prefetchDeviceVoices();
+  }, [cloudOnly]);
 
   const nativeNote = NATIVE_SPEED_SUPPORTED ? null : LITE_SPEED_FIXED;
   const canSwitchKind = NATIVE_VOICE_AVAILABLE && AI_VOICES_SUPPORTED;
@@ -140,7 +146,7 @@ export function TtsSettingsPanel({ onDone, warm = false, surface = 'background' 
       {onDone ? (
         <View className="flex-row items-baseline justify-between">
           <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-            READING VOICE
+            {cloudOnly ? 'LISTENING VOICE' : 'READING VOICE'}
           </ThemedText>
           <Touchable onPress={onDone} haptic="tap" hitSlop={8}>
             <ThemedText type="labelSm" color={asColor(primary)}>
@@ -150,14 +156,20 @@ export function TtsSettingsPanel({ onDone, warm = false, surface = 'background' 
         </View>
       ) : null}
 
-      <VoiceSourceCards
-        source={voiceSource.shown}
-        cloudLocked={voiceSource.cloudLocked}
-        cloudStatus={voiceSource.cloudStatus}
-        onSelectDevice={voiceSource.selectDevice}
-        onSelectCloud={voiceSource.selectCloud}
-        onCloudInfo={openCloudInfo}
-      />
+      {cloudOnly ? (
+        <ThemedText type="bodySm" color={asColor(mutedForeground)}>
+          {BOOKS_CLOUD_ONLY}
+        </ThemedText>
+      ) : (
+        <VoiceSourceCards
+          source={voiceSource.shown}
+          cloudLocked={voiceSource.cloudLocked}
+          cloudStatus={voiceSource.cloudStatus}
+          onSelectDevice={voiceSource.selectDevice}
+          onSelectCloud={voiceSource.selectCloud}
+          onCloudInfo={openCloudInfo}
+        />
+      )}
 
       {voiceSource.note ? (
         <ThemedText type="bodySm" color={asColor(mutedForeground)}>
@@ -167,10 +179,10 @@ export function TtsSettingsPanel({ onDone, warm = false, surface = 'background' 
 
       <SwitchPanes
         order={SOURCE_ORDER}
-        value={voiceSource.shown}
+        value={cloudOnly ? 'cloud' : voiceSource.shown}
         warm={warm}
         panes={{
-          device: (
+          device: cloudOnly ? null : (
             <View className="gap-4">
               {NATIVE_VOICE_AVAILABLE && !AI_VOICES_SUPPORTED ? (
                 <ThemedText type="bodySm" color={asColor(mutedForeground)}>

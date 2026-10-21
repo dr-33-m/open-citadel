@@ -9,6 +9,8 @@ export interface TtsSettingsSheetProps {
   onClose: () => void;
   /** Rising over another sheet (the Listen sheet), which stays beneath it. */
   nested?: boolean;
+  /** Only the cloud's voices: opened for a book being heard (`TtsSettingsPanel`). */
+  cloudOnly?: boolean;
 }
 
 /**
@@ -20,12 +22,12 @@ export interface TtsSettingsSheetProps {
  * the mode cards and the carousel to fit and cut the speed control off. It
  * only scrolls where the panel is taller than the screen allows.
  */
-export function TtsSettingsSheet({ visible, onClose, nested = false }: TtsSettingsSheetProps) {
+export function TtsSettingsSheet({ visible, onClose, nested = false, cloudOnly = false }: TtsSettingsSheetProps) {
   return (
     <Sheet visible={visible} onClose={onClose} maxHeightRatio={0.9} scrollable stackBehavior={nested ? 'push' : undefined}>
       <PageFade edges="both" surface="popover">
         <Sheet.ScrollView contentContainerClassName="px-6 pb-6 pt-2">
-          <TtsSettingsPanel onDone={onClose} surface="popover" />
+          <TtsSettingsPanel onDone={onClose} surface="popover" cloudOnly={cloudOnly} />
         </Sheet.ScrollView>
       </PageFade>
     </Sheet>

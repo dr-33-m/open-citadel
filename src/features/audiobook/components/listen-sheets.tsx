@@ -14,7 +14,7 @@ export function ListenSheets({ listen }: { listen: ListenState }) {
   return (
     <>
       <ListenSheet sheet={listen.sheet} />
-      <TtsSettingsSheet {...listen.voice} nested />
+      <TtsSettingsSheet {...listen.voice} nested cloudOnly />
       <InfoSheet {...listen.info} />
       <PlansSheet {...listen.plans} />
     </>
