@@ -10,6 +10,7 @@ import {
   bookPosition,
   orderOf,
   paceOf,
+  steadyPace,
   sentenceSeconds,
   timeline,
   type PaceStats,
@@ -52,6 +53,8 @@ export interface BookSession {
   source: PieceSource;
   lengths: SentenceLengths;
   pace: PaceStats;
+  /** The pace the clock is laid out by (`steadyPace`): null until first read. */
+  clockPace: number | null;
   queue: QueuedSentence[];
   /** The queue item playing, or -1 before anything has loaded. */
   playing: number;
@@ -90,13 +93,20 @@ export function placeSentence(s: BookSession): Sentence | null {
   return s.pending?.sentence ?? playingEntry(s)?.sentence ?? null;
 }
 
+/** Characters a second, as the book's clock counts them. */
+export function clockPaceOf(s: BookSession): number {
+  s.clockPace = steadyPace(s.clockPace, paceOf(s.pace));
+  return s.clockPace;
+}
+
 let memo: { key: string; line: Timeline } | null = null;
 
 /** The book's timeline as it stands, laid out again only when something it is made from has changed. */
 export function timelineOf(s: BookSession): Timeline {
   const cut = s.script.cutSentences();
-  const key = `${s.info.id}|${s.voiceKey}|${s.lengths.map.size}|${[...cut.keys()].join(',')}|${s.pace.chars}`;
-  if (memo?.key !== key) memo = { key, line: timeline(s.script.clockSections, s.lengths.map, paceOf(s.pace), cut) };
+  const pace = clockPaceOf(s);
+  const key = `${s.info.id}|${s.voiceKey}|${s.lengths.map.size}|${[...cut.keys()].join(',')}|${pace}`;
+  if (memo?.key !== key) memo = { key, line: timeline(s.script.clockSections, s.lengths.map, pace, cut) };
   return memo.line;
 }
 
@@ -105,7 +115,7 @@ export function bookSecondsAt(s: BookSession, sentence: Sentence, into: number):
   const script = s.script.peek(sentence.section);
   if (!script) return 0;
   const index = script.sentences.findIndex((x) => x.id === sentence.id);
-  return bookPosition(timelineOf(s), script.sentences, Math.max(0, index), into, s.lengths.map, paceOf(s.pace));
+  return bookPosition(timelineOf(s), script.sentences, Math.max(0, index), into, s.lengths.map, clockPaceOf(s));
 }
 
 /** Where a sentence starts within its section, and how long the section is: the chapter clock the lock screen shows. */
@@ -117,7 +127,7 @@ export function chapterClock(s: BookSession, sentence: Sentence): { chapterStart
   if (script) {
     for (const x of script.sentences) {
       if (x.id === sentence.id) break;
-      start += sentenceSeconds(x, s.lengths.map, paceOf(s.pace));
+      start += sentenceSeconds(x, s.lengths.map, clockPaceOf(s));
     }
   }
   return { chapterStart: start, chapterLength: order >= 0 ? line.lengths[order] : 0 };

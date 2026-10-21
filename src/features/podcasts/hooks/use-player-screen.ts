@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useCurrentChapter } from '@/features/podcasts/hooks/use-current-chapter';
 import { usePlayerState } from '@/features/podcasts/hooks/use-player-state';
+import { useHeld } from '@/hooks/use-held';
 import {
   createChaptersQueryOptions,
   createEpisodeItemQueryOptions,
@@ -29,7 +30,8 @@ const NO_CHAPTERS: Chapter[] = [];
  * player again in the middle of its own opening, which is what made it stutter.
  */
 export function usePlayerScreen(landed: boolean) {
-  const current = usePlayer(selectEpisode);
+  // Held: the player keeps drawing the episode while it goes back down once emptied.
+  const current = useHeld(usePlayer(selectEpisode));
   const state = usePlayerState(landed);
   const episodeId = current?.episodeId ?? null;
   const podcastId = current?.podcastId ?? null;

@@ -3,7 +3,6 @@ import TrackPlayer from "@rntp/player";
 
 import { heldPosition } from "@/utils/seek-hold";
 import { saveProgress } from "@/services/podcasts/episode-state";
-import { attachListeners } from "@/services/podcasts/player/events";
 import { startEpisode } from "@/services/podcasts/player/lifecycle";
 import { session, settlePausedSeek } from "@/services/podcasts/player/session";
 import { markSeeking, markStarting, store } from "@/services/player/session";
@@ -16,7 +15,6 @@ import { usePodcastPrefs } from "@/stores/podcast-prefs";
  * queued behind it.
  */
 export async function playEpisode(episodeId: string, startAt: number | null = null): Promise<void> {
-  attachListeners();
   await startEpisode(episodeId, startAt);
 }
 

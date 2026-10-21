@@ -9,6 +9,7 @@ import {
   paceOf,
   sectionAt,
   sentenceAt,
+  steadyPace,
   timeline,
   type ClockSection,
   type Measured,
@@ -120,6 +121,14 @@ describe('book clock', () => {
     const learned = learnPace(learnPace(NO_PACE, { sec: 4, chars: 60 }), { sec: 6, chars: 120 });
     expect(paceOf(learned)).toBeCloseTo(18);
     expect(learnPace(learned, { sec: 0, chars: 10 })).toBe(learned);
+  });
+
+  it('keeps the clock on its pace until the learned one has really moved', () => {
+    expect(steadyPace(null, 15)).toBe(15);
+    expect(steadyPace(15, 15.2)).toBe(15);
+    expect(steadyPace(15, 14.8)).toBe(15);
+    expect(steadyPace(15, 15.5)).toBe(15.5);
+    expect(steadyPace(15, 14)).toBe(14);
   });
 });
 

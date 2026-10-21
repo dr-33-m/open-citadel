@@ -8,21 +8,44 @@ import TrackPlayer from '@rntp/player';
 
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
 import { bookRow, infoOf, newSession, nowPlayingOf, publish } from '@/services/audiobook/lifecycle';
-import { parseBookMediaId } from '@/services/audiobook/media-id';
+import { isBookItem, parseBookMediaId } from '@/services/audiobook/media-id';
 import { produce } from '@/services/audiobook/producer';
 import type { BookItemExtras } from '@/services/audiobook/queue';
 import { loadScript } from '@/services/audiobook/script';
 import { book, current, type BookSession, type QueuedSentence } from '@/services/audiobook/session';
 import { readCurrent, writeCurrent } from '@/services/audiobook/settings';
+import { applyCommands } from '@/services/player/commands';
+import { readyPlayer } from '@/services/player/events';
 import { store } from '@/services/player/session';
 import { useSettingsStore } from '@/stores/settings';
 
 /**
+ * The book the native player is still playing after the JS was reloaded
+ * (Android, where the player is set up at launch and can be asked). On iOS
+ * it is set up on first play, and asking an unset player is not safe.
+ */
+function stillPlaying(): string | null {
+  if (process.env.EXPO_OS !== 'android') return null;
+  try {
+    const mediaId = TrackPlayer.getActiveMediaItem()?.mediaId;
+    return isBookItem(mediaId) ? (mediaId as string) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Puts the last book back in the mini player after a restart, paused and not
- * loaded: pressing play starts it from the sentence it was left at.
+ * loaded: pressing play starts it from the sentence it was left at. If the
+ * native player is in fact still playing it, takes it back up as it is.
  */
 export async function restoreBook(): Promise<void> {
   if (store().current) return;
+  const playing = stillPlaying();
+  if (playing && readyPlayer()) {
+    applyCommands('book');
+    if (await adopt(playing)) return;
+  }
   const remembered = readCurrent();
   const row = remembered ? bookRow(remembered.bookId) : null;
   if (!remembered || !row) {

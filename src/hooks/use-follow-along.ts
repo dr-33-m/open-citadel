@@ -3,7 +3,7 @@ import React from 'react';
 
 /** Where the spoken line sits while following: about a third down the sheet. */
 export const FOLLOW_AT = 0.33;
-/** Lines the list starts above the one it opens on: the short stretch it glides down. */
+/** Rows the list starts above the one it opens on, by default: the short stretch it glides down. */
 const RUN_UP = 6;
 /** How long the opened list is seen still before it glides. */
 const GLIDE_AFTER_MS = 150;
@@ -34,11 +34,18 @@ export function useFollowAlong<T>({
   visible,
   current,
   resetKey,
+  runUp = RUN_UP,
 }: {
   visible: boolean;
   current: number;
   /** What the rows are of (a book's chapter): when it changes, the list starts over as on opening. */
   resetKey?: unknown;
+  /**
+   * Rows above the spoken one the list opens on. Six short transcript lines
+   * are a glance; six paragraphs of a book are screens, and the spoken one
+   * would only come into view at the end of the glide.
+   */
+  runUp?: number;
 }) {
   const list = React.useRef<FlashListRef<T>>(null);
   const [following, setFollowing] = React.useState(true);
@@ -67,9 +74,9 @@ export function useFollowAlong<T>({
 
   /** Starts the list again beside a line above what it holds. Called while rendering, never in an effect. */
   const cover = (index: number, at = FOLLOW_AT) => {
-    if (index >= 0 && index < from) setChunk({ from: Math.max(0, index - RUN_UP), epoch: epoch + 1, target: index, at });
+    if (index >= 0 && index < from) setChunk({ from: Math.max(0, index - runUp), epoch: epoch + 1, target: index, at });
   };
-  if (visible && chunk === null && current >= 0) setChunk({ from: Math.max(0, current - RUN_UP), epoch: 0, target: null, at: FOLLOW_AT });
+  if (visible && chunk === null && current >= 0) setChunk({ from: Math.max(0, current - runUp), epoch: 0, target: null, at: FOLLOW_AT });
   const live = ready === epoch;
   // A seek back past what the list holds.
   if (live && following && current >= 0 && current < from) cover(current);

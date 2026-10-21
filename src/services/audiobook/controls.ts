@@ -1,14 +1,14 @@
 /** What the player's controls do to a book: play and pause, seek, skip, speed, the end of a chapter, the voice. */
 import TrackPlayer from '@rntp/player';
 
-import { atRate, paceOf, sectionAt, sentenceAt } from '@/features/audiobook/utils/book-clock';
+import { atRate, sectionAt, sentenceAt } from '@/features/audiobook/utils/book-clock';
 import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
 import type { Sentence } from '@/features/audiobook/utils/sentences-of';
 import { currentBookVoice, publish, startBook } from '@/services/audiobook/lifecycle';
 import { saveBookPlace } from '@/services/audiobook/position';
 import { produce } from '@/services/audiobook/producer';
 import { skipWithinQueue } from '@/services/audiobook/queue';
-import { bookSecondsAt, current, placeSentence, playingEntry, timelineOf, type BookSession } from '@/services/audiobook/session';
+import { bookSecondsAt, clockPaceOf, current, placeSentence, playingEntry, timelineOf, type BookSession } from '@/services/audiobook/session';
 import { markStarting, store } from '@/services/player/session';
 import { useAudiobook } from '@/stores/audiobook';
 import { selectBook, selectPlaying } from '@/stores/player';
@@ -84,7 +84,7 @@ export async function seekBook(seconds: number): Promise<void> {
   const section = line.sections[order];
   const script = section ? await s.script.load(section.index) : null;
   if (!script || current() !== s) return;
-  const { index, offset } = sentenceAt(script.sentences, into, s.lengths.map, paceOf(s.pace));
+  const { index, offset } = sentenceAt(script.sentences, into, s.lengths.map, clockPaceOf(s));
   const sentence = script.sentences[index];
   if (sentence) jumpTo(s, sentence, offset);
 }

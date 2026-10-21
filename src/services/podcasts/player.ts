@@ -25,7 +25,7 @@ export {
   sleepAtEpisodeEnd,
   toggleEpisode,
 } from "@/services/podcasts/player/controls";
-export { attachListeners as attachPodcastListeners, restoreNowPlaying } from "@/services/podcasts/player/events";
+export { restoreNowPlaying } from "@/services/podcasts/player/events";
 export {
   finishCurrentAndAdvance,
   releasePlayerForSpeech,

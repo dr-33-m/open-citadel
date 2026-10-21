@@ -13,7 +13,6 @@ import { startIndex, startPlace } from '@/features/audiobook/utils/start-place';
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
 import { queryClient } from '@/lib/query-client';
 import { billingKeys } from '@/query-manager/billing/keys';
-import { ensureAudioPlayer } from '@/services/audio-session';
 import { SentenceLengths } from '@/services/audiobook/lengths';
 import { savedLocator, saveBookPlace } from '@/services/audiobook/position';
 import { produce } from '@/services/audiobook/producer';
@@ -34,6 +33,7 @@ import { clearWavCopies } from '@/services/audiobook/track-file';
 import type { PlanPreview } from '@/services/billing-plans';
 import { PieceSource } from '@/services/cloud-tts/piece-source';
 import { applyCommands } from '@/services/player/commands';
+import { readyPlayer } from '@/services/player/events';
 import { clearWaits, markStarting, onTakenOver, store, takePlayerFor } from '@/services/player/session';
 import { useAudiobook } from '@/stores/audiobook';
 import { selectBook, type BookNowPlaying } from '@/stores/player';
@@ -90,6 +90,7 @@ export async function newSession(info: BookInfo, script: BookScript, voiceKey: s
     source: new PieceSource(info.id),
     lengths: await SentenceLengths.load(info.id, choice.modelId, choice.voice),
     pace: readPace(choice.modelId, choice.voice),
+    clockPace: null,
     queue: [],
     playing: -1,
     generation: 0,
@@ -132,7 +133,7 @@ export async function startBook(bookId: string, options: { fromSentenceId?: stri
   if (!row) return 'unreadable';
   const voice = currentBookVoice();
   if (!voice) return 'no-voice';
-  if (!ensureAudioPlayer()) return 'unavailable';
+  if (!readyPlayer()) return 'unavailable';
   const wasLoaded = store().loaded;
   // Whatever was in the player saves its place and steps aside (an episode,
   // or this or another book), and stops sounding while this one is prepared.

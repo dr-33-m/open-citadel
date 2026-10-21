@@ -2,6 +2,7 @@ import React from 'react';
 
 import { usePlaybackClock } from '@/features/podcasts/hooks/use-playback-clock';
 import { formatClock, formatSpeed } from '@/features/podcasts/utils/format';
+import { useHeld } from '@/hooks/use-held';
 import { selectPlaying, usePlayer, usePlayerLoader, type SleepTimer } from '@/stores/player';
 import { usePodcastPrefs } from '@/stores/podcast-prefs';
 
@@ -35,7 +36,7 @@ function useSleepLabel(sleep: SleepTimer, ticking: boolean): string | null {
  * nothing here renders as the audio moves.
  */
 export function usePlayerState(landed: boolean) {
-  const current = usePlayer((s) => s.current);
+  const current = useHeld(usePlayer((s) => s.current));
   // Playing or about to be: set on the press, so the icon answers at once. The
   // loader only for a wait long enough to notice.
   const isPlaying = usePlayer(selectPlaying);

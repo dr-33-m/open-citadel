@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { bookMenu } from '@/features/library/utils/book-menu';
+import { bookMenu, type BookMenuOptions } from '@/features/library/utils/book-menu';
 import type { Book } from '@/stores/books';
 
 const book = (patch: Partial<Book>) => ({ id: 'b', title: 'Dune', status: null, isFavorite: 0, ...patch }) as Book;
 const all = { collections: true, rename: true, delete: true };
-const keys = (b: Book, options = all) => bookMenu(b, options).map((row) => row.key);
+const keys = (b: Book, options: BookMenuOptions = all) => bookMenu(b, options).map((row) => row.key);
 
 describe('bookMenu', () => {
   it('offers queueing and finishing to a book on no shelf', () => {

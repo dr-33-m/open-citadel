@@ -35,7 +35,8 @@ export function useBookText(visible: boolean) {
   const rows = React.useMemo(() => (chapter ? paragraphRows(chapter.sentences) : NO_ROWS), [chapter]);
   const current = rowOf(rows, sentenceId);
 
-  const follow = useFollowAlong<ParagraphRow>({ visible, current, resetKey: chapter?.index ?? null });
+  // A row is a paragraph: the list opens one above the spoken one, so it is in view from the first frame.
+  const follow = useFollowAlong<ParagraphRow>({ visible, current, resetKey: chapter?.index ?? null, runUp: 1 });
   const { from, following, follow: startFollowing } = follow;
   const data = React.useMemo(() => (from > 0 ? rows.slice(from) : rows), [rows, from]);
 

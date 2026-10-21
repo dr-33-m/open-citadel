@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { usePlayerState } from '@/features/podcasts/hooks/use-player-state';
+import { useHeld } from '@/hooks/use-held';
 import { timeLeftLabel } from '@/features/audiobook/utils/listen-estimate';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
 import { bookChapters, bookClockNow, type BookChapter } from '@/services/audiobook';
@@ -22,7 +23,8 @@ const NO_CHAPTERS: BookChapter[] = [];
  * while the player is still opening.
  */
 export function useBookPlayer(landed: boolean) {
-  const current = usePlayer(selectBook);
+  // Held: the player keeps drawing the book while it goes back down after a stop.
+  const current = useHeld(usePlayer(selectBook));
   const state = usePlayerState(landed);
   const sentenceId = useAudiobook((s) => s.sentenceId);
   const highlighted = useAudiobook(selectSentenceHighlighted);

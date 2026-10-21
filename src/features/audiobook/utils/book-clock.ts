@@ -173,6 +173,20 @@ export function paceOf(stats: PaceStats): number {
   return stats.sec >= 5 && stats.chars > 0 ? stats.chars / stats.sec : CHARACTERS_PER_SECOND;
 }
 
+/** How far the learned pace may move before the clock is laid out by it again. */
+export const PACE_STEP = 0.02;
+
+/**
+ * The pace the book's clock is laid out by: the learned one, taken up only
+ * once it has moved more than `PACE_STEP` from the one in use. Every measured
+ * sentence nudges the learned pace, and across a ten-hour book each nudge
+ * moved the time left by a minute: a clock that crept while it was read.
+ */
+export function steadyPace(inUse: number | null, learned: number): number {
+  if (inUse === null || !(inUse > 0)) return learned;
+  return Math.abs(learned - inUse) / inUse > PACE_STEP ? learned : inUse;
+}
+
 /** The running mean with one more measured sentence in it. */
 export function learnPace(stats: PaceStats, sample: Measured): PaceStats {
   if (!(sample.sec > 0) || !(sample.chars > 0)) return stats;

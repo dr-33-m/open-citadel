@@ -16,7 +16,7 @@ export type BookMenuAction =
   | 'rename'
   | 'delete';
 
-type BookMenuOptions = {
+export type BookMenuOptions = {
   collections: boolean;
   rename: boolean;
   delete: boolean;

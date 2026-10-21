@@ -5,14 +5,13 @@
  */
 import TrackPlayer, { Event, PlaybackState, type BackgroundEvent, type MediaItem } from "@rntp/player";
 
-import { ensureAudioPlayer } from "@/services/audio-session";
 import { isBookItem } from "@/services/audiobook/media-id";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
 import { advance, becomeCurrent, syncNativeQueue } from "@/services/podcasts/player/lifecycle";
 import { nowPlayingFrom, speedFor } from "@/services/podcasts/player/media";
-import { applyCommands, followSkipLengths } from "@/services/player/commands";
+import { applyCommands } from "@/services/player/commands";
 import { finishEpisode, persistProgress, ranToTheEnd, session, track } from "@/services/podcasts/player/session";
-import { addPlayerHandler, attachPlayerListeners } from "@/services/player/events";
+import { addPlayerHandler, readyPlayer } from "@/services/player/events";
 import { store } from "@/services/player/session";
 import { selectEpisode } from "@/stores/player";
 import { getShow } from "@/services/podcasts/shows";
@@ -108,11 +107,6 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
 
 addPlayerHandler(handleEvent);
 
-/** Listens to the native player in the foreground, with the lock screen's skip lengths kept in step. Once per runtime. */
-export function attachListeners(): void {
-  attachPlayerListeners([{ remove: followSkipLengths(() => (store().loaded ? (store().current?.kind ?? null) : null)) }]);
-}
-
 /**
  * Puts the last episode back in the mini player after a restart, paused and
  * not yet loaded (loading is deferred to the first press, so launch pays
@@ -138,8 +132,7 @@ export async function restoreNowPlaying(): Promise<void> {
       active = null;
     }
   }
-  if (active?.mediaId === item.id && ensureAudioPlayer()) {
-    attachListeners();
+  if (active?.mediaId === item.id && readyPlayer()) {
     // Setting the player up again (above) knows nothing of the lock screen's
     // controls, and nothing else says them again for an episode already playing.
     applyCommands("episode");

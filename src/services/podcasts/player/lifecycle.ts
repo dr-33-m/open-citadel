@@ -1,13 +1,13 @@
 /** Starting, moving on from, stopping and handing over the episode in the player. */
 import TrackPlayer from "@rntp/player";
 
-import { ensureAudioPlayer } from "@/services/audio-session";
 import { ensureChapters } from "@/services/podcasts/chapters";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
 import { dequeue, upNextIds } from "@/services/podcasts/queue";
 import { mediaItemFrom, nativeUpNext, nowPlayingFrom, resumePosition } from "@/services/podcasts/player/media";
 import { finishEpisode, persistProgress, session, track } from "@/services/podcasts/player/session";
 import { applyCommands } from "@/services/player/commands";
+import { readyPlayer } from "@/services/player/events";
 import { clearStarting, clearWaits, markStarting, onTakenOver, store, takePlayerFor } from "@/services/player/session";
 import { selectEpisode } from "@/stores/player";
 import type { EpisodeItem } from "@/services/podcasts/records";
@@ -41,11 +41,10 @@ export async function becomeCurrent(item: EpisodeItem, startAt: number | null): 
 
 /**
  * Plays an episode from where it was left (or from `startAt`), with Up Next
- * queued behind it. The event listeners are the caller's to attach (see
- * `player.ts`), which keeps this module free of a cycle with the events.
+ * queued behind it.
  */
 export async function startEpisode(episodeId: string, startAt: number | null = null): Promise<void> {
-  if (!ensureAudioPlayer()) {
+  if (!readyPlayer()) {
     store().patch({ error: "Audio playback is not available on this device." });
     return;
   }

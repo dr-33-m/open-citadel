@@ -10,7 +10,8 @@
  */
 import TrackPlayer, { Event, PlaybackState, type BackgroundEvent } from '@rntp/player';
 
-import { registerAudioBackgroundHandler } from '@/services/audio-session';
+import { ensureAudioPlayer, registerAudioBackgroundHandler } from '@/services/audio-session';
+import { followSkipLengths } from '@/services/player/commands';
 import { clearSeeking, clearStarting, store } from '@/services/player/session';
 
 export type PlayerEventHandler = (event: BackgroundEvent) => Promise<void>;
@@ -68,8 +69,11 @@ const FOREGROUND_EVENTS = [
 const attached = globalThis as { __playerListeners?: { remove: () => void }[] };
 let listening = false;
 
-/** Listens to the native player in the foreground. Once per runtime; `extra` are removed with the rest. */
-export function attachPlayerListeners(extra: { remove: () => void }[] = []): void {
+/**
+ * Listens to the native player in the foreground, with the lock screen's skip
+ * lengths kept in step. Once per runtime.
+ */
+export function attachPlayerListeners(): void {
   if (listening) return;
   listening = true;
   attached.__playerListeners?.forEach((listener) => listener.remove());
@@ -81,8 +85,19 @@ export function attachPlayerListeners(extra: { remove: () => void }[] = []): voi
     // cannot travel through the shared handler's `{ ...payload, type }` shape.
     // It only clears what the screens show, which nothing in the background draws.
     TrackPlayer.addEventListener(Event.SleepTimerTriggered, () => store().patch({ sleep: null })),
-    ...extra,
+    { remove: followSkipLengths(() => (store().loaded ? (store().current?.kind ?? null) : null)) },
   ];
+}
+
+/**
+ * The player set up and heard, before anything loads into it: whatever plays
+ * (an episode, a book) goes through here, so nothing can sound without its
+ * events reaching the screens. False where audio is unavailable.
+ */
+export function readyPlayer(): boolean {
+  if (!ensureAudioPlayer()) return false;
+  attachPlayerListeners();
+  return true;
 }
 
 /** Android: the same handling while the app is in the background. Module level, before render. */

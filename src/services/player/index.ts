@@ -16,4 +16,4 @@ export {
   stopPlayback,
   togglePlayback,
 } from '@/services/player/controls';
-export { attachPlayerListeners, registerPlayerBackgroundHandler } from '@/services/player/events';
+export { attachPlayerListeners, readyPlayer, registerPlayerBackgroundHandler } from '@/services/player/events';
