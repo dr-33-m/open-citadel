@@ -25,7 +25,14 @@ const TOAST = 'audiobook-failure';
  */
 export function useAudiobookLifecycle(ready: boolean) {
   const failure = useAudiobook((s) => s.failure);
+  const plansAsked = useAudiobook((s) => s.plansAsked);
   const [selling, setSelling] = React.useState(false);
+  // Play pressed with no plan that reaches a cloud voice: the plans, in place.
+  const [answered, setAnswered] = React.useState(plansAsked);
+  if (answered !== plansAsked) {
+    setAnswered(plansAsked);
+    if (CAN_SELL_PLANS) setSelling(true);
+  }
 
   React.useEffect(() => {
     if (ready) void restoreBook();

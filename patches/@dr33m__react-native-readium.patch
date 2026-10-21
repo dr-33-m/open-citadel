@@ -1,5 +1,5 @@
 diff --git a/android/build.gradle b/android/build.gradle
-index d980fe94a06e00f78e758aac92b4c99dcd433abc..2af4352f0be80cfbb244c6bb28d07d5714c0a51a 100644
+index d980fe94a06e00f78e758aac92b4c99dcd433abc..24480a58412379935a2fef92fcb290f6f79a054d 100644
 --- a/android/build.gradle
 +++ b/android/build.gradle
 @@ -39,7 +39,24 @@ android {
@@ -28,7 +28,7 @@ index d980fe94a06e00f78e758aac92b4c99dcd433abc..2af4352f0be80cfbb244c6bb28d07d57
        }
      }
    }
-@@ -164,8 +181,12 @@ dependencies {
+@@ -164,8 +181,15 @@ dependencies {
      // transitive deps to avoid potential collisions with other projects.
      exclude group: "com.google.android.exoplayer"
    }
@@ -39,6 +39,9 @@ index d980fe94a06e00f78e758aac92b4c99dcd433abc..2af4352f0be80cfbb244c6bb28d07d57
 +  // media3-common has to be on the compile classpath explicitly here.
    implementation "org.readium.kotlin-toolkit:readium-navigator-media-tts:$readium_version"
 +  implementation "androidx.media3:media3-common:1.9.0"
++  // PATCHED (Open Citadel): finds the element a handed-over sentence is in
++  // (BaseReaderFragment.withElement). Readium ships it at runtime only.
++  implementation "org.jsoup:jsoup:1.18.1"
  
    // other deps
    implementation "androidx.core:core-ktx:1.13.1"
@@ -128,10 +131,18 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..f64ca21eb32b047233ce8e2261826de7
      }
    }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-index 4ebb74c21c404bba938d72982e6cfd41492c935c..e58079e548d09c39b67a1149900e1bd5f3aecdf9 100644
+index 4ebb74c21c404bba938d72982e6cfd41492c935c..4a3c2869bf76af9db665e4bb245ff7392a11a892 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-@@ -232,7 +232,17 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -21,6 +21,7 @@ import org.readium.r2.navigator.OverflowableNavigator
+ import org.readium.r2.navigator.SelectableNavigator
+ import org.readium.r2.navigator.VisualNavigator
+ import org.readium.r2.shared.publication.Locator
++import org.readium.r2.shared.publication.html.cssSelector
+ import org.readium.r2.shared.publication.services.cover
+ import org.readium.r2.shared.publication.services.positions
+ import java.io.File
+@@ -232,7 +233,17 @@ abstract class BaseReaderFragment : Fragment() {
  
    // MARK: - TTS
  
@@ -150,7 +161,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..e58079e548d09c39b67a1149900e1bd5
      val viewScope = viewLifecycleOwner.lifecycleScope
      if (ttsManager == null) {
        val app = requireActivity().application
-@@ -247,6 +257,15 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -247,6 +258,15 @@ abstract class BaseReaderFragment : Fragment() {
          },
          onUtterance = { locator, text ->
            applyTTSDecoration(locator) // Apply decoration natively — no JS round-trip
@@ -166,7 +177,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..e58079e548d09c39b67a1149900e1bd5
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSUtterance(locator, text, null, null))
            }
-@@ -255,6 +274,21 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -255,6 +275,21 @@ abstract class BaseReaderFragment : Fragment() {
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSError(message))
            }
@@ -188,16 +199,16 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..e58079e548d09c39b67a1149900e1bd5
          }
        )
      }
-@@ -264,7 +298,7 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -264,7 +299,7 @@ abstract class BaseReaderFragment : Fragment() {
        // currentLocator may still point to the resource start when the book
        // is first opened from a saved position.
        if (ttsManager?.isRunning() != true) delay(400)
 -      val startLocator = if (isNavigatorReady) {
-+      val startLocator = handedOver ?: if (isNavigatorReady) {
++      val startLocator = handedOver?.let { withElement(it) } ?: if (isNavigatorReady) {
          (navigator as? VisualNavigator)?.firstVisibleElementLocator()
            ?: navigator.currentLocator.value
        } else null
-@@ -281,6 +315,15 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -281,6 +316,51 @@ abstract class BaseReaderFragment : Fragment() {
    fun ttsSetRate(rate: Float) { ttsManager?.setRate(rate) }
    fun ttsSkipNext() { ttsManager?.skipNext() }
    fun ttsSkipPrevious() { ttsManager?.skipPrevious() }
@@ -209,6 +220,42 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..e58079e548d09c39b67a1149900e1bd5
 +  }
 +  fun ttsSynthesisFailed(requestId: String, message: String) {
 +    ttsManager?.synthesisFailed(requestId, message)
++  }
++
++  /**
++   * PATCHED (Open Citadel): a locator handed over by the audiobook names its
++   * sentence (`text.highlight`) and how far into the resource it is, but not
++   * its element. Readium's TTS starts a resource at the locator's element
++   * (`cssSelector`) and, without one, at the resource's top: in a book whose
++   * first file holds seven chapters, that was the start of the book. Finds the
++   * smallest element whose text holds the sentence's opening words, so
++   * read-aloud starts at the paragraph being heard. Any trouble leaves the
++   * locator as it was.
++   */
++  private suspend fun withElement(locator: Locator): Locator {
++    if (locator.locations.cssSelector != null) return locator
++    // Spaces of every kind, as one: the index and the page can differ in them.
++    val spaces = Regex("[\\s\\u00A0]+")
++    val words = locator.text.highlight?.replace(spaces, " ")?.trim()?.take(80)
++    if (words.isNullOrEmpty()) return locator
++    return try {
++      val publication = model.publication
++      val link = publication.linkWithHref(locator.href) ?: return locator
++      val resource = publication.get(link) ?: return locator
++      val bytes = try { resource.read().getOrNull() } finally { resource.close() } ?: return locator
++      // A chapter file can be a few hundred thousand characters: read off the main thread.
++      val selector = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
++        org.jsoup.Jsoup.parse(String(bytes, Charsets.UTF_8)).body().select("*")
++          .filter { it.text().replace(spaces, " ").contains(words) }
++          .minByOrNull { it.text().length }
++          ?.cssSelector()
++      } ?: return locator
++      locator.copy(
++        locations = locator.locations.copy(otherLocations = locator.locations.otherLocations + ("cssSelector" to selector))
++      )
++    } catch (e: Exception) {
++      locator
++    }
 +  }
  
    private fun applyTTSDecoration(locator: Locator) {

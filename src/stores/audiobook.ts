@@ -25,6 +25,12 @@ type AudiobookState = {
   handingOver: boolean;
   /** Bumped when the book's timeline changes shape (a section cut, lengths measured), for the chapter list to read again. */
   timelineVersion: number;
+  /**
+   * Bumped when play was pressed and there is no plan that reaches a cloud
+   * voice (it lapsed, or was never bought): the plans rise where the listener
+   * is (`AudiobookWalls`) rather than the press doing nothing.
+   */
+  plansAsked: number;
   patch: (next: Partial<Omit<AudiobookState, 'patch'>>) => void;
 };
 
@@ -35,6 +41,7 @@ export const useAudiobook = create<AudiobookState>((set) => ({
   preparing: false,
   handingOver: false,
   timelineVersion: 0,
+  plansAsked: 0,
   patch: (next) => set(next),
 }));
 

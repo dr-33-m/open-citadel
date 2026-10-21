@@ -14,13 +14,23 @@ import { useAudiobook } from '@/stores/audiobook';
 import { selectBook, selectPlaying } from '@/stores/player';
 import { useSettingsStore } from '@/stores/settings';
 
+/**
+ * Starts the book, from a sentence if given. Without a plan that reaches a
+ * cloud voice (one that lapsed since the book was last heard), the plans rise
+ * instead, so the press is never answered by nothing.
+ */
+async function begin(bookId: string, fromSentenceId: string | null = null): Promise<void> {
+  const result = await startBook(bookId, { fromSentenceId });
+  if (result === 'no-voice') useAudiobook.getState().patch({ plansAsked: useAudiobook.getState().plansAsked + 1 });
+}
+
 /** Play or pause, answered at once: the loader shows through a wait for the next sentence. */
 export async function toggleBook(): Promise<void> {
   const now = selectBook(store());
   const s = current();
   if (!now) return;
   if (!s || !store().loaded) {
-    await startBook(now.bookId);
+    await begin(now.bookId);
     return;
   }
   if (selectPlaying(store())) {
@@ -136,13 +146,17 @@ export async function followBookVoice(): Promise<void> {
   const now = selectBook(store());
   if (!now || currentBookVoice()?.key === s?.voiceKey) return;
   const sentence = s ? placeSentence(s) : null;
-  await startBook(now.bookId, { fromSentenceId: sentence?.id ?? null });
+  await begin(now.bookId, sentence?.id ?? null);
 }
 
-/** After a failure: "Try again", a plan bought, or the network back. */
+/** After a failure: "Try again", a plan bought, or the network back. A book not started yet starts. */
 export function retryBook(): void {
   const s = current();
-  if (!s) return;
+  if (!s || !store().loaded) {
+    const now = selectBook(store());
+    if (now) void begin(now.bookId, useAudiobook.getState().sentenceId);
+    return;
+  }
   useAudiobook.getState().patch({ failure: null });
   if (s.wantsToPlay) markStarting();
   void produce(s);
@@ -188,7 +202,7 @@ export async function playFromSentence(sentenceId: string): Promise<void> {
   const s = current();
   const now = selectBook(store());
   if (!s || !store().loaded) {
-    if (now) await startBook(now.bookId, { fromSentenceId: sentenceId });
+    if (now) await begin(now.bookId, sentenceId);
     return;
   }
   const script = await s.script.load(Number.parseInt(sentenceId, 10));
