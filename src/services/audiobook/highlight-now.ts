@@ -11,8 +11,12 @@
  */
 import TrackPlayer from '@rntp/player';
 
-import { highlightLocator, highlightTarget, sectionText } from '@/features/audiobook/utils/sentence-locator';
+import { highlightLocator, highlightTarget, sectionText, type LocatorSection } from '@/features/audiobook/utils/sentence-locator';
+import type { ScriptParagraph, Sentence } from '@/features/audiobook/utils/sentences-of';
+import { queryClient } from '@/lib/query-client';
+import { audiobookKeys } from '@/query-manager/audiobook/keys';
 import { current, playingEntry, type BookSession } from '@/services/audiobook/session';
+import type { ChapterText } from '@/services/audiobook/text';
 import { useAudiobook } from '@/stores/audiobook';
 import { useReaderStore } from '@/stores/reader';
 
@@ -23,34 +27,52 @@ export type HighlightResult =
   | { kind: 'already'; highlightId: string; sentenceId: string }
   | { kind: 'none' };
 
-async function targetOf(s: BookSession) {
+/** The sentence a Highlight press means: the one playing, or the one just ended for a press in its first second. */
+function targetOf(s: BookSession): Sentence | null {
   const entry = playingEntry(s);
   if (!entry) return null;
   const index = highlightTarget(s.playing, TrackPlayer.getProgress().position);
-  const sentence = s.queue[index]?.sentence ?? entry.sentence;
-  const script = await s.script.load(sentence.section);
-  return script ? { sentence, script } : null;
+  return s.queue[index]?.sentence ?? entry.sentence;
 }
 
+/** The book's highlights changed: the follow-along sheet marks its sentences again. */
+function rereadHighlights(): void {
+  void queryClient.invalidateQueries({ queryKey: [...audiobookKeys.all, 'highlights'] });
+}
+
+/** A section as a highlight's locator is made from: where it is in the book, and its text. */
+type HighlightPlace = { section: LocatorSection; paragraphs: readonly ScriptParagraph[] };
+
+/** Highlight the sentence being heard. */
 export async function highlightNow(): Promise<HighlightResult> {
   const s = current();
-  if (!s) return { kind: 'none' };
-  const target = await targetOf(s);
-  if (!target) return { kind: 'none' };
-  const { sentence, script } = target;
+  const sentence = s ? targetOf(s) : null;
+  const script = s && sentence ? await s.script.load(sentence.section) : null;
+  if (!s || !sentence || !script) return { kind: 'none' };
+  return highlightIn(s.info.id, { section: script.section, paragraphs: script.paragraphs }, sentence);
+}
+
+/**
+ * Highlight one sentence of a chapter, by its id: a long press in the
+ * follow-along sheet. From the chapter as the sheet read it, so it works on a
+ * book waiting paused in the mini player as well as one playing.
+ */
+export async function highlightSentence(bookId: string, chapter: ChapterText, sentenceId: string): Promise<HighlightResult> {
+  const sentence = chapter.sentences.find((x) => x.id === sentenceId);
+  if (!sentence) return { kind: 'none' };
+  const section = { href: chapter.href, title: chapter.title, chars: chapter.chars };
+  return highlightIn(bookId, { section, paragraphs: chapter.paragraphs }, sentence);
+}
+
+async function highlightIn(bookId: string, place: HighlightPlace, sentence: Sentence): Promise<HighlightResult> {
   const known = useAudiobook.getState().highlighted[sentence.id];
   if (known) return { kind: 'already', highlightId: known, sentenceId: sentence.id };
-  const locator = highlightLocator(
-    { href: script.section.href, title: script.section.title, chars: script.section.chars },
-    sentence,
-    sectionText(script.paragraphs),
-  );
-  const highlightId = await useReaderStore
-    .getState()
-    .addHighlight(sentence.text, locator as never, undefined, undefined, s.info.id);
+  const locator = highlightLocator(place.section, sentence, sectionText(place.paragraphs));
+  const highlightId = await useReaderStore.getState().addHighlight(sentence.text, locator as never, undefined, undefined, bookId);
   if (!highlightId) return { kind: 'none' };
   const { highlighted } = useAudiobook.getState();
   useAudiobook.getState().patch({ highlighted: { ...highlighted, [sentence.id]: highlightId } });
+  rereadHighlights();
   return { kind: 'saved', highlightId, sentenceId: sentence.id };
 }
 
@@ -63,6 +85,7 @@ export async function undoHighlight(sentenceId: string): Promise<void> {
   delete rest[sentenceId];
   useAudiobook.getState().patch({ highlighted: rest });
   await useReaderStore.getState().deleteHighlight(id);
+  rereadHighlights();
 }
 
 /** The notification's one button: highlight the sentence, or take its highlight back if it has one. */

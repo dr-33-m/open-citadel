@@ -26,7 +26,7 @@ export function BookTextSheet({ visible, onClose, state }: BookTextSheetProps) {
   const ink = tokens['--color-foreground'];
   const gold = tokens['--color-primary'];
   const colors = React.useMemo<BookRowColors>(() => ({ ink, gold }), [gold, ink]);
-  const { lit, dim, marked, onSentence } = state;
+  const { lit, dim, marks, onSentence, onLongPress } = state;
 
   const renderItem = React.useCallback(
     ({ item }: { item: SentenceRow }) => (
@@ -34,14 +34,15 @@ export function BookTextSheet({ visible, onClose, state }: BookTextSheetProps) {
         row={item}
         lit={item.sentence.id === lit}
         dim={dim}
-        marked={marked[item.sentence.id] !== undefined}
+        mark={marks.get(item.sentence.id)?.color ?? null}
         colors={colors}
         onSentence={onSentence}
+        onLongPress={onLongPress}
       />
     ),
-    [colors, dim, lit, marked, onSentence],
+    [colors, dim, lit, marks, onLongPress, onSentence],
   );
-  const extra = React.useMemo(() => ({ lit, dim, marked }), [dim, lit, marked]);
+  const extra = React.useMemo(() => ({ lit, dim, marks }), [dim, lit, marks]);
 
   return (
     <FollowAlongSheet

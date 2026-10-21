@@ -1,2 +1,2 @@
 export { audiobookKeys } from './keys';
-export { createChapterTextQueryOptions, createListenFiguresQueryOptions } from './options';
+export { createBookHighlightsQueryOptions, createChapterTextQueryOptions, createListenFiguresQueryOptions } from './options';

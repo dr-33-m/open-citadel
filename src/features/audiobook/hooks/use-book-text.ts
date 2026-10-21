@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
+import { useBookTextActions } from '@/features/audiobook/hooks/use-book-text-actions';
 import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
 import { rowOf, sentenceRows, type SentenceRow } from '@/features/audiobook/utils/sentence-rows';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
@@ -24,12 +25,12 @@ function textHeader(title: string | null | undefined, book: { title: string; aut
  * sentence (as a transcript is a row a line), the one being spoken lit and
  * held a third of the way down (`useFollowAlong`), exactly as a transcript
  * follows its episode. The next chapter takes its place as the voice crosses
- * into it, and the list starts over there. A tap on any sentence goes there.
+ * into it, and the list starts over there. A tap on any sentence goes there;
+ * a long press highlights it, or opens its highlight (`useBookTextActions`).
  */
 export function useBookText(visible: boolean) {
   const book = usePlayer(selectBook);
   const sentenceId = useAudiobook((s) => s.sentenceId);
-  const marked = useAudiobook((s) => s.highlighted);
   const bookId = book?.bookId ?? '';
   const section = sentenceId ? sectionOfId(sentenceId) : null;
   const query = useQuery(createChapterTextQueryOptions(bookId, section ?? -1, { enabled: visible && !!bookId && section !== null }));
@@ -37,6 +38,7 @@ export function useBookText(visible: boolean) {
   const rows = React.useMemo(() => (chapter ? sentenceRows(chapter.sentences) : NO_ROWS), [chapter]);
   const current = rowOf(rows, sentenceId);
 
+  const actions = useBookTextActions({ visible, book, chapter });
   const follow = useFollowAlong<SentenceRow>({ visible, current, resetKey: chapter?.index ?? null });
   const { from, following, follow: startFollowing } = follow;
   const data = React.useMemo(() => (from > 0 ? rows.slice(from) : rows), [rows, from]);
@@ -54,7 +56,10 @@ export function useBookText(visible: boolean) {
     ...textHeader(chapter?.title, book),
     rows: data,
     lit: sentenceId,
-    marked,
+    marks: actions.marks,
+    onLongPress: actions.onLongPress,
+    menu: actions.menu,
+    editor: actions.editor,
     dim: following && current >= 0,
     loading: query.isPending && visible,
     listRef: follow.listRef,

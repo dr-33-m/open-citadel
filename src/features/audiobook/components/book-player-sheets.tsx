@@ -1,5 +1,7 @@
 import React from 'react';
 
+import { FollowAlongMenuSheet } from '@/components/follow-along/follow-along-menu-sheet';
+import { HighlightMenu } from '@/components/reader/highlight-menu';
 import { BookMenuSheet } from '@/features/audiobook/components/book-menu-sheet';
 import { BookTextSheet } from '@/features/audiobook/components/book-text-sheet';
 import { BookVoiceSheet } from '@/features/audiobook/components/book-voice-sheet';
@@ -47,6 +49,8 @@ export function BookPlayerSheets({ player, controls, onMenu }: BookPlayerSheetsP
         onSelect={controls.seek}
       />
       <BookTextSheet visible={sheet === 'text'} onClose={closeSheet} state={text} />
+      <FollowAlongMenuSheet {...text.menu} />
+      {text.editor ? <HighlightMenu {...text.editor} /> : null}
       <BookVoiceSheet state={voice} />
       <BookMenuSheet visible={sheet === 'menu'} title={player.current?.title ?? ''} onClose={closeSheet} onSelect={onMenu} />
     </>

@@ -23,7 +23,7 @@ export {
   toggleBook,
   type BookChapter,
 } from '@/services/audiobook/controls';
-export { highlightNow, toggleHighlightNow, undoHighlight, type HighlightResult } from '@/services/audiobook/highlight-now';
+export { highlightNow, highlightSentence, toggleHighlightNow, undoHighlight, type HighlightResult } from '@/services/audiobook/highlight-now';
 export { currentBookVoice, releaseBookForSpeech, startBook, stopBook, type StartResult } from '@/services/audiobook/lifecycle';
 export { restoreBook } from '@/services/audiobook/resume';
 export { isBookItem } from '@/services/audiobook/media-id';

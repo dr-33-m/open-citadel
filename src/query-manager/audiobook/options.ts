@@ -2,6 +2,7 @@ import type { UseQueryOptions } from '@tanstack/react-query';
 
 import { audiobookKeys } from '@/query-manager/audiobook/keys';
 import { chapterText, listenFigures, type ChapterText, type ListenFigures } from '@/services/audiobook/text';
+import { listBookHighlights, type HighlightRow } from '@/services/highlights';
 
 type Options<T, TData = T> = Omit<UseQueryOptions<T, Error, TData>, 'queryKey' | 'queryFn'>;
 
@@ -27,4 +28,14 @@ export function createListenFiguresQueryOptions(bookId: string, options?: Option
     queryKey: audiobookKeys.listen(bookId),
     queryFn: () => listenFigures(bookId),
   } satisfies UseQueryOptions<ListenFigures | null>;
+}
+
+/** A book's highlights, for marking the sentences in the follow-along sheet and opening their sheet. */
+export function createBookHighlightsQueryOptions(bookId: string, options?: Options<HighlightRow[]>) {
+  return {
+    ...LOCAL,
+    ...options,
+    queryKey: audiobookKeys.highlights(bookId),
+    queryFn: () => listBookHighlights(bookId),
+  } satisfies UseQueryOptions<HighlightRow[]>;
 }

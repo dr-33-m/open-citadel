@@ -14,6 +14,7 @@ import type { BookItemExtras } from '@/services/audiobook/queue';
 import { loadScript } from '@/services/audiobook/script';
 import { book, current, type BookSession, type QueuedSentence } from '@/services/audiobook/session';
 import { readCurrent, writeCurrent } from '@/services/audiobook/settings';
+import { useAudiobook } from '@/stores/audiobook';
 import { applyCommands } from '@/services/player/commands';
 import { readyPlayer } from '@/services/player/events';
 import { store } from '@/services/player/session';
@@ -63,6 +64,8 @@ export async function restoreBook(): Promise<void> {
   s.source.dispose();
   if (store().current) return;
   store().patch({ current: now, loaded: false, speed: useSettingsStore.getState().ttsRate });
+  // The text sheet opens on it, and a tap there starts the book from where it is tapped.
+  useAudiobook.getState().patch({ sentenceId: sentence.id });
 }
 
 /**

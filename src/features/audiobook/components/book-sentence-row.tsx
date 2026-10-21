@@ -20,10 +20,12 @@ type BookSentenceRowProps = {
   lit: boolean;
   /** Following the voice: every other sentence steps back. */
   dim: boolean;
-  /** Highlighted from the player: the reader's gold marker behind its words. */
-  marked: boolean;
+  /** Highlighted in the book: its colour, drawn as the marker behind its words, as in the reader. */
+  mark: string | null;
   colors: BookRowColors;
   onSentence: (sentenceId: string) => void;
+  /** Its menu, or its highlight's sheet when it has one. */
+  onLongPress: (sentenceId: string) => void;
 };
 
 /**
@@ -31,27 +33,43 @@ type BookSentenceRowProps = {
  * line is (`TranscriptRow`): the serif, a gold rule beside the one being
  * spoken, the rest stepped back while following. A paragraph's first
  * sentence has room above it, so the chapter still reads in paragraphs. A tap
- * plays from it.
+ * plays from it; a long press opens its menu, or its highlight's sheet.
  *
  * Plain React Native, as the transcript's rows are: a list a finger flings
  * through mounts these by the dozen. Memoised, so a new sentence redraws two
  * rows, not the list.
  */
-export const BookSentenceRow = React.memo(function BookSentenceRow({ row, lit, dim, marked, colors, onSentence }: BookSentenceRowProps) {
+export const BookSentenceRow = React.memo(function BookSentenceRow({ row, lit, dim, mark, colors, onSentence, onLongPress }: BookSentenceRowProps) {
   const { sentence } = row;
+  // A long press must not also play from the sentence when the finger lifts.
+  const held = React.useRef(false);
+  const pressIn = () => {
+    held.current = false;
+  };
   const press = () => {
+    if (held.current) {
+      held.current = false;
+      return;
+    }
     haptics.select();
     onSentence(sentence.id);
   };
+  const longPress = () => {
+    held.current = true;
+    haptics.commit();
+    onLongPress(sentence.id);
+  };
   const rowStyle = ({ pressed }: PressableStateCallbackType) => [styles.row, row.opensParagraph && styles.opens, pressed && styles.pressed];
-  const marker = marked && colors.gold ? { backgroundColor: `${colors.gold}${MARKER_ALPHA}` } : null;
+  const marker = mark ? { backgroundColor: `${mark}${MARKER_ALPHA}` } : null;
 
   return (
     <Pressable
       style={rowStyle}
+      onPressIn={pressIn}
       onPress={press}
+      onLongPress={longPress}
       accessibilityRole="button"
-      accessibilityLabel={`${marked ? 'Highlighted. ' : ''}${sentence.text}`}
+      accessibilityLabel={`${mark ? 'Highlighted. ' : ''}${sentence.text}`}
       accessibilityHint="Plays from here"
       accessibilityState={{ selected: lit }}
     >

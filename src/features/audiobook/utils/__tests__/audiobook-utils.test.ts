@@ -251,6 +251,36 @@ describe('sentenceRows', () => {
   });
 });
 
+describe('sentenceMarks', () => {
+  it('marks the sentences a highlight in this chapter covers, whoever made it', async () => {
+    const { sentenceMarks } = await import('@/features/audiobook/utils/sentence-marks');
+    const sentences = [
+      sentence('2:1:0', 'Money chasing is not business.'),
+      sentence('2:1:1', 'It is very easy to get burdened with money.'),
+      sentence('2:2:0', 'Business is never as healthy as when it must scratch.'),
+    ];
+    const at = (href: string) => JSON.stringify({ href, locations: {} });
+    const marks = sentenceMarks(
+      sentences,
+      'ch2.xhtml',
+      [
+        // From the player: the sentence itself.
+        { id: 'a', text: 'Money chasing is not business.', locator: at('ch2.xhtml'), color: '#ff0' },
+        // From the reader: part of a sentence, with its own spacing.
+        { id: 'b', text: 'never as  healthy as when', locator: at('ch2.xhtml#p4'), color: null },
+        // Another chapter's: never here.
+        { id: 'c', text: 'It is very easy to get burdened with money.', locator: at('ch3.xhtml'), color: '#0f0' },
+        // A word or two: too common to say which sentence.
+        { id: 'd', text: 'money', locator: at('ch2.xhtml'), color: '#00f' },
+      ],
+      '#gold',
+    );
+    expect(marks.get('2:1:0')).toEqual({ id: 'a', color: '#ff0' });
+    expect(marks.get('2:2:0')).toEqual({ id: 'b', color: '#gold' });
+    expect(marks.has('2:1:1')).toBe(false);
+  });
+});
+
 describe('listenStats', () => {
   it('draws the time left and the Neurons, and leaves out an unpriced voice', async () => {
     const { listenStats } = await import('@/features/audiobook/utils/listen-estimate');

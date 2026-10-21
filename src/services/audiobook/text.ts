@@ -17,7 +17,11 @@ import { paragraphsOf, sectionsOf } from '@/services/book-text/store';
 
 export interface ChapterText {
   index: number;
+  /** The section's file in the book: what a highlight's locator points into. */
+  href: string;
   title: string | null;
+  /** Characters in the section, which a locator's progression is measured against. */
+  chars: number;
   paragraphs: ScriptParagraph[];
   sentences: Sentence[];
 }
@@ -28,7 +32,7 @@ export async function chapterText(bookId: string, index: number): Promise<Chapte
   const section = (await sectionsOf(driver, bookId)).find((s) => s.index === index);
   if (!section) return null;
   const paragraphs = await paragraphsOf(driver, bookId, index, 1, 1_000_000);
-  return { index, title: section.title, paragraphs, sentences: scriptSentences(paragraphs) };
+  return { index, href: section.href, title: section.title, chars: section.chars, paragraphs, sentences: scriptSentences(paragraphs) };
 }
 
 export interface ListenFigures {

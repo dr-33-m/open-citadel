@@ -183,10 +183,14 @@ export function bookChapters(): BookChapter[] {
   }));
 }
 
-/** Plays from a sentence of the book: a tap in the follow-along sheet. */
+/** Plays from a sentence of the book: a tap in the follow-along sheet. A book waiting in the mini player starts there. */
 export async function playFromSentence(sentenceId: string): Promise<void> {
   const s = current();
-  if (!s) return;
+  const now = selectBook(store());
+  if (!s || !store().loaded) {
+    if (now) await startBook(now.bookId, { fromSentenceId: sentenceId });
+    return;
+  }
   const script = await s.script.load(Number.parseInt(sentenceId, 10));
   const sentence = script?.sentences.find((x) => x.id === sentenceId);
   if (!sentence || current() !== s) return;
