@@ -24,7 +24,8 @@ export {
   type BookChapter,
 } from '@/services/audiobook/controls';
 export { highlightNow, toggleHighlightNow, undoHighlight, type HighlightResult } from '@/services/audiobook/highlight-now';
-export { currentBookVoice, releaseBookForSpeech, restoreBook, startBook, stopBook, type StartResult } from '@/services/audiobook/lifecycle';
+export { currentBookVoice, releaseBookForSpeech, startBook, stopBook, type StartResult } from '@/services/audiobook/lifecycle';
+export { restoreBook } from '@/services/audiobook/resume';
 export { isBookItem } from '@/services/audiobook/media-id';
 export { readAlongLocator } from '@/services/audiobook/position';
 export { current as currentBookSession, placeSentence, timelineOf } from '@/services/audiobook/session';

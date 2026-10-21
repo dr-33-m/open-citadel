@@ -70,9 +70,11 @@ async function make(s: BookSession, sentence: Sentence): Promise<QueuedSentence>
   return { sentence, key, track };
 }
 
-/** Keeps the book made ahead of the voice. Safe to call at any time: a second call while making is a no-op. */
+/** Keeps the book made ahead of the voice. Safe to call at any time: a second call while making, or one after a failure, is a no-op. */
 export async function produce(s: BookSession): Promise<void> {
-  if (s.making || s.madeToEnd) return;
+  // Stopped by a failure, the book waits for its way out (TRY AGAIN, a plan
+  // bought, the network back) rather than asking again on every tick.
+  if (s.making || s.madeToEnd || useAudiobook.getState().failure) return;
   s.making = true;
   const generation = s.generation;
   const stale = () => current() !== s || s.generation !== generation;

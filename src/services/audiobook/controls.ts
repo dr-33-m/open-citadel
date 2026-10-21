@@ -65,6 +65,8 @@ export function jumpTo(s: BookSession, sentence: Sentence, offsetSec: number): v
   s.madeToEnd = false;
   s.waiting = false;
   s.pending = { sentence, offsetSec };
+  // Going somewhere is asking for the voice again, whatever stopped it before.
+  useAudiobook.getState().patch({ failure: null });
   TrackPlayer.pause();
   if (s.wantsToPlay) markStarting();
   publish(s);
