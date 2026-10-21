@@ -82,7 +82,15 @@ export function useFollowAlong<T>({
   }, [from]);
   const jump = React.useCallback((index: number, viewPosition = FOLLOW_AT) => {
     const at = index - fromRef.current;
-    if (at >= 0) void list.current?.scrollToIndex({ index: at, viewPosition, animated: true });
+    if (at < 0 || !list.current) return;
+    // A row too tall to sit a third of the way down (a long sentence, a long
+    // line) goes to the top instead. Placed by `viewPosition` it was scrolled
+    // past its own start (FlashList moves by the room left over, which goes
+    // negative), and the words being spoken were above the sheet.
+    const height = list.current.getLayout(at)?.height ?? 0;
+    const room = list.current.getWindowSize().height;
+    const position = room > 0 && height > room * (1 - viewPosition) ? 0 : viewPosition;
+    void list.current.scrollToIndex({ index: at, viewPosition: position, animated: true });
   }, []);
 
   const followed = live && following ? current : -1;
