@@ -11,6 +11,7 @@
  */
 import TrackPlayer, { type MediaItem } from '@rntp/player';
 
+import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
 import { bookMediaId } from '@/services/audiobook/media-id';
 import { chapterClock, type BookSession, type QueuedSentence } from '@/services/audiobook/session';
 import { pinPieces } from '@/services/cloud-tts/audio-cache';
@@ -44,7 +45,7 @@ function itemFor(s: BookSession, entry: QueuedSentence, startPosition = 0): Medi
     url: entry.track.uri,
     mimeType: entry.track.mimeType,
     title: s.info.title,
-    artist: section?.title ?? s.info.author ?? undefined,
+    artist: chapterTitle(section?.title, s.info.title) ?? s.info.author ?? undefined,
     albumTitle: s.info.author ?? undefined,
     artworkUrl: s.info.coverUrl ?? undefined,
     duration: entry.track.seconds > 0 ? entry.track.seconds : undefined,

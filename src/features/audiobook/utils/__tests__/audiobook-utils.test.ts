@@ -261,3 +261,13 @@ describe('failureToast', () => {
     expect(failureToast('plan_lapsed', false).wayOut).toBe('retry');
   });
 });
+
+describe('chapterTitle', () => {
+  it('drops a title that is only the book’s own name, or none', async () => {
+    const { chapterTitle } = await import('@/features/audiobook/utils/chapter-title');
+    expect(chapterTitle('Moby-Dick', 'Moby-Dick')).toBeNull();
+    expect(chapterTitle('  moby-dick ', 'Moby-Dick')).toBeNull();
+    expect(chapterTitle('', 'Moby-Dick')).toBeNull();
+    expect(chapterTitle('Chapter 1. Loomings.', 'Moby-Dick')).toBe('Chapter 1. Loomings.');
+  });
+});

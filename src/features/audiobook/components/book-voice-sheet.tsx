@@ -6,6 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
 import { PlansSheet } from '@/features/billing/components/plans-sheet';
 import type { BookVoiceState } from '@/features/audiobook/hooks/use-book-voice';
+import { VoicesUnavailable } from '@/features/audiobook/components/voices-unavailable';
 import { CloudVoicePane } from '@/features/tts/components/cloud-voice-pane';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
@@ -30,7 +31,7 @@ export function BookVoiceSheet({ state, nested = false }: { state: BookVoiceStat
           <Sheet.Deferred skeleton={null}>
             <PageFade edges="both" surface="popover">
               <Sheet.ScrollView contentContainerClassName="px-6 pb-6 pt-2">
-                <CloudVoicePane {...state.voices} />
+                {state.unavailable ? <VoicesUnavailable onRetry={state.retry} /> : <CloudVoicePane {...state.voices} />}
               </Sheet.ScrollView>
             </PageFade>
           </Sheet.Deferred>

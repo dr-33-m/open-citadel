@@ -2,6 +2,7 @@
 import TrackPlayer from '@rntp/player';
 
 import { atRate, paceOf, sectionAt, sentenceAt } from '@/features/audiobook/utils/book-clock';
+import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
 import type { Sentence } from '@/features/audiobook/utils/sentences-of';
 import { currentBookVoice, publish, startBook } from '@/services/audiobook/lifecycle';
 import { saveBookPlace } from '@/services/audiobook/position';
@@ -177,7 +178,7 @@ export function bookChapters(): BookChapter[] {
   const rate = store().speed;
   return line.sections.map((section, order) => ({
     id: String(section.index),
-    title: s.script.section(section.index)?.title ?? `Part ${order + 1}`,
+    title: chapterTitle(s.script.section(section.index)?.title, s.info.title) ?? `Part ${order + 1}`,
     startSec: atRate(line.starts[order], rate),
   }));
 }

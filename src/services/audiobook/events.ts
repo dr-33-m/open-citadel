@@ -146,7 +146,9 @@ setProducerHooks({
   },
   onFailure: (s, failure) => {
     useAudiobook.getState().patch({ failure });
-    if (s.waiting) clearStarting();
+    // Nothing is sounding (the first sentence, a jump, or a player run dry):
+    // the loader stops, and Play says what pressing it will do, which is try again.
+    if (s.waiting || s.pending) clearStarting();
     // Offline: carries on by itself when the network is back.
     if (failure !== 'offline' || unwatch) return;
     unwatch = watchConnection((online) => {

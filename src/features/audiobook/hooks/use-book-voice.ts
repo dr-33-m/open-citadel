@@ -2,6 +2,8 @@ import React from 'react';
 import type { PlanId } from 'samwell-shared';
 
 import { CAN_SELL_PLANS } from '@/features/billing/utils/can-sell';
+import { queryClient } from '@/lib/query-client';
+import { billingKeys } from '@/query-manager/billing/keys';
 import { useCloudVoicePane } from '@/features/tts/hooks/use-cloud-voice-pane';
 import { plansForMaker } from '@/features/tts/utils/cloud-voices';
 import { landOnCloud } from '@/features/tts/hooks/use-voice-source';
@@ -40,6 +42,9 @@ export function useBookVoice({ visible, onClose }: { visible: boolean; onClose: 
 
   return {
     sheet: { visible, onClose: close },
+    /** No voice box to show: the voices could not be read from the server. */
+    unavailable: pane.boxes.length === 0,
+    retry: () => void queryClient.invalidateQueries({ queryKey: billingKeys.planPreview() }),
     voices: {
       selection: pane.selection,
       boxes: pane.boxes,

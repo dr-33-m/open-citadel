@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { books } from '@/db/schema';
 import { bookVoice } from '@/features/audiobook/utils/book-voice';
+import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
 import { startIndex, startPlace } from '@/features/audiobook/utils/start-place';
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
 import { queryClient } from '@/lib/query-client';
@@ -68,7 +69,7 @@ export function nowPlayingOf(s: BookSession): BookNowPlaying {
     title: s.info.title,
     author: s.info.author,
     coverUrl: s.info.coverUrl,
-    chapterTitle: section?.title ?? null,
+    chapterTitle: chapterTitle(section?.title, s.info.title),
     durationSec: timelineOf(s).total,
     positionSec: sentence ? bookSecondsAt(s, sentence, 0) : 0,
   };

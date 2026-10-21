@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
+import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
 import { paragraphRows, rowOf, type ParagraphRow } from '@/features/audiobook/utils/paragraph-rows';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
 import { useFollowAlong } from '@/hooks/use-follow-along';
@@ -10,6 +11,13 @@ import { useAudiobook } from '@/stores/audiobook';
 import { selectBook, usePlayer } from '@/stores/player';
 
 const NO_ROWS: ParagraphRow[] = [];
+
+/** The chapter over the book and its author; the book over its author when the chapter has no name of its own. */
+function textHeader(title: string | null | undefined, book: { title: string; author: string | null } | null) {
+  const chapter = book ? chapterTitle(title, book.title) : null;
+  if (chapter) return { title: chapter, line: [book?.title, book?.author].filter(Boolean).join(' · ') };
+  return { title: book?.title ?? 'Text', line: book?.author ?? '' };
+}
 
 /**
  * The book's text sheet, read like lyrics: the chapter being heard, a row a
@@ -41,8 +49,7 @@ export function useBookText(visible: boolean) {
   );
 
   return {
-    title: chapter?.title ?? book?.chapterTitle ?? 'Text',
-    line: [book?.title, book?.author].filter(Boolean).join(' · '),
+    ...textHeader(chapter?.title, book),
     rows: data,
     lit: sentenceId,
     dim: following && current >= 0,
