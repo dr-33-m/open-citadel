@@ -12,6 +12,7 @@ import { db } from '@/db/client';
 import { books } from '@/db/schema';
 import { watchConnection } from '@/lib/network';
 import { armChapterSleep, seekInChapter, skipBook } from '@/services/audiobook/controls';
+import { handingOver, openHandover } from '@/services/audiobook/handover';
 import { publish, stopBook } from '@/services/audiobook/lifecycle';
 import { adopt } from '@/services/audiobook/resume';
 import { isBookItem, parseBookMediaId } from '@/services/audiobook/media-id';
@@ -82,6 +83,11 @@ async function handleBookEvent(event: BackgroundEvent): Promise<void> {
         s.wantsToPlay = true;
         return;
       }
+      // Stopped at the end of its sentence for read-aloud to go on from the next.
+      if (handingOver()) {
+        openHandover();
+        return;
+      }
       // Paused by the listener (not run dry): the place is kept now.
       if (TrackPlayer.getPlaybackState() !== PlaybackState.Ended && !s.pending) s.wantsToPlay = false;
       await saveBookPlace(s, true);
@@ -89,7 +95,10 @@ async function handleBookEvent(event: BackgroundEvent): Promise<void> {
     }
     case Event.PlaybackStateChanged: {
       const s = current();
-      if (s && selectBook(store()) && event.state === PlaybackState.Ended) await ranDry(s);
+      if (s && selectBook(store()) && event.state === PlaybackState.Ended) {
+        if (handingOver()) openHandover();
+        else await ranDry(s);
+      }
       return;
     }
     case Event.PlaybackError:

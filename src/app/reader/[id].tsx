@@ -35,7 +35,7 @@ import { useCSSVariable } from "uniwind";
 import { useCloudVoiceFailure } from "@/features/reader/hooks/use-cloud-voice-failure";
 import { useReadAloudBridge } from "@/features/reader/hooks/use-read-aloud-bridge";
 import { readerVoiceId } from "@/services/device-tts/catalogue";
-import { useAudiobookHandover, useHandoverUtterance } from "@/features/audiobook/hooks/use-audiobook-handover";
+import { useAudiobookHandover } from "@/features/audiobook/hooks/use-audiobook-handover";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
 import { SelectionBar } from "@/components/reader/selection-bar";
@@ -116,7 +116,7 @@ export default function ReaderScreen() {
   // Whichever voice reads, on the phone or in the cloud, answers Readium
   // through this; a cloud voice that cannot go on is held and drawn below.
   const readAloud = useReadAloudBridge(readerRef, id);
-  const { onSynthesisRequest, onSynthesisCancel, onUtterance: bridgeUtterance, onUpcoming } = readAloud;
+  const { onSynthesisRequest, onSynthesisCancel, onUtterance, onUpcoming } = readAloud;
   const cloudFailure = useCloudVoiceFailure(readerRef, readAloud);
 
   const {
@@ -582,8 +582,7 @@ export default function ReaderScreen() {
   }, []);
 
   // A book being heard in the player hands its voice over to read-aloud here.
-  useAudiobookHandover({ bookId: id, painted: readerPainted, readerRef, onStarted: setTtsState });
-  const onUtterance = useHandoverUtterance(bridgeUtterance, currentBook);
+  useAudiobookHandover({ bookId: id, painted: readerPainted, readerRef, book: currentBook, onStarted: setTtsState });
 
   const handleTTSUtterance = useCallback((event: TTSUtteranceEvent) => {
     // Dedup: iOS fires many word-level events per sentence (same text, different

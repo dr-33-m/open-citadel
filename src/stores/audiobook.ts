@@ -21,8 +21,6 @@ type AudiobookState = {
   failure: CloudVoiceFailure | null;
   /** The book is being read into the text index before it can be heard. */
   preparing: boolean;
-  /** Read-aloud has been started in the reader to take over from the player, and has not spoken yet. */
-  handingOver: boolean;
   /** Bumped when the book's timeline changes shape (a section cut, lengths measured), for the chapter list to read again. */
   timelineVersion: number;
   /**
@@ -39,7 +37,6 @@ export const useAudiobook = create<AudiobookState>((set) => ({
   highlighted: {},
   failure: null,
   preparing: false,
-  handingOver: false,
   timelineVersion: 0,
   plansAsked: 0,
   patch: (next) => set(next),
