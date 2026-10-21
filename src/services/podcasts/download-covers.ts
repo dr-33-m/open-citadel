@@ -20,7 +20,7 @@ import { podcastEpisodes, podcasts } from "@/db/schema";
 import { ensureFolder, setStatus } from "@/services/podcasts/download-files";
 import { episodeArtwork, folderUri } from "@/services/podcasts/download-paths";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
-import { usePodcastPlayer } from "@/stores/podcast-player";
+import { selectEpisode, usePlayer } from "@/stores/player";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
 
 /** A cover is small; one that has not arrived by now is not coming on this connection. */
@@ -114,13 +114,13 @@ export async function withSavedCover(url: string | null, record: (name: string |
  * gone.
  */
 export async function refreshPlayingCover(ids: string[]): Promise<void> {
-  const playing = usePodcastPlayer.getState().current;
+  const playing = selectEpisode(usePlayer.getState());
   if (!playing || !ids.includes(playing.episodeId)) return;
   const item = await getEpisodeItem(playing.episodeId);
-  const current = usePodcastPlayer.getState().current;
+  const current = selectEpisode(usePlayer.getState());
   if (!item || current?.episodeId !== item.id) return;
   const artworkUrl = episodeArtwork(item);
-  if (artworkUrl !== current.artworkUrl) usePodcastPlayer.getState().patch({ current: { ...current, artworkUrl } });
+  if (artworkUrl !== current.artworkUrl) usePlayer.getState().patch({ current: { ...current, artworkUrl } });
 }
 
 /** Removes the covers among `names` that no row names any more. */

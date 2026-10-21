@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CREDIT_PLANS, PLANS, planRank, type CreditPlan, type PlanId } from 'samwell-shared';
+import type { CreditPlan, PlanId } from 'samwell-shared';
 
 import { CAN_SELL_PLANS } from '@/features/billing/utils/can-sell';
-import { cloudPaneView, cloudVoiceForPlan } from '@/features/tts/utils/cloud-voices';
+import { cloudPaneView, cloudVoiceForPlan, plansForMaker } from '@/features/tts/utils/cloud-voices';
 import { planShortName } from '@/utils/plan-name';
 import {
   CLOUD_PLANS_ELSEWHERE,
@@ -146,10 +146,7 @@ export function useVoiceSource({ source, selectDevice }: { source: VoiceSource; 
   const openPlansFor = useCallback(
     (maker: string, needed: PlanId) => {
       if (!CAN_SELL_PLANS) return;
-      const plans = PLANS.filter(
-        (candidate) => planRank(candidate.id) >= planRank(needed) && (!plan || planRank(candidate.id) > planRank(plan)),
-      );
-      setOffer({ line: `${maker} voices come with ${CREDIT_PLANS[needed].label}.`, plans, initialPlanId: needed });
+      setOffer(plansForMaker(maker, needed, plan));
       setOffering(true);
     },
     [plan],

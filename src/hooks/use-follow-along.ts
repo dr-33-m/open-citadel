@@ -1,8 +1,6 @@
 import type { FlashListRef } from '@shopify/flash-list';
 import React from 'react';
 
-import type { TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
-
 /** Where the spoken line sits while following: about a third down the sheet. */
 export const FOLLOW_AT = 0.33;
 /** Lines the list starts above the one it opens on: the short stretch it glides down. */
@@ -12,11 +10,12 @@ const GLIDE_AFTER_MS = 150;
 /** Earlier lines put back above at a time, as the list nears the top of what it holds. */
 const PAGE = 40;
 
-/** What the list holds: the transcript from `from` on. A new epoch is a new list, opened beside `target`. */
+/** What the list holds: the rows from `from` on. A new epoch is a new list, opened beside `target`. */
 type Chunk = { from: number; epoch: number; target: number | null; at: number };
 
 /**
- * Keeping the transcript on the line being spoken, the way a chat opens on a
+ * Keeping a follow-along list (an episode's transcript, a book's text) on the
+ * row being spoken, the way a chat opens on a
  * linked message (Expensify's `initialScrollKey` and paged report actions):
  * never by scrolling the whole way there.
  *
@@ -31,8 +30,17 @@ type Chunk = { from: number; epoch: number; target: number | null; at: number };
  * the list stops that; "Back to now" or a tap on a line starts it again.
  * Every opening starts by following.
  */
-export function useTranscriptFollow({ visible, current }: { visible: boolean; current: number }) {
-  const list = React.useRef<FlashListRef<TranscriptLine>>(null);
+export function useFollowAlong<T>({
+  visible,
+  current,
+  resetKey,
+}: {
+  visible: boolean;
+  current: number;
+  /** What the rows are of (a book's chapter): when it changes, the list starts over as on opening. */
+  resetKey?: unknown;
+}) {
+  const list = React.useRef<FlashListRef<T>>(null);
   const [following, setFollowing] = React.useState(true);
   // Null until the spoken line is known on opening.
   const [chunk, setChunk] = React.useState<Chunk | null>(null);
@@ -43,8 +51,10 @@ export function useTranscriptFollow({ visible, current }: { visible: boolean; cu
   const [touched, setTouched] = React.useState(false);
 
   const [wasVisible, setWasVisible] = React.useState(visible);
-  if (wasVisible !== visible) {
+  const [seenKey, setSeenKey] = React.useState(resetKey);
+  if (wasVisible !== visible || seenKey !== resetKey) {
     setWasVisible(visible);
+    setSeenKey(resetKey);
     if (visible) {
       setFollowing(true);
       setTouched(false);

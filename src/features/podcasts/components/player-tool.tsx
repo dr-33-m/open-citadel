@@ -1,6 +1,10 @@
 import React from 'react';
 
 import { Touchable } from '@/components/ui/touchable';
+import { fontFamily } from '@/constants/theme';
+
+/** A value drawn as a tool ("1.5×", a timer, a count): figures that line up as they change. */
+export const TOOL_VALUE = { fontFamily: fontFamily.sansSemiBold, fontSize: 15, lineHeight: 20, fontVariant: ['tabular-nums' as const] };
 
 type PlayerToolProps = {
   label: string;

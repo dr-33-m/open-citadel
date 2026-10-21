@@ -13,7 +13,7 @@ import * as actions from '@/services/podcasts/actions';
 import { localCoverUri } from '@/services/podcasts/download-paths';
 import { playEpisodeFrom } from '@/services/podcasts/player';
 import { showName } from '@/services/podcasts/records';
-import { useEpisodePlayback } from '@/stores/podcast-player';
+import { useEpisodePlayback } from '@/stores/player';
 
 /** What an episode's page draws: its skeleton, the episode, or word that it is gone. */
 export type EpisodeView = 'loading' | 'episode' | 'gone';

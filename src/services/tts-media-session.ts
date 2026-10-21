@@ -1,7 +1,7 @@
 import TrackPlayer from "@rntp/player";
 
 import { ensureAudioPlayer, registerAudioBackgroundHandler } from "@/services/audio-session";
-import { releasePlayerForSpeech } from "@/services/podcasts/player";
+import { releasePlayerForSpeech } from "@/services/player";
 
 const TTS_MEDIA_ID = "tts-session";
 

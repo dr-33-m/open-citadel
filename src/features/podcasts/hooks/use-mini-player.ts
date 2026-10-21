@@ -1,7 +1,9 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 
+import { useHighlightNow } from '@/features/audiobook/hooks/use-highlight-now';
 import { MINI_PLAYER_CLEARANCE, type MiniPlayerProps } from '@/features/podcasts/components/mini-player';
+import { miniPlayerItem } from '@/features/podcasts/utils/mini-player-item';
 import { queryClient } from '@/lib/query-client';
 import {
   createChaptersQueryOptions,
@@ -9,8 +11,9 @@ import {
   createPodcastSectionQueryOptions,
   createShowQueryOptions,
 } from '@/query-manager/podcasts';
-import { skipBy, stopPlayback, togglePlayback } from '@/services/podcasts/player';
-import { selectPlaying, usePlayerLoader, usePodcastPlayer } from '@/stores/podcast-player';
+import { skipBy, stopPlayback, togglePlayback } from '@/services/player';
+import { selectSentenceHighlighted, useAudiobook } from '@/stores/audiobook';
+import { selectEpisode, selectPlaying, usePlayerLoader, usePlayer } from '@/stores/player';
 import { usePodcastPrefs } from '@/stores/podcast-prefs';
 
 /**
@@ -33,10 +36,10 @@ function warmPlayer(episodeId: string, podcastId: string): void {
  */
 export function useMiniPlayer(bottomInset: number): { props: MiniPlayerProps | null; clearance: number } {
   const router = useRouter();
-  const nowPlaying = usePodcastPlayer((s) => s.current);
+  const nowPlaying = usePlayer((s) => s.current);
   // Playing or about to be: set on the press, so the icon answers at once. The
   // loader only for a wait long enough to notice.
-  const isPlaying = usePodcastPlayer(selectPlaying);
+  const isPlaying = usePlayer(selectPlaying);
   const isBuffering = usePlayerLoader();
   const skipForwardSec = usePodcastPrefs((s) => s.skipForwardSec);
   // Already playing when this screen opened: the card came with the screen,
@@ -44,8 +47,12 @@ export function useMiniPlayer(bottomInset: number): { props: MiniPlayerProps | n
   const [cameWithScreen, setCameWithScreen] = React.useState(nowPlaying !== null);
   if (cameWithScreen && !nowPlaying) setCameWithScreen(false);
 
-  const episodeId = nowPlaying?.episodeId ?? null;
-  const podcastId = nowPlaying?.podcastId ?? null;
+  const highlighted = useAudiobook(selectSentenceHighlighted);
+  const onHighlight = useHighlightNow();
+  const item = React.useMemo(() => (nowPlaying ? miniPlayerItem(nowPlaying) : null), [nowPlaying]);
+  const episode = usePlayer(selectEpisode);
+  const episodeId = episode?.episodeId ?? null;
+  const podcastId = episode?.podcastId ?? null;
   React.useEffect(() => {
     if (episodeId && podcastId) warmPlayer(episodeId, podcastId);
   }, [episodeId, podcastId]);
@@ -55,13 +62,15 @@ export function useMiniPlayer(bottomInset: number): { props: MiniPlayerProps | n
   const onSkipForward = React.useCallback(() => skipBy(skipForwardSec), [skipForwardSec]);
   const onClose = React.useCallback(() => void stopPlayback(), []);
 
-  if (!nowPlaying) return { props: null, clearance: 0 };
+  if (!item) return { props: null, clearance: 0 };
   return {
     props: {
-      nowPlaying,
+      item,
       isPlaying,
       isBuffering,
       skipForwardSec,
+      highlighted,
+      onHighlight: () => void onHighlight(),
       bottomInset,
       arrives: !cameWithScreen,
       onOpen,
@@ -79,5 +88,5 @@ export function useMiniPlayer(bottomInset: number): { props: MiniPlayerProps | n
  * to sit in the same place on every screen, like the floating buttons.
  */
 export function useMiniPlayerClearance(): number {
-  return usePodcastPlayer((s) => (s.current ? MINI_PLAYER_CLEARANCE : 0));
+  return usePlayer((s) => (s.current ? MINI_PLAYER_CLEARANCE : 0));
 }

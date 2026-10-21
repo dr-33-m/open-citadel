@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { Pause, Play, X } from '@/components/icons';
+import { Highlighter, Pause, Play, X } from '@/components/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { Touchable } from '@/components/ui/touchable';
 import { iconSize } from '@/constants/theme';
@@ -10,7 +10,12 @@ type MiniPlayerControlsProps = {
   isPlaying: boolean;
   isBuffering: boolean;
   skipForwardSec: number;
+  /** The control beside play while playing: forward past an ad, or (a book) Highlight. */
+  second: 'skip' | 'highlight';
+  highlighted: boolean;
   color: string | undefined;
+  gold: string | undefined;
+  onHighlight: () => void;
   onToggle: () => void;
   onSkipForward: () => void;
   onClose: () => void;
@@ -18,13 +23,19 @@ type MiniPlayerControlsProps = {
 
 /**
  * The mini player's two controls, the two a listener reaches for without
- * looking: pause, and forward past an ad. Paused, forward becomes close.
+ * looking: pause, and forward past an ad, or for a book Highlight, the one
+ * thing a listener does to a book with the phone still in a pocket. Paused,
+ * the second becomes close.
  */
 export function MiniPlayerControls({
   isPlaying,
   isBuffering,
   skipForwardSec,
+  second,
+  highlighted,
   color,
+  gold,
+  onHighlight,
   onToggle,
   onSkipForward,
   onClose,
@@ -46,7 +57,17 @@ export function MiniPlayerControls({
           <PlayIcon size={iconSize.default} color={color} fill={color} />
         )}
       </Touchable>
-      {isPlaying ? (
+      {isPlaying && second === 'highlight' ? (
+        <Touchable
+          className="h-11 w-11 items-center justify-center"
+          onPress={onHighlight}
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={highlighted ? 'Highlighted' : 'Highlight this sentence'}
+        >
+          <Highlighter size={iconSize.default} color={highlighted ? gold : color} />
+        </Touchable>
+      ) : isPlaying ? (
         <Touchable
           className="h-11 w-11 items-center justify-center"
           onPress={onSkipForward}

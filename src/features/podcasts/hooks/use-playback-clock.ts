@@ -3,8 +3,9 @@ import React from 'react';
 import { Easing, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { positionSince, type PositionRead } from '@/features/podcasts/utils/playback-position';
+import { bookClockNow } from '@/services/audiobook';
 import { heldPosition } from '@/utils/seek-hold';
-import { usePodcastPlayer } from '@/stores/podcast-player';
+import { usePlayer, type NowPlaying } from '@/stores/player';
 
 /** How often the player is asked where it is. */
 const POLL_MS = 500;
@@ -13,6 +14,15 @@ const FRESH_MS = 2000;
 
 /** The last reading any surface took, shared so the next surface to mount can start from it. */
 let lastRead: PositionRead | null = null;
+
+const itemIdOf = (current: NowPlaying | null) => (current?.kind === 'book' ? `book:${current.bookId}` : (current?.episodeId ?? null));
+
+/**
+ * How fast the clock moves while playing. An episode's clock is its own
+ * seconds, so it runs at the playback speed; a book's is already divided by
+ * the speed (`bookClockNow`), so it runs at one second a second.
+ */
+const clockRate = (current: NowPlaying | null, speed: number) => (current?.kind === 'book' ? 1 : speed);
 
 /**
  * Asks the native player where it is: its reported position, or a seek's
@@ -25,18 +35,19 @@ let lastRead: PositionRead | null = null;
  * screen that has landed, never for a render or a screen still opening.
  */
 export function readPlayback(): { position: number; duration: number } {
-  const state = usePodcastPlayer.getState();
-  const progress = TrackPlayer.getProgress();
+  const state = usePlayer.getState();
+  const progress = state.current?.kind === 'book' ? bookClockNow() : TrackPlayer.getProgress();
   const now = Date.now();
   const { position, released } = heldPosition(progress.position, state.seekHold, now);
   if (released) state.patch({ seekHold: null });
-  if (state.current) {
+  const itemId = itemIdOf(state.current);
+  if (itemId) {
     lastRead = {
-      episodeId: state.current.episodeId,
+      itemId,
       position,
       duration: progress.duration,
       at: now,
-      rate: state.isPlaying ? state.speed : 0,
+      rate: state.isPlaying ? clockRate(state.current, state.speed) : 0,
     };
   }
   return { position, duration: progress.duration };
@@ -48,9 +59,9 @@ export function readPlayback(): { position: number; duration: number } {
  * than `maxAgeMs`, and the player has to be asked after all.
  */
 export function estimatedPlayback(maxAgeMs = FRESH_MS): { position: number; duration: number } | null {
-  const { loaded, current } = usePodcastPlayer.getState();
+  const { loaded, current } = usePlayer.getState();
   const now = Date.now();
-  if (!loaded || !lastRead || lastRead.episodeId !== current?.episodeId || now - lastRead.at > maxAgeMs) return null;
+  if (!loaded || !lastRead || lastRead.itemId !== itemIdOf(current) || now - lastRead.at > maxAgeMs) return null;
   return { position: positionSince(lastRead, now), duration: lastRead.duration };
 }
 
@@ -62,8 +73,8 @@ export function estimatedPlayback(maxAgeMs = FRESH_MS): { position: number; dura
  * say zero. A seek still landing is only known by asking.
  */
 export function playbackPosition(maxAgeMs = FRESH_MS): number {
-  const { loaded, current, seekHold } = usePodcastPlayer.getState();
-  if (!loaded) return current?.positionSec ?? 0;
+  const { loaded, current, seekHold } = usePlayer.getState();
+  if (!loaded) return current?.kind === 'book' ? bookClockNow().position : (current?.positionSec ?? 0);
   const borrowed = seekHold ? null : estimatedPlayback(maxAgeMs);
   return (borrowed ?? readPlayback()).position;
 }
@@ -91,10 +102,14 @@ export type PlaybackClock = {
  * An episode restored after a restart, not yet loaded, shows where it was
  * left (`fallbackPosition`) rather than zero.
  */
-export function usePlaybackClock(fallbackPosition: number, fallbackDuration: number, active = true): PlaybackClock {
-  const loaded = usePodcastPlayer((s) => s.loaded);
-  const isPlaying = usePodcastPlayer((s) => s.isPlaying);
-  const speed = usePodcastPlayer((s) => s.speed);
+export function usePlaybackClock(storedPosition: number, storedDuration: number, active = true): PlaybackClock {
+  // A book's stored place is in the audio's own seconds; its clock is at the listener's speed.
+  const storedRate = usePlayer((s) => (s.current?.kind === 'book' && s.speed > 0 ? s.speed : 1));
+  const fallbackPosition = storedPosition / storedRate;
+  const fallbackDuration = storedDuration / storedRate;
+  const loaded = usePlayer((s) => s.loaded);
+  const isPlaying = usePlayer((s) => s.isPlaying);
+  const speed = usePlayer((s) => clockRate(s.current, s.speed));
   const [seed] = React.useState(estimatedPlayback);
   const position = useSharedValue(seed?.position ?? fallbackPosition);
   const duration = useSharedValue(seed && seed.duration > 0 ? seed.duration : fallbackDuration);

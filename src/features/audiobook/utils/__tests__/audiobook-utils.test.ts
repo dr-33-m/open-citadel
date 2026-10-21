@@ -1,0 +1,242 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  atRate,
+  bookPosition,
+  learnPace,
+  measuredBySection,
+  NO_PACE,
+  paceOf,
+  sectionAt,
+  sentenceAt,
+  timeline,
+  type ClockSection,
+  type Measured,
+} from '@/features/audiobook/utils/book-clock';
+import { formatListenTime, listenEstimate } from '@/features/audiobook/utils/listen-estimate';
+import { shouldMakeMore } from '@/features/audiobook/utils/produce-ahead';
+import {
+  bookFraction,
+  CONTEXT_CHARS,
+  highlightLocator,
+  highlightTarget,
+  placeLocator,
+  sectionText,
+} from '@/features/audiobook/utils/sentence-locator';
+import { sectionOfId, sentencesOf, type ScriptParagraph, type Sentence } from '@/features/audiobook/utils/sentences-of';
+import { startIndex, startPlace, type PlaceSection } from '@/features/audiobook/utils/start-place';
+import { CHARACTERS_PER_SECOND } from 'samwell-shared';
+
+const paragraphs = (section: number, texts: string[]): ScriptParagraph[] => {
+  let start = 0;
+  return texts.map((text, i) => {
+    const p = { section, n: i + 1, start, text };
+    start += text.length + 2;
+    return p;
+  });
+};
+
+describe('sentencesOf', () => {
+  it('cuts paragraphs into sentences with stable ids and offsets into the section', () => {
+    const ps = paragraphs(3, ['It was late. The rain had stopped.', 'She waited.']);
+    const out = sentencesOf(ps, 1_500);
+    expect(out.map((s) => s.id)).toEqual(['3:1:0', '3:1:1', '3:2:0']);
+    expect(out.map((s) => s.text)).toEqual(['It was late.', 'The rain had stopped.', 'She waited.']);
+    const text = sectionText(ps);
+    for (const s of out) expect(text.slice(s.offset, s.offset + s.text.length)).toBe(s.text);
+  });
+
+  it('cuts a sentence over the limit into parts that are tracks of their own', () => {
+    const long = `${'word '.repeat(30).trim()}, and ${'more '.repeat(30).trim()}.`;
+    const out = sentencesOf(paragraphs(0, [long]), 100);
+    expect(out.length).toBeGreaterThan(1);
+    expect(out.every((s) => s.text.length <= 100)).toBe(true);
+    expect(out.map((s) => s.id)).toEqual(out.map((_, i) => `0:1:${i}`));
+    for (const s of out) expect(long.slice(s.offset, s.offset + s.text.length)).toBe(s.text);
+  });
+
+  it('reads the section back out of an id', () => {
+    expect(sectionOfId('12:4:2')).toBe(12);
+    expect(sectionOfId('nope')).toBeNull();
+  });
+});
+
+function sentence(id: string, text: string, offset = 0): Sentence {
+  const [section, paragraph] = id.split(':').map(Number);
+  return { id, section, paragraph, offset, text };
+}
+
+describe('book clock', () => {
+  const pace = 10;
+  const sections: ClockSection[] = [
+    { index: 2, chars: 100, paragraphs: 1 },
+    { index: 3, chars: 202, paragraphs: 2 },
+  ];
+  const script3 = [sentence('3:1:0', 'a'.repeat(50)), sentence('3:1:1', 'b'.repeat(50)), sentence('3:2:0', 'c'.repeat(100))];
+
+  it('mixes measured and estimated lengths', () => {
+    const lengths = new Map<string, Measured>([
+      ['2:1:0', { sec: 4, chars: 40 }],
+      ['3:1:0', { sec: 6, chars: 50 }],
+    ]);
+    const line = timeline(sections, lengths, pace);
+    // Section 2: 4s measured + 60 chars at 10/s.
+    expect(line.lengths[0]).toBeCloseTo(10);
+    // Section 3: 200 spoken chars, 50 of them measured at 6s.
+    expect(line.lengths[1]).toBeCloseTo(6 + 15);
+    expect(line.total).toBeCloseTo(31);
+    expect(measuredBySection(lengths).get(3)).toEqual({ sec: 6, chars: 50 });
+  });
+
+  it('sums a section in hand sentence by sentence, so its sentences and the book agree', () => {
+    const lengths = new Map<string, Measured>([['3:1:0', { sec: 6, chars: 50 }]]);
+    const line = timeline(sections, lengths, pace, new Map([[3, script3]]));
+    expect(line.lengths[1]).toBeCloseTo(6 + 5 + 10);
+    expect(bookPosition(line, script3, 2, 3, lengths, pace)).toBeCloseTo(10 + 6 + 5 + 3);
+  });
+
+  it('maps a time to a sentence and an offset, at the first and last sentence and across a chapter edge', () => {
+    const lengths = new Map<string, Measured>();
+    const line = timeline(sections, lengths, pace, new Map([[3, script3]]));
+    expect(sectionAt(line, 0)).toEqual({ order: 0, into: 0 });
+    expect(sectionAt(line, 9.5).order).toBe(0);
+    const edge = sectionAt(line, 10);
+    expect(edge).toEqual({ order: 1, into: 0 });
+    expect(sentenceAt(script3, edge.into, lengths, pace)).toEqual({ index: 0, offset: 0 });
+    expect(sentenceAt(script3, 7, lengths, pace)).toEqual({ index: 1, offset: 2 });
+    // Past the end lands on the last sentence's end.
+    const end = sectionAt(line, 999);
+    expect(end.order).toBe(1);
+    expect(sentenceAt(script3, end.into, lengths, pace)).toEqual({ index: 2, offset: 10 });
+  });
+
+  it('applies the rate to what the listener sees', () => {
+    expect(atRate(90, 1.5)).toBe(60);
+    expect(atRate(90, 0)).toBe(90);
+  });
+
+  it('learns a pace once a little has been heard', () => {
+    expect(paceOf(NO_PACE)).toBe(CHARACTERS_PER_SECOND);
+    const learned = learnPace(learnPace(NO_PACE, { sec: 4, chars: 60 }), { sec: 6, chars: 120 });
+    expect(paceOf(learned)).toBeCloseTo(18);
+    expect(learnPace(learned, { sec: 0, chars: 10 })).toBe(learned);
+  });
+});
+
+describe('listenEstimate', () => {
+  it('is nothing when no characters are left', () => {
+    expect(listenEstimate({ charsLeft: 0, pace: 15, rate: 1, chapterCredits: 10 })).toEqual({ seconds: 0, neurons: 0 });
+  });
+
+  it('scales the voice’s chapter figure to what is left: Kokoro and Eleven', () => {
+    const hour = 54_000;
+    const kokoro = listenEstimate({ charsLeft: hour, pace: 15, rate: 1, chapterCredits: 18 });
+    expect(kokoro.seconds).toBeCloseTo(3_600);
+    expect(kokoro.neurons).toBe(43);
+    const eleven = listenEstimate({ charsLeft: hour, pace: 15, rate: 1.5, chapterCredits: 1_125 });
+    expect(eleven.seconds).toBeCloseTo(2_400);
+    expect(eleven.neurons).toBe(2_700);
+  });
+
+  it('has no Neurons for a voice with no price', () => {
+    expect(listenEstimate({ charsLeft: 1000, pace: 15, rate: 1, chapterCredits: null }).neurons).toBeNull();
+  });
+
+  it('writes a time as a figure', () => {
+    expect(formatListenTime(22_320)).toBe('6 h 12 m');
+    expect(formatListenTime(2_700)).toBe('45 m');
+    expect(formatListenTime(7_200)).toBe('2 h');
+    expect(formatListenTime(10)).toBe('1 m');
+  });
+});
+
+describe('start place', () => {
+  const sections: PlaceSection[] = [
+    { index: 0, href: 'OEBPS/cover.xhtml', chars: 10, frontMatter: true },
+    { index: 1, href: 'OEBPS/ch1.xhtml', chars: 1000, frontMatter: false },
+    { index: 2, href: 'OEBPS/ch2.xhtml', chars: 2000, frontMatter: false },
+  ];
+
+  it('starts a book with no place at its first section that is not front matter', () => {
+    expect(startPlace(sections, null)).toEqual({ section: 1, offset: 0 });
+  });
+
+  it('starts at the start of a section, mid-paragraph, and past the front matter', () => {
+    expect(startPlace(sections, { href: 'ch2.xhtml', locations: { progression: 0 } })).toEqual({ section: 2, offset: 0 });
+    expect(startPlace(sections, { href: 'ch2.xhtml', locations: { progression: 0.25 } })).toEqual({ section: 2, offset: 500 });
+    expect(startPlace(sections, { href: 'cover.xhtml', locations: { progression: 0.5 } })).toEqual({ section: 1, offset: 0 });
+  });
+
+  it('picks the first sentence at or after the place, or none past the end', () => {
+    const script = [sentence('1:1:0', 'One.', 0), sentence('1:1:1', 'Two.', 5), sentence('1:2:0', 'Three.', 11)];
+    expect(startIndex(script, 0)).toBe(0);
+    expect(startIndex(script, 3)).toBe(1);
+    expect(startIndex(script, 5)).toBe(1);
+    expect(startIndex(script, 50)).toBe(-1);
+  });
+});
+
+describe('sentence locator', () => {
+  const ps = paragraphs(1, ['First paragraph here.', `${'x'.repeat(200)}. Middle sentence. Y${'y'.repeat(199)}`]);
+  const text = sectionText(ps);
+  const script = sentencesOf(ps, 1_500);
+  const section = { href: 'ch1.xhtml', title: 'One', chars: text.length };
+
+  it('cuts the context at the chapter edge', () => {
+    const first = highlightLocator(section, script[0], text);
+    expect(first.text.before).toBeUndefined();
+    expect(first.text.highlight).toBe('First paragraph here.');
+    expect(first.text.after?.length).toBe(CONTEXT_CHARS);
+    const last = script[script.length - 1];
+    const end = highlightLocator(section, last, text);
+    expect(end.text.after).toBeUndefined();
+  });
+
+  it('carries the progression into the section', () => {
+    const middle = script.find((s) => s.text === 'Middle sentence.') as Sentence;
+    const locator = highlightLocator(section, middle, text);
+    expect(locator.locations.progression).toBeCloseTo(middle.offset / text.length);
+    expect(locator.text.before?.endsWith('x. ')).toBe(true);
+    expect(placeLocator(section, middle).text).toEqual({ highlight: 'Middle sentence.' });
+  });
+
+  it('means the sentence before when a tap lands in the first second', () => {
+    expect(highlightTarget(4, 0.5)).toBe(3);
+    expect(highlightTarget(4, 1.5)).toBe(4);
+    expect(highlightTarget(0, 0.2)).toBe(0);
+  });
+
+  it('measures the whole book by characters', () => {
+    const all = [
+      { index: 0, chars: 100 },
+      { index: 1, chars: 300 },
+    ];
+    expect(bookFraction(all, 1, 100)).toBeCloseTo(0.5);
+    expect(bookFraction([], 0, 0)).toBe(0);
+  });
+});
+
+describe('shouldMakeMore', () => {
+  it('starts under two minutes, carries on to three, and applies the rate', () => {
+    expect(shouldMakeMore({ aheadSec: 100, rate: 1, making: false })).toBe(true);
+    expect(shouldMakeMore({ aheadSec: 150, rate: 1, making: false })).toBe(false);
+    expect(shouldMakeMore({ aheadSec: 150, rate: 1, making: true })).toBe(true);
+    expect(shouldMakeMore({ aheadSec: 190, rate: 1, making: true })).toBe(false);
+    // At 2×, 200s of audio is 100s heard: under the floor.
+    expect(shouldMakeMore({ aheadSec: 200, rate: 2, making: false })).toBe(true);
+  });
+});
+
+describe('paragraphRows', () => {
+  it('groups sentences by paragraph and finds the row a sentence is in', async () => {
+    const { paragraphRows, rowOf } = await import('@/features/audiobook/utils/paragraph-rows');
+    const rows = paragraphRows([sentence('2:1:0', 'A.'), sentence('2:1:1', 'B.'), sentence('2:3:0', 'C.')]);
+    expect(rows.map((r) => [r.key, r.sentences.length])).toEqual([
+      ['2:1', 2],
+      ['2:3', 1],
+    ]);
+    expect(rowOf(rows, '2:3:0')).toBe(1);
+    expect(rowOf(rows, '9:1:0')).toBe(-1);
+    expect(rowOf(rows, null)).toBe(-1);
+  });
+});
