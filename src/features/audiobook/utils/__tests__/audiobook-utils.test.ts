@@ -236,15 +236,16 @@ describe('shouldMakeMore', () => {
   });
 });
 
-describe('paragraphRows', () => {
-  it('groups sentences by paragraph and finds the row a sentence is in', async () => {
-    const { paragraphRows, rowOf } = await import('@/features/audiobook/utils/paragraph-rows');
-    const rows = paragraphRows([sentence('2:1:0', 'A.'), sentence('2:1:1', 'B.'), sentence('2:3:0', 'C.')]);
-    expect(rows.map((r) => [r.key, r.sentences.length])).toEqual([
-      ['2:1', 2],
-      ['2:3', 1],
+describe('sentenceRows', () => {
+  it('lists a sentence a row, marks where paragraphs begin, and finds the row a sentence is in', async () => {
+    const { sentenceRows, rowOf } = await import('@/features/audiobook/utils/sentence-rows');
+    const rows = sentenceRows([sentence('2:1:0', 'A.'), sentence('2:1:1', 'B.'), sentence('2:3:0', 'C.')]);
+    expect(rows.map((r) => [r.sentence.id, r.opensParagraph])).toEqual([
+      ['2:1:0', true],
+      ['2:1:1', false],
+      ['2:3:0', true],
     ]);
-    expect(rowOf(rows, '2:3:0')).toBe(1);
+    expect(rowOf(rows, '2:3:0')).toBe(2);
     expect(rowOf(rows, '9:1:0')).toBe(-1);
     expect(rowOf(rows, null)).toBe(-1);
   });

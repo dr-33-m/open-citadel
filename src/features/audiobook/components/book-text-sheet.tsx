@@ -1,10 +1,10 @@
 import React from 'react';
 
 import { FollowAlongSheet, FollowAlongTitle } from '@/components/follow-along/follow-along-sheet';
-import { BookParagraphRow, type BookRowColors } from '@/features/audiobook/components/book-paragraph-row';
+import { BookSentenceRow, type BookRowColors } from '@/features/audiobook/components/book-sentence-row';
 import { BookTextSkeleton } from '@/features/audiobook/components/book-text-skeleton';
 import type { BookTextState } from '@/features/audiobook/hooks/use-book-text';
-import type { ParagraphRow } from '@/features/audiobook/utils/paragraph-rows';
+import type { SentenceRow } from '@/features/audiobook/utils/sentence-rows';
 import { FollowAlongTransport } from '@/features/podcasts/components/follow-along-transport';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
@@ -14,11 +14,11 @@ type BookTextSheetProps = {
   state: BookTextState;
 };
 
-const keyOf = (row: ParagraphRow) => row.key;
+const keyOf = (row: SentenceRow) => row.sentence.id;
 
 /**
  * The book's text as it is heard, Spotify's lyrics for a book, in the
- * follow-along sheet: the chapter's paragraphs, the sentence being spoken
+ * follow-along sheet: the chapter a sentence a row, the one being spoken
  * lit in gold, the scrubber and the transport pinned underneath.
  */
 export function BookTextSheet({ visible, onClose, state }: BookTextSheetProps) {
@@ -26,21 +26,22 @@ export function BookTextSheet({ visible, onClose, state }: BookTextSheetProps) {
   const ink = tokens['--color-foreground'];
   const gold = tokens['--color-primary'];
   const colors = React.useMemo<BookRowColors>(() => ({ ink, gold }), [gold, ink]);
-  const { lit, dim, onSentence } = state;
+  const { lit, dim, marked, onSentence } = state;
 
   const renderItem = React.useCallback(
-    ({ item }: { item: ParagraphRow }) => (
-      <BookParagraphRow
+    ({ item }: { item: SentenceRow }) => (
+      <BookSentenceRow
         row={item}
-        lit={lit && item.sentences.some((s) => s.id === lit) ? lit : null}
+        lit={item.sentence.id === lit}
         dim={dim}
+        marked={marked[item.sentence.id] !== undefined}
         colors={colors}
         onSentence={onSentence}
       />
     ),
-    [colors, dim, lit, onSentence],
+    [colors, dim, lit, marked, onSentence],
   );
-  const extra = React.useMemo(() => ({ lit, dim }), [dim, lit]);
+  const extra = React.useMemo(() => ({ lit, dim, marked }), [dim, lit, marked]);
 
   return (
     <FollowAlongSheet
