@@ -1734,7 +1734,7 @@ index 0000000000000000000000000000000000000000..f46fe9eeae873a3be4e44cb65bf9a457
 +    }
 +}
 diff --git a/ios/HybridReadiumView.swift b/ios/HybridReadiumView.swift
-index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..93cd9f0e12d4820d5a270c324edb5df00940ba6c 100644
+index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..dad39b82b256bd0f61411cb42da4595fc50469c6 100644
 --- a/ios/HybridReadiumView.swift
 +++ b/ios/HybridReadiumView.swift
 @@ -55,6 +55,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
@@ -1814,7 +1814,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..93cd9f0e12d4820d5a270c324edb5df0
 +      // and the sentences before it there are passed over (`startAtText`).
        var fromLocator: RLocator? = nil
 -      if let visual = self.readerViewController?.navigator as? VisualNavigator {
-+      if let handedOver { fromLocator = await manager.elementStart(for: handedOver) }
++      if let handedOver = handedOver { fromLocator = await manager.elementStart(for: handedOver) }
 +      if fromLocator == nil, let visual = self.readerViewController?.navigator as? VisualNavigator {
          fromLocator = await visual.firstVisibleElementLocator()
        }
@@ -2350,10 +2350,10 @@ index 0000000000000000000000000000000000000000..82cd8c06fcbd303d9b4b7ad7f7b75346
 +    }
 +}
 diff --git a/ios/Reader/TTS/TTSManager.swift b/ios/Reader/TTS/TTSManager.swift
-index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..7fae03dd625932e52a54257cf68602880c6bb9bc 100644
+index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..589986c5a8ac47b10615bc348e3a74116abf5864 100644
 --- a/ios/Reader/TTS/TTSManager.swift
 +++ b/ios/Reader/TTS/TTSManager.swift
-@@ -10,16 +10,99 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -10,16 +10,100 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
      private var synthesizer: PublicationSpeechSynthesizer?
      private let publication: Publication
      private var currentRate: Float = 1.0
@@ -2387,7 +2387,8 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..7fae03dd625932e52a54257cf6860288
 +    /// its paragraph are passed over: never spoken, lit or reported.
 +    private var startAt: String?
 +    private var passedOver = 0
-+    private static let maxPassedOver = 60
++    /// Asked twice a sentence (the delegate and the engine), so sixty sentences.
++    private static let maxPassedOver = 120
 +    private static let maxElements = 4_000
 +    /// How many of a sentence's opening characters identify it.
 +    private static let matchChars = 40
@@ -2454,7 +2455,7 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..7fae03dd625932e52a54257cf6860288
          if let rate = rate {
              currentRate = min(max(rate, 0.25), 4.0)
          }
-@@ -35,24 +118,51 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -35,24 +119,51 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
          }
  
          var config = PublicationSpeechSynthesizer.Configuration()
@@ -2509,7 +2510,7 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..7fae03dd625932e52a54257cf6860288
  
          if let locator = fromLocator {
              synth.start(from: locator)
-@@ -72,12 +182,18 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -72,12 +183,18 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
      func stop() {
          synthesizer?.stop()
          synthesizer = nil
@@ -2529,7 +2530,7 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..7fae03dd625932e52a54257cf6860288
      }
  
      func skipNext() {
-@@ -92,6 +208,80 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -92,6 +209,80 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
          stop()
      }
  
@@ -2610,7 +2611,7 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..7fae03dd625932e52a54257cf6860288
      // MARK: - PublicationSpeechSynthesizerDelegate
  
      func publicationSpeechSynthesizer(
-@@ -102,12 +292,15 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -102,12 +293,15 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
          case .stopped:
              onStateChange?(false, false, currentRate)
          case .paused(let utterance):
@@ -2626,7 +2627,7 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..7fae03dd625932e52a54257cf6860288
          }
      }
  
-@@ -116,6 +309,20 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -116,6 +310,20 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
          utterance: PublicationSpeechSynthesizer.Utterance,
          didFailWithError error: PublicationSpeechSynthesizer.Error
      ) {
