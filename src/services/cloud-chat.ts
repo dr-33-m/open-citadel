@@ -820,10 +820,11 @@ function createSamwellClientTools(ctx: ToolCallContext) {
     }),
     suggestHighlightTool.client(async (input) => {
       const { result } = await executeToolCall('suggest_highlight', input, ctx);
-      const suggestResult = result as { ok?: boolean; suggestionId?: string | null; error?: string };
+      const suggestResult = result as { ok?: boolean; suggestionId?: string | null; passage?: string; error?: string };
       return {
         ok: suggestResult.ok === true,
         suggestionId: suggestResult.suggestionId ?? null,
+        ...(suggestResult.passage ? { passage: suggestResult.passage } : {}),
         ...(suggestResult.error ? { error: suggestResult.error } : {}),
       };
     }),

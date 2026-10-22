@@ -15,6 +15,7 @@ import {
 import { invalidateBlogLibrary } from "@/query-manager/blogs/invalidate";
 import { finishArticleOfBook } from "@/services/blogs/articles";
 import { extractSurroundingText } from "@/services/book-context";
+import { repairSuggestedHighlights } from "@/services/book-text/repair-suggested-highlights";
 import { countableProgress } from "@/services/reading-day";
 import { useBooksStore } from "@/stores/books";
 import { localDayString } from "@/utils/day";
@@ -62,7 +63,8 @@ interface ReaderState {
     updates: { color?: string; tags?: string; chatSessionId?: string },
   ) => Promise<void>;
   deleteHighlight: (id: string) => Promise<void>;
-  addNote: (highlightId: string, text: string) => Promise<void>;
+  /** The new note's id, or null when the highlight no longer exists. */
+  addNote: (highlightId: string, text: string) => Promise<string | null>;
   updateNote: (
     noteId: string,
     highlightId: string,
@@ -261,6 +263,19 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       allTags: allTagsList,
       isLoading: false,
     });
+
+    // Highlights Samwell suggested before suggestions found their passage
+    // were saved at the reader's position, and never drawn. Moved to their
+    // passage in the background, and redrawn if this book is still open.
+    void repairSuggestedHighlights(bookId)
+      .then(async (moved) => {
+        if (!moved || get().currentBook?.id !== bookId) return;
+        const repaired = await db.select().from(highlights).where(eq(highlights.bookId, bookId));
+        if (get().currentBook?.id === bookId) set({ highlights: repaired });
+      })
+      .catch(() => {
+        // Best-effort: they stay where they were, as they always have.
+      });
   },
 
   updateProgress: (locator: Locator) => {
@@ -453,15 +468,25 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   addNote: async (highlightId: string, text: string) => {
-    const { currentBook, highlightNotes } = get();
-    if (!currentBook) return;
+    // The note belongs to the highlight's book, which is not necessarily the
+    // one open in the reader, or any book at all: Samwell writes notes from a
+    // chat. Taking the book from the reader dropped every note written while
+    // none was open, and said nothing.
+    const owner = db
+      .select({ bookId: highlights.bookId })
+      .from(highlights)
+      .where(eq(highlights.id, highlightId))
+      .get();
+    if (!owner) return null;
 
-    const id = `note-${Date.now()}`;
+    // A random suffix as for highlights: two notes in one millisecond (a
+    // tap and a tool call) would otherwise share an id and the second fail.
+    const id = `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const now = new Date().toISOString();
     const noteRow: Note = {
       id,
       highlightId,
-      bookId: currentBook.id,
+      bookId: owner.bookId,
       text,
       createdAt: now,
       updatedAt: null,
@@ -469,13 +494,17 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
 
     await db.insert(notes).values(noteRow);
 
-    const existing = highlightNotes[highlightId] ?? [];
-    set({
-      highlightNotes: {
-        ...highlightNotes,
-        [highlightId]: [...existing, noteRow],
-      },
-    });
+    const { currentBook, highlightNotes } = get();
+    if (currentBook?.id === owner.bookId) {
+      const existing = highlightNotes[highlightId] ?? [];
+      set({
+        highlightNotes: {
+          ...highlightNotes,
+          [highlightId]: [...existing, noteRow],
+        },
+      });
+    }
+    return id;
   },
 
   updateNote: async (noteId: string, highlightId: string, text: string) => {
@@ -486,7 +515,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       .where(eq(notes.id, noteId));
 
     const { highlightNotes } = get();
-    const existing = highlightNotes[highlightId] ?? [];
+    const existing = highlightNotes[highlightId];
+    if (!existing) return;
     set({
       highlightNotes: {
         ...highlightNotes,
@@ -501,7 +531,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     await db.delete(notes).where(eq(notes.id, noteId));
 
     const { highlightNotes } = get();
-    const existing = highlightNotes[highlightId] ?? [];
+    const existing = highlightNotes[highlightId];
+    if (!existing) return;
     set({
       highlightNotes: {
         ...highlightNotes,

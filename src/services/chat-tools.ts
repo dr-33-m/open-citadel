@@ -1,4 +1,4 @@
-import { and, desc, eq, like, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
 import {
   OPEN_CITADEL_GUIDE,
   SAMWELL_SYSTEM_PROMPT,
@@ -34,6 +34,7 @@ import {
   searchLibrary,
   type BookResolution,
 } from '@/services/library-lookup';
+import { locatePassage } from '@/services/book-text/locate-passage';
 import { estimateTokens, usableTokens } from '@/services/context-budget';
 import { SEARCH_LIMITS, type ToolRuntime } from '@/services/tool-limits';
 import { useBooksStore } from '@/stores/books';
@@ -274,7 +275,7 @@ export const SAMWELL_TOOLS = [
         properties: {
           quote: {
             type: 'string',
-            description: 'The passage text, close to word-for-word, that the user has already read',
+            description: "The passage, in the book's exact words, that the user has already read",
           },
         },
         required: ['quote'],
@@ -642,6 +643,8 @@ export interface SearchResult {
   tags: string[];
   locator: string | null;
   noteText: string | null;
+  /** Each note on a highlight with its id, which update_note and delete_note take. */
+  notes?: { id: string; text: string }[];
 }
 
 // ── Tool executor ───────────────────────────────────────────────────────────
@@ -812,7 +815,7 @@ export async function executeToolCall(
       };
     case 'suggest_highlight':
       return {
-        result: await suggestHighlight(args.quote as string, ctx),
+        result: await suggestHighlight(args.quote as string, args.book_title as string | undefined, ctx),
         status: toolStatus(name),
       };
     case 'suggest_thought':
@@ -883,19 +886,12 @@ export async function executeToolCall(
       };
     case 'update_note':
       return {
-        result: await updateNoteForModel(
-          args.note_id as string,
-          args.highlight_id as string,
-          args.text as string,
-        ),
+        result: await updateNoteForModel(args.note_id as string, args.text as string),
         status: toolStatus(name),
       };
     case 'delete_note':
       return {
-        result: await deleteNoteForModel(
-          args.note_id as string,
-          args.highlight_id as string,
-        ),
+        result: await deleteNoteForModel(args.note_id as string),
         status: toolStatus(name),
       };
     case 'update_thought':
@@ -1006,6 +1002,7 @@ async function searchHighlights(
       locator: highlights.locator,
       bookId: highlights.bookId,
       bookTitle: books.title,
+      noteId: notes.id,
       noteText: notes.text,
     })
     .from(highlights)
@@ -1017,26 +1014,7 @@ async function searchHighlights(
     .limit(q ? limits.matched * RANK_POOL : limits.matched)
     .all();
 
-  // Dedup by highlight id (a highlight can have multiple notes)
-  const seen = new Map<string, SearchResult>();
-  for (const row of rows) {
-    if (seen.has(row.id)) {
-      const existing = seen.get(row.id)!;
-      if (row.noteText && existing.noteText) existing.noteText += ` | ${row.noteText}`;
-      continue;
-    }
-    seen.set(row.id, {
-      id: row.id,
-      type: 'highlight',
-      bookId: row.bookId,
-      bookTitle: row.bookTitle,
-      text: row.text,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      locator: row.locator,
-      noteText: row.noteText ?? null,
-    });
-  }
-  results.push(...seen.values());
+  results.push(...highlightResults(rows));
 
   // Also search notes text directly (may surface highlights via note content),
   // still respecting book_title/tag if the caller gave them.
@@ -1048,36 +1026,36 @@ async function searchHighlights(
     }
     if (t) noteConditions.push(like(highlights.tags, `%"${t}"%`));
 
-    const noteRows = db
-      .select({
-        highlightId: notes.highlightId,
-        noteText: notes.text,
-        highlightText: highlights.text,
-        highlightTags: highlights.tags,
-        highlightLocator: highlights.locator,
-        bookId: highlights.bookId,
-        bookTitle: books.title,
-      })
+    // The highlights whose notes matched, with every note they carry.
+    const noted = db
+      .selectDistinct({ id: notes.highlightId })
       .from(notes)
       .innerJoin(highlights, eq(notes.highlightId, highlights.id))
       .innerJoin(books, eq(highlights.bookId, books.id))
       .where(and(...noteConditions))
       .limit(limits.notes)
-      .all();
+      .all()
+      .map((row) => row.id)
+      .filter((id): id is string => !!id && !results.some((r) => r.id === id));
 
-    for (const row of noteRows) {
-      if (row.highlightId && !results.some((r) => r.id === row.highlightId)) {
-        results.push({
-          id: row.highlightId,
-          type: 'highlight',
-          bookId: row.bookId,
-          bookTitle: row.bookTitle,
-          text: row.highlightText,
-          tags: row.highlightTags ? JSON.parse(row.highlightTags) : [],
-          locator: row.highlightLocator,
-          noteText: row.noteText,
-        });
-      }
+    if (noted.length > 0) {
+      const noteRows = db
+        .select({
+          id: highlights.id,
+          text: highlights.text,
+          tags: highlights.tags,
+          locator: highlights.locator,
+          bookId: highlights.bookId,
+          bookTitle: books.title,
+          noteId: notes.id,
+          noteText: notes.text,
+        })
+        .from(highlights)
+        .innerJoin(books, eq(highlights.bookId, books.id))
+        .leftJoin(notes, eq(notes.highlightId, highlights.id))
+        .where(inArray(highlights.id, noted))
+        .all();
+      results.push(...highlightResults(noteRows));
     }
   }
 
@@ -1111,34 +1089,73 @@ function getRecentHighlights(limit: number): SearchResult[] {
       locator: highlights.locator,
       bookId: highlights.bookId,
       bookTitle: books.title,
+      noteId: notes.id,
       noteText: notes.text,
     })
     .from(highlights)
     .innerJoin(books, eq(highlights.bookId, books.id))
     .leftJoin(notes, eq(notes.highlightId, highlights.id))
+    // The newest highlights first, then all their notes: limiting the joined
+    // rows instead let one highlight with many notes crowd out the rest.
+    .where(
+      inArray(
+        highlights.id,
+        db.select({ id: highlights.id }).from(highlights).orderBy(desc(highlights.createdAt)).limit(limit),
+      ),
+    )
     .orderBy(desc(highlights.createdAt))
-    .limit(limit)
     .all();
 
-  const seen = new Map<string, SearchResult>();
+  return highlightResults(rows);
+}
+
+/** A highlight joined to its notes, one row a note, as one result a highlight with every note and its id. */
+function highlightResults(
+  rows: readonly {
+    id: string;
+    text: string;
+    tags: string | null;
+    locator: string | null;
+    bookId: string;
+    bookTitle: string;
+    noteId: string | null;
+    noteText: string | null;
+  }[],
+): SearchResult[] {
+  const seen = new Map<string, SearchResult & { notes: { id: string; text: string }[] }>();
   for (const row of rows) {
-    if (seen.has(row.id)) {
-      const existing = seen.get(row.id)!;
-      if (row.noteText && existing.noteText) existing.noteText += ` | ${row.noteText}`;
-      continue;
+    let entry = seen.get(row.id);
+    if (!entry) {
+      entry = {
+        id: row.id,
+        type: 'highlight',
+        bookId: row.bookId,
+        bookTitle: row.bookTitle,
+        text: row.text,
+        tags: parseTags(row.tags),
+        locator: row.locator,
+        noteText: null,
+        notes: [],
+      };
+      seen.set(row.id, entry);
     }
-    seen.set(row.id, {
-      id: row.id,
-      type: 'highlight',
-      bookId: row.bookId,
-      bookTitle: row.bookTitle,
-      text: row.text,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      locator: row.locator,
-      noteText: row.noteText ?? null,
-    });
+    if (row.noteId && row.noteText && !entry.notes.some((note) => note.id === row.noteId)) {
+      entry.notes.push({ id: row.noteId, text: row.noteText });
+      entry.noteText = entry.noteText ? `${entry.noteText} | ${row.noteText}` : row.noteText;
+    }
   }
   return [...seen.values()];
+}
+
+/** Tags as stored (a JSON array), or none when the column is empty or not JSON. */
+function parseTags(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const tags: unknown = JSON.parse(json);
+    return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 // ── search_thoughts implementation ─────────────────────────────────────────
@@ -1167,7 +1184,7 @@ async function searchThoughts(
       bookId: null,
       bookTitle: null,
       text: row.text,
-      tags: row.tags ? JSON.parse(row.tags) : [],
+      tags: parseTags(row.tags),
       locator: null,
       noteText: null,
     }));
@@ -1195,7 +1212,7 @@ async function searchThoughts(
     bookId: null,
     bookTitle: null,
     text: row.text,
-    tags: row.tags ? JSON.parse(row.tags) : [],
+    tags: parseTags(row.tags),
     locator: null,
     noteText: null,
   }));
@@ -1221,7 +1238,7 @@ async function addTags(
     return { success: false, tags: [] };
   }
 
-  const existing: string[] = row.tags ? JSON.parse(row.tags) : [];
+  const existing = parseTags(row.tags);
   const merged = Array.from(new Set([...existing, ...newTags]));
   const tagsJson = JSON.stringify(merged);
 
@@ -1264,27 +1281,32 @@ function suggestionId(): string {
   return `sugg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * A highlight Samwell proposes, anchored where the passage is in the book.
+ *
+ * It used to be anchored at the reader's position when he suggested it: the
+ * timeline showed the highlight and the book never drew it, since the reader
+ * draws a highlight by finding its text on the page it points at. Now the
+ * quote is found in what has been read (`locatePassage`), and what the card
+ * shows and approving saves is the book's own wording at its own place. A
+ * quote that cannot be found is said back to him to correct, rather than
+ * saved somewhere it is not.
+ */
 async function suggestHighlight(
   quote: string,
+  bookTitle: string | undefined,
   ctx: ToolCallContext,
-): Promise<{ ok: boolean; suggestionId: string | null; error?: string }> {
-  if (!ctx.bookId) {
-    return { ok: false, suggestionId: null, error: 'no_book_context' };
+): Promise<{ ok: boolean; suggestionId: string | null; passage?: string; error?: string }> {
+  if (!quote?.trim()) return { ok: false, suggestionId: null, error: 'quote_required' };
+  const resolved = resolveLibraryBook(bookTitle, ctx.bookId, { includePosts: true });
+  if (!resolved.ok) {
+    const error = resolved.error === 'no_book_specified' ? 'no_book_context' : resolved.error;
+    return { ok: false, suggestionId: null, error };
   }
+  const book = resolved.book;
 
-  const progress = db
-    .select({ locator: readingProgress.locator })
-    .from(readingProgress)
-    .where(eq(readingProgress.bookId, ctx.bookId))
-    .get();
-
-  // Without a saved reading position there's nothing to anchor the highlight
-  // to — registering the suggestion anyway would let the user tap Approve
-  // and have it silently do nothing. Fail here instead, where the model can
-  // react to it.
-  if (!progress?.locator) {
-    return { ok: false, suggestionId: null, error: 'no_reading_position' };
-  }
+  const located = await locatePassage(book, quote);
+  if ('error' in located) return { ok: false, suggestionId: null, error: located.error };
 
   const id = suggestionId();
   db.insert(chatSuggestions)
@@ -1293,15 +1315,15 @@ async function suggestHighlight(
       sessionId: ctx.sessionId,
       kind: 'highlight',
       status: 'pending',
-      text: quote,
+      text: located.text,
       tags: null,
-      bookId: ctx.bookId,
-      locator: progress.locator,
+      bookId: book.id,
+      locator: JSON.stringify(located.locator),
       createdAt: new Date().toISOString(),
     })
     .run();
 
-  return { ok: true, suggestionId: id };
+  return { ok: true, suggestionId: id, passage: located.text };
 }
 
 async function suggestThought(
@@ -1454,7 +1476,11 @@ export function formatSearchResultsForLLM(
   for (const [i, r] of results.entries()) {
     const lines = [`${i + 1}. "${clampText(r.text)}"`];
     if (r.bookTitle) lines.push(`   Book: ${r.bookTitle}`);
-    if (r.noteText) lines.push(`   Note: ${clampText(r.noteText)}`);
+    if (r.notes && r.notes.length > 0) {
+      for (const note of r.notes) lines.push(`   Note (note_id ${note.id}): ${clampText(note.text)}`);
+    } else if (r.noteText) {
+      lines.push(`   Note: ${clampText(r.noteText)}`);
+    }
     if (r.tags.length > 0) lines.push(`   Tags: ${r.tags.join(', ')}`);
     lines.push(`   ID: ${r.id}`);
     lines.push(`   Ref: [[ref:${r.type}:${r.id}]]`);
@@ -1834,38 +1860,44 @@ async function clearQueueForModel(): Promise<BookBatchActionResult> {
 async function addNoteForModel(highlightId: string, text: string): Promise<NoteResult> {
   const trimmed = text?.trim();
   if (!trimmed) return { ok: false, error: 'text_required' };
+  if (!highlightId) return { ok: false, error: 'highlight_not_found' };
 
-  const row = db
-    .select({ id: highlights.id })
-    .from(highlights)
-    .where(eq(highlights.id, highlightId))
-    .get();
-  if (!row) return { ok: false, error: 'highlight_not_found' };
+  const noteId = await useReaderStore.getState().addNote(highlightId, trimmed);
+  return noteId ? { ok: true, noteId } : { ok: false, error: 'highlight_not_found' };
+}
 
-  await useReaderStore.getState().addNote(highlightId, trimmed);
-  return { ok: true };
+/**
+ * The note an id names, and its highlight. The highlight is read off the
+ * note rather than taken from the call: the id is what is unique, and a model
+ * that pairs a note with the wrong highlight should still change the note it
+ * named, not report success on a write that matched nothing.
+ */
+function findNote(noteId: string): { id: string; highlightId: string | null } | null {
+  if (!noteId) return null;
+  return db.select({ id: notes.id, highlightId: notes.highlightId }).from(notes).where(eq(notes.id, noteId)).get() ?? null;
 }
 
 /** Rewrite a note. */
 async function updateNoteForModel(
   noteId: string,
-  highlightId: string,
   text: string,
 ): Promise<NoteResult> {
   const trimmed = text?.trim();
   if (!trimmed) return { ok: false, error: 'text_required' };
+  const note = findNote(noteId);
+  if (!note) return { ok: false, error: 'note_not_found' };
 
-  await useReaderStore.getState().updateNote(noteId, highlightId, trimmed);
-  return { ok: true, noteId };
+  await useReaderStore.getState().updateNote(note.id, note.highlightId ?? '', trimmed);
+  return { ok: true, noteId: note.id };
 }
 
 /** Delete a note, leaving its highlight. */
-async function deleteNoteForModel(
-  noteId: string,
-  highlightId: string,
-): Promise<NoteResult> {
-  await useReaderStore.getState().deleteNote(noteId, highlightId);
-  return { ok: true, noteId };
+async function deleteNoteForModel(noteId: string): Promise<NoteResult> {
+  const note = findNote(noteId);
+  if (!note) return { ok: false, error: 'note_not_found' };
+
+  await useReaderStore.getState().deleteNote(note.id, note.highlightId ?? '');
+  return { ok: true, noteId: note.id };
 }
 
 /**
@@ -1892,7 +1924,7 @@ async function updateThoughtForModel(
   // Colour and tags read back off the row and handed straight through, so the
   // update touches only the text. `updateThought` takes all four and would
   // otherwise blank the two the model never mentioned.
-  const tags: string[] = row.tags ? JSON.parse(row.tags) : [];
+  const tags = parseTags(row.tags);
   // `color` is nullable on the row; the store wants a string. An untinted
   // thought stays untinted.
   await useTimelineStore.getState().updateThought(id, trimmed, row.color ?? '', tags);
