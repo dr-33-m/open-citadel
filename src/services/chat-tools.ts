@@ -1005,17 +1005,11 @@ async function searchHighlights(
   }
   if (t) conditions.push(like(highlights.tags, `%"${t}"%`));
 
-  const rows = db
-    .select({
-      id: highlights.id,
-      text: highlights.text,
-      tags: highlights.tags,
-      locator: highlights.locator,
-      bookId: highlights.bookId,
-      bookTitle: books.title,
-      noteId: notes.id,
-      noteText: notes.text,
-    })
+  // Which highlights match, first; what they carry, after. Joined to its
+  // notes, a highlight matched by one note came back with that note alone,
+  // and Samwell could neither see nor edit the others.
+  const matched = db
+    .selectDistinct({ id: highlights.id, createdAt: highlights.createdAt })
     .from(highlights)
     .innerJoin(books, eq(highlights.bookId, books.id))
     .leftJoin(notes, eq(notes.highlightId, highlights.id))
@@ -1023,12 +1017,12 @@ async function searchHighlights(
     .orderBy(desc(highlights.createdAt))
     // A wider net than is returned, so the ranking has something to choose from.
     .limit(q ? limits.matched * RANK_POOL : limits.matched)
-    .all();
-
-  results.push(...highlightResults(rows));
+    .all()
+    .map((row) => row.id);
 
   // Also search notes text directly (may surface highlights via note content),
   // still respecting book_title/tag if the caller gave them.
+  const noted: string[] = [];
   if (q) {
     const noteConditions = [or(...words.map((w) => like(notes.text, `%${w}%`)))];
     if (b) {
@@ -1037,38 +1031,18 @@ async function searchHighlights(
     }
     if (t) noteConditions.push(like(highlights.tags, `%"${t}"%`));
 
-    // The highlights whose notes matched, with every note they carry.
-    const noted = db
+    const found = db
       .selectDistinct({ id: notes.highlightId })
       .from(notes)
       .innerJoin(highlights, eq(notes.highlightId, highlights.id))
       .innerJoin(books, eq(highlights.bookId, books.id))
       .where(and(...noteConditions))
       .limit(limits.notes)
-      .all()
-      .map((row) => row.id)
-      .filter((id): id is string => !!id && !results.some((r) => r.id === id));
-
-    if (noted.length > 0) {
-      const noteRows = db
-        .select({
-          id: highlights.id,
-          text: highlights.text,
-          tags: highlights.tags,
-          locator: highlights.locator,
-          bookId: highlights.bookId,
-          bookTitle: books.title,
-          noteId: notes.id,
-          noteText: notes.text,
-        })
-        .from(highlights)
-        .innerJoin(books, eq(highlights.bookId, books.id))
-        .leftJoin(notes, eq(notes.highlightId, highlights.id))
-        .where(inArray(highlights.id, noted))
-        .all();
-      results.push(...highlightResults(noteRows));
-    }
+      .all();
+    for (const row of found) if (row.id && !matched.includes(row.id)) noted.push(row.id);
   }
+
+  results.push(...highlightsWithNotes([...matched, ...noted]));
 
   return rankWhenAsked(results, parsed, (r) => `${r.text} ${r.noteText ?? ''} ${r.bookTitle ?? ''}`).slice(0, limits.matched);
 }
@@ -1092,6 +1066,21 @@ function rankWhenAsked<T>(rows: T[], parsed: SearchQuery, textOf: (row: T) => st
 // ── Helper: get recent highlights ──────────────────────────────────────────
 
 function getRecentHighlights(limit: number): SearchResult[] {
+  // The newest highlights first, then all their notes: limiting the joined
+  // rows instead let one highlight with many notes crowd out the rest.
+  const newest = db
+    .select({ id: highlights.id })
+    .from(highlights)
+    .orderBy(desc(highlights.createdAt))
+    .limit(limit)
+    .all()
+    .map((row) => row.id);
+  return highlightsWithNotes(newest);
+}
+
+/** These highlights, in this order, each with every note it carries. */
+function highlightsWithNotes(ids: readonly string[]): SearchResult[] {
+  if (ids.length === 0) return [];
   const rows = db
     .select({
       id: highlights.id,
@@ -1106,18 +1095,11 @@ function getRecentHighlights(limit: number): SearchResult[] {
     .from(highlights)
     .innerJoin(books, eq(highlights.bookId, books.id))
     .leftJoin(notes, eq(notes.highlightId, highlights.id))
-    // The newest highlights first, then all their notes: limiting the joined
-    // rows instead let one highlight with many notes crowd out the rest.
-    .where(
-      inArray(
-        highlights.id,
-        db.select({ id: highlights.id }).from(highlights).orderBy(desc(highlights.createdAt)).limit(limit),
-      ),
-    )
-    .orderBy(desc(highlights.createdAt))
+    .where(inArray(highlights.id, [...ids]))
+    .orderBy(notes.createdAt)
     .all();
-
-  return highlightResults(rows);
+  const byId = new Map(highlightResults(rows).map((result) => [result.id, result]));
+  return ids.flatMap((id) => byId.get(id) ?? []);
 }
 
 /** A highlight joined to its notes, one row a note, as one result a highlight with every note and its id. */
@@ -1318,8 +1300,10 @@ async function suggestHighlight(
   if (!quote?.trim()) return { ok: false, suggestionId: null, error: 'quote_required' };
   const resolved = resolveLibraryBook(bookTitle, ctx.bookId, { includePosts: true });
   if (!resolved.ok) {
+    // Named the way the reading tools name it, near matches and all, so he can ask which.
     const error = resolved.error === 'no_book_specified' ? 'no_book_context' : resolved.error;
-    return { ok: false, suggestionId: null, error };
+    const matches = resolved.matches?.length ? ` (did you mean: ${resolved.matches.join('; ')})` : '';
+    return { ok: false, suggestionId: null, error: `${error}${matches}` };
   }
   const book = resolved.book;
 

@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { migrateAppDb } from '@/db/__tests__/app-db';
+
 import { db } from '@/db/client';
 import { blogArticles, blogs, podcastChapters, podcastEpisodes, podcastListeningDays, podcasts } from '@/db/schema';
 import {
@@ -15,7 +17,7 @@ import { localDayString } from '@/utils/day';
 // Where downloads live, for an episode's saved cover: only the folder's name is read.
 vi.mock('expo-file-system/legacy', () => ({ documentDirectory: 'file:///docs/' }));
 vi.mock('@/db/client', async () => {
-  const { appDb } = await import('./app-db');
+  const { appDb } = await import('@/db/__tests__/app-db');
   return { db: appDb() };
 });
 
@@ -30,7 +32,8 @@ function episode(id: string, podcastId: string, title: string, extra: Partial<ty
   return { id, podcastId, title, audioUrl: `https://example.com/${id}.mp3`, durationSec: 3600, addedAt: NOW, updatedAt: NOW, ...extra };
 }
 
-beforeAll(() => {
+beforeAll(async () => {
+  await migrateAppDb();
   db.insert(podcasts)
     .values([show('p1', 'Deep Work Radio'), show('p2', 'The Stoic Hour', 'subscribed', 'Stoics'), show('p3', 'Just Looking', 'preview')])
     .run();
