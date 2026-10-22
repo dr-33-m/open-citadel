@@ -42,6 +42,7 @@ import type { ChatMessage } from '@/services/chat-sessions';
 import type { TurnActivity, TurnStep, TurnThought } from '@/utils/turn-activity';
 import type { WebSource } from 'samwell-shared';
 import { unansweredMessageIds } from '@/utils/unanswered';
+import type { PodcastCardKind } from '@/services/listening-tools/card';
 
 export interface TranscriptProps {
   /** Which conversation this is: the scroller is keyed on it (`useConversationKey`). */
@@ -74,6 +75,7 @@ export interface TranscriptProps {
   onNavigateToHighlight?: (bookId: string, locator: string) => void;
   onNavigateToTimeline?: () => void;
   onNavigateToBook?: (bookId: string) => void;
+  onNavigateToPodcast?: (kind: PodcastCardKind, id: string) => void;
   /** Sends again a message of the reader's that never got a reply. */
   onResendMessage?: (id: string) => void;
 }
@@ -95,6 +97,7 @@ export function Transcript({
   onNavigateToHighlight,
   onNavigateToTimeline,
   onNavigateToBook,
+  onNavigateToPodcast,
   onResendMessage,
 }: TranscriptProps) {
   const conversationKey = useConversationKey(sessionId);
@@ -127,6 +130,7 @@ export function Transcript({
         onNavigateToHighlight={onNavigateToHighlight}
         onNavigateToTimeline={onNavigateToTimeline}
         onNavigateToBook={onNavigateToBook}
+        onNavigateToPodcast={onNavigateToPodcast}
         onOpenSources={sourcesSheet.open}
         onOpenThought={thoughtSheet.open}
         onOpenTasks={tasksSheet.open}
@@ -174,6 +178,7 @@ export function Transcript({
                   onNavigateToHighlight={onNavigateToHighlight}
                   onNavigateToTimeline={onNavigateToTimeline}
                   onNavigateToBook={onNavigateToBook}
+                  onNavigateToPodcast={onNavigateToPodcast}
                 />
               ) : trailingReply ? (
                 <React.Fragment key={trailingReply.id}>{bubble(trailingReply)}</React.Fragment>

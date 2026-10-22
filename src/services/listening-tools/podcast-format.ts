@@ -63,7 +63,7 @@ export function formatShows(shows: readonly ShowSummary[], totals: ListeningTota
       show.lastPlayedAt ? `last listened ${day(show.lastPlayedAt)}` : 'never listened',
       show.following ? null : 'not followed',
     ].filter(Boolean);
-    return `- "${show.title}"${show.author ? ` by ${show.author}` : ''}: ${facts.join('; ')}`;
+    return `- "${show.title}"${show.author ? ` by ${show.author}` : ''}: ${facts.join('; ')}\n  Ref: [[podcast:${show.id}]]`;
   });
   return fitLines(head, entries, tokenBudget, 'shows');
 }
@@ -94,7 +94,7 @@ export function formatEpisodes(episodes: readonly EpisodeSummary[], total: numbe
     ].filter(Boolean);
     const lines = [`- "${episode.title}" (${episode.show}): ${facts.join('; ')}`];
     if (episode.summary) lines.push(`  ${clamp(episode.summary, 240)}`);
-    lines.push(`  episode_id: ${episode.id}`);
+    lines.push(`  episode_id: ${episode.id}`, `  Ref: [[episode:${episode.id}]]`);
     return lines.join('\n');
   });
   return fitLines(head, entries, tokenBudget, 'episodes');
@@ -118,6 +118,7 @@ export function formatEpisode(
       .join('; '),
   ];
   if (episode.link) lines.push(`Link: ${episode.link}`);
+  lines.push(`Ref: [[episode:${episode.id}]]`);
   if (chapters.length > 0) {
     lines.push('', 'Chapters:', ...chapters.map((c) => `- ${clock(c.startSec)} ${c.title}`));
   }

@@ -10,6 +10,7 @@ import { ThoughtButton } from "@/components/chat/thought-button";
 import { TurnTrail } from "@/components/chat/turn-trail";
 import type { TurnActivity, TurnStep, TurnThought } from "@/utils/turn-activity";
 import type { WebSource } from "samwell-shared";
+import type { PodcastCardKind } from '@/services/listening-tools/card';
 
 interface SamwellResponseProps {
   content: string;
@@ -18,6 +19,7 @@ interface SamwellResponseProps {
   onNavigateToHighlight?: (bookId: string, locator: string) => void;
   onNavigateToTimeline?: () => void;
   onNavigateToBook?: (bookId: string) => void;
+  onNavigateToPodcast?: (kind: PodcastCardKind, id: string) => void;
   /** Raises the sheet listing every web page the reply drew on. Without it, no sources are shown. */
   onOpenSources?: (sources: readonly WebSource[]) => void;
   /** Raises the sheet with what he thought before answering. Without it, no thought is shown. */
@@ -64,6 +66,7 @@ export const SamwellResponse = React.memo(function SamwellResponse({
   onNavigateToHighlight,
   onNavigateToTimeline,
   onNavigateToBook,
+  onNavigateToPodcast,
   onOpenSources,
   onOpenThought,
   onOpenTasks,
@@ -98,6 +101,7 @@ export const SamwellResponse = React.memo(function SamwellResponse({
           onNavigateToHighlight={onNavigateToHighlight}
           onNavigateToTimeline={onNavigateToTimeline}
           onNavigateToBook={onNavigateToBook}
+          onNavigateToPodcast={onNavigateToPodcast}
         />
       ) : null}
       {hasFooter ? (

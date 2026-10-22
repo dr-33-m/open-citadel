@@ -1,17 +1,10 @@
 import { eq } from 'drizzle-orm';
 import { BookOpen } from '@/components/icons';
 import React from 'react';
-import { View } from 'react-native';
-import { useCSSVariable } from 'uniwind';
 
-import { CoverImage } from '@/components/cover-image';
-import { ThemedText } from '@/components/themed-text';
-import { Touchable } from '@/components/ui/touchable';
+import { MediaCard } from '@/components/chat/media-card';
 import { db } from '@/db/client';
 import { books, readingProgress } from '@/db/schema';
-import { asColor } from '@/utils/colors';
-
-const CARD_COVER = { width: 40, height: 60 } as const;
 
 interface BookCardProps {
   id: string;
@@ -26,6 +19,14 @@ interface CardData {
   percentage: number | null;
 }
 
+/** Where the reader is with a book, in a few words. */
+function bookStatus(data: CardData): string | null {
+  if (data.status === 'reading' && data.percentage != null) return `${Math.round(data.percentage * 100)}% read`;
+  if (data.status === 'archived') return 'Finished';
+  if (data.status === 'queued') return 'In your queue';
+  return null;
+}
+
 /**
  * A book Samwell named, shown as the book rather than as its title.
  *
@@ -34,7 +35,6 @@ interface CardData {
  * can act on.
  */
 export const BookCard = React.memo(function BookCard({ id, onNavigate }: BookCardProps) {
-  const [mutedForeground] = useCSSVariable(['--color-muted-foreground']);
   /* Read during render. See the note in `highlight-card` — an effect here
      cost a frame and a 0-to-full-height jump mid-reply. */
   const data = React.useMemo<CardData | null>(() => {
@@ -53,65 +53,22 @@ export const BookCard = React.memo(function BookCard({ id, onNavigate }: BookCar
 
     return row ?? null;
   }, [id]);
+  const onPress = React.useMemo(() => (onNavigate ? () => onNavigate(id) : undefined), [onNavigate, id]);
 
   // A book that is no longer in the library leaves no trace: better a missing
   // card than a card for something the reader cannot open.
   if (!data) return null;
 
-  const progress =
-    data.status === 'reading' && data.percentage != null
-      ? `${Math.round(data.percentage * 100)}% read`
-      : data.status === 'archived'
-        ? 'Finished'
-        : data.status === 'queued'
-          ? 'In your queue'
-          : null;
-
   return (
-    /*
-     * A solid card, one rung forward from the bubble it sits in.
-     *
-     * It used to draw no surface of its own and a gold rule down its edge,
-     * inside an assistant bubble that is itself a gold tint with a gold rule:
-     * two golds and no separation, so the card read as more bubble. The card
-     * surface gives the cover and title their own ground, the hairline says
-     * where it ends, and the gold stays with the bubble.
-     */
-    <Touchable
-      className="my-1 flex-row items-center gap-3 border border-border bg-card px-3 py-2"
-      onPress={() => onNavigate?.(id)}
-      disabled={!onNavigate}
-    >
-      {data.coverUrl ? (
-        // Cards ride the chat transcript's recycled list, so the decoded image
-        // is pinned to this book id across cell reuse.
-        <CoverImage
-          source={{ uri: data.coverUrl }}
-          style={CARD_COVER}
-          contentFit="cover"
-          recyclingKey={id}
-        />
-      ) : (
-        <View className="h-[60px] w-[40px] items-center justify-center bg-muted">
-          <BookOpen size={18} color={asColor(mutedForeground)} />
-        </View>
-      )}
-
-      <View className="flex-1 gap-[2px]">
-        <ThemedText type="bodySm" numberOfLines={2}>
-          {data.title}
-        </ThemedText>
-        <ThemedText type="labelSm" color={asColor(mutedForeground)} numberOfLines={1}>
-          {data.author}
-        </ThemedText>
-        {progress && (
-          // Ink rather than gold: the bubble already spends the gold, and a second
-          // gold inside it competes with the answer for attention.
-          <ThemedText type="labelSm" style={{ fontVariant: ['tabular-nums'] }}>
-            {progress}
-          </ThemedText>
-        )}
-      </View>
-    </Touchable>
+    <MediaCard
+      id={id}
+      coverUri={data.coverUrl}
+      coverShape="book"
+      FallbackIcon={BookOpen}
+      title={data.title}
+      subtitle={data.author}
+      status={bookStatus(data)}
+      onPress={onPress}
+    />
   );
 });

@@ -9,8 +9,11 @@ import {
   runSearchBlogPosts,
   runSearchPodcastEpisodes,
 } from '@/services/listening-tools';
+import { readPodcastCard } from '@/services/listening-tools/card';
 import { localDayString } from '@/utils/day';
 
+// Where downloads live, for an episode's saved cover: only the folder's name is read.
+vi.mock('expo-file-system/legacy', () => ({ documentDirectory: 'file:///docs/' }));
 vi.mock('@/db/client', async () => {
   const { appDb } = await import('./app-db');
   return { db: appDb() };
@@ -174,5 +177,38 @@ describe('list_my_blogs and search_blog_posts', () => {
     expect(runSearchBlogPosts({ query: 'superlinear' }).total).toBe(1);
     const recent = runSearchBlogPosts({}).formatted;
     expect(recent.indexOf('How to Do Great Work')).toBeLessThan(recent.indexOf('Unread essay'));
+  });
+});
+
+describe('the podcast card', () => {
+  it('draws a show with how much of it was played', () => {
+    expect(readPodcastCard('show', 'p1')).toEqual({
+      title: 'Deep Work Radio',
+      subtitle: 'Host',
+      coverUri: null,
+      status: '1 of 3 episodes played',
+    });
+  });
+
+  it('draws a followed show nothing was played of as followed', () => {
+    db.insert(podcasts).values(show('p4', 'Fresh Show')).run();
+    expect(readPodcastCard('show', 'p4')?.status).toBe('Following');
+  });
+
+  it('draws an episode with where the listener is in it', () => {
+    expect(readPodcastCard('episode', 'e1')?.status).toBe('Played');
+    expect(readPodcastCard('episode', 'e2')).toMatchObject({ subtitle: 'Deep Work Radio', status: '40m left' });
+    expect(readPodcastCard('episode', 'e3')?.status).toBe('In Up Next');
+  });
+
+  it('draws nothing for what is no longer on the device', () => {
+    expect(readPodcastCard('episode', 'gone')).toBeNull();
+    expect(readPodcastCard('show', 'gone')).toBeNull();
+  });
+
+  it('is what the tools point at: every show and episode line carries its marker', () => {
+    expect(runListMyPodcasts({}).formatted).toContain('Ref: [[podcast:p1]]');
+    expect(runSearchPodcastEpisodes({ status: 'listened' }).formatted).toContain('Ref: [[episode:e1]]');
+    expect(runGetPodcastEpisode({ episode_id: 'e1' }).formatted).toContain('Ref: [[episode:e1]]');
   });
 });
