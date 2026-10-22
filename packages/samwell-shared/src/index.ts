@@ -10,6 +10,7 @@ export * from './free-books';
 export * from './insider';
 export * from './journal';
 export * from './limits';
+export * from './listening-tools';
 export * from './models';
 export * from './onboarding';
 export * from './onboarding-follow-tools';

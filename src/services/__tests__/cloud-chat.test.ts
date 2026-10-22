@@ -38,6 +38,7 @@ vi.mock('@/utils/backoff', () => ({ retryDelayMs: () => 0 }));
 vi.mock('@/services/cloud-identity', () => ({ cloudHeaders: async () => ({}) }));
 vi.mock('@/services/chat-tools', () => ({}));
 vi.mock('@/services/compass-tools', () => ({}));
+vi.mock('@/services/listening-tools', () => ({}));
 vi.mock('@/services/journey', () => ({}));
 vi.mock('@/services/onboarding-tools/client-tools', () => ({ createOnboardingClientTools: () => undefined }));
 vi.mock('@/stores/approval', () => ({

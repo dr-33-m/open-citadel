@@ -1,6 +1,8 @@
 import { toolDefinition } from '@tanstack/ai/client';
 import { z } from 'zod';
 
+import { LISTENING_TOOL_DEFINITIONS } from './listening-tools';
+
 export const SearchResultSchema = z.object({
   id: z.string(),
   type: z.enum(['highlight', 'thought']),
@@ -729,6 +731,8 @@ export const SAMWELL_TOOL_DEFINITIONS = [
   deleteNoteTool,
   updateThoughtTool,
   searchJourneyTool,
+  // Podcasts and blogs: what they listen to and read online. See `listening-tools.ts`.
+  ...LISTENING_TOOL_DEFINITIONS,
 ] as const;
 
 export const SAMWELL_CLIENT_TOOL_DEFINITIONS = SAMWELL_TOOL_DEFINITIONS.map((tool) =>

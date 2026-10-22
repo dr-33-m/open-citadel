@@ -50,6 +50,11 @@ import {
   proposeAdjustmentsTool,
   proposeGoalTool,
   toggleFavoriteTool,
+  listMyPodcastsTool,
+  searchPodcastEpisodesTool,
+  getPodcastEpisodeTool,
+  listMyBlogsTool,
+  searchBlogPostsTool,
   TOOL_LOOP_CEILING,
 } from 'samwell-shared';
 
@@ -89,6 +94,13 @@ import {
   runProposeGoal,
 } from '@/services/compass-tools';
 import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
+import {
+  runGetPodcastEpisode,
+  runListMyBlogs,
+  runListMyPodcasts,
+  runSearchBlogPosts,
+  runSearchPodcastEpisodes,
+} from '@/services/listening-tools';
 import { formatLibrarySearch, type CollectionListing, type LibraryBook } from '@/services/library-format';
 import { NO_ACTIVITY, sameActivity, turnActivity, type TurnActivity } from '@/utils/turn-activity';
 import { useApprovalStore } from '@/stores/approval';
@@ -676,6 +688,20 @@ function libraryLookupTools(ctx: ToolCallContext) {
   ] as const;
 }
 
+/**
+ * The podcasts and blogs, defined once and handed to both factories like the
+ * library lookups: what "the shows they follow" means is decided in one place.
+ */
+function listeningTools() {
+  return [
+    listMyPodcastsTool.client(async (input) => runListMyPodcasts(input)),
+    searchPodcastEpisodesTool.client(async (input) => runSearchPodcastEpisodes(input)),
+    getPodcastEpisodeTool.client(async (input) => runGetPodcastEpisode(input)),
+    listMyBlogsTool.client(async (input) => runListMyBlogs(input)),
+    searchBlogPostsTool.client(async (input) => runSearchBlogPosts(input)),
+  ] as const;
+}
+
 function createCompassClientTools(ctx: ToolCallContext) {
   return clientTools(
     getCompassStatusTool.client(async () => ({ formatted: formatCompassStatus() })),
@@ -720,6 +746,7 @@ function createCompassClientTools(ctx: ToolCallContext) {
       };
     }),
     ...libraryLookupTools(ctx),
+    ...listeningTools(),
     journeyTool(ctx),
   );
 }
@@ -943,6 +970,7 @@ function createSamwellClientTools(ctx: ToolCallContext) {
       const { result } = await executeToolCall('update_thought', input, ctx);
       return result as { ok: boolean; id?: string; type?: 'thought'; error?: string };
     }),
+    ...listeningTools(),
     journeyTool(ctx),
   );
 }

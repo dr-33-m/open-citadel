@@ -721,6 +721,13 @@ export const TOOL_STATUS: Record<string, string> = {
   resume_trackable: 'Starting that again…',
   search_journey: 'Remembering…',
 
+  // Podcasts and blogs, on both surfaces.
+  list_my_podcasts: 'Looking over your podcasts…',
+  search_podcast_episodes: 'Looking through your episodes…',
+  get_podcast_episode: 'Reading the show notes…',
+  list_my_blogs: 'Looking over your blogs…',
+  search_blog_posts: 'Looking through your blogs…',
+
   // The app explaining itself, and the first run. Same table again: what he is
   // doing right now is one question, whichever surface is asking it.
   explain_app: 'Checking how that works…',
