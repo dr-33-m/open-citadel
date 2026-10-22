@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import type { TranscriptDoc } from 'samwell-shared';
 
+import type { FollowAlongMenuKey } from '@/components/follow-along/follow-along-menu-sheet';
 import { showToast } from '@/components/toast/toast-provider';
 import { lineSurrounding, type Mark } from '@/features/podcasts/utils/transcript-highlights';
 import type { TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
@@ -16,8 +17,7 @@ import { ensureEpisodeBook, renameSpeaker } from '@/services/podcasts/transcript
 import { showChatOnSamwellPage } from '@/services/samwell-handoff';
 import { useChatStore } from '@/stores/chat';
 
-export type TranscriptMenuKey = 'highlight' | 'ask' | 'copy' | 'rename' | 'reader';
-type MenuRow = { key: TranscriptMenuKey; label: string };
+type MenuRow = { key: FollowAlongMenuKey; label: string };
 
 const MENU: MenuRow[] = [
   { key: 'highlight', label: 'Highlight' },
@@ -111,7 +111,7 @@ export function useTranscriptActions({
     showToast({ message: 'Highlighted', tone: 'success', key: 'transcript-highlight' });
   };
 
-  const onMenu = (key: TranscriptMenuKey) => {
+  const onMenu = (key: FollowAlongMenuKey) => {
     const line = menuLine;
     setMenuLine(null);
     if (!line) return;

@@ -34,7 +34,8 @@ export type JobEvent =
   | { type: 'audio'; samples: Float32Array }
   /** MP3 as it arrived, for the native player to decode. */
   | { type: 'encoded'; bytes: Uint8Array }
-  | { type: 'done' }
+  /** `saved` settles once the whole piece is in the phone's cache. */
+  | { type: 'done'; saved?: Promise<void> }
   | { type: 'failed'; failure: CloudVoiceFailure };
 
 export interface Job {
@@ -46,6 +47,8 @@ export interface Job {
   samples: Float32Array[];
   state: 'queued' | 'running' | 'done' | 'failed';
   failure: CloudVoiceFailure | null;
+  /** The write to the cache, once the piece is whole. */
+  saved: Promise<void> | null;
   listeners: Set<(event: JobEvent) => void>;
   controller: AbortController;
 }
@@ -74,6 +77,7 @@ export class PieceQueue {
       samples: [],
       state: 'queued',
       failure: null,
+      saved: null,
       listeners: new Set(),
       controller: new AbortController(),
     };
@@ -154,8 +158,10 @@ export class PieceQueue {
         });
       }
       job.state = 'done';
-      emit({ type: 'done' });
-      if (job.format) void writeCachedPiece(job.key, job.raw, job.format);
+      // Started before anyone hears it is done, so a caller that needs the
+      // file (the audiobook) can wait for it; a write never throws.
+      job.saved = job.format ? writeCachedPiece(job.key, job.raw, job.format) : Promise.resolve();
+      emit({ type: 'done', saved: job.saved });
     } catch (error) {
       if (job.controller.signal.aborted) return;
       job.state = 'failed';

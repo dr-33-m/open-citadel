@@ -2,15 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
 import { useCurrentSegment } from '@/features/podcasts/hooks/use-current-segment';
+import { useFollowAlong } from '@/hooks/use-follow-along';
 import { useEpisodeHighlightEditor } from '@/features/podcasts/hooks/use-episode-highlight-editor';
 import { useTranscriptActions } from '@/features/podcasts/hooks/use-transcript-actions';
-import { useTranscriptFollow } from '@/features/podcasts/hooks/use-transcript-follow';
 import { markedLines } from '@/features/podcasts/utils/transcript-highlights';
 import { followLines, lineMatches, type TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
 import { isTimed, matchLabel } from '@/features/podcasts/utils/transcript-rows';
 import { createEpisodeHighlightsQueryOptions, createTranscriptQueryOptions } from '@/query-manager/transcripts';
 import type { EpisodeHighlight } from '@/services/podcasts/transcript/highlights';
-import { usePodcastPlayer } from '@/stores/podcast-player';
+import { selectEpisodeId, usePlayer } from '@/stores/player';
 
 const NO_LINES: TranscriptLine[] = [];
 const NO_HIGHLIGHTS: EpisodeHighlight[] = [];
@@ -22,7 +22,7 @@ const GUTTER_HOURS = 68;
 
 /**
  * The transcript sheet, read like lyrics: the lines, the one being spoken,
- * following the audio (`useTranscriptFollow`), and search. While following,
+ * following the audio (`useFollowAlong`), and search. While following,
  * the other lines step back; once the list is dragged every line comes up to
  * full strength, for reading. Search counts its matches in the header and
  * jumps between them without filtering, so the lines around each stay in view.
@@ -35,12 +35,12 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
   const starts = React.useMemo(() => lines.map((line) => line.start), [lines]);
   const kept = useQuery(createEpisodeHighlightsQueryOptions(episodeId ?? '', { enabled: visible && episodeId !== null })).data;
   const marked = React.useMemo(() => markedLines(lines, kept ?? []), [lines, kept]);
-  const isCurrent = usePodcastPlayer((s) => s.current?.episodeId === episodeId);
+  const isCurrent = usePlayer((s) => selectEpisodeId(s) === episodeId);
   const timed = doc ? isTimed(doc) : false;
   const { current, place } = useCurrentSegment(starts, visible && isCurrent && timed);
 
   const { listRef, from, epoch, placing, following, jump, cover, onListLoad, onStartReached, follow, stopFollowing, onDrag } =
-    useTranscriptFollow({ visible, current });
+    useFollowAlong<TranscriptLine>({ visible, current });
   const data = React.useMemo(() => (from > 0 ? lines.slice(from) : lines), [lines, from]);
 
   const [search, setSearch] = React.useState('');

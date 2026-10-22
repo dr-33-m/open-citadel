@@ -15,6 +15,7 @@ import { Platform } from 'react-native';
 import type { ReadiumViewRef, TTSSynthesisRequest, TTSUpcomingEvent } from '@dr33m/react-native-readium';
 
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
+import { afterHandover } from '@/services/audiobook/handover';
 import { queryClient } from '@/lib/query-client';
 import { billingKeys } from '@/query-manager/billing/keys';
 import type { PlanPreview } from '@/services/billing-plans';
@@ -64,12 +65,14 @@ export function useCloudVoiceBridge(readerRef: React.RefObject<ReadiumViewRef | 
   const session = useCallback((): CloudVoiceSession | null => {
     if (!bookId) return null;
     sessionRef.current ??= new CloudVoiceSession(bookId, {
+      // Held while a book in the player finishes the sentence it is on, when
+      // read-aloud is taking over from it (`services/audiobook/handover`).
       provide: (requestId, samples, sampleRate, isLast) => {
-        readerRef.current?.ttsProvideAudioChunk(requestId, samples, sampleRate, isLast);
+        afterHandover(() => readerRef.current?.ttsProvideAudioChunk(requestId, samples, sampleRate, isLast));
         if (isLast) requestsRef.current.delete(requestId);
       },
       provideEncoded: (requestId, data, mimeType, isLast) => {
-        readerRef.current?.ttsProvideEncodedAudio(requestId, data, mimeType, isLast);
+        afterHandover(() => readerRef.current?.ttsProvideEncodedAudio(requestId, data, mimeType, isLast));
         if (isLast) requestsRef.current.delete(requestId);
       },
       onWaiting: setWorking,

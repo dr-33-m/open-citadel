@@ -49,7 +49,7 @@ function fakeFetch(): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-function app(apiKey: string | undefined = 'sk-test') {
+function app(apiKey: string | undefined = 'sk-test', encodeMp3: Parameters<typeof createTtsRoutes>[0]['encodeMp3'] = null) {
   const charging = createSpeechCharging({ client, billing, now: () => NOW });
   return createTtsRoutes({
     identify: async () => ({ id: ACCOUNT }),
@@ -74,6 +74,7 @@ function app(apiKey: string | undefined = 'sk-test') {
     fetchImpl: fakeFetch(),
     wait: async () => undefined,
     onSettled: (settling) => settles.push(settling),
+    encodeMp3,
   });
 }
 
@@ -108,8 +109,8 @@ async function seedPlan(plan: PlanId | null, balance = 500): Promise<void> {
   });
 }
 
-function speak(body: Record<string, unknown>, apiKey?: string) {
-  return app(apiKey).request('/speak', {
+function speak(body: Record<string, unknown>, apiKey?: string, encodeMp3: Parameters<typeof app>[1] = null) {
+  return app(apiKey, encodeMp3).request('/speak', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -262,13 +263,56 @@ describe('POST /tts/speak', () => {
     expect(speechCalls[1].body.response_format).toBe('pcm');
   });
 
-  it('asks a PCM-only maker for PCM even when the app wants MP3, and says it is PCM', async () => {
+  it('asks a PCM-only maker for PCM and, with nothing here to encode it, says it is PCM', async () => {
     await seedPlan('grand_maester');
     const response = await speak({ modelId: 'google/gemini-3.8-flash-lite-tts', voice: 'Kore', text: 'Hello.', format: 'mp3' });
     expect(response.status).toBe(200);
     expect(response.headers.get('x-audio-format')).toBe('pcm');
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(PCM);
     expect(speechCalls[0].body.response_format).toBe('pcm');
+  });
+
+  it('encodes a PCM-only maker to MP3 when the app wants it, and charges what the maker sent', async () => {
+    await seedPlan('grand_maester');
+    const shapes: { sampleRate: number; channels: number }[] = [];
+    const fakeEncoder: Parameters<typeof app>[1] = (source, shape, onSourceBytes) => {
+      shapes.push(shape);
+      const reader = source.getReader();
+      return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            return;
+          }
+          onSourceBytes(value.byteLength);
+          controller.enqueue(new Uint8Array([0xff, 0xfb, 0x90, 0xc0]));
+        },
+      });
+    };
+    const response = await speak(
+      { modelId: 'google/gemini-3.8-flash-lite-tts', voice: 'Kore', text: 'Hello.', format: 'mp3' },
+      undefined,
+      fakeEncoder,
+    );
+    expect(response.headers.get('x-audio-format')).toBe('mp3');
+    expect(response.headers.get('content-type')).toBe('audio/mpeg');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([0xff, 0xfb, 0x90, 0xc0]));
+    await Promise.all(settles);
+    expect(speechCalls[0].body.response_format).toBe('pcm');
+    expect(shapes).toEqual([{ kind: 'pcm', sampleRate: 24_000, channels: 1 }]);
+    // Charged, since the maker sent audio: the hold became a debit.
+    const credits = await row('SELECT reserved FROM account_credits WHERE account_id = ?');
+    expect(credits.reserved).toBe(0);
+  });
+
+  it('leaves a PCM answer alone when the app asked for PCM, encoder or not', async () => {
+    await seedPlan('grand_maester');
+    const encoder = vi.fn();
+    const response = await speak({ modelId: 'google/gemini-3.8-flash-lite-tts', voice: 'Kore', text: 'Hello.' }, undefined, encoder);
+    expect(response.headers.get('x-audio-format')).toBe('pcm');
+    await response.arrayBuffer();
+    expect(encoder).not.toHaveBeenCalled();
   });
 
   it('answers 500 rather than a silent failure when the key is missing', async () => {

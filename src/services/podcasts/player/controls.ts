@@ -1,12 +1,12 @@
-/** What the player's controls do: play and pause, seek, skip, speed and sleep. */
+/** What the player's controls do to an episode: play and pause, seek, skip, speed and sleep. */
 import TrackPlayer from "@rntp/player";
 
 import { heldPosition } from "@/utils/seek-hold";
 import { saveProgress } from "@/services/podcasts/episode-state";
-import { attachListeners } from "@/services/podcasts/player/events";
 import { startEpisode } from "@/services/podcasts/player/lifecycle";
-import { markSeeking, markStarting, session, store } from "@/services/podcasts/player/session";
-import { selectPlaying } from "@/stores/podcast-player";
+import { session, settlePausedSeek } from "@/services/podcasts/player/session";
+import { markSeeking, markStarting, store } from "@/services/player/session";
+import { selectEpisode, selectPlaying } from "@/stores/player";
 import { getShow, updateShowSettings } from "@/services/podcasts/shows";
 import { usePodcastPrefs } from "@/stores/podcast-prefs";
 
@@ -15,7 +15,6 @@ import { usePodcastPrefs } from "@/stores/podcast-prefs";
  * queued behind it.
  */
 export async function playEpisode(episodeId: string, startAt: number | null = null): Promise<void> {
-  attachListeners();
   await startEpisode(episodeId, startAt);
 }
 
@@ -25,13 +24,13 @@ export async function playEpisode(episodeId: string, startAt: number | null = nu
  * the episode already in the player; otherwise the episode started there.
  */
 export async function playEpisodeFrom(episodeId: string, seconds: number): Promise<void> {
-  const { current, loaded } = store();
-  if (current?.episodeId !== episodeId || !loaded) {
+  const { loaded } = store();
+  if (selectEpisode(store())?.episodeId !== episodeId || !loaded) {
     await playEpisode(episodeId, seconds);
     return;
   }
-  seekTo(seconds);
-  if (!selectPlaying(store())) await togglePlayback();
+  seekEpisode(seconds);
+  if (!selectPlaying(store())) await toggleEpisode();
 }
 
 /**
@@ -40,8 +39,9 @@ export async function playEpisodeFrom(episodeId: string, seconds: number): Promi
  * player as starting, so the control shows its loader through a seek or a
  * buffer instead of sitting on Play looking unpressed.
  */
-export async function togglePlayback(): Promise<void> {
-  const { current, loaded, isPlaying, starting } = store();
+export async function toggleEpisode(): Promise<void> {
+  const { loaded, isPlaying, starting } = store();
+  const current = selectEpisode(store());
   if (!current) return;
   if (!loaded) {
     await playEpisode(current.episodeId);
@@ -56,8 +56,9 @@ export async function togglePlayback(): Promise<void> {
   }
 }
 
-export function seekTo(seconds: number): void {
-  const { loaded, current } = store();
+export function seekEpisode(seconds: number): void {
+  const { loaded } = store();
+  const current = selectEpisode(store());
   if (!loaded) {
     // Restored after a restart and not loaded yet: move where Play will
     // start from, rather than ignoring the scrub.
@@ -72,7 +73,7 @@ export function seekTo(seconds: number): void {
   // as playing (the loader, then Pause) rather than flicking to Play and
   // back; a seek made while paused shows the loader and stays paused.
   if (selectPlaying(store())) markStarting();
-  markSeeking();
+  markSeeking(() => void settlePausedSeek());
   // Held until the native player has caught up, so nothing polling it in the
   // meantime draws the old position (see `seek-hold`).
   store().patch({ seekHold: { target, at: Date.now() } });
@@ -83,16 +84,17 @@ export function seekTo(seconds: number): void {
   }
 }
 
-export function skipBy(seconds: number): void {
-  const { loaded, current } = store();
+export function skipEpisode(seconds: number): void {
+  const { loaded } = store();
+  const current = selectEpisode(store());
   if (!loaded) {
-    if (current) seekTo(current.positionSec + seconds);
+    if (current) seekEpisode(current.positionSec + seconds);
     return;
   }
   // From where the last seek is going, not where the player still says it is:
   // two quick skips should add up.
   const { position } = heldPosition(TrackPlayer.getProgress().position, store().seekHold, Date.now());
-  seekTo(position + seconds);
+  seekEpisode(position + seconds);
 }
 
 /**
@@ -100,8 +102,9 @@ export function skipBy(seconds: number): void {
  * changes it); otherwise this is the speed for everything, as in AntennaPod
  * where the per-show setting overrides the global one.
  */
-export async function setSpeed(speed: number): Promise<void> {
-  const { current, loaded } = store();
+export async function setEpisodeSpeed(speed: number): Promise<void> {
+  const { loaded } = store();
+  const current = selectEpisode(store());
   if (loaded) TrackPlayer.setPlaybackSpeed(speed);
   store().patch({ speed });
   if (current) {
@@ -114,17 +117,8 @@ export async function setSpeed(speed: number): Promise<void> {
   usePodcastPrefs.getState().set("playbackSpeed", speed);
 }
 
-/** Pauses after a number of minutes (fading the last ten seconds out), at the episode's end, or never. */
-export function setSleepTimer(choice: number | "episode" | null): void {
-  if (!store().loaded) return;
-  if (choice === null) {
-    TrackPlayer.cancelSleepTimer();
-    store().patch({ sleep: null });
-  } else if (choice === "episode") {
-    TrackPlayer.sleepAfterMediaItemAtIndex();
-    store().patch({ sleep: { kind: "episode" } });
-  } else {
-    TrackPlayer.sleepAfterTime(choice * 60, { fadeOutSeconds: 10 });
-    store().patch({ sleep: { kind: "time", endsAt: Date.now() + choice * 60_000, minutes: choice } });
-  }
+/** Pauses at the episode's end: it is the item playing, so the native player knows where that is. */
+export function sleepAtEpisodeEnd(): void {
+  TrackPlayer.sleepAfterMediaItemAtIndex();
+  store().patch({ sleep: { kind: "end" } });
 }

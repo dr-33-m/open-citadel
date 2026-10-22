@@ -1,8 +1,16 @@
 diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
-index 7da495f568b686444e13e4a3857911e5641ff7d0..c82e3a6e8920353b75055e185aaebdf2fe0ed033 100644
+index 7da495f568b686444e13e4a3857911e5641ff7d0..40eaa9ca973ccf93022078734452e2af51b05fda 100644
 --- a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
 +++ b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
-@@ -58,7 +58,20 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+@@ -24,6 +24,7 @@ import com.facebook.react.bridge.WritableMap
+ import com.google.common.util.concurrent.MoreExecutors
+ import com.doublesymmetry.trackplayer.extensions.emitEvent
+ import androidx.media3.datasource.cache.ContentMetadata
++import com.doublesymmetry.trackplayer.models.ChapterClock
+ import com.doublesymmetry.trackplayer.models.TrackPlayerMediaItem
+ import com.doublesymmetry.trackplayer.models.BrowseTree
+ import com.doublesymmetry.trackplayer.models.MediaHeaders
+@@ -58,7 +59,20 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
  
    @ReactMethod
    override fun setupPlayer(map: ReadableMap) {
@@ -24,7 +32,26 @@ index 7da495f568b686444e13e4a3857911e5641ff7d0..c82e3a6e8920353b75055e185aaebdf2
      config.store(context)
      controller.run {
        val sessionToken = SessionToken(context, ComponentName(context, TrackPlayerPlaybackService::class.java))
-@@ -204,8 +217,16 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+@@ -112,6 +126,18 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+     }
+   }
+ 
++  /** PATCHED (Open Citadel): whether the sentence being heard is highlighted, for the notification's button. */
++  @ReactMethod
++  override fun setHighlighted(highlighted: Boolean) {
++    controller.run { mc ->
++      val args = Bundle().apply { putBoolean("highlighted", highlighted) }
++      mc?.sendCustomCommand(
++        SessionCommand(TrackPlayerPlaybackService.COMMAND_SET_HIGHLIGHTED, Bundle.EMPTY),
++        args
++      )
++    }
++  }
++
+   @ReactMethod
+   override fun seekTo(position: Double) {
+     controller.run { mc ->
+@@ -204,8 +230,16 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
    @ReactMethod
    override fun setMediaItems(data: ReadableArray, startIndex: Double) {
      val mediaItems = readableArrayToMediaItems(data)
@@ -42,8 +69,34 @@ index 7da495f568b686444e13e4a3857911e5641ff7d0..c82e3a6e8920353b75055e185aaebdf2
        mc?.prepare()
      }
      context.emitEvent(QueueChangedEvent())
+@@ -350,10 +384,22 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+         map.putDouble("buffered", 0.0)
+         map.putDouble("cached", 0.0)
+       } else {
+-        val durationMs = mc.duration
+-        map.putDouble("position", mc.currentPosition / 1000.0)
++        // PATCHED (Open Citadel): a book's sentence is shown on its chapter's
++        // clock by the session (`ChapterClock`); the app reads the sentence's own.
++        val chapter = ChapterClock.of(mc.currentMediaItem)
++        val offsetMs = chapter?.startMs ?: 0L
++        // The sentence's own length is its window in the timeline, which the session does not change.
++        val itemDurationMs = chapter?.let {
++          val timeline = mc.currentTimeline
++          val index = mc.currentMediaItemIndex
++          if (timeline.isEmpty || index >= timeline.windowCount) null
++          else timeline.getWindow(index, androidx.media3.common.Timeline.Window()).durationMs
++            .takeIf { ms -> ms != androidx.media3.common.C.TIME_UNSET }
++        }
++        val durationMs = itemDurationMs ?: mc.duration
++        map.putDouble("position", (mc.currentPosition - offsetMs).coerceAtLeast(0L) / 1000.0)
+         map.putDouble("duration", durationMs / 1000.0)
+-        map.putDouble("buffered", mc.bufferedPosition / 1000.0)
++        map.putDouble("buffered", (mc.bufferedPosition - offsetMs).coerceAtLeast(0L) / 1000.0)
+ 
+         val cache = TrackPlayerPlaybackService.sharedCache
+         val uri = mc.currentMediaItem?.localConfiguration?.uri?.toString()
 diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
-index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c41621e71bbe0 100644
+index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..380e034a3e9bc78a4e1c82337fd12971f62e3861 100644
 --- a/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
 +++ b/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
 @@ -36,6 +36,9 @@ import androidx.media3.exoplayer.hls.offline.HlsDownloader
@@ -56,7 +109,25 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c4162
  import androidx.media3.session.DefaultMediaNotificationProvider
  import androidx.media3.session.LibraryResult
  import androidx.media3.session.MediaLibraryService
-@@ -126,7 +129,16 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -56,6 +59,8 @@ import com.doublesymmetry.trackplayer.models.PlayerCommand
+ import com.doublesymmetry.trackplayer.models.PlayerConfig
+ import com.doublesymmetry.trackplayer.models.RemoteControlHandling
+ import com.doublesymmetry.trackplayer.models.RemotePlayEvent
++import com.doublesymmetry.trackplayer.models.RemoteHighlightEvent
++import com.doublesymmetry.trackplayer.models.ChapterClock
+ import com.doublesymmetry.trackplayer.models.RemotePauseEvent
+ import com.doublesymmetry.trackplayer.models.RemoteNextEvent
+ import com.doublesymmetry.trackplayer.models.RemotePreviousEvent
+@@ -73,6 +78,8 @@ import org.json.JSONObject
+ 
+ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.MediaLibrarySession.Callback {
+   private var mediaSession: MediaLibraryService.MediaLibrarySession? = null
++  /** PATCHED (Open Citadel): the sentence being heard is highlighted, so the button shows filled. */
++  private var sentenceHighlighted = false
+   private var playerConfig: PlayerConfig? = null
+   private var simpleCache: SimpleCache? = null
+   private var exoPlayer: ExoPlayer? = null
+@@ -126,7 +133,16 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
          cachedFactory = DefaultMediaSourceFactory(cacheDataSourceFactory),
          uncachedFactory = DefaultMediaSourceFactory(upstreamFactory)
        )
@@ -74,7 +145,7 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c4162
  
      val built = ExoPlayer.Builder(this)
        .setMediaSourceFactory(mediaSourceFactory)
-@@ -195,6 +207,13 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -195,10 +211,21 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
          if (isPlaying) startProgressSyncTimer() else stopProgressSyncTimer(fireFinalTick = true)
        }
  
@@ -88,7 +159,15 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c4162
        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
          val currentIndex = activePlayer?.currentMediaItemIndex ?: 0
          sleepTimerController?.handleItemTransition(currentIndex)
-@@ -222,6 +241,14 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+         lastStreamMetadata = null
++        // PATCHED (Open Citadel): Highlight comes and goes with a book, and a
++        // new sentence starts unhighlighted until the app says otherwise.
++        sentenceHighlighted = false
++        mediaSession?.let { syncMediaButtonPreferences(it, playerConfig ?: config) }
+       }
+ 
+       override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+@@ -222,6 +249,14 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
  
      val sessionActivityIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -103,7 +182,7 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c4162
      }
      val sessionActivity = sessionActivityIntent?.let {
        PendingIntent.getActivity(
-@@ -232,6 +259,8 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -232,6 +267,8 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
  
      mediaSession = MediaLibraryService.MediaLibrarySession.Builder(this, player, this)
        .apply { sessionActivity?.let { setSessionActivity(it) } }
@@ -112,7 +191,48 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c4162
        .build()
  
      setupNotificationProvider(config)
-@@ -282,28 +311,161 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -240,6 +277,40 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+   @OptIn(UnstableApi::class)
+   private fun createForwardingPlayer(player: Player, config: PlayerConfig): Player {
+     return object : ForwardingPlayer(player) {
++      // PATCHED (Open Citadel): the chapter clock (`ChapterClock`). This is the
++      // player the session shows the notification and the lock screen; the
++      // app's own commands go to the player itself, and its reads are put back
++      // on the sentence's clock in `TrackPlayerModule.getProgress`.
++      override fun getCurrentPosition(): Long {
++        val chapter = ChapterClock.of(currentMediaItem) ?: return super.getCurrentPosition()
++        return chapter.startMs + super.getCurrentPosition()
++      }
++
++      override fun getContentPosition(): Long {
++        val chapter = ChapterClock.of(currentMediaItem) ?: return super.getContentPosition()
++        return chapter.startMs + super.getContentPosition()
++      }
++
++      override fun getBufferedPosition(): Long {
++        val chapter = ChapterClock.of(currentMediaItem) ?: return super.getBufferedPosition()
++        return chapter.startMs + super.getBufferedPosition()
++      }
++
++      override fun getContentBufferedPosition(): Long {
++        val chapter = ChapterClock.of(currentMediaItem) ?: return super.getContentBufferedPosition()
++        return chapter.startMs + super.getContentBufferedPosition()
++      }
++
++      override fun getDuration(): Long {
++        val chapter = ChapterClock.of(currentMediaItem) ?: return super.getDuration()
++        return chapter.lengthMs
++      }
++
++      override fun getContentDuration(): Long {
++        val chapter = ChapterClock.of(currentMediaItem) ?: return super.getContentDuration()
++        return chapter.lengthMs
++      }
++
+       override fun play() {
+         if (shouldHandleNatively(PlayerCommand.PLAY_PAUSE)) {
+           super.play()
+@@ -282,28 +353,181 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
          emitRemoteEventIfNeeded(RemotePreviousEvent(), PlayerCommand.PREVIOUS)
        }
  
@@ -219,7 +339,27 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c4162
 +        )
 +      )
 +    }
++    highlightButton()?.let { buttons.add(it) }
 +    return buttons
++  }
++
++  /**
++   * PATCHED (Open Citadel): Highlight, for a book. The sentence being heard is
++   * kept as a highlight by the app (`RemoteHighlightEvent`); the icon fills
++   * while it is one, which the app says through `COMMAND_SET_HIGHLIGHTED`.
++   * Its own custom command, so the system's notification can send it.
++   */
++  @OptIn(UnstableApi::class)
++  private fun highlightButton(): CommandButton? {
++    if (!ChapterClock.isBook(activePlayer?.currentMediaItem)) return null
++    val name = if (sentenceHighlighted) "ic_highlight_filled" else "ic_highlight"
++    val resId = resources.getIdentifier(name, "drawable", packageName)
++    val builder = CommandButton.Builder(CommandButton.ICON_UNDEFINED)
++      .setSessionCommand(SessionCommand(COMMAND_HIGHLIGHT, Bundle.EMPTY))
++      .setDisplayName(if (sentenceHighlighted) "Highlighted" else "Highlight")
++      .setSlots(CommandButton.SLOT_OVERFLOW)
++    if (resId != 0) builder.setCustomIconResId(resId)
++    return builder.build()
 +  }
 +
 +  @OptIn(UnstableApi::class)
@@ -278,7 +418,7 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c4162
    @OptIn(UnstableApi::class)
    private fun setupNotificationProvider(config: PlayerConfig) {
      val channelId = config.notificationChannelId ?: return
-@@ -388,11 +550,19 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -388,11 +612,19 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
      session: MediaSession,
      controller: MediaSession.ControllerInfo
    ): MediaSession.ConnectionResult {
@@ -300,7 +440,7 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c4162
        .build()
    }
  
-@@ -404,12 +574,16 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -404,12 +636,16 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
    ): ListenableFuture<SessionResult> {
      when (customCommand.customAction) {
        COMMAND_UPDATE_COMMANDS -> {
@@ -319,6 +459,290 @@ index 9c0906bb5c3687d584501d6e5bd84eb8fd28d657..0b342f06f71b0ca99c6c4a89ed2c4162
          return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
        }
        COMMAND_UPDATE_BROWSE_TREE -> {
+@@ -423,6 +659,16 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+         playerConfig = PlayerConfig().load(this)
+         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+       }
++      // PATCHED (Open Citadel): see `highlightButton`.
++      COMMAND_HIGHLIGHT -> {
++        this@TrackPlayerPlaybackService.emitEvent(RemoteHighlightEvent())
++        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
++      }
++      COMMAND_SET_HIGHLIGHTED -> {
++        sentenceHighlighted = args.getBoolean("highlighted", false)
++        syncMediaButtonPreferences(session, playerConfig ?: PlayerConfig().load(this))
++        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
++      }
+       COMMAND_PLAY -> {
+         activePlayer?.play()
+         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+@@ -643,6 +889,9 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+       .add(SessionCommand(COMMAND_CANCEL_SLEEP_TIMER, Bundle.EMPTY))
+       .add(SessionCommand(COMMAND_PRELOAD, Bundle.EMPTY))
+       .add(SessionCommand(COMMAND_CANCEL_PRELOAD, Bundle.EMPTY))
++      // PATCHED (Open Citadel): Highlight from the notification, and its state from the app.
++      .add(SessionCommand(COMMAND_HIGHLIGHT, Bundle.EMPTY))
++      .add(SessionCommand(COMMAND_SET_HIGHLIGHTED, Bundle.EMPTY))
+       .build()
+ 
+   // endregion
+@@ -914,6 +1163,9 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+     const val COMMAND_UPDATE_COMMANDS = "trackplayer.update_commands"
+     const val COMMAND_UPDATE_BROWSE_TREE = "trackplayer.update_browse_tree"
+     const val COMMAND_PLAY = "trackplayer.play"
++    // PATCHED (Open Citadel): see `highlightButton`.
++    const val COMMAND_HIGHLIGHT = "open-citadel.highlight"
++    const val COMMAND_SET_HIGHLIGHTED = "open-citadel.set-highlighted"
+     const val COMMAND_PAUSE = "trackplayer.pause"
+     const val COMMAND_STOP = "trackplayer.stop"
+     const val COMMAND_SEEK_TO = "trackplayer.seek_to"
+diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/models/ChapterClock.kt b/android/src/main/java/com/doublesymmetry/trackplayer/models/ChapterClock.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..5a150624c95f8ff4f2d2cfb8bc2ff070e51b903f
+--- /dev/null
++++ b/android/src/main/java/com/doublesymmetry/trackplayer/models/ChapterClock.kt
+@@ -0,0 +1,31 @@
++/*
++ * PATCHED (Open Citadel): the chapter clock for a book heard a sentence at a time.
++ */
++
++package com.doublesymmetry.trackplayer.models
++
++import androidx.media3.common.MediaItem
++
++/**
++ * A book plays one sentence per item, so the item's own clock is a few
++ * seconds long. The app puts where the sentence starts in its chapter and how
++ * long the chapter is into the item's extras (`chapterStart`,
++ * `chapterLength`, seconds), and the notification and the lock screen show
++ * the chapter's clock from them, the way an audiobook app does. Items
++ * without them (episodes) keep their own clock.
++ */
++data class ChapterClock(val startMs: Long, val lengthMs: Long) {
++  companion object {
++    fun of(item: MediaItem?): ChapterClock? {
++      val extras = item?.mediaMetadata?.extras?.getBundle(MediaItemExtras.METADATA_KEY) ?: return null
++      if (!extras.containsKey("chapterStart") || !extras.containsKey("chapterLength")) return null
++      val start = extras.getDouble("chapterStart", -1.0)
++      val length = extras.getDouble("chapterLength", -1.0)
++      if (start < 0 || length <= 0) return null
++      return ChapterClock((start * 1000).toLong(), (length * 1000).toLong())
++    }
++
++    /** Whether an item is a sentence of a book: what the Highlight button is offered for. */
++    fun isBook(item: MediaItem?): Boolean = of(item) != null
++  }
++}
+diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/models/EmitEventType.kt b/android/src/main/java/com/doublesymmetry/trackplayer/models/EmitEventType.kt
+index 8a665af4941a1b5c71d66b4a2b6fb7e361da102d..360f8a82db218515f72111ddb83554e7ea8a151b 100644
+--- a/android/src/main/java/com/doublesymmetry/trackplayer/models/EmitEventType.kt
++++ b/android/src/main/java/com/doublesymmetry/trackplayer/models/EmitEventType.kt
+@@ -21,6 +21,8 @@ enum class EmitEventType(val value: String) {
+   REMOTE_SEEK("event.remote-seek"),
+   REMOTE_SKIP_FORWARD("event.remote-skip-forward"),
+   REMOTE_SKIP_BACKWARD("event.remote-skip-backward"),
++  // PATCHED (Open Citadel): the notification's Highlight button, for a book.
++  REMOTE_HIGHLIGHT("event.remote-highlight"),
+   PLAYBACK_PROGRESS_UPDATED("event.playback-progress-updated"),
+   SLEEP_TIMER_TRIGGERED("event.sleep-timer-triggered"),
+ }
+diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/models/RemoteControlEvent.kt b/android/src/main/java/com/doublesymmetry/trackplayer/models/RemoteControlEvent.kt
+index 32fdcee811021b66de9adaa91f3c09c6a33b24de..17531b913c3f96f2299318c575488ebd08074e33 100644
+--- a/android/src/main/java/com/doublesymmetry/trackplayer/models/RemoteControlEvent.kt
++++ b/android/src/main/java/com/doublesymmetry/trackplayer/models/RemoteControlEvent.kt
+@@ -56,3 +56,9 @@ data class RemoteSkipBackwardEvent(
+     "interval" to interval
+   )
+ }
++
++/** PATCHED (Open Citadel): the notification's Highlight button was pressed, for a book. */
++class RemoteHighlightEvent : EmitEvent {
++  override val type = EmitEventType.REMOTE_HIGHLIGHT
++  override fun pairs(): Array<Pair<String, Any>> = arrayOf()
++}
+diff --git a/ios/TrackPlayer.swift b/ios/TrackPlayer.swift
+index 966277d08a4d5adc3ae7a3dddfc63426071ed1e8..cc54f134610f65d78a24598cf58383e6417ff90e 100644
+--- a/ios/TrackPlayer.swift
++++ b/ios/TrackPlayer.swift
+@@ -128,6 +128,11 @@ class TrackPlayer: RCTEventEmitter {
+     player.stop()
+   }
+ 
++  /// PATCHED (Open Citadel): the Android notification's Highlight state. The
++  /// iOS lock screen has no free-form buttons, so there is nothing to draw.
++  @objc(setHighlighted:)
++  func setHighlighted(highlighted: Bool) {}
++
+   @objc(seekTo:)
+   func seekTo(position: Double) {
+     player.seek(to: position)
+diff --git a/ios/TrackPlayerBridge.mm b/ios/TrackPlayerBridge.mm
+index ed09556eb961649a9304dc61b03107dc76e5f573..931f346ed8f8338d1a1b27f9e0f579d7044b3fe7 100644
+--- a/ios/TrackPlayerBridge.mm
++++ b/ios/TrackPlayerBridge.mm
+@@ -23,6 +23,8 @@ RCT_EXTERN_METHOD(play);
+ RCT_EXTERN_METHOD(pause);
+ RCT_EXTERN_METHOD(stop);
+ RCT_EXTERN_METHOD(seekTo:(double)position);
++// PATCHED (Open Citadel): the notification's Highlight state. Android only; a no-op here.
++RCT_EXTERN_METHOD(setHighlighted:(BOOL)highlighted);
+ RCT_EXTERN_METHOD(seekBy:(double)offset);
+ RCT_EXTERN_METHOD(skipToNext);
+ RCT_EXTERN_METHOD(skipToPrevious);
+diff --git a/ios/player/AudioPlayer.swift b/ios/player/AudioPlayer.swift
+index 61d685c1ea2d6f99c744db75389429bf3dbc7424..367f18bfe840c9f5b52e67fc030ea867f2f6f221 100644
+--- a/ios/player/AudioPlayer.swift
++++ b/ios/player/AudioPlayer.swift
+@@ -482,8 +482,19 @@ class AudioPlayer {
+   private func updateNowPlayingPlaybackInfo() {
+     #if canImport(UIKit)
+     guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
+-    info[MPMediaItemPropertyPlaybackDuration] = duration
+-    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
++    // PATCHED (Open Citadel): a book plays a sentence an item, and the lock
++    // screen shows its chapter's clock instead, from the item's extras
++    // (`chapterStart`, `chapterLength`, seconds). Anything else keeps its own.
++    if let media = currentItem as? MediaItem,
++       let start = (media.extras?["chapterStart"] as? NSNumber)?.doubleValue,
++       let length = (media.extras?["chapterLength"] as? NSNumber)?.doubleValue,
++       length > 0 {
++      info[MPMediaItemPropertyPlaybackDuration] = length
++      info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = start + currentTime
++    } else {
++      info[MPMediaItemPropertyPlaybackDuration] = duration
++      info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
++    }
+     info[MPNowPlayingInfoPropertyPlaybackRate] = state == .playing ? Double(rate) : 0.0
+     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+     #endif
+diff --git a/lib/commonjs/audio.js b/lib/commonjs/audio.js
+index d8ef9113d344e246865ddf03025f5dd6bde45547..c869af1ec014ef6991474693425090b82f78bda9 100644
+--- a/lib/commonjs/audio.js
++++ b/lib/commonjs/audio.js
+@@ -35,6 +35,7 @@ exports.replaceMediaItem = replaceMediaItem;
+ exports.retry = retry;
+ exports.seekBy = seekBy;
+ exports.seekTo = seekTo;
++exports.setHighlighted = setHighlighted;
+ exports.setBrowseTree = setBrowseTree;
+ exports.setCommands = setCommands;
+ exports.setMediaItem = setMediaItem;
+@@ -242,6 +243,11 @@ function stop() {
+ }
+ 
+ /** Seek to a position in seconds. */
++/** PATCHED (Open Citadel): see src/audio.ts. */
++function setHighlighted(highlighted) {
++  if (_reactNative.Platform.OS !== 'android') return;
++  _trackPlayerModule.TrackPlayer.setHighlighted(highlighted);
++}
+ function seekTo(position) {
+   _trackPlayerModule.TrackPlayer.seekTo(position);
+ }
+diff --git a/lib/commonjs/events/index.js b/lib/commonjs/events/index.js
+index 4ea7cfe169d07395a366e7c8ebd2ee51dee1cb4a..b0860f3be8a21d3229e336001289e70ee0b62021 100644
+--- a/lib/commonjs/events/index.js
++++ b/lib/commonjs/events/index.js
+@@ -148,6 +148,7 @@ let Event = exports.Event = /*#__PURE__*/function (Event) {
+   Event["RemoteSeek"] = "event.remote-seek";
+   Event["RemoteSkipForward"] = "event.remote-skip-forward";
+   Event["RemoteSkipBackward"] = "event.remote-skip-backward";
++  Event["RemoteHighlight"] = "event.remote-highlight";
+   Event["SleepTimerTriggered"] = "event.sleep-timer-triggered";
+   return Event;
+ }({});
+diff --git a/lib/module/audio.js b/lib/module/audio.js
+index cbda655fb1de3d2ff87445adc3f977124350e086..afe20346b304555fc1e676cfbbfaa019dadd69ef 100644
+--- a/lib/module/audio.js
++++ b/lib/module/audio.js
+@@ -190,6 +190,11 @@ export function stop() {
+ }
+ 
+ /** Seek to a position in seconds. */
++/** PATCHED (Open Citadel): see src/audio.ts. */
++export function setHighlighted(highlighted) {
++  if (Platform.OS !== 'android') return;
++  TrackPlayer.setHighlighted(highlighted);
++}
+ export function seekTo(position) {
+   TrackPlayer.seekTo(position);
+ }
+diff --git a/lib/module/events/index.js b/lib/module/events/index.js
+index b6867b870f36c689bdd7165048dcffa19e23e76f..0efa1df9022c587f573e6bcd5a45bc20f7b42242 100644
+--- a/lib/module/events/index.js
++++ b/lib/module/events/index.js
+@@ -22,6 +22,7 @@ export let Event = /*#__PURE__*/function (Event) {
+   Event["RemoteSeek"] = "event.remote-seek";
+   Event["RemoteSkipForward"] = "event.remote-skip-forward";
+   Event["RemoteSkipBackward"] = "event.remote-skip-backward";
++  Event["RemoteHighlight"] = "event.remote-highlight";
+   Event["SleepTimerTriggered"] = "event.sleep-timer-triggered";
+   return Event;
+ }({});
+diff --git a/lib/typescript/src/NativeTrackPlayer.d.ts b/lib/typescript/src/NativeTrackPlayer.d.ts
+index e0f4a598eb22bb01f9b7d2ad652e100784d522cb..929510c7be24debc00ab5771e092adfa0d363ecb 100644
+--- a/lib/typescript/src/NativeTrackPlayer.d.ts
++++ b/lib/typescript/src/NativeTrackPlayer.d.ts
+@@ -10,6 +10,7 @@ export interface Spec extends TurboModule {
+     pause(): void;
+     stop(): void;
+     seekTo(position: number): void;
++    setHighlighted(highlighted: boolean): void;
+     seekBy(offset: number): void;
+     skipToNext(): void;
+     skipToPrevious(): void;
+diff --git a/lib/typescript/src/audio.d.ts b/lib/typescript/src/audio.d.ts
+index 6cb3306b6dd69e98151b47de814804b163ea8295..f2f55279b1859fc0926808eb6d07119cb0c481d8 100644
+--- a/lib/typescript/src/audio.d.ts
++++ b/lib/typescript/src/audio.d.ts
+@@ -46,6 +46,7 @@ export declare function pause(): void;
+ /** Stop playback and reset position. Queue is preserved. */
+ export declare function stop(): void;
+ /** Seek to a position in seconds. */
++export declare function setHighlighted(highlighted: boolean): void;
+ export declare function seekTo(position: number): void;
+ /** Seek by a relative offset in seconds (negative = rewind). */
+ export declare function seekBy(offset: number): void;
+diff --git a/lib/typescript/src/events/RemoteControl.d.ts b/lib/typescript/src/events/RemoteControl.d.ts
+index 1f399a7b1418fa56e9be95d46fd30dcb835a691b..8d5a321ef0c86c60d1bbf18382e2a5f95616d1b1 100644
+--- a/lib/typescript/src/events/RemoteControl.d.ts
++++ b/lib/typescript/src/events/RemoteControl.d.ts
+@@ -22,3 +22,5 @@ export interface RemoteSkipBackwardEvent {
+     interval: number;
+ }
+ //# sourceMappingURL=RemoteControl.d.ts.map
++/** PATCHED (Open Citadel): the notification's Highlight button was pressed. */
++export interface RemoteHighlightEvent {}
+\ No newline at end of file
+diff --git a/lib/typescript/src/events/index.d.ts b/lib/typescript/src/events/index.d.ts
+index ee68a6d03738716de6f4b2648ebd74cf24ebe8df..a696236bd502040cc19d47f1bc201a1893df9ecc 100644
+--- a/lib/typescript/src/events/index.d.ts
++++ b/lib/typescript/src/events/index.d.ts
+@@ -7,7 +7,7 @@ import type { IsPlayingChangedEvent } from './IsPlayingChanged';
+ import type { MediaItemTransitionEvent } from './MediaItemTransition';
+ import type { MediaMetadataChangedEvent } from './MediaMetadataChanged';
+ import type { MetadataReceivedEvent } from './MetadataReceived';
+-import type { RemotePlayEvent, RemotePauseEvent, RemoteNextEvent, RemotePreviousEvent, RemoteStopEvent, RemoteSeekEvent, RemoteSkipForwardEvent, RemoteSkipBackwardEvent } from './RemoteControl';
++import type { RemotePlayEvent, RemotePauseEvent, RemoteNextEvent, RemotePreviousEvent, RemoteStopEvent, RemoteSeekEvent, RemoteSkipForwardEvent, RemoteSkipBackwardEvent, RemoteHighlightEvent } from './RemoteControl';
+ import type { PlaybackErrorEvent } from './PlaybackError';
+ import type { PlaybackProgressUpdatedEvent } from './PlaybackProgressUpdated';
+ import type { QueueChangedEvent } from './QueueChanged';
+@@ -29,6 +29,7 @@ export declare enum Event {
+     RemoteSeek = "event.remote-seek",
+     RemoteSkipForward = "event.remote-skip-forward",
+     RemoteSkipBackward = "event.remote-skip-backward",
++    RemoteHighlight = "event.remote-highlight",
+     SleepTimerTriggered = "event.sleep-timer-triggered"
+ }
+ export type EventPayloadByEvent = {
+@@ -48,6 +49,7 @@ export type EventPayloadByEvent = {
+     [Event.RemoteSeek]: RemoteSeekEvent;
+     [Event.RemoteSkipForward]: RemoteSkipForwardEvent;
+     [Event.RemoteSkipBackward]: RemoteSkipBackwardEvent;
++    [Event.RemoteHighlight]: RemoteHighlightEvent;
+     [Event.SleepTimerTriggered]: SleepTimerTriggeredEvent;
+ };
+ type Simplify<T> = {
 diff --git a/lib/typescript/src/interfaces/MediaItem.d.ts b/lib/typescript/src/interfaces/MediaItem.d.ts
 index 3689842ac4d0b39eaf347e4bace291d33f049379..cf089c2121835d7f5892951e8aaa14a6c7132597 100644
 --- a/lib/typescript/src/interfaces/MediaItem.d.ts
@@ -339,6 +763,80 @@ index 3689842ac4d0b39eaf347e4bace291d33f049379..cf089c2121835d7f5892951e8aaa14a6
      /**
       * Whether this is a live stream.
       *
+diff --git a/src/NativeTrackPlayer.ts b/src/NativeTrackPlayer.ts
+index 8f955c47fe05ec10e2edb5c8c7e8b366c41ec648..73527d346069696cd9c16f9761c0e3d409732f86 100644
+--- a/src/NativeTrackPlayer.ts
++++ b/src/NativeTrackPlayer.ts
+@@ -16,6 +16,8 @@ export interface Spec extends TurboModule {
+   pause(): void;
+   stop(): void;
+   seekTo(position: number): void;
++  /** PATCHED (Open Citadel): whether the sentence being heard is highlighted, for the notification's Highlight button. */
++  setHighlighted(highlighted: boolean): void;
+   seekBy(offset: number): void;
+   skipToNext(): void;
+   skipToPrevious(): void;
+diff --git a/src/audio.ts b/src/audio.ts
+index 5ca71f79a5c9f3ba0dc0484e3895d63faa2b6cbe..e172ba16750e1a43885cc32f40cf4d9ba6629598 100644
+--- a/src/audio.ts
++++ b/src/audio.ts
+@@ -240,6 +240,16 @@ export function stop(): void {
+   TrackPlayer.stop();
+ }
+ 
++/**
++ * PATCHED (Open Citadel): whether the sentence of a book being heard is
++ * highlighted, so the notification's Highlight button shows filled. Android
++ * only; the iOS lock screen has no room for the button.
++ */
++export function setHighlighted(highlighted: boolean): void {
++  if (Platform.OS !== 'android') return;
++  TrackPlayer.setHighlighted(highlighted);
++}
++
+ /** Seek to a position in seconds. */
+ export function seekTo(position: number): void {
+   TrackPlayer.seekTo(position);
+diff --git a/src/events/RemoteControl.ts b/src/events/RemoteControl.ts
+index 1892ebdfe22fd431c17f15eacb5c1554d6cf12f8..170cc458716aac5af0fe3385a5c681b61b3da53e 100644
+--- a/src/events/RemoteControl.ts
++++ b/src/events/RemoteControl.ts
+@@ -24,3 +24,6 @@ export interface RemoteSkipForwardEvent {
+ export interface RemoteSkipBackwardEvent {
+   interval: number; // seconds
+ }
++
++/** PATCHED (Open Citadel): the notification's Highlight button was pressed. */
++export interface RemoteHighlightEvent {}
+diff --git a/src/events/index.ts b/src/events/index.ts
+index 2766dbb596c2bd9ddd79adf507dabb8c1e7d3b3c..409823e109383e9d18cfb14a2f0e5497c7d5b6ff 100644
+--- a/src/events/index.ts
++++ b/src/events/index.ts
+@@ -17,6 +17,7 @@ import type {
+   RemoteSeekEvent,
+   RemoteSkipForwardEvent,
+   RemoteSkipBackwardEvent,
++  RemoteHighlightEvent,
+ } from './RemoteControl';
+ import type { PlaybackErrorEvent } from './PlaybackError';
+ import type { PlaybackProgressUpdatedEvent } from './PlaybackProgressUpdated';
+@@ -40,6 +41,8 @@ export enum Event {
+   RemoteSeek = 'event.remote-seek',
+   RemoteSkipForward = 'event.remote-skip-forward',
+   RemoteSkipBackward = 'event.remote-skip-backward',
++  /** PATCHED (Open Citadel): the notification's Highlight button, for a book. Android only. */
++  RemoteHighlight = 'event.remote-highlight',
+   SleepTimerTriggered = 'event.sleep-timer-triggered',
+ }
+ 
+@@ -60,6 +63,7 @@ export type EventPayloadByEvent = {
+   [Event.RemoteSeek]: RemoteSeekEvent;
+   [Event.RemoteSkipForward]: RemoteSkipForwardEvent;
+   [Event.RemoteSkipBackward]: RemoteSkipBackwardEvent;
++  [Event.RemoteHighlight]: RemoteHighlightEvent;
+   [Event.SleepTimerTriggered]: SleepTimerTriggeredEvent;
+ };
+ 
 diff --git a/src/interfaces/MediaItem.ts b/src/interfaces/MediaItem.ts
 index 8d912aea555d5b15e864c5b76b245cc2e42083d4..1ab5a94957c234d9fb61cab783f23e5806d8de22 100644
 --- a/src/interfaces/MediaItem.ts

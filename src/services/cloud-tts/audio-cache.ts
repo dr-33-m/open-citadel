@@ -42,6 +42,11 @@ interface Entry {
 }
 
 let folder: Directory | null = null;
+/**
+ * Pieces in the native player's queue (the audiobook's): never trimmed, or a
+ * sentence about to play could be deleted under the player.
+ */
+const pinned = new Set<string>();
 let index: Map<string, Entry> | null = null;
 let indexTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -157,6 +162,38 @@ export async function writeCachedPiece(
   }
 }
 
+/** A cached piece as the native player can open it: its file, its kind and how its audio is laid out. */
+export interface PieceFile {
+  uri: string;
+  kind: AudioEncoding;
+  bytes: number;
+  sampleRate: number;
+  channels: number;
+}
+
+/** The file a cached piece is kept in, or null when it is not in the cache. Marks it used. */
+export async function pieceFileUri(key: string): Promise<PieceFile | null> {
+  const entries = await loadIndex();
+  const entry = entries.get(key);
+  if (!entry) return null;
+  const kind = entry.kind ?? 'pcm';
+  const file = pieceFile(key, kind);
+  if (!file.exists) {
+    entries.delete(key);
+    scheduleIndexWrite();
+    return null;
+  }
+  entry.usedAt = Date.now();
+  scheduleIndexWrite();
+  return { uri: file.uri, kind, bytes: entry.bytes, sampleRate: entry.sampleRate, channels: entry.channels ?? 1 };
+}
+
+/** Keeps exactly these pieces from being trimmed: the ones in the native player's queue now. */
+export function pinPieces(keys: Iterable<string>): void {
+  pinned.clear();
+  for (const key of keys) pinned.add(key);
+}
+
 /** Oldest-used out until the cache is back under the trim line. */
 function trim(entries: Map<string, Entry>): void {
   let total = 0;
@@ -165,6 +202,7 @@ function trim(entries: Map<string, Entry>): void {
   const oldestFirst = [...entries.entries()].sort((a, b) => a[1].usedAt - b[1].usedAt);
   for (const [key, entry] of oldestFirst) {
     if (total <= TRIM_TO_BYTES) break;
+    if (pinned.has(key)) continue;
     try {
       const file = pieceFile(key, entry.kind ?? 'pcm');
       if (file.exists) file.delete();

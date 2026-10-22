@@ -2,7 +2,7 @@ import React from 'react';
 
 import { estimatedPlayback, playbackPosition } from '@/features/podcasts/hooks/use-playback-clock';
 import { segmentIndexAt } from '@/features/podcasts/utils/transcript-rows';
-import { usePodcastPlayer } from '@/stores/podcast-player';
+import { usePlayer } from '@/stores/player';
 
 /**
  * How far ahead of the words a line lights: its fade has finished as they
@@ -41,11 +41,11 @@ const PLACE_HOLD_MS = 2500;
  * the episode is not the one in the player, or the transcript has no times.
  */
 export function useCurrentSegment(starts: readonly number[], active: boolean) {
-  const isPlaying = usePodcastPlayer((s) => s.isPlaying);
-  const speed = usePodcastPlayer((s) => s.speed);
+  const isPlaying = usePlayer((s) => s.isPlaying);
+  const speed = usePlayer((s) => s.speed);
   // Without asking the player: this runs while rendering.
   const seed = () =>
-    segmentIndexAt(starts, (estimatedPlayback()?.position ?? usePodcastPlayer.getState().current?.positionSec ?? 0) + LEAD_SEC);
+    segmentIndexAt(starts, (estimatedPlayback()?.position ?? usePlayer.getState().current?.positionSec ?? 0) + LEAD_SEC);
   const [index, setIndex] = React.useState(seed);
   const placed = React.useRef<{ line: number; at: number } | null>(null);
   // Opened again: from where the audio is now, not where it was last time.

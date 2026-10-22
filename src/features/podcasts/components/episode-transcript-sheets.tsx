@@ -1,11 +1,11 @@
 import React from 'react';
 
+import { FollowAlongMenuSheet } from '@/components/follow-along/follow-along-menu-sheet';
 import { InfoSheet, type InfoContent } from '@/components/info-sheet';
 import { HighlightMenu } from '@/components/reader/highlight-menu';
 import { PlansSheet } from '@/features/billing/components/plans-sheet';
 import { SpeakerNameSheet } from '@/features/podcasts/components/speaker-name-sheet';
 import { TranscribeSheet } from '@/features/podcasts/components/transcribe-sheet';
-import { TranscriptMenuSheet } from '@/features/podcasts/components/transcript-menu-sheet';
 import { TranscriptSheet } from '@/features/podcasts/components/transcript-sheet';
 import type { EpisodeTranscript } from '@/features/podcasts/hooks/use-episode-transcript';
 import { useTranscriptSheet } from '@/features/podcasts/hooks/use-transcript-sheet';
@@ -48,7 +48,7 @@ export function TranscriptViewer({ episodeId, visible, onClose, preparing = fals
   return (
     <>
       <TranscriptSheet visible={visible} onClose={onClose} line={line} state={state} listRef={listRef} />
-      <TranscriptMenuSheet {...state.menu} />
+      <FollowAlongMenuSheet {...state.menu} />
       {state.editor ? <HighlightMenu {...state.editor} /> : null}
       <SpeakerNameSheet {...state.rename} />
     </>

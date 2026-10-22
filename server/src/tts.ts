@@ -38,6 +38,18 @@ export interface TtsDeps {
   wait?: (ms: number) => Promise<void>;
   /** Called with each settle's promise, so the tests can await what production does not. */
   onSettled?: (settling: Promise<void>) => void;
+  /**
+   * PCM to MP3 as it streams, for a voice that makes only PCM and an app that
+   * asked for MP3 (`tts-encode.ts`). Null where it cannot be done here, and
+   * the PCM goes out as it came, which every build can play.
+   */
+  encodeMp3?:
+    | ((
+        source: ReadableStream<Uint8Array>,
+        shape: { sampleRate: number; channels: number },
+        onSourceBytes: (bytes: number) => void,
+      ) => ReadableStream<Uint8Array>)
+    | null;
 }
 
 const SpeakSchema = z.object({
@@ -49,8 +61,9 @@ const SpeakSchema = z.object({
    * What the app can play. PCM is the default and what an older build asks
    * for: its JS turns it into samples itself. A build whose native player can
    * decode MP3 asks for that instead, which is about a tenth of the bytes,
-   * and gets it from a maker that takes it. Gemini takes PCM alone, so a
-   * reader on Gemini gets PCM whatever was asked; the app plays either.
+   * and gets it from a maker that takes it. Gemini makes PCM alone, which is
+   * encoded to MP3 here as it streams (`encodeMp3`); where that cannot be
+   * done, the reader gets PCM whatever was asked, and the app plays either.
    */
   format: z.enum(['pcm', 'mp3']).optional(),
 });
@@ -142,10 +155,14 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
     }
 
     const firstByteMs = Date.now() - askedAt;
-    const format = parseAudioFormat(upstream.headers.get('content-type'));
+    const made = parseAudioFormat(upstream.headers.get('content-type'));
     const generationId = upstream.headers.get('x-generation-id');
-    const reader = upstream.body.getReader();
     let bytes = 0;
+    // The maker made PCM and the app asked for MP3: encoded on the way out.
+    // The piece is charged on what the maker sent either way.
+    const encode = wanted === 'mp3' && made.kind === 'pcm' ? (deps.encodeMp3 ?? null) : null;
+    const format = encode ? { ...made, kind: 'mp3' as const } : made;
+    const reader = (encode ? encode(upstream.body, made, (sent) => (bytes += sent)) : upstream.body).getReader();
     let finished = false;
 
     const finish = (outcome: 'complete' | 'cancelled' | 'failed') => {
@@ -214,7 +231,7 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
             finish('complete');
             return;
           }
-          bytes += value.byteLength;
+          if (!encode) bytes += value.byteLength;
           controller.enqueue(value);
         } catch (error) {
           controller.error(error);
@@ -230,7 +247,7 @@ export function createTtsRoutes(deps: TtsDeps): Hono {
     return new Response(body, {
       status: 200,
       headers: {
-        'Content-Type': upstream.headers.get('content-type') ?? 'application/octet-stream',
+        'Content-Type': encode ? 'audio/mpeg' : (upstream.headers.get('content-type') ?? 'application/octet-stream'),
         'X-Audio-Format': format.kind,
         'X-Audio-Sample-Rate': String(format.sampleRate),
         'X-Audio-Channels': String(format.channels),

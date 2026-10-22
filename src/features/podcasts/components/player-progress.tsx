@@ -13,6 +13,8 @@ type PlayerProgressProps = {
   hasChapters: boolean;
   position: SharedValue<number>;
   duration: SharedValue<number>;
+  /** Between the scrubber's two times, when there is something to say there. */
+  middleLabel?: string | null;
   error: string | null;
   onChapters: () => void;
   onSeek: (seconds: number) => void;
@@ -21,7 +23,7 @@ type PlayerProgressProps = {
 };
 
 /** Where the listener is: the chapter playing (which opens the list), the scrubber, and why playback stopped, if it did. */
-export function PlayerProgress({ chapterTitle, hasChapters, position, duration, error, onChapters, onSeek, live }: PlayerProgressProps) {
+export function PlayerProgress({ chapterTitle, hasChapters, position, duration, middleLabel = null, error, onChapters, onSeek, live }: PlayerProgressProps) {
   const tokens = useThemeTokens();
   const chapter = chapterTitle ?? (hasChapters ? 'Chapters' : null);
   return (
@@ -33,7 +35,7 @@ export function PlayerProgress({ chapterTitle, hasChapters, position, duration, 
           </ThemedText>
         </Touchable>
       ) : null}
-      <PlayerScrubber position={position} duration={duration} onSeek={onSeek} live={live} />
+      <PlayerScrubber position={position} duration={duration} onSeek={onSeek} live={live} middleLabel={middleLabel} />
       {error ? (
         <ThemedText type="bodySm" color={tokens['--color-muted-foreground']}>
           {error}
