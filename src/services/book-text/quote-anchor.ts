@@ -60,7 +60,9 @@ function normalize(text: string): { text: string; at: number[] } {
 
 /** The quote as it can be looked for: folded, and without the quotation marks or ellipses round it. */
 function cleanQuote(quote: string): string {
-  return normalize(quote).text.replace(/^["'.\s]+|["'.\s]+$/g, '');
+  // read_chapter numbers its paragraphs "[12] ", and a quote copied from it can carry them.
+  const unnumbered = quote.replace(/\[\d+\]\s*/g, ' ');
+  return normalize(unnumbered).text.replace(/^["'.\s]+|["'.\s]+$/g, '');
 }
 
 function spanOf(at: readonly number[], from: number, to: number, score: number): QuoteSpan {

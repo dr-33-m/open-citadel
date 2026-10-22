@@ -32,6 +32,12 @@ describe('findQuote', () => {
     );
   });
 
+  it('ignores the paragraph numbers read_chapter puts in front of each paragraph', () => {
+    expect(slice(findQuote(SECTION, '[1] The first paragraph sets the scene. [2] He said'))).toBe(
+      'The first paragraph sets the scene.\n\nHe said',
+    );
+  });
+
   it('does not loosely match unless asked', () => {
     expect(findQuote(SECTION, 'You can never step into the same river twice')).toBeNull();
   });

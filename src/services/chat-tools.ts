@@ -845,7 +845,11 @@ export async function executeToolCall(
       };
     case 'toggle_favorite':
       return {
-        result: await toggleFavoriteForModel(args.book_titles as string[] | undefined, ctx),
+        result: await toggleFavoriteForModel(
+          args.book_titles as string[] | undefined,
+          typeof args.favorite === 'boolean' ? args.favorite : undefined,
+          ctx,
+        ),
         status: toolStatus(name),
       };
     case 'mark_as_finished':
@@ -1239,7 +1243,9 @@ async function addTags(
   }
 
   const existing = parseTags(row.tags);
-  const merged = Array.from(new Set([...existing, ...newTags]));
+  // Trimmed and without blanks: a model's " focus" and "focus" are one tag to the reader.
+  const cleaned = (Array.isArray(newTags) ? newTags : []).map((tag) => String(tag).trim()).filter(Boolean);
+  const merged = Array.from(new Set([...existing, ...cleaned]));
   const tagsJson = JSON.stringify(merged);
 
   db.update(table)
@@ -1266,10 +1272,15 @@ async function deleteEntry(
     return { success: false };
   }
 
+  // Through the stores, which delete a highlight's notes with it and redraw
+  // what is on screen: the reader under a chat started from it kept drawing a
+  // highlight Samwell had deleted, and the timeline kept listing it.
   if (type === 'highlight') {
-    db.delete(notes).where(eq(notes.highlightId, id)).run();
+    await useReaderStore.getState().deleteHighlight(id);
+    await useTimelineStore.getState().loadTimeline();
+  } else {
+    await useTimelineStore.getState().deleteThought(id);
   }
-  db.delete(table).where(eq(table.id, id)).run();
 
   console.log(`[Samwell] deleteEntry: success, id=${id}`);
   return { success: true };
@@ -1726,16 +1737,26 @@ async function reorderQueueForModel(
   return { ok: failed.length === 0, succeeded: queued.map((b) => b.title), failed };
 }
 
+/**
+ * Favourite or unfavourite books.
+ *
+ * With `favorite` given, each book ends up that way whatever it was: "add it
+ * to my favourites" said of a book already there used to take it out. Without
+ * it (an older server), each book flips, as the tool always did. The state is
+ * read from the book's own row, not the store's list, which may not hold it.
+ */
 async function toggleFavoriteForModel(
   bookTitles: string[] | undefined,
+  favorite: boolean | undefined,
   ctx: ToolCallContext,
 ): Promise<BookBatchActionResult> {
   const { books: resolved, failed } = resolveBooksByTitles(bookTitles, ctx);
   const succeeded: string[] = [];
 
   for (const book of resolved) {
-    await useBooksStore.getState().toggleFavorite(book.id);
-    succeeded.push(book.title);
+    const wanted = favorite ?? book.isFavorite !== 1;
+    await useBooksStore.getState().setFavorite(book.id, wanted);
+    succeeded.push(`${book.title} (${wanted ? 'now a favourite' : 'no longer a favourite'})`);
   }
 
   return { ok: failed.length === 0, succeeded, failed };
@@ -1764,12 +1785,23 @@ interface NoteResult {
 interface CreateCollectionResult {
   ok: boolean;
   collectionId?: string;
+  alreadyExisted?: boolean;
   error?: string;
 }
 
 async function createCollectionForModel(name: string): Promise<CreateCollectionResult> {
   const trimmed = name?.trim();
   if (!trimmed) return { ok: false, error: 'name_required' };
+
+  // Asked for again (a retried turn, or "make a Fashion collection" when one
+  // exists), the one there is answers: a second of the same name is only
+  // ever a shelf nobody can tell apart from the first.
+  const existing = db
+    .select({ id: collections.id, name: collections.name })
+    .from(collections)
+    .all()
+    .find((c) => c.name.trim().toLowerCase() === trimmed.toLowerCase());
+  if (existing) return { ok: true, collectionId: existing.id, alreadyExisted: true };
 
   const collectionId = await useCollectionsStore.getState().createCollection(trimmed);
   return { ok: true, collectionId };

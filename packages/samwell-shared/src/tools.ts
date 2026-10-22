@@ -188,7 +188,16 @@ export const CreateCollectionInputSchema = z.object({
 export const CreateCollectionResultSchema = z.object({
   ok: z.boolean(),
   collectionId: z.string().optional(),
+  /** A collection by that name was already there, and nothing new was made. */
+  alreadyExisted: z.boolean().optional(),
   error: z.string().optional(),
+});
+
+export const ToggleFavoriteInputSchema = BookTitlesInputSchema.extend({
+  favorite: z
+    .boolean()
+    .optional()
+    .describe('true to make them favourites, false to take them out. Omit only to flip each one.'),
 });
 
 export const DeleteCollectionInputSchema = z.object({
@@ -505,8 +514,8 @@ export const reorderQueueTool = toolDefinition({
 export const toggleFavoriteTool = toolDefinition({
   name: 'toggle_favorite',
   description:
-    'Add or remove one or more books from Favorites. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.',
-  inputSchema: BookTitlesInputSchema,
+    'Add one or more books to Favorites (favorite: true) or take them out (favorite: false). Always say which: a book already in Favorites stays there when asked to add it. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.',
+  inputSchema: ToggleFavoriteInputSchema,
   outputSchema: BookBatchActionResultSchema,
   needsApproval: true,
 });

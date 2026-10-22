@@ -148,8 +148,12 @@ export function approvalCopy({ toolName, input }: PendingApproval): ApprovalCopy
       return approve('Remove from queue?', `Samwell wants to remove ${bookWord} from your reading queue.`);
     case 'reorder_queue':
       return approve('Reorder queue?', `Samwell wants to move ${bookWord} in your reading queue.`);
-    case 'toggle_favorite':
+    case 'toggle_favorite': {
+      const favorite = input && typeof input === 'object' ? (input as { favorite?: unknown }).favorite : undefined;
+      if (favorite === true) return approve('Add to favorites?', `Samwell wants to add ${bookWord} to your favorites.`);
+      if (favorite === false) return approve('Remove from favorites?', `Samwell wants to take ${bookWord} out of your favorites.`);
       return approve('Update favorites?', `Samwell wants to update favorites for ${bookWord}.`);
+    }
     case 'mark_as_finished':
       return approve('Mark as finished?', `Samwell wants to mark ${bookWord} as finished.`);
     case 'create_collection': {
@@ -191,13 +195,18 @@ export function approvalCopy({ toolName, input }: PendingApproval): ApprovalCopy
         `Samwell wants to delete "${name}". The books in it stay in your library.`,
       );
     }
-    case 'add_note_to_highlight':
-      return approve('Add this note?', 'Samwell wants to write a note on a highlight.');
-    case 'update_note':
+    case 'add_note_to_highlight': {
+      // The words themselves, so what is approved is what gets written.
+      const text = stringField(input, 'text');
+      return approve('Add this note?', text ? `Samwell wants to write this note: "${text}"` : 'Samwell wants to write a note on a highlight.');
+    }
+    case 'update_note': {
+      const text = stringField(input, 'text');
       return approve(
         'Rewrite this note?',
-        "Samwell wants to replace a note's text with something new.",
+        text ? `Samwell wants the note to say: "${text}"` : "Samwell wants to replace a note's text with something new.",
       );
+    }
     case 'delete_note':
       return approve(
         'Delete this note?',
