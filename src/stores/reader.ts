@@ -15,7 +15,7 @@ import {
 import { invalidateBlogLibrary } from "@/query-manager/blogs/invalidate";
 import { finishArticleOfBook } from "@/services/blogs/articles";
 import { extractSurroundingText } from "@/services/book-context";
-import { repairSuggestedHighlights } from "@/services/book-text/repair-suggested-highlights";
+import { repairSuggestedHighlights as moveSuggestedHighlights } from "@/services/book-text/repair-suggested-highlights";
 import { countableProgress } from "@/services/reading-day";
 import { useBooksStore } from "@/stores/books";
 import { localDayString } from "@/utils/day";
@@ -46,6 +46,8 @@ interface ReaderState {
   isLoading: boolean;
 
   openBook: (bookId: string) => Promise<void>;
+  /** Moves highlights Samwell suggested the old way to their passage. Run once the book is on screen. */
+  repairSuggestedHighlights: (bookId: string) => Promise<void>;
   updateProgress: (locator: Locator) => void;
   addBookmark: () => Promise<void>;
   removeBookmark: (id: string) => Promise<void>;
@@ -263,19 +265,19 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       allTags: allTagsList,
       isLoading: false,
     });
+  },
 
+  repairSuggestedHighlights: async (bookId: string) => {
     // Highlights Samwell suggested before suggestions found their passage
     // were saved at the reader's position, and never drawn. Moved to their
-    // passage in the background, and redrawn if this book is still open.
-    void repairSuggestedHighlights(bookId)
-      .then(async (moved) => {
-        if (!moved || get().currentBook?.id !== bookId) return;
-        const repaired = await db.select().from(highlights).where(eq(highlights.bookId, bookId));
-        if (get().currentBook?.id === bookId) set({ highlights: repaired });
-      })
-      .catch(() => {
-        // Best-effort: they stay where they were, as they always have.
-      });
+    // passage, and redrawn if this book is still open.
+    try {
+      if (!(await moveSuggestedHighlights(bookId)) || get().currentBook?.id !== bookId) return;
+      const repaired = await db.select().from(highlights).where(eq(highlights.bookId, bookId));
+      if (get().currentBook?.id === bookId) set({ highlights: repaired });
+    } catch {
+      // Best-effort: they stay where they were, as they always have.
+    }
   },
 
   updateProgress: (locator: Locator) => {

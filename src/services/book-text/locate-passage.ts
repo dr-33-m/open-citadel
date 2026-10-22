@@ -23,46 +23,83 @@ export interface LocatedPassage {
 }
 
 /**
- * Finds a quoted passage in what the reader has read of a book and anchors
- * it where it is, so a highlight made from it is drawn on that passage.
+ * How far past the saved position the current chapter is searched: about a
+ * page. The saved position is the top of the page on screen, so the passage a
+ * reader is looking at when they ask for it to be highlighted sits just past
+ * it, and was "not read yet". Only the quote itself comes back to Samwell, so
+ * a page's grace gives nothing away.
+ */
+const PAGE_AHEAD_CHARS = 3_000;
+
+/** A turn of the event loop between sections, so a long book never holds the screen. */
+const breathe = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** Finds quoted passages in one book, as many as asked, reading the book once. */
+export type PassageFinder = (quote: string) => Promise<LocatedPassage | { error: string }>;
+
+/**
+ * Finds quoted passages in what the reader has read of a book and anchors
+ * each where it is, so a highlight made from it is drawn on that passage.
  *
  * A suggested highlight used to be saved at the reader's position at the
  * time: the timeline showed it, and the book never did, because the reader
  * draws a highlight by finding its text on the page and the page it was
  * pointed at held some other text. Now the passage is looked up in the
  * book's text index (current chapter first, then back towards the start),
- * verbatim before loose, and never past where the reader has got to.
+ * verbatim before loose, and never more than a page past the reader.
+ *
+ * The book is read once, on the first quote, and kept for the rest: moving a
+ * dozen old highlights reads it once, not a dozen times.
  */
-export async function locatePassage(book: Book, quote: string): Promise<LocatedPassage | { error: string }> {
+export async function passageFinder(book: Book): Promise<PassageFinder | { error: string }> {
   const known = await bookExtent(book);
   if (!known) return { error: 'book_unreadable' };
-  const { sections, extent } = known;
-  if (extent.lastSection < 0) return { error: 'nothing_read_yet' };
+  const { sections } = known;
+  if (known.extent.lastSection < 0) return { error: 'nothing_read_yet' };
+  const extent: ReadableExtent = { ...known.extent, lastSectionChars: known.extent.lastSectionChars + PAGE_AHEAD_CHARS };
 
   const reached = sections.filter((section) => section.index <= extent.lastSection).sort((a, b) => b.index - a.index);
   const driver = await bookTextDriver();
   const texts: { section: StoredSection; text: string }[] = [];
   for (const section of reached) texts.push({ section, text: await readText(driver, book.id, section, extent) });
-
-  let found: { section: StoredSection; text: string; span: QuoteSpan } | null = null;
-  for (const entry of texts) {
-    const span = findQuote(entry.text, quote);
-    if (span) {
-      found = { ...entry, span };
-      break;
-    }
-  }
-  if (!found) {
-    for (const entry of texts) {
-      const span = findQuote(entry.text, quote, true);
-      if (span && (!found || span.score > found.span.score)) found = { ...entry, span };
-    }
-  }
-  if (!found) return { error: 'quote_not_found' };
-
-  const { section, text, span } = found;
-  const highlight = text.slice(span.start, span.end).split(SEPARATOR).join('\n');
   const template = readerTemplate(book.id, sections);
+
+  return async (quote) => {
+    let found: { section: StoredSection; text: string; span: QuoteSpan } | null = null;
+    for (const entry of texts) {
+      const span = findQuote(entry.text, quote);
+      if (span) {
+        found = { ...entry, span };
+        break;
+      }
+      await breathe();
+    }
+    if (!found) {
+      for (const entry of texts) {
+        const span = findQuote(entry.text, quote, true);
+        if (span && (!found || span.score > found.span.score)) found = { ...entry, span };
+        await breathe();
+      }
+    }
+    if (!found) return { error: 'quote_not_found' };
+    return anchor(found.section, found.text, found.span, template);
+  };
+}
+
+/** One quote in one book: `passageFinder` for a single passage. */
+export async function locatePassage(book: Book, quote: string): Promise<LocatedPassage | { error: string }> {
+  const find = await passageFinder(book);
+  return typeof find === 'function' ? find(quote) : find;
+}
+
+/** The passage as the book has it, and a locator the reader draws it at. */
+function anchor(
+  section: StoredSection,
+  text: string,
+  span: QuoteSpan,
+  template: { href: string; spinePath: string; type: string } | null,
+): LocatedPassage {
+  const highlight = text.slice(span.start, span.end).split(SEPARATOR).join('\n');
   return {
     text: highlight,
     locator: {

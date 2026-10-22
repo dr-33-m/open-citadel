@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { books, chatSuggestions, highlights } from '@/db/schema';
-import { locatePassage } from '@/services/book-text/locate-passage';
+import { passageFinder } from '@/services/book-text/locate-passage';
 
 /** Lowercased with whitespace collapsed: enough to tell a locator's text from a different passage. */
 const squash = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -28,9 +28,11 @@ export async function repairSuggestedHighlights(bookId: string): Promise<boolean
 
   const book = db.select().from(books).where(eq(books.id, bookId)).get();
   if (!book) return false;
+  const find = await passageFinder(book);
+  if (typeof find !== 'function') return false;
   let moved = false;
   for (const row of misplaced) {
-    const located = await locatePassage(book, row.text);
+    const located = await find(row.text);
     if ('error' in located) continue;
     db.update(highlights)
       // The context was read around the wrong place; cleared, it is read again when next wanted.

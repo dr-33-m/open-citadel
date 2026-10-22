@@ -37,7 +37,7 @@ function normalize(text: string): { text: string; at: number[] } {
   let space = true;
   for (let i = 0; i < text.length; i++) {
     const folded = FOLD[text[i]] ?? text[i].toLowerCase();
-    if (/\s/.test(folded)) {
+    if (isSpace(folded.charCodeAt(0))) {
       if (!space) {
         out += ' ';
         at.push(i);
@@ -56,6 +56,11 @@ function normalize(text: string): { text: string; at: number[] } {
     at.pop();
   }
   return { text: out, at };
+}
+
+/** Whitespace, by code: a regex a character was most of the cost of folding a chapter. */
+function isSpace(code: number): boolean {
+  return code === 32 || (code >= 9 && code <= 13) || code === 0x2028 || code === 0x2029 || code === 0x3000 || (code >= 0x2000 && code <= 0x200a);
 }
 
 /** The quote as it can be looked for: folded, and without the quotation marks or ellipses round it. */
@@ -141,6 +146,24 @@ function findLoose(norm: { text: string; at: number[] }, quote: string): QuoteSp
   return spanOf(norm.at, window[first].start, window[last].end, score);
 }
 
+/** Runs of letters or digits long enough to say something about where a passage is. */
+const ANCHOR_WORD = /[\p{L}\p{N}]{4,}/gu;
+
+/**
+ * Whether a section could hold the quote, by a native search for its three
+ * longest words, before any of it is folded: a verbatim match holds all of
+ * them, a loose one all but one. Folding a whole book a character at a time
+ * to find one paragraph was a long stall on the JavaScript thread; this
+ * leaves it to the one or two sections that might hold the passage.
+ */
+function mightHold(sectionText: string, wanted: string, loose: boolean): boolean {
+  const anchors = [...new Set(wanted.match(ANCHOR_WORD) ?? [])].sort((a, b) => b.length - a.length).slice(0, 3);
+  if (anchors.length === 0) return true;
+  const lower = sectionText.toLowerCase();
+  const held = anchors.filter((word) => lower.includes(word)).length;
+  return held >= (loose ? Math.max(1, anchors.length - 1) : anchors.length);
+}
+
 /**
  * Where a quote is in a section's text. `loose` also accepts a passage with
  * most of the quote's words in order-ish, for a quote with a word or two
@@ -148,7 +171,7 @@ function findLoose(norm: { text: string; at: number[] }, quote: string): QuoteSp
  */
 export function findQuote(sectionText: string, quote: string, loose = false): QuoteSpan | null {
   const wanted = cleanQuote(quote);
-  if (!wanted) return null;
+  if (!wanted || !mightHold(sectionText, wanted, loose)) return null;
   const norm = normalize(sectionText);
   return findExact(norm, wanted) ?? (loose ? findLoose(norm, wanted) : null);
 }
