@@ -1,3 +1,4 @@
+import type { WebSource } from 'samwell-shared';
 import { describe, expect, it } from 'vitest';
 
 import { earlierToolUseNote, type EarlierMessage } from '../earlier-tool-use';
@@ -7,8 +8,19 @@ function step(tool: string, title: string, detail: string | null, status: TurnSt
   return { id: `${tool}-${title}`, tool, title, detail, status };
 }
 
-function reply(content: string, steps: TurnStep[]): EarlierMessage {
-  return { role: 'assistant', content, activity: { steps, sources: [] } };
+function reply(content: string, steps: TurnStep[], sources: WebSource[] = []): EarlierMessage {
+  return { role: 'assistant', content, activity: { steps, sources } };
+}
+
+function page(n: number, snippet = `What page ${n} says`): WebSource {
+  return { title: `Page ${n}`, url: `https://example.com/${n}`, snippet };
+}
+
+function searched(asked: string, sources: WebSource[]): EarlierMessage[] {
+  return [
+    { role: 'user', content: asked },
+    reply('Found it', [step('web_search', `Searched the web for "${asked}"`, 'Found pages')], sources),
+  ];
 }
 
 describe('earlierToolUseNote', () => {
@@ -94,5 +106,28 @@ describe('earlierToolUseNote', () => {
   it('names no question when the reply came first', () => {
     const note = earlierToolUseNote([reply('Hello', [step('search_journey', 'Looked back over your journey', null)])]);
     expect(note).toContain('Before an earlier reply:');
+  });
+
+  it('carries the pages his latest web search found, with what each said', () => {
+    const note = earlierToolUseNote(searched('Chip Wilson book', [page(1, 'Publisher: RosettaBooks;\n November 27, 2018')]));
+    expect(note).toContain('- the web pages those searches found:\n  - Page 1 (https://example.com/1): Publisher: RosettaBooks; November 27, 2018');
+  });
+
+  it('carries pages for the two latest searches only, six apiece, each said briefly', () => {
+    const many = Array.from({ length: 8 }, (_, i) => page(i + 1, 'x'.repeat(500)));
+    const note = earlierToolUseNote([
+      ...searched('first', [page(90)]),
+      ...searched('second', many),
+      { role: 'user', content: 'no search' },
+      reply('Answer', [step('search_library', 'Looked through your library', null)]),
+      ...searched('third', [page(91)]),
+    ]);
+    expect(note).toContain('Searched the web for "first"');
+    expect(note).not.toContain('example.com/90');
+    expect(note).toContain('example.com/6');
+    expect(note).not.toContain('example.com/7');
+    expect(note).toContain('example.com/91');
+    const longest = Math.max(...note!.split('\n').filter((line) => line.startsWith('  - ')).map((line) => line.length));
+    expect(longest).toBeLessThan(450);
   });
 });
