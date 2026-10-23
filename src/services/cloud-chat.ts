@@ -1370,8 +1370,16 @@ export async function sendCloudChatTurn({
       if (chunk.type === 'REASONING_MESSAGE_CONTENT') {
         const delta = (chunk as { delta?: unknown }).delta;
         if (typeof delta === 'string' && delta) {
-          // The model is thinking again: the tool phase is over.
-          endToolPhase();
+          /*
+           * The model is thinking again. With nothing said yet the tool phase
+           * is over: the reasoning panel takes the footer and says so. With
+           * words already on screen it is not, because the footer then shows
+           * nothing unless a tool is running (`turnIndicator`): GLM said "let
+           * me dig through everything", looked six things up, and the row went
+           * blank for the seconds it thought before answering. It holds on
+           * "Working through that…" until new words arrive or the run ends.
+           */
+          if (!saidWhenToolCalled) endToolPhase();
           thinkingStartedAt ??= Date.now();
           thinking += delta;
           flushThinking(thinking);
