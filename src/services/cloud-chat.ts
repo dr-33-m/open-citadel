@@ -102,6 +102,7 @@ import {
   runSearchPodcastEpisodes,
 } from '@/services/listening-tools';
 import { formatLibrarySearch, type CollectionListing, type LibraryBook } from '@/services/library-format';
+import { earlierToolUseNote } from '@/utils/earlier-tool-use';
 import { NO_ACTIVITY, sameActivity, turnActivity, type TurnActivity } from '@/utils/turn-activity';
 import { useApprovalStore } from '@/stores/approval';
 import { useSettingsStore } from '@/stores/settings';
@@ -306,6 +307,8 @@ type StoredChatMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   createdAt: string;
+  /** What he did before this reply, said back to him by `earlierToolUseMessages`. */
+  activity?: TurnActivity | null;
 };
 
 type ApprovalRequest = {
@@ -485,6 +488,22 @@ function journeyMessages(mode: SamwellTurnMode): UIMessage[] {
       ],
     },
   ];
+}
+
+/**
+ * The lookups behind his earlier replies, which `toUIMessage` leaves out.
+ *
+ * A system message, as the journey is, so the server lifts it into the system
+ * prompts and it never sits in the conversation as words he said. Without it
+ * he read his own earlier replies as unchecked and apologised for them. See
+ * `earlier-tool-use.ts`. Not in onboarding, which is a fixed script whose
+ * prompt the house caches.
+ */
+function earlierToolUseMessages(mode: SamwellTurnMode, history: StoredChatMessage[]): UIMessage[] {
+  if (mode === 'onboarding') return [];
+  const note = earlierToolUseNote(history);
+  if (!note) return [];
+  return [{ id: 'samwell-earlier-tools', role: 'system', createdAt: new Date(), parts: [{ type: 'text', content: note }] }];
 }
 
 function toUIMessage(message: StoredChatMessage): UIMessage | null {
@@ -1225,6 +1244,7 @@ export async function sendCloudChatTurn({
   const approvals: ApprovalRequest[] = [];
   const initialMessages = [
     ...journeyMessages(mode),
+    ...earlierToolUseMessages(mode, history),
     ...history.map(toUIMessage).filter((message): message is UIMessage => message !== null),
   ];
 
