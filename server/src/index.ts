@@ -10,12 +10,14 @@ import { logger } from 'hono/logger';
 import {
   COMPASS_CLIENT_TOOL_DEFINITIONS,
   COMPASS_SYSTEM_PROMPT,
+  LISTENING_TOOL_NAMES,
   onboardingClientToolDefinitions,
   onboardingSystemPrompt,
   readOnboardingFeeds,
   SAMWELL_APP_GUIDE_TOOL_PROMPT,
   SAMWELL_CLIENT_TOOL_DEFINITIONS,
   SAMWELL_JOURNEY_TOOL_PROMPT,
+  SAMWELL_LISTENING_TOOL_PROMPT,
   SAMWELL_SYSTEM_PROMPT,
   SAMWELL_WEB_SEARCH_TOOL_PROMPT,
   PLAN_ORDER,
@@ -100,7 +102,7 @@ import {
 } from './billing.js';
 import { readIdentity } from './identity.js';
 import { asOneRun } from './one-run.js';
-import { offeredClientTools } from './offered-tools.js';
+import { offeredClientTools, offersAny } from './offered-tools.js';
 import { WEB_SEARCH_FALLBACK_COST_USD, createWebSearchTool } from './web-search.js';
 import { ttsRoutes } from './tts-production.js';
 import { voiceCatalog } from './voice-catalog.js';
@@ -171,19 +173,23 @@ function readMode(body: RunAgentInput): SamwellMode {
  * re-sent on every request, so they are part of what the reader pays for -
  * and one mode-to-prompts decision is one chance to keep the two agreeing.
  */
-function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean): string[] {
+function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean, declaredTools: unknown): string[] {
   // Compass names search_journey in its own prompt, since Compass only
   // ever runs here. The reading persona is shared with the on-device
   // engine, so the journey paragraph is added on this route alone.
   // The web is the cloud's alone, and onboarding has no use for it: see
   // `SAMWELL_WEB_SEARCH_TOOL_PROMPT`.
-  if (mode === 'compass') return [COMPASS_SYSTEM_PROMPT, SAMWELL_WEB_SEARCH_TOOL_PROMPT];
+  // The podcasts and blogs paragraph only for an app that declared those
+  // tools: an older build is never offered them, and must not be told of them.
+  const listening = offersAny(declaredTools, LISTENING_TOOL_NAMES) ? [SAMWELL_LISTENING_TOOL_PROMPT] : [];
+  if (mode === 'compass') return [COMPASS_SYSTEM_PROMPT, SAMWELL_WEB_SEARCH_TOOL_PROMPT, ...listening];
   if (mode === 'onboarding') return [onboardingSystemPrompt({ feeds: onboardingFeeds })];
   return [
     SAMWELL_SYSTEM_PROMPT,
     SAMWELL_JOURNEY_TOOL_PROMPT,
     SAMWELL_APP_GUIDE_TOOL_PROMPT,
     SAMWELL_WEB_SEARCH_TOOL_PROMPT,
+    ...listening,
   ];
 }
 
@@ -865,7 +871,7 @@ app.post('/chat/http', async (c) => {
    * and a request that is about to be refused must not spend one of the
    * house's onboarding turns on its way to being refused.
    *
-   * See `tool-loop.ts` for why twelve.
+   * See `limits.ts` in samwell-shared for why forty, and why it is a backstop.
    */
   const loop = admitRequest(
     openTurns,
@@ -1024,7 +1030,7 @@ app.post('/chat/http', async (c) => {
       ) +
       // The persona and the book grounding are re-sent by the server on every
       // request; the client never sends them, so the estimate adds them.
-      [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts].reduce(
+      [...personaPromptsFor(mode, onboardingFeeds, body.tools), ...sessionSystemPrompts].reduce(
         (sum, text) => sum + estimateTextTokens(text),
         0,
       );
@@ -1151,7 +1157,29 @@ app.post('/chat/http', async (c) => {
    * is cancelled.
    */
   const abortController = new AbortController();
+  /*
+   * Which turn, and which step of it, every line about this request is.
+   *
+   * The thread is cut to eight characters: enough to tell one reader's turn
+   * from another in a log, not an identifier worth keeping. Without it the
+   * logs could not say whether a run of requests was one turn or three, which
+   * is the first question about any turn that stopped early.
+   */
+  const turnLabel = `thread=${(body.threadId ?? 'none').slice(0, 8)} step=${loop.continuations}`;
   c.req.raw.signal?.addEventListener('abort', () => abortController.abort(), { once: true });
+  /*
+   * The reader's side closed the connection before the reply was done: stop
+   * pressed, the app stopping a turn itself, or the network dropping. Nothing
+   * else aborts this controller (the request's own signal above, or the
+   * response stream being cancelled). TanStack logs it as a "fatal" error
+   * from the model's stream, which reads like the server failing; it is not,
+   * and this line says what it is.
+   */
+  abortController.signal.addEventListener(
+    'abort',
+    () => console.log(`[Samwell Cloud] Reader disconnected mid-reply: ${turnLabel}`),
+    { once: true },
+  );
 
   const stream = chat({
     abortController,
@@ -1173,7 +1201,7 @@ app.post('/chat/http', async (c) => {
     // Not cached for Anthropic, even in onboarding: this route is the
     // reader's bill, and it does not price in a cache write. See
     // `cachedOnboardingPrompt`.
-    systemPrompts: [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts],
+    systemPrompts: [...personaPromptsFor(mode, onboardingFeeds, body.tools), ...sessionSystemPrompts],
     // The device's tools as definitions only (the app runs them), and the
     // web search as a server tool TanStack runs here in its own agent loop.
     tools:
@@ -1274,7 +1302,7 @@ app.post('/chat/http', async (c) => {
   });
 
   console.log(
-    `[Samwell Cloud] ${mode} turn: model=${modelId} thinkingBudget=${thinkingBudget}` +
+    `[Samwell Cloud] ${mode} turn: ${turnLabel} model=${modelId} thinkingBudget=${thinkingBudget}` +
       (mode === 'onboarding'
         ? ` billed=${onTheHouse ? 'house' : 'reader'}`
         : ` plan=${plan}`),

@@ -290,6 +290,14 @@ export default function ReaderScreen() {
     return () => closeBook();
   }, [id]);
 
+  // Highlights Samwell suggested before he could find their passage are moved
+  // to it, once the book is on screen: it reads the book's text, which has no
+  // place in the frames that bring the reader in.
+  const repairSuggestedHighlights = useReaderStore((s) => s.repairSuggestedHighlights);
+  useEffect(() => {
+    if (readerPainted && id) void repairSuggestedHighlights(id);
+  }, [readerPainted, id, repairSuggestedHighlights]);
+
   // Where a link asked to open (a highlight on the timeline, a passage in a
   // chat), when it asked for somewhere rather than the saved position. The
   // router hands the param over decoded; decoding it again threw on any `%`

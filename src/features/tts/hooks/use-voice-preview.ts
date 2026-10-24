@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 
+import { disposeAudioPlayer } from '@/lib/audio-player';
 import { AI_VOICES_SUPPORTED, DEVICE_VOICE, voiceLabel, type ReaderVoice } from '@/services/device-tts/catalogue';
 import { synthesize } from '@/services/device-tts/engine';
 import { deviceSpeech } from '@/services/device-tts/speech';
@@ -41,7 +42,7 @@ export function useVoicePreview() {
   const stopPlayer = useCallback(() => {
     if (playbackTimerRef.current) clearTimeout(playbackTimerRef.current);
     playbackTimerRef.current = null;
-    playerRef.current?.remove();
+    disposeAudioPlayer(playerRef.current);
     playerRef.current = null;
   }, []);
 

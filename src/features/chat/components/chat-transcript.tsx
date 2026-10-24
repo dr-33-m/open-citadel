@@ -16,6 +16,7 @@ import type { SamwellStatus } from "@/features/chat/hooks/use-samwell-status";
 import type { TurnIndicator } from "@/features/chat/utils/agent-activity";
 import type { ChatMessage } from "@/stores/chat";
 import type { TurnActivity } from "@/utils/turn-activity";
+import type { PodcastCardKind } from '@/services/listening-tools/card';
 
 interface ChatTranscriptProps {
   /** Which conversation this is. The scroller is keyed on it, so opening
@@ -43,6 +44,7 @@ interface ChatTranscriptProps {
   onNavigateToHighlight: (bookId: string, locator: string) => void;
   onNavigateToTimeline: () => void;
   onNavigateToBook: (bookId: string) => void;
+  onNavigateToPodcast: (kind: PodcastCardKind, id: string) => void;
   /** Sends again a message of the reader's that never got a reply. */
   onResendMessage: (id: string) => void;
 }
@@ -62,6 +64,7 @@ export function ChatTranscript({
   onNavigateToHighlight,
   onNavigateToTimeline,
   onNavigateToBook,
+  onNavigateToPodcast,
   onResendMessage,
 }: ChatTranscriptProps) {
   /*
@@ -133,6 +136,7 @@ export function ChatTranscript({
         onNavigateToHighlight={onNavigateToHighlight}
         onNavigateToTimeline={onNavigateToTimeline}
         onNavigateToBook={onNavigateToBook}
+        onNavigateToPodcast={onNavigateToPodcast}
         onResendMessage={onResendMessage}
       />
     </>

@@ -12,6 +12,7 @@ import { haptics } from "@/utils/haptics";
 import type { HeldMessage } from "@/hooks/use-message-actions";
 import type { TurnActivity, TurnStep, TurnThought } from "@/utils/turn-activity";
 import type { WebSource } from "samwell-shared";
+import type { PodcastCardKind } from '@/services/listening-tools/card';
 
 /** New turns rise and fade in rather than popping into the list —
  * fires once per instance, so it plays for a freshly-sent or
@@ -33,6 +34,7 @@ interface ChatBubbleProps {
   onNavigateToHighlight?: (bookId: string, locator: string) => void;
   onNavigateToTimeline?: () => void;
   onNavigateToBook?: (bookId: string) => void;
+  onNavigateToPodcast?: (kind: PodcastCardKind, id: string) => void;
   /** Samwell's turns only: raises the conversation's sources sheet. */
   onOpenSources?: (sources: readonly WebSource[]) => void;
   /** Samwell's turns only: raises the conversation's thought sheet. */
@@ -71,6 +73,7 @@ export const ChatBubble = React.memo(function ChatBubble({
   onNavigateToHighlight,
   onNavigateToTimeline,
   onNavigateToBook,
+  onNavigateToPodcast,
   onOpenSources,
   onOpenThought,
   onOpenTasks,
@@ -110,6 +113,7 @@ export const ChatBubble = React.memo(function ChatBubble({
           onNavigateToHighlight={onNavigateToHighlight}
           onNavigateToTimeline={onNavigateToTimeline}
           onNavigateToBook={onNavigateToBook}
+          onNavigateToPodcast={onNavigateToPodcast}
           onOpenSources={onOpenSources}
           onOpenThought={onOpenThought}
           onOpenTasks={onOpenTasks}
