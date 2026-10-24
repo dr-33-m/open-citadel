@@ -4,6 +4,7 @@
  *   [[ref:highlight:hl-123]] / [[ref:thought:th-123]]  an existing entry, read-only
  *   [[suggest:highlight:sugg-1]] / [[suggest:thought:sugg-1]]  a proposal, approve/reject
  *   [[book:bk-123]]  a book from the library, shown with its cover
+ *   [[podcast:pod-1]] / [[episode:ep-1]]  a show or an episode, shown with its artwork
  *
  * One pattern for drawing a reply (`AssistantContent` puts a card where each
  * marker is) and for copying one, so the two never disagree about what a
@@ -12,7 +13,7 @@
 
 /** A fresh global pattern: `exec` keeps its place in `lastIndex`, so one is never shared. */
 export function replyMarkerPattern(): RegExp {
-  return /\[\[(?:(ref|suggest):(highlight|thought)|(book)):([^\]]+)\]\]/g;
+  return /\[\[(?:(ref|suggest):(highlight|thought)|(book|podcast|episode)):([^\]]+)\]\]/g;
 }
 
 /**

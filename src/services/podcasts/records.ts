@@ -21,10 +21,7 @@ export type EpisodeItem = Omit<Episode, "description"> & {
 /** A show as a shelf draws it, with how many episodes are waiting in it. */
 export type ShowItem = Podcast & { newCount: number };
 
-/** The name a show goes by: the reader's own, when they gave it one. */
-export function showName(show: Pick<Podcast, "title" | "customTitle">): string {
-  return show.customTitle?.trim() || show.title;
-}
+export { SHOW_NAME_SQL, showName } from "@/services/podcasts/show-name";
 
 export { chunk, newId, nowIso, yieldToUi } from "@/services/rows";
 

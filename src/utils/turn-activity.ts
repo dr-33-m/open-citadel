@@ -117,6 +117,20 @@ function titles(tool: string, args: Record<string, unknown>): [string, string] {
       return ['Looking over your library', 'Looked over your library'];
     case 'search_journey':
       return ['Looking back over your journey', 'Looked back over your journey'];
+    case 'list_my_podcasts':
+      return ['Looking over your podcasts', 'Looked over your podcasts'];
+    case 'search_podcast_episodes': {
+      const where = quoted(args.show) ? ` from${quoted(args.show)}` : '';
+      return q
+        ? [`Looking for${q} in your episodes`, `Looked for${q} in your episodes`]
+        : [`Looking through your episodes${where}`, `Looked through your episodes${where}`];
+    }
+    case 'get_podcast_episode':
+      return ['Reading the show notes', 'Read the show notes'];
+    case 'list_my_blogs':
+      return ['Looking over your blogs', 'Looked over your blogs'];
+    case 'search_blog_posts':
+      return q ? [`Looking for${q} in your blogs`, `Looked for${q} in your blogs`] : ['Looking through your blogs', 'Looked through your blogs'];
     case 'explain_app':
       return ['Checking how the app works', 'Checked how the app works'];
     default:
@@ -178,6 +192,19 @@ function detailFor(tool: string, output: unknown): string | null {
     case 'search_library': {
       const total = typeof record.total === 'number' ? record.total : null;
       return total === null ? null : total === 0 ? 'No book matched' : `Found ${plural(total, 'book')}`;
+    }
+    case 'list_my_podcasts':
+    case 'list_my_blogs':
+    case 'search_podcast_episodes':
+    case 'search_blog_posts': {
+      const total = typeof record.total === 'number' ? record.total : null;
+      const noun = {
+        list_my_podcasts: ['show', 'shows'],
+        list_my_blogs: ['blog', 'blogs'],
+        search_podcast_episodes: ['episode', 'episodes'],
+        search_blog_posts: ['post', 'posts'],
+      }[tool] as [string, string];
+      return total === null ? null : total === 0 ? 'Nothing matched' : `Found ${plural(total, noun[0], noun[1])}`;
     }
     case 'list_collections': {
       const n = count(output, 'collections');

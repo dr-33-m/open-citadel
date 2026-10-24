@@ -1,6 +1,8 @@
 import { toolDefinition } from '@tanstack/ai/client';
 import { z } from 'zod';
 
+import { LISTENING_TOOL_DEFINITIONS } from './listening-tools';
+
 export const SearchResultSchema = z.object({
   id: z.string(),
   type: z.enum(['highlight', 'thought']),
@@ -10,6 +12,8 @@ export const SearchResultSchema = z.object({
   tags: z.array(z.string()),
   locator: z.string().nullable(),
   noteText: z.string().nullable(),
+  /** Each note with its id, for update_note and delete_note. Optional: older apps do not send it. */
+  notes: z.array(z.object({ id: z.string(), text: z.string() })).optional(),
 });
 
 export type SamwellSearchResult = z.infer<typeof SearchResultSchema>;
@@ -127,6 +131,8 @@ export const SuggestNextBookOutputSchema = z.object({
 
 export const SuggestHighlightInputSchema = z.object({
   quote: z.string().min(1),
+  /** The book the passage is in. Optional: older apps take the chat's own book. */
+  book_title: z.string().optional(),
 });
 
 export const SuggestThoughtInputSchema = z.object({
@@ -137,6 +143,8 @@ export const SuggestThoughtInputSchema = z.object({
 export const SuggestionResultSchema = z.object({
   ok: z.boolean(),
   suggestionId: z.string().nullable(),
+  /** The passage as the book has it, which is what is saved. Optional: older apps do not send it. */
+  passage: z.string().optional(),
   error: z.string().optional(),
 });
 
@@ -182,7 +190,16 @@ export const CreateCollectionInputSchema = z.object({
 export const CreateCollectionResultSchema = z.object({
   ok: z.boolean(),
   collectionId: z.string().optional(),
+  /** A collection by that name was already there, and nothing new was made. */
+  alreadyExisted: z.boolean().optional(),
   error: z.string().optional(),
+});
+
+export const ToggleFavoriteInputSchema = BookTitlesInputSchema.extend({
+  favorite: z
+    .boolean()
+    .optional()
+    .describe('true to make them favourites, false to take them out. Omit only to flip each one.'),
 });
 
 export const DeleteCollectionInputSchema = z.object({
@@ -221,8 +238,9 @@ export const NoteInputSchema = z.object({
 });
 
 export const UpdateNoteInputSchema = z.object({
-  note_id: z.string(),
-  highlight_id: z.string(),
+  note_id: z.string().describe('The note_id search_highlights gives for the note.'),
+  /** Optional: the note's id is enough, and its highlight is read off it. Older apps used it. */
+  highlight_id: z.string().optional().describe('The highlight the note is on.'),
   text: z.string().min(1),
 });
 
@@ -362,7 +380,7 @@ export const explainAppTool = toolDefinition({
 export const searchHighlightsTool = toolDefinition({
   name: 'search_highlights',
   description:
-    "Search the user's book highlights and notes. Can search by keyword in highlight/note text, by book title, or by tag. Call with no arguments to get the most recent highlights.",
+    "Search the user's book highlights and notes. Can search by keyword in highlight/note text, by book title, or by tag. Call with no arguments to get the most recent highlights. Each result gives the highlight's ID and each note's note_id, which the note tools take.",
   inputSchema: SearchHighlightsInputSchema,
   outputSchema: SearchToolOutputSchema,
 });
@@ -446,7 +464,7 @@ export const deleteThoughtTool = toolDefinition({
 export const suggestHighlightTool = toolDefinition({
   name: 'suggest_highlight',
   description:
-    "Propose saving a passage the user has ALREADY read as a highlight. This only registers a suggestion for the user to review inline in the chat, approve, or reject; it never saves anything directly. Only call this within a chat about a specific book, for a passage that connects meaningfully to the user's journey (their goals, recurring themes, or something they're actively working through), not just anything that seems interesting in isolation. Use sparingly. `quote` must be text the user has actually read, close to word-for-word. After calling this, mention it in your reply using the marker [[suggest:highlight:<suggestionId>]] so it renders for the user.",
+    "Propose saving a passage the user has ALREADY read as a highlight. This only registers a suggestion for the user to review inline in the chat, approve, or reject; it never saves anything directly. The passage is found in the book and saved at its place there, so `quote` must be the book's own words, copied exactly from search_reading or read_chapter (an ellipsis may stand for a skipped stretch); never a paraphrase. Give book_title when the chat is not about that book. If it answers quote_not_found, read the passage with read_chapter and try again with its exact words. Only for a passage that connects meaningfully to the user's journey (their goals, recurring themes, or something they're actively working through), not just anything that seems interesting in isolation. Use sparingly. After calling this, mention it in your reply using the marker [[suggest:highlight:<suggestionId>]] so it renders for the user.",
   inputSchema: SuggestHighlightInputSchema,
   outputSchema: SuggestionResultSchema,
 });
@@ -498,8 +516,8 @@ export const reorderQueueTool = toolDefinition({
 export const toggleFavoriteTool = toolDefinition({
   name: 'toggle_favorite',
   description:
-    'Add or remove one or more books from Favorites. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.',
-  inputSchema: BookTitlesInputSchema,
+    'Add one or more books to Favorites (favorite: true) or take them out (favorite: false). Always say which: a book already in Favorites stays there when asked to add it. If book_titles is omitted, applies to the book the current chat is about. Requires user approval.',
+  inputSchema: ToggleFavoriteInputSchema,
   outputSchema: BookBatchActionResultSchema,
   needsApproval: true,
 });
@@ -596,7 +614,7 @@ export const addNoteToHighlightTool = toolDefinition({
 export const updateNoteTool = toolDefinition({
   name: 'update_note',
   description:
-    "Rewrite an existing note on a highlight, replacing its text entirely. ASK FIRST: read the current note back to the user and ask what they want it to say instead, unless they have already told you. Never quietly reword something they wrote. Requires user approval.",
+    "Rewrite an existing note on a highlight, replacing its text entirely. Take its note_id from search_highlights. ASK FIRST: read the current note back to the user and ask what they want it to say instead, unless they have already told you. Never quietly reword something they wrote. Requires user approval.",
   inputSchema: UpdateNoteInputSchema,
   outputSchema: NoteResultSchema,
   needsApproval: true,
@@ -605,7 +623,7 @@ export const updateNoteTool = toolDefinition({
 export const deleteNoteTool = toolDefinition({
   name: 'delete_note',
   description:
-    'Permanently delete a note from a highlight. The highlight itself stays. Requires user approval.',
+    'Permanently delete a note from a highlight, by the note_id search_highlights gives. The highlight itself stays. Requires user approval.',
   inputSchema: UpdateNoteInputSchema.omit({ text: true }),
   outputSchema: NoteResultSchema,
   needsApproval: true,
@@ -713,6 +731,8 @@ export const SAMWELL_TOOL_DEFINITIONS = [
   deleteNoteTool,
   updateThoughtTool,
   searchJourneyTool,
+  // Podcasts and blogs: what they listen to and read online. See `listening-tools.ts`.
+  ...LISTENING_TOOL_DEFINITIONS,
 ] as const;
 
 export const SAMWELL_CLIENT_TOOL_DEFINITIONS = SAMWELL_TOOL_DEFINITIONS.map((tool) =>

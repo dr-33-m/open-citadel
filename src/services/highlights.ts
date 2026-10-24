@@ -56,7 +56,10 @@ export function listHighlightNotes(highlightId: string): HighlightNoteRow[] {
 
 /** Writes a note on a highlight. Returns the row as kept. */
 export async function addHighlightNote(highlightId: string, bookId: string, text: string): Promise<HighlightNoteRow> {
-  const row: HighlightNoteRow = { id: `note-${Date.now()}`, highlightId, bookId, text, createdAt: new Date().toISOString(), updatedAt: null };
+  // A random suffix as for highlights: two notes in one millisecond (a tap
+  // and a tool call) would otherwise share an id and the second fail.
+  const id = `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const row: HighlightNoteRow = { id, highlightId, bookId, text, createdAt: new Date().toISOString(), updatedAt: null };
   await db.insert(notes).values(row);
   return row;
 }

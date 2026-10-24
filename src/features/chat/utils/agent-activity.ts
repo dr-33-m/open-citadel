@@ -41,6 +41,11 @@ const TOOL_ORB: Record<string, ThinkingOrbState> = {
   list_collections: 'searching',
   search_library: 'searching',
   get_book_details: 'searching',
+  list_my_podcasts: 'searching',
+  search_podcast_episodes: 'searching',
+  get_podcast_episode: 'searching',
+  list_my_blogs: 'searching',
+  search_blog_posts: 'searching',
   // Run on the server, but drawn the same: he is looking something up.
   web_search: 'searching',
 

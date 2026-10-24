@@ -10,12 +10,14 @@ import { logger } from 'hono/logger';
 import {
   COMPASS_CLIENT_TOOL_DEFINITIONS,
   COMPASS_SYSTEM_PROMPT,
+  LISTENING_TOOL_NAMES,
   onboardingClientToolDefinitions,
   onboardingSystemPrompt,
   readOnboardingFeeds,
   SAMWELL_APP_GUIDE_TOOL_PROMPT,
   SAMWELL_CLIENT_TOOL_DEFINITIONS,
   SAMWELL_JOURNEY_TOOL_PROMPT,
+  SAMWELL_LISTENING_TOOL_PROMPT,
   SAMWELL_SYSTEM_PROMPT,
   SAMWELL_WEB_SEARCH_TOOL_PROMPT,
   PLAN_ORDER,
@@ -100,7 +102,7 @@ import {
 } from './billing.js';
 import { readIdentity } from './identity.js';
 import { asOneRun } from './one-run.js';
-import { offeredClientTools } from './offered-tools.js';
+import { offeredClientTools, offersAny } from './offered-tools.js';
 import { WEB_SEARCH_FALLBACK_COST_USD, createWebSearchTool } from './web-search.js';
 import { ttsRoutes } from './tts-production.js';
 import { transcribeRoutes, transcribeWorker } from './transcribe-production.js';
@@ -172,19 +174,23 @@ function readMode(body: RunAgentInput): SamwellMode {
  * re-sent on every request, so they are part of what the reader pays for -
  * and one mode-to-prompts decision is one chance to keep the two agreeing.
  */
-function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean): string[] {
+function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean, declaredTools: unknown): string[] {
   // Compass names search_journey in its own prompt, since Compass only
   // ever runs here. The reading persona is shared with the on-device
   // engine, so the journey paragraph is added on this route alone.
   // The web is the cloud's alone, and onboarding has no use for it: see
   // `SAMWELL_WEB_SEARCH_TOOL_PROMPT`.
-  if (mode === 'compass') return [COMPASS_SYSTEM_PROMPT, SAMWELL_WEB_SEARCH_TOOL_PROMPT];
+  // The podcasts and blogs paragraph only for an app that declared those
+  // tools: an older build is never offered them, and must not be told of them.
+  const listening = offersAny(declaredTools, LISTENING_TOOL_NAMES) ? [SAMWELL_LISTENING_TOOL_PROMPT] : [];
+  if (mode === 'compass') return [COMPASS_SYSTEM_PROMPT, SAMWELL_WEB_SEARCH_TOOL_PROMPT, ...listening];
   if (mode === 'onboarding') return [onboardingSystemPrompt({ feeds: onboardingFeeds })];
   return [
     SAMWELL_SYSTEM_PROMPT,
     SAMWELL_JOURNEY_TOOL_PROMPT,
     SAMWELL_APP_GUIDE_TOOL_PROMPT,
     SAMWELL_WEB_SEARCH_TOOL_PROMPT,
+    ...listening,
   ];
 }
 
@@ -1043,7 +1049,7 @@ app.post('/chat/http', async (c) => {
       ) +
       // The persona and the book grounding are re-sent by the server on every
       // request; the client never sends them, so the estimate adds them.
-      [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts].reduce(
+      [...personaPromptsFor(mode, onboardingFeeds, body.tools), ...sessionSystemPrompts].reduce(
         (sum, text) => sum + estimateTextTokens(text),
         0,
       );
@@ -1214,7 +1220,7 @@ app.post('/chat/http', async (c) => {
     // Not cached for Anthropic, even in onboarding: this route is the
     // reader's bill, and it does not price in a cache write. See
     // `cachedOnboardingPrompt`.
-    systemPrompts: [...personaPromptsFor(mode, onboardingFeeds), ...sessionSystemPrompts],
+    systemPrompts: [...personaPromptsFor(mode, onboardingFeeds, body.tools), ...sessionSystemPrompts],
     // The device's tools as definitions only (the app runs them), and the
     // web search as a server tool TanStack runs here in its own agent loop.
     tools:

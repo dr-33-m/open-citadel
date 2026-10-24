@@ -74,7 +74,9 @@ import { PastGoalsSheet } from "@/features/compass/components/past-goals-sheet";
 import { PlannerSheet } from "@/features/compass/components/planner-sheet";
 import { useCompassConversation } from "@/features/compass/hooks/use-compass-conversation";
 import { useGoalEnding } from "@/features/compass/hooks/use-goal-ending";
+import { openEpisodePage, openShowPage } from "@/features/podcasts/hooks/open-podcast-page";
 import { useAfterFirstPaint } from "@/navigation/use-after-first-paint";
+import type { PodcastCardKind } from "@/services/listening-tools/card";
 import { isVisibleChatMessage } from "@/services/chat-transcript";
 import { useSettingsStore } from "@/stores/settings";
 import { useAllBooks, useBooksStore } from "@/stores/books";
@@ -469,6 +471,16 @@ export function SamwellPage() {
     [router],
   );
 
+  // A show or an episode opens its own page, read ahead from the tap as the
+  // podcasts screens open them.
+  const handleNavigateToPodcast = React.useCallback(
+    (kind: PodcastCardKind, id: string) => {
+      if (kind === "show") openShowPage(router, id);
+      else openEpisodePage(router, id);
+    },
+    [router],
+  );
+
   /** Bottom padding that keeps content clear of the floating card and nav. */
   const floatingClearance = React.useMemo(
     () => ({ paddingBottom: floatingBottomHeight + spacing[3] }),
@@ -819,6 +831,7 @@ export function SamwellPage() {
                       onNavigateToHighlight={handleNavigateToHighlight}
                       onNavigateToTimeline={handleNavigateToTimeline}
                       onNavigateToBook={handleNavigateToBook}
+                      onNavigateToPodcast={handleNavigateToPodcast}
                       onResendMessage={chat.resend}
                     />
                   </EpisodeTimesContext.Provider>
