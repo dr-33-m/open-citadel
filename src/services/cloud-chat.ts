@@ -1098,6 +1098,13 @@ export async function sendCloudChatTurn({
    */
   let thinking = '';
   /*
+   * Which reasoning message the trace is in. Each request after a tool thinks
+   * in a new one, and running them straight on joined a cut-off sentence to
+   * the next round's first ("gentle, insightfulFun request"); a new one starts
+   * a new paragraph.
+   */
+  let reasoningMessageId: string | null = null;
+  /*
    * Thinking-time measurement. `thinkingStartedAt` is set on the first
    * reasoning delta; `reportThinkingDone` fires `onThinkingDone` once, at the
    * first answer token or when the turn ends, whichever comes first.
@@ -1381,6 +1388,13 @@ export async function sendCloudChatTurn({
            */
           if (!saidWhenToolCalled) endToolPhase();
           thinkingStartedAt ??= Date.now();
+          const messageId = (chunk as { messageId?: unknown }).messageId;
+          if (typeof messageId === 'string' && messageId !== reasoningMessageId) {
+            if (reasoningMessageId !== null && thinking && !thinking.endsWith('\n\n')) {
+              thinking = `${thinking.trimEnd()}\n\n`;
+            }
+            reasoningMessageId = messageId;
+          }
           thinking += delta;
           flushThinking(thinking);
         }

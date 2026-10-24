@@ -241,4 +241,35 @@ describe('the status row after a tool, while he thinks again', () => {
     expect(events.indexOf('clear')).toBeGreaterThanOrEqual(0);
     expect(events.indexOf('clear')).toBeLessThan(events.indexOf('think'));
   });
+
+  it('starts each round of thinking on a new paragraph', async () => {
+    runs = [
+      [
+        started,
+        { type: 'REASONING_MESSAGE_START', messageId: 'r0', role: 'reasoning', timestamp: at },
+        { type: 'REASONING_MESSAGE_CONTENT', messageId: 'r0', delta: 'My persona is gentle, insightful', timestamp: at },
+        { type: 'TEXT_MESSAGE_START', messageId: 'm1', role: 'assistant', timestamp: at },
+        ...searched,
+        ...thinks,
+        ...answers,
+        ...finished,
+      ],
+    ];
+    let trace = '';
+    await sendCloudChatTurn({
+      baseUrl: 'https://cloud.test',
+      modelId: 'test-model',
+      sessionId: 's1',
+      bookId: null,
+      mode: 'onboarding',
+      history: [],
+      content: 'Hello',
+      onStreamingContent: () => {},
+      onThinkingContent: (content) => {
+        trace = content;
+      },
+      onToolStatus: () => {},
+    });
+    expect(trace).toBe('My persona is gentle, insightful\n\nWeighing what came back.');
+  });
 });
