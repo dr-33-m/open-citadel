@@ -6,9 +6,10 @@ import type { EpisodeSummary, ListeningTotals, ShowSummary } from '@/services/li
 import { showNotesToText } from '@/services/podcasts/show-notes';
 import { addDaysYmd, localDayString } from '@/utils/day';
 import { filterTerms, isEmptyQuery, parseSearchQuery, rankByMatch } from '@/utils/search-terms';
+import { SHOW_NAME_SQL } from '@/services/podcasts/show-name';
 
 /** The name a show is drawn with: the reader's own for it, when they gave one. */
-const showTitle = sql<string>`coalesce(nullif(trim(${podcasts.customTitle}), ''), ${podcasts.title})`;
+const showTitle = SHOW_NAME_SQL;
 const count = (condition: SQL) => sql<number>`coalesce(sum(case when ${condition} then 1 else 0 end), 0)`;
 
 /** Episodes returned at most, and fetched for the ranking to choose from when there are words to rank by. */

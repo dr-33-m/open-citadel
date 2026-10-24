@@ -1534,7 +1534,10 @@ export async function sendCloudChatTurn({
       if (streamError && !aborted && isWorthResuming(streamError) && resume.canResume()) {
         // The connection dropped, not the server refusing: go again from
         // where that request started, once the phone is back online.
-        if (isCloudUnreachable(streamError)) reportCloudUnreached();
+        // Only a request that never got an answer: a stream cut after it
+        // started (a proxy closing long streams) is not the server unreached,
+        // and three of those used to put the whole app offline.
+        if (isCloudUnreachable(streamError) && !reachedThisRequest) reportCloudUnreached();
         const dropped = streamError;
         streamError = null;
         resuming = true;

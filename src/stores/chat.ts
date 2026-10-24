@@ -978,7 +978,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // Carrying on is the reader's next message, in the chat it paused in.
           onPaused: (reason) =>
             sayTurnPaused(reason, () => {
-              if (get().activeSession?.id === activeSession.id) void get().sendMessage(KEEP_GOING_MESSAGE);
+              // Never over a turn already running: the toast stays up while
+              // the reader writes something else, and a second turn would
+              // race the first and leave stop holding only one of them.
+              if (get().activeSession?.id === activeSession.id && !get().isGenerating) {
+                void get().sendMessage(KEEP_GOING_MESSAGE);
+              }
             }),
         });
       } catch (err) {

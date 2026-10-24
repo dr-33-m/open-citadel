@@ -4,6 +4,7 @@ import { db } from '@/db/client';
 import { podcastEpisodes, podcasts } from '@/db/schema';
 import { duration, plural } from '@/services/listening-tools/format';
 import { episodeArtwork } from '@/services/podcasts/download-paths';
+import { SHOW_NAME_SQL } from '@/services/podcasts/show-name';
 
 /** What a podcast card in the transcript draws. */
 export interface PodcastCardData {
@@ -15,7 +16,7 @@ export interface PodcastCardData {
 
 export type PodcastCardKind = 'show' | 'episode';
 
-const showTitle = sql<string>`coalesce(nullif(trim(${podcasts.customTitle}), ''), ${podcasts.title})`;
+const showTitle = SHOW_NAME_SQL;
 
 /**
  * A show or an episode Samwell named, as its card draws it: the artwork the

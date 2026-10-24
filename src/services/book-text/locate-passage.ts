@@ -48,8 +48,10 @@ export type PassageFinder = (quote: string) => Promise<LocatedPassage | { error:
  * book's text index (current chapter first, then back towards the start),
  * verbatim before loose, and never more than a page past the reader.
  *
- * The book is read once, on the first quote, and kept for the rest: moving a
- * dozen old highlights reads it once, not a dozen times.
+ * Each section is read the first time a search reaches it and kept for the
+ * rest: the verbatim pass stops at the first section that holds the quote,
+ * which is nearly always the chapter in view, so one quote rarely reads more
+ * than that; moving a dozen old highlights still reads the book at most once.
  */
 export async function passageFinder(book: Book): Promise<PassageFinder | { error: string }> {
   const known = await bookExtent(book);
@@ -60,24 +62,33 @@ export async function passageFinder(book: Book): Promise<PassageFinder | { error
 
   const reached = sections.filter((section) => section.index <= extent.lastSection).sort((a, b) => b.index - a.index);
   const driver = await bookTextDriver();
-  const texts: { section: StoredSection; text: string }[] = [];
-  for (const section of reached) texts.push({ section, text: await readText(driver, book.id, section, extent) });
+  const read = new Map<number, Promise<string>>();
+  const textOf = (section: StoredSection) => {
+    let text = read.get(section.index);
+    if (!text) {
+      text = readText(driver, book.id, section, extent);
+      read.set(section.index, text);
+    }
+    return text;
+  };
   const template = readerTemplate(book.id, sections);
 
   return async (quote) => {
     let found: { section: StoredSection; text: string; span: QuoteSpan } | null = null;
-    for (const entry of texts) {
-      const span = findQuote(entry.text, quote);
+    for (const section of reached) {
+      const text = await textOf(section);
+      const span = findQuote(text, quote);
       if (span) {
-        found = { ...entry, span };
+        found = { section, text, span };
         break;
       }
       await breathe();
     }
     if (!found) {
-      for (const entry of texts) {
-        const span = findQuote(entry.text, quote, true);
-        if (span && (!found || span.score > found.span.score)) found = { ...entry, span };
+      for (const section of reached) {
+        const text = await textOf(section);
+        const span = findQuote(text, quote, true);
+        if (span && (!found || span.score > found.span.score)) found = { section, text, span };
         await breathe();
       }
     }

@@ -22,12 +22,16 @@ export async function pingCloud(): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PING_TIMEOUT_MS);
   try {
-    const response = await fetch(`${SAMWELL_CLOUD_BASE_URL}${PING_PATH}`, {
+    await fetch(`${SAMWELL_CLOUD_BASE_URL}${PING_PATH}`, {
       signal: controller.signal,
       // Never an answer from a cache: the point is to reach the server.
       headers: { 'Cache-Control': 'no-cache' },
     });
-    return response.ok;
+    // Any answer, an error status included, as every other cloud request is
+    // counted (`report-fetch.ts`): /health reads the catalogue and the
+    // database, and a 500 from it kept the whole app offline while the
+    // server was plainly there.
+    return true;
   } catch {
     return false;
   } finally {
