@@ -2,6 +2,7 @@ import type { DecorationGroup, Locator, ReadiumViewRef } from '@dr33m/react-nati
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
+import { FIRST_VISIBLE_TEXT_SCRIPT } from '@/features/audiobook/utils/first-visible-text';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
 import { createChapterTextQueryOptions } from '@/query-manager/audiobook';
 import { playFromLocator, readAlongLocator, sentenceLocator, skipSentence } from '@/services/audiobook';
@@ -101,9 +102,11 @@ export function useReadAlong({
       following && detached
         ? {
             onBackToNow: () => setDetached(false),
-            onListenFromHere: () => {
+            onListenFromHere: async () => {
+              const page = onPage.current;
+              const text = await readerRef.current?.evaluateJavaScript(FIRST_VISIBLE_TEXT_SCRIPT);
               setDetached(false);
-              if (onPage.current) void playFromLocator(onPage.current as never);
+              if (page) void playFromLocator(page as never, text);
             },
           }
         : null,

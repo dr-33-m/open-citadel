@@ -43,18 +43,19 @@ index d980fe94a06e00f78e758aac92b4c99dcd433abc..2af4352f0be80cfbb244c6bb28d07d57
    // other deps
    implementation "androidx.core:core-ktx:1.13.1"
 diff --git a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt b/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
-index 67d86a62e7b8a80070aa55f8a259079649b37aaf..efb58cc378c52f7297ff1594f407ea472f931cb9 100644
+index 67d86a62e7b8a80070aa55f8a259079649b37aaf..f020ed965efc9f7c41829bb2097f51882834d43b 100644
 --- a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
 +++ b/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
-@@ -6,6 +6,7 @@ import android.view.View
+@@ -6,6 +6,8 @@ import android.view.View
  import android.view.ViewGroup
  import android.widget.FrameLayout
  import androidx.fragment.app.FragmentActivity
 +import com.margelo.nitro.core.ArrayBuffer
++import com.margelo.nitro.core.Promise
  import com.reactnativereadium.reader.BaseReaderFragment
  import com.reactnativereadium.reader.EpubReaderFragment
  import com.reactnativereadium.reader.ReaderService
-@@ -105,6 +106,7 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -105,6 +107,7 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
      }
  
    override var onLocationChange: ((locator: Locator) -> Unit)? = null
@@ -62,7 +63,7 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..efb58cc378c52f7297ff1594f407ea47
    override var onPublicationReady: ((event: PublicationReadyEvent) -> Unit)? = null
    override var onDecorationActivated: ((event: DecorationActivatedEvent) -> Unit)? = null
    override var onSelectionChange: ((event: SelectionEvent) -> Unit)? = null
-@@ -112,6 +114,9 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -112,6 +115,9 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
    override var onTTSStateChange: ((state: TTSState) -> Unit)? = null
    override var onTTSUtterance: ((event: TTSUtteranceEvent) -> Unit)? = null
    override var onTTSError: ((error: String) -> Unit)? = null
@@ -72,7 +73,20 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..efb58cc378c52f7297ff1594f407ea47
  
    private fun ensureService() {
      if (svc == null) {
-@@ -188,6 +193,27 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -171,6 +177,12 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+     }
+   }
+ 
++  override fun evaluateJavaScript(script: String): Promise<String?> {
++    val frag = fragment as? EpubReaderFragment ?: return Promise.resolved<String?>(null)
++    // On the main thread: the script runs in Readium's WebView.
++    return Promise.async(scope) { frag.evaluateJavaScript(script) }
++  }
++
+   override fun goForward() { fragment?.goForward() }
+   override fun goBackward() { fragment?.goBackward() }
+ 
+@@ -188,6 +200,27 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
    override fun ttsSetRate(rate: Double) { fragment?.ttsSetRate(rate.toFloat()) }
    override fun ttsSkipNext() { fragment?.ttsSkipNext() }
    override fun ttsSkipPrevious() { fragment?.ttsSkipPrevious() }
@@ -100,7 +114,7 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..efb58cc378c52f7297ff1594f407ea47
    override fun destroy() {
      if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
        cleanup()
-@@ -342,7 +368,9 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -342,7 +375,9 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
      frag.channel.receive(frag) { event ->
        when (event) {
          is ReaderViewModel.Event.LocatorUpdate -> {
@@ -111,7 +125,7 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..efb58cc378c52f7297ff1594f407ea47
          }
          is ReaderViewModel.Event.PublicationReady -> {
            onPublicationReady?.invoke(PublicationReadyEvent(
-@@ -395,6 +423,24 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -395,6 +430,24 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
          is ReaderViewModel.Event.TTSError -> {
            onTTSError?.invoke(event.message)
          }
@@ -318,7 +332,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..674edf9a4fdd485f2ddad12d658ec49c
    private fun applyTTSDecoration(locator: Locator) {
      if (!isNavigatorReady) return
 diff --git a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
-index 78b3513728f4ca50b980cd095d9acddfd0e098e6..60e42334534a0ba8b409f48b9faf602c73096f5e 100644
+index 78b3513728f4ca50b980cd095d9acddfd0e098e6..b7ca1cded5804f948a3a84d69124cccbdaca394d 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
 @@ -6,6 +6,8 @@
@@ -330,15 +344,16 @@ index 78b3513728f4ca50b980cd095d9acddfd0e098e6..60e42334534a0ba8b409f48b9faf602c
  import android.os.Bundle
  import android.view.*
  import android.view.accessibility.AccessibilityManager
-@@ -26,6 +28,7 @@ import org.readium.r2.navigator.epub.EpubPreferences
+@@ -26,6 +28,8 @@ import org.readium.r2.navigator.epub.EpubPreferences
  import org.readium.r2.navigator.epub.EpubNavigatorFactory
  import org.readium.r2.shared.publication.Locator
  import org.readium.r2.shared.publication.Publication
 +import org.readium.r2.shared.util.AbsoluteUrl
++import org.json.JSONTokener
  import org.readium.r2.navigator.preferences.Theme
  
  data class SelectionAction(
-@@ -35,6 +38,22 @@ data class SelectionAction(
+@@ -35,6 +39,22 @@ data class SelectionAction(
  
  class EpubReaderFragment : VisualReaderFragment() {
  
@@ -361,7 +376,30 @@ index 78b3513728f4ca50b980cd095d9acddfd0e098e6..60e42334534a0ba8b409f48b9faf602c
      override lateinit var model: ReaderViewModel
      override lateinit var navigator: Navigator
      private lateinit var publication: Publication
-@@ -126,8 +145,9 @@ class EpubReaderFragment : VisualReaderFragment() {
+@@ -108,6 +128,22 @@ class EpubReaderFragment : VisualReaderFragment() {
+       setPositionLabelColor(color)
+     }
+ 
++    /**
++     * Runs `script` in the resource on screen (Readium's own
++     * `evaluateJavascript`, which waits for it to have loaded) and answers
++     * its result if it is a string, else null.
++     */
++    suspend fun evaluateJavaScript(script: String): String? {
++        if (!this::navigatorFragment.isInitialized) return null
++        val raw = navigatorFragment.evaluateJavascript(script) ?: return null
++        // The WebView answers in JSON, so a string comes back quoted.
++        return try {
++            JSONTokener(raw).nextValue() as? String
++        } catch (e: Exception) {
++            null
++        }
++    }
++
+     fun updateSelectionActions(actions: List<SelectionAction>) {
+       selectionActions = actions
+     }
+@@ -126,8 +162,9 @@ class EpubReaderFragment : VisualReaderFragment() {
  
            childFragmentManager.fragmentFactory =
              navigatorFactory.createFragmentFactory(
@@ -1738,7 +1776,7 @@ index 0000000000000000000000000000000000000000..f46fe9eeae873a3be4e44cb65bf9a457
 +    }
 +}
 diff --git a/ios/HybridReadiumView.swift b/ios/HybridReadiumView.swift
-index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f0fd96b95 100644
+index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..8d732df4f5599a9dcf2977052ad1e35c2e429e35 100644
 --- a/ios/HybridReadiumView.swift
 +++ b/ios/HybridReadiumView.swift
 @@ -48,6 +48,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
@@ -1771,7 +1809,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f
      readerViewController = vc
  
      // Apply pending state
-@@ -275,6 +284,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -275,13 +284,33 @@ class HybridReadiumView: HybridReadiumViewSpec {
        guard let self else { return }
        guard let navigator = self.readerViewController?.navigator else { return }
        guard let readiumLocator = nitroLocatorToReadium(locator) else { return }
@@ -1779,7 +1817,25 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f
        _ = await navigator.go(to: readiumLocator, options: .animated)
      }
    }
-@@ -282,6 +292,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
+ 
++  func evaluateJavaScript(script: String) throws -> Promise<String?> {
++    let promise = Promise<String?>()
++    Task { @MainActor [weak self] in
++      guard let navigator = self?.readerViewController?.navigator as? EPUBNavigatorViewController else {
++        promise.resolve(withResult: nil)
++        return
++      }
++      // Readium's own, in the resource on screen.
++      switch await navigator.evaluateJavaScript(script) {
++      case .success(let value):
++        promise.resolve(withResult: value as? String)
++      case .failure:
++        promise.resolve(withResult: nil)
++      }
++    }
++    return promise
++  }
++
    func goForward() {
      Task { @MainActor in
        guard let navigator = readerViewController?.navigator else { return }
@@ -1787,7 +1843,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f
        _ = await navigator.goForward(options: .animated)
      }
    }
-@@ -289,6 +300,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -289,6 +318,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
    func goBackward() {
      Task { @MainActor in
        guard let navigator = readerViewController?.navigator else { return }
@@ -1795,7 +1851,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f
        _ = await navigator.goBackward(options: .animated)
      }
    }
-@@ -319,8 +331,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -319,8 +349,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
          ))
        }
        manager.onUtterance = { [weak self] locator, text in
@@ -1806,7 +1862,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f
            let tint = UIColor(red: 0.949, green: 0.792, blue: 0.314, alpha: 0.35) // #f2ca50 @ 35%
            let decoration = RDecoration(
              id: "tts-current",
-@@ -329,7 +342,22 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -329,7 +360,22 @@ class HybridReadiumView: HybridReadiumViewSpec {
            )
            nav.apply(decorations: [decoration], in: "tts")
          }
@@ -1830,7 +1886,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f
            locator: readiumLocatorToNitro(locator),
            utterance: text,
            rangeStart: nil,
-@@ -339,6 +367,15 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -339,6 +385,15 @@ class HybridReadiumView: HybridReadiumViewSpec {
        manager.onError = { [weak self] message in
          self?.onTTSError?(message)
        }
@@ -1846,7 +1902,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f
        vc.ttsManager = manager
      }
      return vc.ttsManager
-@@ -352,6 +389,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -352,6 +407,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
      Task { @MainActor [weak self] in
        guard let self = self else { return }
        guard let manager = self.ensureTTSManager() else { return }
@@ -1854,7 +1910,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f
        // Start TTS from the first element visible on screen — the same approach
        // as Readium's TestApp TTSViewModel. The navigator's currentLocation is a
        // coarse resource-level progression that the speech synthesizer maps back
-@@ -410,6 +448,37 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -410,6 +466,37 @@ class HybridReadiumView: HybridReadiumViewSpec {
        self?.readerViewController?.ttsManager?.skipPrevious()
      }
    }
@@ -4759,10 +4815,10 @@ index 0000000000000000000000000000000000000000..bf25ed462251b29a52da1e19a7190a3f
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp b/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..7171991095938c63957960613aa3e059e33c20f9
+index 0000000000000000000000000000000000000000..42b0f1ac4ae4839ea99369534701cee8135f836f
 --- /dev/null
 +++ b/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
-@@ -0,0 +1,521 @@
+@@ -0,0 +1,539 @@
 +///
 +/// JHybridReadiumViewSpec.cpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -4899,6 +4955,8 @@ index 0000000000000000000000000000000000000000..7171991095938c63957960613aa3e059
 +#include "TTSUpcomingEvent.hpp"
 +#include "JFunc_void_TTSUpcomingEvent.hpp"
 +#include "JTTSUpcomingEvent.hpp"
++#include <NitroModules/Promise.hpp>
++#include <NitroModules/JPromise.hpp>
 +#include "TTSConfig.hpp"
 +#include "JTTSConfig.hpp"
 +#include <NitroModules/ArrayBuffer.hpp>
@@ -5282,14 +5340,30 @@ index 0000000000000000000000000000000000000000..7171991095938c63957960613aa3e059
 +    auto __result = method(_javaPart, jni::make_jstring(mimeType));
 +    return static_cast<bool>(__result);
 +  }
++  std::shared_ptr<Promise<std::optional<std::string>>> JHybridReadiumViewSpec::evaluateJavaScript(const std::string& script) {
++    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(jni::alias_ref<jni::JString> /* script */)>("evaluateJavaScript");
++    auto __result = method(_javaPart, jni::make_jstring(script));
++    return [&]() {
++      auto __promise = Promise<std::optional<std::string>>::create();
++      __result->cthis()->addOnResolvedListener([=](const jni::alias_ref<jni::JObject>& __boxedResult) {
++        auto __result = jni::static_ref_cast<jni::JString>(__boxedResult);
++        __promise->resolve(__result != nullptr ? std::make_optional(__result->toStdString()) : std::nullopt);
++      });
++      __result->cthis()->addOnRejectedListener([=](const jni::alias_ref<jni::JThrowable>& __throwable) {
++        jni::JniException __jniError(__throwable);
++        __promise->reject(std::make_exception_ptr(__jniError));
++      });
++      return __promise;
++    }();
++  }
 +
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp b/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..1a8b9906a608e0f32bb986f2740e22a5eb06e640
+index 0000000000000000000000000000000000000000..c6b3dfdd165655ca0e37d6a60b752c1b76a1bc33
 --- /dev/null
 +++ b/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,111 @@
 +///
 +/// HybridReadiumViewSpec.hpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -5394,6 +5468,7 @@ index 0000000000000000000000000000000000000000..1a8b9906a608e0f32bb986f2740e22a5
 +    void ttsSynthesisFailed(const std::string& requestId, const std::string& message) override;
 +    void ttsProvideEncodedAudio(const std::string& requestId, const std::shared_ptr<ArrayBuffer>& data, const std::string& mimeType, bool isLast) override;
 +    bool ttsCanDecodeAudio(const std::string& mimeType) override;
++    std::shared_ptr<Promise<std::optional<std::string>>> evaluateJavaScript(const std::string& script) override;
 +
 +  private:
 +    jni::global_ref<JHybridReadiumViewSpec::JavaPart> _javaPart;
@@ -9118,10 +9193,10 @@ index 0000000000000000000000000000000000000000..e74c2982892a9734448cc2d26933ceef
 +}
 diff --git a/lib/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt b/lib/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..1e761ce2ae946e11771729474f21f6463e107304
+index 0000000000000000000000000000000000000000..12fa9a5b768ca085cb1189a301f48a43315aa394
 --- /dev/null
 +++ b/lib/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
-@@ -0,0 +1,308 @@
+@@ -0,0 +1,313 @@
 +///
 +/// HybridReadiumViewSpec.kt
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -9135,6 +9210,7 @@ index 0000000000000000000000000000000000000000..1e761ce2ae946e11771729474f21f646
 +import com.facebook.jni.HybridData
 +import com.facebook.proguard.annotations.DoNotStrip
 +import com.margelo.nitro.core.ArrayBuffer
++import com.margelo.nitro.core.Promise
 +import com.margelo.nitro.core.HybridObject
 +import com.margelo.nitro.views.HybridView
 +
@@ -9409,6 +9485,10 @@ index 0000000000000000000000000000000000000000..1e761ce2ae946e11771729474f21f646
 +  @DoNotStrip
 +  @Keep
 +  abstract fun ttsCanDecodeAudio(mimeType: String): Boolean
++  
++  @DoNotStrip
++  @Keep
++  abstract fun evaluateJavaScript(script: String): Promise<String?>
 +
 +  // Default implementation of `HybridObject.toString()`
 +  override fun toString(): String {
@@ -11276,10 +11356,10 @@ index 0000000000000000000000000000000000000000..2729c0bbe8ece43b17a7362423204770
 +end
 diff --git a/lib/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.cpp b/lib/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..0260e9f3fe64c0b2db16e8228e4ae19ddce646a8
+index 0000000000000000000000000000000000000000..fbdc115900b234b750ef0296c88056301a9155f3
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.cpp
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,129 @@
 +///
 +/// NitroReadium-Swift-Cxx-Bridge.cpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -11376,6 +11456,22 @@ index 0000000000000000000000000000000000000000..0260e9f3fe64c0b2db16e8228e4ae19d
 +    };
 +  }
 +  
++  // pragma MARK: std::function<void(const std::optional<std::string>& /* result */)>
++  Func_void_std__optional_std__string_ create_Func_void_std__optional_std__string_(void* NON_NULL swiftClosureWrapper) noexcept {
++    auto swiftClosure = NitroReadium::Func_void_std__optional_std__string_::fromUnsafe(swiftClosureWrapper);
++    return [swiftClosure = std::move(swiftClosure)](const std::optional<std::string>& result) mutable -> void {
++      swiftClosure.call(result);
++    };
++  }
++  
++  // pragma MARK: std::function<void(const std::exception_ptr& /* error */)>
++  Func_void_std__exception_ptr create_Func_void_std__exception_ptr(void* NON_NULL swiftClosureWrapper) noexcept {
++    auto swiftClosure = NitroReadium::Func_void_std__exception_ptr::fromUnsafe(swiftClosureWrapper);
++    return [swiftClosure = std::move(swiftClosure)](const std::exception_ptr& error) mutable -> void {
++      swiftClosure.call(error);
++    };
++  }
++  
 +  // pragma MARK: std::shared_ptr<HybridReadiumViewSpec>
 +  std::shared_ptr<HybridReadiumViewSpec> create_std__shared_ptr_HybridReadiumViewSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
 +    NitroReadium::HybridReadiumViewSpec_cxx swiftPart = NitroReadium::HybridReadiumViewSpec_cxx::fromUnsafe(swiftUnsafePointer);
@@ -11395,10 +11491,10 @@ index 0000000000000000000000000000000000000000..0260e9f3fe64c0b2db16e8228e4ae19d
 +} // namespace margelo::nitro::readium::bridge::swift
 diff --git a/lib/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.hpp b/lib/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.hpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..ce76616cb3c12d00f92a869628f4af4236575ccb
+index 0000000000000000000000000000000000000000..4272bfe6ca34703776da83273bb416be1aea784a
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.hpp
-@@ -0,0 +1,955 @@
+@@ -0,0 +1,1022 @@
 +///
 +/// NitroReadium-Swift-Cxx-Bridge.hpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -11499,6 +11595,8 @@ index 0000000000000000000000000000000000000000..ce76616cb3c12d00f92a869628f4af42
 +#include "TTSSynthesisRequest.hpp"
 +#include "TTSUpcomingEvent.hpp"
 +#include "TTSUtteranceEvent.hpp"
++#include <NitroModules/Promise.hpp>
++#include <NitroModules/PromiseHolder.hpp>
 +#include <NitroModules/Result.hpp>
 +#include <exception>
 +#include <functional>
@@ -12323,6 +12421,62 @@ index 0000000000000000000000000000000000000000..ce76616cb3c12d00f92a869628f4af42
 +    return optional.value();
 +  }
 +  
++  // pragma MARK: std::shared_ptr<Promise<std::optional<std::string>>>
++  /**
++   * Specialized version of `std::shared_ptr<Promise<std::optional<std::string>>>`.
++   */
++  using std__shared_ptr_Promise_std__optional_std__string___ = std::shared_ptr<Promise<std::optional<std::string>>>;
++  inline std::shared_ptr<Promise<std::optional<std::string>>> create_std__shared_ptr_Promise_std__optional_std__string___() noexcept {
++    return Promise<std::optional<std::string>>::create();
++  }
++  inline PromiseHolder<std::optional<std::string>> wrap_std__shared_ptr_Promise_std__optional_std__string___(std::shared_ptr<Promise<std::optional<std::string>>> promise) noexcept {
++    return PromiseHolder<std::optional<std::string>>(std::move(promise));
++  }
++  
++  // pragma MARK: std::function<void(const std::optional<std::string>& /* result */)>
++  /**
++   * Specialized version of `std::function<void(const std::optional<std::string>&)>`.
++   */
++  using Func_void_std__optional_std__string_ = std::function<void(const std::optional<std::string>& /* result */)>;
++  /**
++   * Wrapper class for a `std::function<void(const std::optional<std::string>& / * result * /)>`, this can be used from Swift.
++   */
++  class Func_void_std__optional_std__string__Wrapper final {
++  public:
++    explicit Func_void_std__optional_std__string__Wrapper(std::function<void(const std::optional<std::string>& /* result */)>&& func): _function(std::make_unique<std::function<void(const std::optional<std::string>& /* result */)>>(std::move(func))) {}
++    inline void call(std::optional<std::string> result) const noexcept {
++      _function->operator()(result);
++    }
++  private:
++    std::unique_ptr<std::function<void(const std::optional<std::string>& /* result */)>> _function;
++  } SWIFT_NONCOPYABLE;
++  Func_void_std__optional_std__string_ create_Func_void_std__optional_std__string_(void* NON_NULL swiftClosureWrapper) noexcept;
++  inline Func_void_std__optional_std__string__Wrapper wrap_Func_void_std__optional_std__string_(Func_void_std__optional_std__string_ value) noexcept {
++    return Func_void_std__optional_std__string__Wrapper(std::move(value));
++  }
++  
++  // pragma MARK: std::function<void(const std::exception_ptr& /* error */)>
++  /**
++   * Specialized version of `std::function<void(const std::exception_ptr&)>`.
++   */
++  using Func_void_std__exception_ptr = std::function<void(const std::exception_ptr& /* error */)>;
++  /**
++   * Wrapper class for a `std::function<void(const std::exception_ptr& / * error * /)>`, this can be used from Swift.
++   */
++  class Func_void_std__exception_ptr_Wrapper final {
++  public:
++    explicit Func_void_std__exception_ptr_Wrapper(std::function<void(const std::exception_ptr& /* error */)>&& func): _function(std::make_unique<std::function<void(const std::exception_ptr& /* error */)>>(std::move(func))) {}
++    inline void call(std::exception_ptr error) const noexcept {
++      _function->operator()(error);
++    }
++  private:
++    std::unique_ptr<std::function<void(const std::exception_ptr& /* error */)>> _function;
++  } SWIFT_NONCOPYABLE;
++  Func_void_std__exception_ptr create_Func_void_std__exception_ptr(void* NON_NULL swiftClosureWrapper) noexcept;
++  inline Func_void_std__exception_ptr_Wrapper wrap_Func_void_std__exception_ptr(Func_void_std__exception_ptr value) noexcept {
++    return Func_void_std__exception_ptr_Wrapper(std::move(value));
++  }
++  
 +  // pragma MARK: std::shared_ptr<HybridReadiumViewSpec>
 +  /**
 +   * Specialized version of `std::shared_ptr<HybridReadiumViewSpec>`.
@@ -12352,14 +12506,23 @@ index 0000000000000000000000000000000000000000..ce76616cb3c12d00f92a869628f4af42
 +  inline Result_bool_ create_Result_bool_(const std::exception_ptr& error) noexcept {
 +    return Result<bool>::withError(error);
 +  }
++  
++  // pragma MARK: Result<std::shared_ptr<Promise<std::optional<std::string>>>>
++  using Result_std__shared_ptr_Promise_std__optional_std__string____ = Result<std::shared_ptr<Promise<std::optional<std::string>>>>;
++  inline Result_std__shared_ptr_Promise_std__optional_std__string____ create_Result_std__shared_ptr_Promise_std__optional_std__string____(const std::shared_ptr<Promise<std::optional<std::string>>>& value) noexcept {
++    return Result<std::shared_ptr<Promise<std::optional<std::string>>>>::withValue(value);
++  }
++  inline Result_std__shared_ptr_Promise_std__optional_std__string____ create_Result_std__shared_ptr_Promise_std__optional_std__string____(const std::exception_ptr& error) noexcept {
++    return Result<std::shared_ptr<Promise<std::optional<std::string>>>>::withError(error);
++  }
 +
 +} // namespace margelo::nitro::readium::bridge::swift
 diff --git a/lib/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Umbrella.hpp b/lib/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Umbrella.hpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..5e8a3d1805ea582d64fb5a355e1b70751881ebf4
+index 0000000000000000000000000000000000000000..ad107fa7679c330885572d6ed5a9e7e0c2d0b4f7
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Umbrella.hpp
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,134 @@
 +///
 +/// NitroReadium-Swift-Cxx-Umbrella.hpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -12460,6 +12623,7 @@ index 0000000000000000000000000000000000000000..5e8a3d1805ea582d64fb5a355e1b7075
 +#include "TTSUpcomingEvent.hpp"
 +#include "TTSUtteranceEvent.hpp"
 +#include <NitroModules/ArrayBuffer.hpp>
++#include <NitroModules/Promise.hpp>
 +#include <NitroModules/Result.hpp>
 +#include <exception>
 +#include <functional>
@@ -12583,10 +12747,10 @@ index 0000000000000000000000000000000000000000..d6f256683c111c4b039e3721a802a936
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp b/lib/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..1df2b4a1c5552d7c84769c4ac28b41dde2afeec8
+index 0000000000000000000000000000000000000000..73fe29aef3ba6be7a5e467da945b6ae1fc6c4bb5
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
-@@ -0,0 +1,375 @@
+@@ -0,0 +1,384 @@
 +///
 +/// HybridReadiumViewSpecSwift.hpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -12695,6 +12859,7 @@ index 0000000000000000000000000000000000000000..1df2b4a1c5552d7c84769c4ac28b41dd
 +#include "TTSConfig.hpp"
 +#include <NitroModules/ArrayBuffer.hpp>
 +#include <NitroModules/ArrayBufferHolder.hpp>
++#include <NitroModules/Promise.hpp>
 +
 +#include "NitroReadium-Swift-Cxx-Umbrella.hpp"
 +
@@ -12950,6 +13115,14 @@ index 0000000000000000000000000000000000000000..1df2b4a1c5552d7c84769c4ac28b41dd
 +    }
 +    inline bool ttsCanDecodeAudio(const std::string& mimeType) override {
 +      auto __result = _swiftPart.ttsCanDecodeAudio(mimeType);
++      if (__result.hasError()) [[unlikely]] {
++        std::rethrow_exception(__result.error());
++      }
++      auto __value = std::move(__result.value());
++      return __value;
++    }
++    inline std::shared_ptr<Promise<std::optional<std::string>>> evaluateJavaScript(const std::string& script) override {
++      auto __result = _swiftPart.evaluateJavaScript(script);
 +      if (__result.hasError()) [[unlikely]] {
 +        std::rethrow_exception(__result.error());
 +      }
@@ -14432,6 +14605,117 @@ index 0000000000000000000000000000000000000000..f2ac03af8f548340cb683eadc36d3fcd
 +    return Unmanaged<Func_void_TTSUtteranceEvent>.fromOpaque(pointer).takeRetainedValue()
 +  }
 +}
+diff --git a/lib/nitrogen/generated/ios/swift/Func_void_std__exception_ptr.swift b/lib/nitrogen/generated/ios/swift/Func_void_std__exception_ptr.swift
+new file mode 100644
+index 0000000000000000000000000000000000000000..857e251b0e7900ca750f8fb4bf87b32cf43f2c7f
+--- /dev/null
++++ b/lib/nitrogen/generated/ios/swift/Func_void_std__exception_ptr.swift
+@@ -0,0 +1,46 @@
++///
++/// Func_void_std__exception_ptr.swift
++/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
++/// https://github.com/mrousavy/nitro
++/// Copyright © Marc Rousavy @ Margelo
++///
++
++import NitroModules
++
++/**
++ * Wraps a Swift `(_ error: Error) -> Void` as a class.
++ * This class can be used from C++, e.g. to wrap the Swift closure as a `std::function`.
++ */
++public final class Func_void_std__exception_ptr {
++  public typealias bridge = margelo.nitro.readium.bridge.swift
++
++  private let closure: (_ error: Error) -> Void
++
++  public init(_ closure: @escaping (_ error: Error) -> Void) {
++    self.closure = closure
++  }
++
++  @inline(__always)
++  public func call(error: std.exception_ptr) -> Void {
++    self.closure(RuntimeError.from(cppError: error))
++  }
++
++  /**
++   * Casts this instance to a retained unsafe raw pointer.
++   * This acquires one additional strong reference on the object!
++   */
++  @inline(__always)
++  public func toUnsafe() -> UnsafeMutableRawPointer {
++    return Unmanaged.passRetained(self).toOpaque()
++  }
++
++  /**
++   * Casts an unsafe pointer to a `Func_void_std__exception_ptr`.
++   * The pointer has to be a retained opaque `Unmanaged<Func_void_std__exception_ptr>`.
++   * This removes one strong reference from the object!
++   */
++  @inline(__always)
++  public static func fromUnsafe(_ pointer: UnsafeMutableRawPointer) -> Func_void_std__exception_ptr {
++    return Unmanaged<Func_void_std__exception_ptr>.fromOpaque(pointer).takeRetainedValue()
++  }
++}
+diff --git a/lib/nitrogen/generated/ios/swift/Func_void_std__optional_std__string_.swift b/lib/nitrogen/generated/ios/swift/Func_void_std__optional_std__string_.swift
+new file mode 100644
+index 0000000000000000000000000000000000000000..b149c56df4394c33f27724cc7e3db2b4e8349022
+--- /dev/null
++++ b/lib/nitrogen/generated/ios/swift/Func_void_std__optional_std__string_.swift
+@@ -0,0 +1,53 @@
++///
++/// Func_void_std__optional_std__string_.swift
++/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
++/// https://github.com/mrousavy/nitro
++/// Copyright © Marc Rousavy @ Margelo
++///
++
++import NitroModules
++
++/**
++ * Wraps a Swift `(_ value: String?) -> Void` as a class.
++ * This class can be used from C++, e.g. to wrap the Swift closure as a `std::function`.
++ */
++public final class Func_void_std__optional_std__string_ {
++  public typealias bridge = margelo.nitro.readium.bridge.swift
++
++  private let closure: (_ value: String?) -> Void
++
++  public init(_ closure: @escaping (_ value: String?) -> Void) {
++    self.closure = closure
++  }
++
++  @inline(__always)
++  public func call(value: bridge.std__optional_std__string_) -> Void {
++    self.closure({ () -> String? in
++      if bridge.has_value_std__optional_std__string_(value) {
++        let __unwrapped = bridge.get_std__optional_std__string_(value)
++        return String(__unwrapped)
++      } else {
++        return nil
++      }
++    }())
++  }
++
++  /**
++   * Casts this instance to a retained unsafe raw pointer.
++   * This acquires one additional strong reference on the object!
++   */
++  @inline(__always)
++  public func toUnsafe() -> UnsafeMutableRawPointer {
++    return Unmanaged.passRetained(self).toOpaque()
++  }
++
++  /**
++   * Casts an unsafe pointer to a `Func_void_std__optional_std__string_`.
++   * The pointer has to be a retained opaque `Unmanaged<Func_void_std__optional_std__string_>`.
++   * This removes one strong reference from the object!
++   */
++  @inline(__always)
++  public static func fromUnsafe(_ pointer: UnsafeMutableRawPointer) -> Func_void_std__optional_std__string_ {
++    return Unmanaged<Func_void_std__optional_std__string_>.fromOpaque(pointer).takeRetainedValue()
++  }
++}
 diff --git a/lib/nitrogen/generated/ios/swift/Func_void_std__string.swift b/lib/nitrogen/generated/ios/swift/Func_void_std__string.swift
 new file mode 100644
 index 0000000000000000000000000000000000000000..a29a07be38bd48da53b23bc902c0f30672c3823f
@@ -14486,10 +14770,10 @@ index 0000000000000000000000000000000000000000..a29a07be38bd48da53b23bc902c0f306
 +}
 diff --git a/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift b/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..37cc2e873787029caa6cf62d886c8a1ac339078c
+index 0000000000000000000000000000000000000000..d046747b6d212f12405791344926d83864e29bb4
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,86 @@
 +///
 +/// HybridReadiumViewSpec.swift
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -14536,6 +14820,7 @@ index 0000000000000000000000000000000000000000..37cc2e873787029caa6cf62d886c8a1a
 +  func ttsSynthesisFailed(requestId: String, message: String) throws -> Void
 +  func ttsProvideEncodedAudio(requestId: String, data: ArrayBuffer, mimeType: String, isLast: Bool) throws -> Void
 +  func ttsCanDecodeAudio(mimeType: String) throws -> Bool
++  func evaluateJavaScript(script: String) throws -> Promise<String?>
 +}
 +
 +public extension HybridReadiumViewSpec_protocol {
@@ -14577,10 +14862,10 @@ index 0000000000000000000000000000000000000000..37cc2e873787029caa6cf62d886c8a1a
 +public typealias HybridReadiumViewSpec = HybridReadiumViewSpec_protocol & HybridReadiumViewSpec_base
 diff --git a/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift b/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..1f904bec89c461b85bde878349e7adc6ac55efd4
+index 0000000000000000000000000000000000000000..c11b1cb2985862b20c8edeb3602db005ba0d7642
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
-@@ -0,0 +1,813 @@
+@@ -0,0 +1,838 @@
 +///
 +/// HybridReadiumViewSpec_cxx.swift
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -15370,6 +15655,31 @@ index 0000000000000000000000000000000000000000..1f904bec89c461b85bde878349e7adc6
 +    } catch (let __error) {
 +      let __exceptionPtr = __error.toCpp()
 +      return bridge.create_Result_bool_(__exceptionPtr)
++    }
++  }
++  
++  @inline(__always)
++  public final func evaluateJavaScript(script: std.string) -> bridge.Result_std__shared_ptr_Promise_std__optional_std__string____ {
++    do {
++      let __result = try self.__implementation.evaluateJavaScript(script: String(script))
++      let __resultCpp = { () -> bridge.std__shared_ptr_Promise_std__optional_std__string___ in
++        let __promise = bridge.create_std__shared_ptr_Promise_std__optional_std__string___()
++        let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_std__optional_std__string___(__promise)
++        __result
++          .then({ __result in __promiseHolder.resolve({ () -> bridge.std__optional_std__string_ in
++              if let __unwrappedValue = __result {
++                return bridge.create_std__optional_std__string_(std.string(__unwrappedValue))
++              } else {
++                return .init()
++              }
++            }()) })
++          .catch({ __error in __promiseHolder.reject(__error.toCpp()) })
++        return __promise
++      }()
++      return bridge.create_Result_std__shared_ptr_Promise_std__optional_std__string____(__resultCpp)
++    } catch (let __error) {
++      let __exceptionPtr = __error.toCpp()
++      return bridge.create_Result_std__shared_ptr_Promise_std__optional_std__string____(__exceptionPtr)
 +    }
 +  }
 +  
@@ -18608,10 +18918,10 @@ index 0000000000000000000000000000000000000000..3cd97a6507b5a003df6b51aec675ee20
 +} // namespace margelo::nitro
 diff --git a/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp b/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..27bf99b9499840f2b28ae893722e08b954da88a2
+index 0000000000000000000000000000000000000000..884b6ba0c1f639c26ac26ca9a926aa6e1b63da17
 --- /dev/null
 +++ b/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,70 @@
 +///
 +/// HybridReadiumViewSpec.cpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -18677,16 +18987,17 @@ index 0000000000000000000000000000000000000000..27bf99b9499840f2b28ae893722e08b9
 +      prototype.registerHybridMethod("ttsSynthesisFailed", &HybridReadiumViewSpec::ttsSynthesisFailed);
 +      prototype.registerHybridMethod("ttsProvideEncodedAudio", &HybridReadiumViewSpec::ttsProvideEncodedAudio);
 +      prototype.registerHybridMethod("ttsCanDecodeAudio", &HybridReadiumViewSpec::ttsCanDecodeAudio);
++      prototype.registerHybridMethod("evaluateJavaScript", &HybridReadiumViewSpec::evaluateJavaScript);
 +    });
 +  }
 +
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp b/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..42a18aff582345516fdcbcb8b37904fd26e5b855
+index 0000000000000000000000000000000000000000..b5269cdbb2e69b8e402f274e4627bfedca717628
 --- /dev/null
 +++ b/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,156 @@
 +///
 +/// HybridReadiumViewSpec.hpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -18750,6 +19061,7 @@ index 0000000000000000000000000000000000000000..42a18aff582345516fdcbcb8b37904fd
 +#include "TTSUpcomingEvent.hpp"
 +#include "TTSConfig.hpp"
 +#include <NitroModules/ArrayBuffer.hpp>
++#include <NitroModules/Promise.hpp>
 +
 +namespace margelo::nitro::readium {
 +
@@ -18830,6 +19142,7 @@ index 0000000000000000000000000000000000000000..42a18aff582345516fdcbcb8b37904fd
 +      virtual void ttsSynthesisFailed(const std::string& requestId, const std::string& message) = 0;
 +      virtual void ttsProvideEncodedAudio(const std::string& requestId, const std::shared_ptr<ArrayBuffer>& data, const std::string& mimeType, bool isLast) = 0;
 +      virtual bool ttsCanDecodeAudio(const std::string& mimeType) = 0;
++      virtual std::shared_ptr<Promise<std::optional<std::string>>> evaluateJavaScript(const std::string& script) = 0;
 +
 +    protected:
 +      // Hybrid Setup
@@ -21518,7 +21831,7 @@ index 2dfa2f529d2f70db70ffecdb4df97c4d2fb5f9ec..0e23d7699b7c68ed11e562e862873c43
 +  }
  }
 diff --git a/lib/src/components/ReadiumView.js b/lib/src/components/ReadiumView.js
-index 48decb736d8036732e04ebc4bb48937684295f44..1f03e1cc32fcf543f73eb67cad1575942c74e7c7 100644
+index 48decb736d8036732e04ebc4bb48937684295f44..c74067bee23079f91e6bc122616da92dd31ff9d0 100644
 --- a/lib/src/components/ReadiumView.js
 +++ b/lib/src/components/ReadiumView.js
 @@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
@@ -21530,7 +21843,7 @@ index 48decb736d8036732e04ebc4bb48937684295f44..1f03e1cc32fcf543f73eb67cad157594
      const hybridRef = useRef(null);
      const [{ height, width }, setDimensions] = useState({
          width: 0,
-@@ -35,6 +35,20 @@ export const ReadiumView = forwardRef(({ onLocationChange, onPublicationReady, o
+@@ -35,6 +35,32 @@ export const ReadiumView = forwardRef(({ onLocationChange, onPublicationReady, o
          ttsSetRate: (rate) => hybridRef.current?.ttsSetRate(rate),
          ttsSkipNext: () => hybridRef.current?.ttsSkipNext(),
          ttsSkipPrevious: () => hybridRef.current?.ttsSkipPrevious(),
@@ -21548,10 +21861,22 @@ index 48decb736d8036732e04ebc4bb48937684295f44..1f03e1cc32fcf543f73eb67cad157594
 +                return false;
 +            }
 +        },
++        // Asked the same way: a binary built before it existed answers undefined.
++        evaluateJavaScript: async (script) => {
++            const native = hybridRef.current;
++            if (typeof native?.evaluateJavaScript !== 'function')
++                return undefined;
++            try {
++                return (await native.evaluateJavaScript(script)) ?? undefined;
++            }
++            catch {
++                return undefined;
++            }
++        },
      }), []);
      useEffect(() => {
          return () => {
-@@ -43,7 +57,7 @@ export const ReadiumView = forwardRef(({ onLocationChange, onPublicationReady, o
+@@ -43,7 +69,7 @@ export const ReadiumView = forwardRef(({ onLocationChange, onPublicationReady, o
      }, []);
      const isReady = width > 0 && height > 0;
      return (<View style={styles.container} onLayout={onLayout}>
@@ -21561,7 +21886,7 @@ index 48decb736d8036732e04ebc4bb48937684295f44..1f03e1cc32fcf543f73eb67cad157594
              })}/>)}
        </View>);
 diff --git a/lib/src/components/ReadiumView.types.d.ts b/lib/src/components/ReadiumView.types.d.ts
-index c67e934e07e5965f7e7a52e17beb9e56f6323496..b58533806e160ab6f83f298f047c745289f1d949 100644
+index c67e934e07e5965f7e7a52e17beb9e56f6323496..e39b3eee755913792cbddb8a428754ace38ee463 100644
 --- a/lib/src/components/ReadiumView.types.d.ts
 +++ b/lib/src/components/ReadiumView.types.d.ts
 @@ -1,4 +1,4 @@
@@ -21570,7 +21895,7 @@ index c67e934e07e5965f7e7a52e17beb9e56f6323496..b58533806e160ab6f83f298f047c7452
  export type ReadiumViewRef = {
      goTo: (locator: Locator) => void;
      goForward: () => void;
-@@ -10,6 +10,10 @@ export type ReadiumViewRef = {
+@@ -10,6 +10,12 @@ export type ReadiumViewRef = {
      ttsSetRate: (rate: number) => void;
      ttsSkipNext: () => void;
      ttsSkipPrevious: () => void;
@@ -21578,10 +21903,12 @@ index c67e934e07e5965f7e7a52e17beb9e56f6323496..b58533806e160ab6f83f298f047c7452
 +    ttsSynthesisFailed: (requestId: string, message: string) => void;
 +    ttsProvideEncodedAudio: (requestId: string, data: ArrayBuffer, mimeType: string, isLast: boolean) => void;
 +    ttsCanDecodeAudio: (mimeType: string) => boolean;
++    /** Runs `script` in the HTML resource on screen; its result as a string, or undefined. */
++    evaluateJavaScript: (script: string) => Promise<string | undefined>;
  };
  export type ReadiumProps = {
      file: File;
-@@ -19,6 +23,12 @@ export type ReadiumProps = {
+@@ -19,6 +25,12 @@ export type ReadiumProps = {
      suppressNativeSelectionMenu?: boolean;
      style?: any;
      onLocationChange?: (locator: Locator) => void;
@@ -21594,7 +21921,7 @@ index c67e934e07e5965f7e7a52e17beb9e56f6323496..b58533806e160ab6f83f298f047c7452
      onPublicationReady?: (event: PublicationReadyEvent) => void;
      onDecorationActivated?: (event: DecorationActivatedEvent) => void;
      onSelectionChange?: (event: SelectionEvent) => void;
-@@ -26,4 +36,7 @@ export type ReadiumProps = {
+@@ -26,4 +38,7 @@ export type ReadiumProps = {
      onTTSStateChange?: (state: TTSState) => void;
      onTTSUtterance?: (event: TTSUtteranceEvent) => void;
      onTTSError?: (error: string) => void;
@@ -21623,7 +21950,7 @@ index 4e1e8943c2bcabe032e7fb6ab13fec4b82239588..d064d58af11d482d7d01ae42a5818a2c
 -export type { TTSConfig, TTSState, TTSUtteranceEvent, } from '../specs/ReadiumView.nitro';
 +export type { TTSConfig, TTSState, TTSUtteranceEvent, TTSSynthesisRequest, TTSUpcomingEvent, } from '../specs/ReadiumView.nitro';
 diff --git a/lib/src/specs/ReadiumView.nitro.d.ts b/lib/src/specs/ReadiumView.nitro.d.ts
-index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..4df327e59f330f5f758c527ede70f03cb81b06ab 100644
+index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..c57791f5ec9e8189d6b0ebb9964ed80ebc3a27a7 100644
 --- a/lib/src/specs/ReadiumView.nitro.d.ts
 +++ b/lib/src/specs/ReadiumView.nitro.d.ts
 @@ -191,6 +191,21 @@ export interface TTSUtteranceEvent {
@@ -21671,7 +21998,7 @@ index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..4df327e59f330f5f758c527ede70f03c
  }
  export interface ReadiumViewMethods extends HybridViewMethods {
      goTo(locator: Locator): void;
-@@ -222,5 +246,9 @@ export interface ReadiumViewMethods extends HybridViewMethods {
+@@ -222,5 +246,15 @@ export interface ReadiumViewMethods extends HybridViewMethods {
      ttsSetRate(rate: number): void;
      ttsSkipNext(): void;
      ttsSkipPrevious(): void;
@@ -21679,6 +22006,12 @@ index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..4df327e59f330f5f758c527ede70f03c
 +    ttsSynthesisFailed(requestId: string, message: string): void;
 +    ttsProvideEncodedAudio(requestId: string, data: ArrayBuffer, mimeType: string, isLast: boolean): void;
 +    ttsCanDecodeAudio(mimeType: string): boolean;
++    /**
++     * Runs `script` in the HTML resource on screen and answers what it
++     * evaluates to, as a string; undefined when there is no resource to run it
++     * in or the script failed. Readium's own `evaluateJavascript`.
++     */
++    evaluateJavaScript(script: string): Promise<string | undefined>;
  }
  export type ReadiumView = HybridView<ReadiumViewProps, ReadiumViewMethods>;
 diff --git a/nitrogen/generated/android/NitroReadiumOnLoad.cpp b/nitrogen/generated/android/NitroReadiumOnLoad.cpp
@@ -22434,7 +22767,7 @@ index 28527978402d2aa67fdf3ed662fce7caaa251624..bf25ed462251b29a52da1e19a7190a3f
        registerHybrid({makeNativeMethod("invoke_cxx", JFunc_void_std__string_cxx::invoke_cxx)});
      }
 diff --git a/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp b/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
-index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..7171991095938c63957960613aa3e059e33c20f9 100644
+index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..42b0f1ac4ae4839ea99369534701cee8135f836f 100644
 --- a/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
 +++ b/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
 @@ -57,6 +57,10 @@ namespace margelo::nitro::readium { struct SelectionActionEvent; }
@@ -22448,7 +22781,7 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..7171991095938c63957960613aa3e059
  // Forward declaration of `TTSConfig` to properly resolve imports.
  namespace margelo::nitro::readium { struct TTSConfig; }
  
-@@ -124,8 +128,16 @@ namespace margelo::nitro::readium { struct TTSConfig; }
+@@ -124,8 +128,18 @@ namespace margelo::nitro::readium { struct TTSConfig; }
  #include "JFunc_void_TTSUtteranceEvent.hpp"
  #include "JTTSUtteranceEvent.hpp"
  #include "JFunc_void_std__string.hpp"
@@ -22458,6 +22791,8 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..7171991095938c63957960613aa3e059
 +#include "TTSUpcomingEvent.hpp"
 +#include "JFunc_void_TTSUpcomingEvent.hpp"
 +#include "JTTSUpcomingEvent.hpp"
++#include <NitroModules/Promise.hpp>
++#include <NitroModules/JPromise.hpp>
  #include "TTSConfig.hpp"
  #include "JTTSConfig.hpp"
 +#include <NitroModules/ArrayBuffer.hpp>
@@ -22465,7 +22800,7 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..7171991095938c63957960613aa3e059
  
  namespace margelo::nitro::readium {
  
-@@ -178,56 +190,56 @@ namespace margelo::nitro::readium {
+@@ -178,56 +192,56 @@ namespace margelo::nitro::readium {
    std::optional<std::vector<DecorationGroup>> JHybridReadiumViewSpec::getDecorations() {
      static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JArrayClass<JDecorationGroup>>()>("getDecorations");
      auto __result = method(_javaPart);
@@ -22538,7 +22873,7 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..7171991095938c63957960613aa3e059
    }
    std::optional<bool> JHybridReadiumViewSpec::getSuppressNativeSelectionMenu() {
      static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getSuppressNativeSelectionMenu");
-@@ -255,6 +267,23 @@ namespace margelo::nitro::readium {
+@@ -255,6 +269,23 @@ namespace margelo::nitro::readium {
      static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_Locator::javaobject> /* onLocationChange */)>("setOnLocationChange_cxx");
      method(_javaPart, onLocationChange.has_value() ? JFunc_void_Locator_cxx::fromCpp(onLocationChange.value()) : nullptr);
    }
@@ -22562,7 +22897,7 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..7171991095938c63957960613aa3e059
    std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> JHybridReadiumViewSpec::getOnPublicationReady() {
      static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_PublicationReadyEvent::javaobject>()>("getOnPublicationReady_cxx");
      auto __result = method(_javaPart);
-@@ -374,6 +403,57 @@ namespace margelo::nitro::readium {
+@@ -374,6 +405,57 @@ namespace margelo::nitro::readium {
      static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_std__string::javaobject> /* onTTSError */)>("setOnTTSError_cxx");
      method(_javaPart, onTTSError.has_value() ? JFunc_void_std__string_cxx::fromCpp(onTTSError.value()) : nullptr);
    }
@@ -22620,7 +22955,7 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..7171991095938c63957960613aa3e059
  
    // Methods
    void JHybridReadiumViewSpec::goTo(const Locator& locator) {
-@@ -420,5 +500,22 @@ namespace margelo::nitro::readium {
+@@ -420,5 +502,38 @@ namespace margelo::nitro::readium {
      static const auto method = _javaPart->javaClassStatic()->getMethod<void()>("ttsSkipPrevious");
      method(_javaPart);
    }
@@ -22641,10 +22976,26 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..7171991095938c63957960613aa3e059
 +    auto __result = method(_javaPart, jni::make_jstring(mimeType));
 +    return static_cast<bool>(__result);
 +  }
++  std::shared_ptr<Promise<std::optional<std::string>>> JHybridReadiumViewSpec::evaluateJavaScript(const std::string& script) {
++    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(jni::alias_ref<jni::JString> /* script */)>("evaluateJavaScript");
++    auto __result = method(_javaPart, jni::make_jstring(script));
++    return [&]() {
++      auto __promise = Promise<std::optional<std::string>>::create();
++      __result->cthis()->addOnResolvedListener([=](const jni::alias_ref<jni::JObject>& __boxedResult) {
++        auto __result = jni::static_ref_cast<jni::JString>(__boxedResult);
++        __promise->resolve(__result != nullptr ? std::make_optional(__result->toStdString()) : std::nullopt);
++      });
++      __result->cthis()->addOnRejectedListener([=](const jni::alias_ref<jni::JThrowable>& __throwable) {
++        jni::JniException __jniError(__throwable);
++        __promise->reject(std::make_exception_ptr(__jniError));
++      });
++      return __promise;
++    }();
++  }
  
  } // namespace margelo::nitro::readium
 diff --git a/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp b/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
-index d5ba5ac97c2f7f28d096c5e7b9836c3ade6b54c6..1a8b9906a608e0f32bb986f2740e22a5eb06e640 100644
+index d5ba5ac97c2f7f28d096c5e7b9836c3ade6b54c6..c6b3dfdd165655ca0e37d6a60b752c1b76a1bc33 100644
 --- a/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
 +++ b/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
 @@ -21,11 +21,11 @@ namespace margelo::nitro::readium {
@@ -22683,7 +23034,7 @@ index d5ba5ac97c2f7f28d096c5e7b9836c3ade6b54c6..1a8b9906a608e0f32bb986f2740e22a5
  
    public:
      // Methods
-@@ -90,6 +98,10 @@ namespace margelo::nitro::readium {
+@@ -90,6 +98,11 @@ namespace margelo::nitro::readium {
      void ttsSetRate(double rate) override;
      void ttsSkipNext() override;
      void ttsSkipPrevious() override;
@@ -22691,6 +23042,7 @@ index d5ba5ac97c2f7f28d096c5e7b9836c3ade6b54c6..1a8b9906a608e0f32bb986f2740e22a5
 +    void ttsSynthesisFailed(const std::string& requestId, const std::string& message) override;
 +    void ttsProvideEncodedAudio(const std::string& requestId, const std::shared_ptr<ArrayBuffer>& data, const std::string& mimeType, bool isLast) override;
 +    bool ttsCanDecodeAudio(const std::string& mimeType) override;
++    std::shared_ptr<Promise<std::optional<std::string>>> evaluateJavaScript(const std::string& script) override;
  
    private:
      jni::global_ref<JHybridReadiumViewSpec::JavaPart> _javaPart;
@@ -24177,18 +24529,19 @@ index 0000000000000000000000000000000000000000..8feb483a644d140a61754777b28cc7dd
 +  }
 +}
 diff --git a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
-index 4f109c9f1b0973b00ec7691ebadc222279e4a17c..1e761ce2ae946e11771729474f21f6463e107304 100644
+index 4f109c9f1b0973b00ec7691ebadc222279e4a17c..12fa9a5b768ca085cb1189a301f48a43315aa394 100644
 --- a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
 +++ b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
-@@ -10,6 +10,7 @@ package com.margelo.nitro.reactnativereadium
+@@ -10,6 +10,8 @@ package com.margelo.nitro.reactnativereadium
  import androidx.annotation.Keep
  import com.facebook.jni.HybridData
  import com.facebook.proguard.annotations.DoNotStrip
 +import com.margelo.nitro.core.ArrayBuffer
++import com.margelo.nitro.core.Promise
  import com.margelo.nitro.core.HybridObject
  import com.margelo.nitro.views.HybridView
  
-@@ -70,6 +71,20 @@ abstract class HybridReadiumViewSpec: HybridView() {
+@@ -70,6 +72,20 @@ abstract class HybridReadiumViewSpec: HybridView() {
        onLocationChange = value?.let { it }
      }
    
@@ -24209,7 +24562,7 @@ index 4f109c9f1b0973b00ec7691ebadc222279e4a17c..1e761ce2ae946e11771729474f21f646
    abstract var onPublicationReady: ((event: PublicationReadyEvent) -> Unit)?
    
    private var onPublicationReady_cxx: Func_void_PublicationReadyEvent?
-@@ -167,6 +182,48 @@ abstract class HybridReadiumViewSpec: HybridView() {
+@@ -167,6 +183,48 @@ abstract class HybridReadiumViewSpec: HybridView() {
      set(value) {
        onTTSError = value?.let { it }
      }
@@ -24258,7 +24611,7 @@ index 4f109c9f1b0973b00ec7691ebadc222279e4a17c..1e761ce2ae946e11771729474f21f646
  
    // Methods
    @DoNotStrip
-@@ -212,6 +269,22 @@ abstract class HybridReadiumViewSpec: HybridView() {
+@@ -212,6 +270,26 @@ abstract class HybridReadiumViewSpec: HybridView() {
    @DoNotStrip
    @Keep
    abstract fun ttsSkipPrevious(): Unit
@@ -24278,6 +24631,10 @@ index 4f109c9f1b0973b00ec7691ebadc222279e4a17c..1e761ce2ae946e11771729474f21f646
 +  @DoNotStrip
 +  @Keep
 +  abstract fun ttsCanDecodeAudio(mimeType: String): Boolean
++  
++  @DoNotStrip
++  @Keep
++  abstract fun evaluateJavaScript(script: String): Promise<String?>
  
    // Default implementation of `HybridObject.toString()`
    override fun toString(): String {
@@ -25212,10 +25569,10 @@ index 430e3b889cd1a2321af6682f00a9e0c5d317d600..2729c0bbe8ece43b17a7362423204770
    })
  end
 diff --git a/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.cpp b/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.cpp
-index b52f3e63457099fa950f8ae6a3a1b8c45bd48235..0260e9f3fe64c0b2db16e8228e4ae19ddce646a8 100644
+index b52f3e63457099fa950f8ae6a3a1b8c45bd48235..fbdc115900b234b750ef0296c88056301a9155f3 100644
 --- a/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.cpp
 +++ b/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.cpp
-@@ -78,6 +78,22 @@ namespace margelo::nitro::readium::bridge::swift {
+@@ -78,6 +78,38 @@ namespace margelo::nitro::readium::bridge::swift {
      };
    }
    
@@ -25235,11 +25592,27 @@ index b52f3e63457099fa950f8ae6a3a1b8c45bd48235..0260e9f3fe64c0b2db16e8228e4ae19d
 +    };
 +  }
 +  
++  // pragma MARK: std::function<void(const std::optional<std::string>& /* result */)>
++  Func_void_std__optional_std__string_ create_Func_void_std__optional_std__string_(void* NON_NULL swiftClosureWrapper) noexcept {
++    auto swiftClosure = NitroReadium::Func_void_std__optional_std__string_::fromUnsafe(swiftClosureWrapper);
++    return [swiftClosure = std::move(swiftClosure)](const std::optional<std::string>& result) mutable -> void {
++      swiftClosure.call(result);
++    };
++  }
++  
++  // pragma MARK: std::function<void(const std::exception_ptr& /* error */)>
++  Func_void_std__exception_ptr create_Func_void_std__exception_ptr(void* NON_NULL swiftClosureWrapper) noexcept {
++    auto swiftClosure = NitroReadium::Func_void_std__exception_ptr::fromUnsafe(swiftClosureWrapper);
++    return [swiftClosure = std::move(swiftClosure)](const std::exception_ptr& error) mutable -> void {
++      swiftClosure.call(error);
++    };
++  }
++  
    // pragma MARK: std::shared_ptr<HybridReadiumViewSpec>
    std::shared_ptr<HybridReadiumViewSpec> create_std__shared_ptr_HybridReadiumViewSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
      NitroReadium::HybridReadiumViewSpec_cxx swiftPart = NitroReadium::HybridReadiumViewSpec_cxx::fromUnsafe(swiftUnsafePointer);
 diff --git a/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.hpp b/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.hpp
-index fbd689fd1881fbb02143467cf3282f71061d4d7d..ce76616cb3c12d00f92a869628f4af4236575ccb 100644
+index fbd689fd1881fbb02143467cf3282f71061d4d7d..4272bfe6ca34703776da83273bb416be1aea784a 100644
 --- a/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.hpp
 +++ b/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Bridge.hpp
 @@ -58,6 +58,10 @@ namespace margelo::nitro::readium { struct SeriesInfo; }
@@ -25253,16 +25626,19 @@ index fbd689fd1881fbb02143467cf3282f71061d4d7d..ce76616cb3c12d00f92a869628f4af42
  // Forward declaration of `TTSUtteranceEvent` to properly resolve imports.
  namespace margelo::nitro::readium { struct TTSUtteranceEvent; }
  
-@@ -91,6 +95,8 @@ namespace NitroReadium { class HybridReadiumViewSpec_cxx; }
+@@ -91,7 +95,11 @@ namespace NitroReadium { class HybridReadiumViewSpec_cxx; }
  #include "SeriesInfo.hpp"
  #include "Subject.hpp"
  #include "TTSState.hpp"
 +#include "TTSSynthesisRequest.hpp"
 +#include "TTSUpcomingEvent.hpp"
  #include "TTSUtteranceEvent.hpp"
++#include <NitroModules/Promise.hpp>
++#include <NitroModules/PromiseHolder.hpp>
  #include <NitroModules/Result.hpp>
  #include <exception>
-@@ -827,6 +833,95 @@ namespace margelo::nitro::readium::bridge::swift {
+ #include <functional>
+@@ -827,6 +835,151 @@ namespace margelo::nitro::readium::bridge::swift {
      return optional.value();
    }
    
@@ -25355,10 +25731,66 @@ index fbd689fd1881fbb02143467cf3282f71061d4d7d..ce76616cb3c12d00f92a869628f4af42
 +    return optional.value();
 +  }
 +  
++  // pragma MARK: std::shared_ptr<Promise<std::optional<std::string>>>
++  /**
++   * Specialized version of `std::shared_ptr<Promise<std::optional<std::string>>>`.
++   */
++  using std__shared_ptr_Promise_std__optional_std__string___ = std::shared_ptr<Promise<std::optional<std::string>>>;
++  inline std::shared_ptr<Promise<std::optional<std::string>>> create_std__shared_ptr_Promise_std__optional_std__string___() noexcept {
++    return Promise<std::optional<std::string>>::create();
++  }
++  inline PromiseHolder<std::optional<std::string>> wrap_std__shared_ptr_Promise_std__optional_std__string___(std::shared_ptr<Promise<std::optional<std::string>>> promise) noexcept {
++    return PromiseHolder<std::optional<std::string>>(std::move(promise));
++  }
++  
++  // pragma MARK: std::function<void(const std::optional<std::string>& /* result */)>
++  /**
++   * Specialized version of `std::function<void(const std::optional<std::string>&)>`.
++   */
++  using Func_void_std__optional_std__string_ = std::function<void(const std::optional<std::string>& /* result */)>;
++  /**
++   * Wrapper class for a `std::function<void(const std::optional<std::string>& / * result * /)>`, this can be used from Swift.
++   */
++  class Func_void_std__optional_std__string__Wrapper final {
++  public:
++    explicit Func_void_std__optional_std__string__Wrapper(std::function<void(const std::optional<std::string>& /* result */)>&& func): _function(std::make_unique<std::function<void(const std::optional<std::string>& /* result */)>>(std::move(func))) {}
++    inline void call(std::optional<std::string> result) const noexcept {
++      _function->operator()(result);
++    }
++  private:
++    std::unique_ptr<std::function<void(const std::optional<std::string>& /* result */)>> _function;
++  } SWIFT_NONCOPYABLE;
++  Func_void_std__optional_std__string_ create_Func_void_std__optional_std__string_(void* NON_NULL swiftClosureWrapper) noexcept;
++  inline Func_void_std__optional_std__string__Wrapper wrap_Func_void_std__optional_std__string_(Func_void_std__optional_std__string_ value) noexcept {
++    return Func_void_std__optional_std__string__Wrapper(std::move(value));
++  }
++  
++  // pragma MARK: std::function<void(const std::exception_ptr& /* error */)>
++  /**
++   * Specialized version of `std::function<void(const std::exception_ptr&)>`.
++   */
++  using Func_void_std__exception_ptr = std::function<void(const std::exception_ptr& /* error */)>;
++  /**
++   * Wrapper class for a `std::function<void(const std::exception_ptr& / * error * /)>`, this can be used from Swift.
++   */
++  class Func_void_std__exception_ptr_Wrapper final {
++  public:
++    explicit Func_void_std__exception_ptr_Wrapper(std::function<void(const std::exception_ptr& /* error */)>&& func): _function(std::make_unique<std::function<void(const std::exception_ptr& /* error */)>>(std::move(func))) {}
++    inline void call(std::exception_ptr error) const noexcept {
++      _function->operator()(error);
++    }
++  private:
++    std::unique_ptr<std::function<void(const std::exception_ptr& /* error */)>> _function;
++  } SWIFT_NONCOPYABLE;
++  Func_void_std__exception_ptr create_Func_void_std__exception_ptr(void* NON_NULL swiftClosureWrapper) noexcept;
++  inline Func_void_std__exception_ptr_Wrapper wrap_Func_void_std__exception_ptr(Func_void_std__exception_ptr value) noexcept {
++    return Func_void_std__exception_ptr_Wrapper(std::move(value));
++  }
++  
    // pragma MARK: std::shared_ptr<HybridReadiumViewSpec>
    /**
     * Specialized version of `std::shared_ptr<HybridReadiumViewSpec>`.
-@@ -847,5 +942,14 @@ namespace margelo::nitro::readium::bridge::swift {
+@@ -847,5 +1000,23 @@ namespace margelo::nitro::readium::bridge::swift {
    inline Result_void_ create_Result_void_(const std::exception_ptr& error) noexcept {
      return Result<void>::withError(error);
    }
@@ -25371,10 +25803,19 @@ index fbd689fd1881fbb02143467cf3282f71061d4d7d..ce76616cb3c12d00f92a869628f4af42
 +  inline Result_bool_ create_Result_bool_(const std::exception_ptr& error) noexcept {
 +    return Result<bool>::withError(error);
 +  }
++  
++  // pragma MARK: Result<std::shared_ptr<Promise<std::optional<std::string>>>>
++  using Result_std__shared_ptr_Promise_std__optional_std__string____ = Result<std::shared_ptr<Promise<std::optional<std::string>>>>;
++  inline Result_std__shared_ptr_Promise_std__optional_std__string____ create_Result_std__shared_ptr_Promise_std__optional_std__string____(const std::shared_ptr<Promise<std::optional<std::string>>>& value) noexcept {
++    return Result<std::shared_ptr<Promise<std::optional<std::string>>>>::withValue(value);
++  }
++  inline Result_std__shared_ptr_Promise_std__optional_std__string____ create_Result_std__shared_ptr_Promise_std__optional_std__string____(const std::exception_ptr& error) noexcept {
++    return Result<std::shared_ptr<Promise<std::optional<std::string>>>>::withError(error);
++  }
  
  } // namespace margelo::nitro::readium::bridge::swift
 diff --git a/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Umbrella.hpp b/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Umbrella.hpp
-index 69182707549e0a0b5c36299df67b9a1a0bd398ce..5e8a3d1805ea582d64fb5a355e1b70751881ebf4 100644
+index 69182707549e0a0b5c36299df67b9a1a0bd398ce..ad107fa7679c330885572d6ed5a9e7e0c2d0b4f7 100644
 --- a/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Umbrella.hpp
 +++ b/nitrogen/generated/ios/NitroReadium-Swift-Cxx-Umbrella.hpp
 @@ -60,6 +60,10 @@ namespace margelo::nitro::readium { struct Subject; }
@@ -25388,7 +25829,7 @@ index 69182707549e0a0b5c36299df67b9a1a0bd398ce..5e8a3d1805ea582d64fb5a355e1b7075
  // Forward declaration of `TTSUtteranceEvent` to properly resolve imports.
  namespace margelo::nitro::readium { struct TTSUtteranceEvent; }
  
-@@ -90,7 +94,10 @@ namespace margelo::nitro::readium { struct TTSUtteranceEvent; }
+@@ -90,7 +94,11 @@ namespace margelo::nitro::readium { struct TTSUtteranceEvent; }
  #include "Subject.hpp"
  #include "TTSConfig.hpp"
  #include "TTSState.hpp"
@@ -25396,11 +25837,12 @@ index 69182707549e0a0b5c36299df67b9a1a0bd398ce..5e8a3d1805ea582d64fb5a355e1b7075
 +#include "TTSUpcomingEvent.hpp"
  #include "TTSUtteranceEvent.hpp"
 +#include <NitroModules/ArrayBuffer.hpp>
++#include <NitroModules/Promise.hpp>
  #include <NitroModules/Result.hpp>
  #include <exception>
  #include <functional>
 diff --git a/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp b/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
-index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..1df2b4a1c5552d7c84769c4ac28b41dde2afeec8 100644
+index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..73fe29aef3ba6be7a5e467da945b6ae1fc6c4bb5 100644
 --- a/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
 +++ b/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
 @@ -62,8 +62,14 @@ namespace margelo::nitro::readium { struct SelectionActionEvent; }
@@ -25418,7 +25860,7 @@ index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..1df2b4a1c5552d7c84769c4ac28b41dd
  
  #include "ReadiumFile.hpp"
  #include <optional>
-@@ -95,7 +101,11 @@ namespace margelo::nitro::readium { struct TTSConfig; }
+@@ -95,7 +101,12 @@ namespace margelo::nitro::readium { struct TTSConfig; }
  #include "SelectionActionEvent.hpp"
  #include "TTSState.hpp"
  #include "TTSUtteranceEvent.hpp"
@@ -25427,10 +25869,11 @@ index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..1df2b4a1c5552d7c84769c4ac28b41dd
  #include "TTSConfig.hpp"
 +#include <NitroModules/ArrayBuffer.hpp>
 +#include <NitroModules/ArrayBufferHolder.hpp>
++#include <NitroModules/Promise.hpp>
  
  #include "NitroReadium-Swift-Cxx-Umbrella.hpp"
  
-@@ -185,6 +195,13 @@ namespace margelo::nitro::readium {
+@@ -185,6 +196,13 @@ namespace margelo::nitro::readium {
      inline void setOnLocationChange(const std::optional<std::function<void(const Locator& /* locator */)>>& onLocationChange) noexcept override {
        _swiftPart.setOnLocationChange(onLocationChange);
      }
@@ -25444,7 +25887,7 @@ index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..1df2b4a1c5552d7c84769c4ac28b41dd
      inline std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> getOnPublicationReady() noexcept override {
        auto __result = _swiftPart.getOnPublicationReady();
        return __result;
-@@ -234,6 +251,27 @@ namespace margelo::nitro::readium {
+@@ -234,6 +252,27 @@ namespace margelo::nitro::readium {
      inline void setOnTTSError(const std::optional<std::function<void(const std::string& /* error */)>>& onTTSError) noexcept override {
        _swiftPart.setOnTTSError(onTTSError);
      }
@@ -25472,7 +25915,7 @@ index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..1df2b4a1c5552d7c84769c4ac28b41dd
  
    public:
      // Methods
-@@ -303,6 +341,32 @@ namespace margelo::nitro::readium {
+@@ -303,6 +342,40 @@ namespace margelo::nitro::readium {
          std::rethrow_exception(__result.error());
        }
      }
@@ -25496,6 +25939,14 @@ index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..1df2b4a1c5552d7c84769c4ac28b41dd
 +    }
 +    inline bool ttsCanDecodeAudio(const std::string& mimeType) override {
 +      auto __result = _swiftPart.ttsCanDecodeAudio(mimeType);
++      if (__result.hasError()) [[unlikely]] {
++        std::rethrow_exception(__result.error());
++      }
++      auto __value = std::move(__result.value());
++      return __value;
++    }
++    inline std::shared_ptr<Promise<std::optional<std::string>>> evaluateJavaScript(const std::string& script) override {
++      auto __result = _swiftPart.evaluateJavaScript(script);
 +      if (__result.hasError()) [[unlikely]] {
 +        std::rethrow_exception(__result.error());
 +      }
@@ -25674,8 +26125,119 @@ index 0000000000000000000000000000000000000000..fcb8fbadf54fb72732f4de312bb0e6d1
 +    return Unmanaged<Func_void_TTSUpcomingEvent>.fromOpaque(pointer).takeRetainedValue()
 +  }
 +}
+diff --git a/nitrogen/generated/ios/swift/Func_void_std__exception_ptr.swift b/nitrogen/generated/ios/swift/Func_void_std__exception_ptr.swift
+new file mode 100644
+index 0000000000000000000000000000000000000000..857e251b0e7900ca750f8fb4bf87b32cf43f2c7f
+--- /dev/null
++++ b/nitrogen/generated/ios/swift/Func_void_std__exception_ptr.swift
+@@ -0,0 +1,46 @@
++///
++/// Func_void_std__exception_ptr.swift
++/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
++/// https://github.com/mrousavy/nitro
++/// Copyright © Marc Rousavy @ Margelo
++///
++
++import NitroModules
++
++/**
++ * Wraps a Swift `(_ error: Error) -> Void` as a class.
++ * This class can be used from C++, e.g. to wrap the Swift closure as a `std::function`.
++ */
++public final class Func_void_std__exception_ptr {
++  public typealias bridge = margelo.nitro.readium.bridge.swift
++
++  private let closure: (_ error: Error) -> Void
++
++  public init(_ closure: @escaping (_ error: Error) -> Void) {
++    self.closure = closure
++  }
++
++  @inline(__always)
++  public func call(error: std.exception_ptr) -> Void {
++    self.closure(RuntimeError.from(cppError: error))
++  }
++
++  /**
++   * Casts this instance to a retained unsafe raw pointer.
++   * This acquires one additional strong reference on the object!
++   */
++  @inline(__always)
++  public func toUnsafe() -> UnsafeMutableRawPointer {
++    return Unmanaged.passRetained(self).toOpaque()
++  }
++
++  /**
++   * Casts an unsafe pointer to a `Func_void_std__exception_ptr`.
++   * The pointer has to be a retained opaque `Unmanaged<Func_void_std__exception_ptr>`.
++   * This removes one strong reference from the object!
++   */
++  @inline(__always)
++  public static func fromUnsafe(_ pointer: UnsafeMutableRawPointer) -> Func_void_std__exception_ptr {
++    return Unmanaged<Func_void_std__exception_ptr>.fromOpaque(pointer).takeRetainedValue()
++  }
++}
+diff --git a/nitrogen/generated/ios/swift/Func_void_std__optional_std__string_.swift b/nitrogen/generated/ios/swift/Func_void_std__optional_std__string_.swift
+new file mode 100644
+index 0000000000000000000000000000000000000000..b149c56df4394c33f27724cc7e3db2b4e8349022
+--- /dev/null
++++ b/nitrogen/generated/ios/swift/Func_void_std__optional_std__string_.swift
+@@ -0,0 +1,53 @@
++///
++/// Func_void_std__optional_std__string_.swift
++/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
++/// https://github.com/mrousavy/nitro
++/// Copyright © Marc Rousavy @ Margelo
++///
++
++import NitroModules
++
++/**
++ * Wraps a Swift `(_ value: String?) -> Void` as a class.
++ * This class can be used from C++, e.g. to wrap the Swift closure as a `std::function`.
++ */
++public final class Func_void_std__optional_std__string_ {
++  public typealias bridge = margelo.nitro.readium.bridge.swift
++
++  private let closure: (_ value: String?) -> Void
++
++  public init(_ closure: @escaping (_ value: String?) -> Void) {
++    self.closure = closure
++  }
++
++  @inline(__always)
++  public func call(value: bridge.std__optional_std__string_) -> Void {
++    self.closure({ () -> String? in
++      if bridge.has_value_std__optional_std__string_(value) {
++        let __unwrapped = bridge.get_std__optional_std__string_(value)
++        return String(__unwrapped)
++      } else {
++        return nil
++      }
++    }())
++  }
++
++  /**
++   * Casts this instance to a retained unsafe raw pointer.
++   * This acquires one additional strong reference on the object!
++   */
++  @inline(__always)
++  public func toUnsafe() -> UnsafeMutableRawPointer {
++    return Unmanaged.passRetained(self).toOpaque()
++  }
++
++  /**
++   * Casts an unsafe pointer to a `Func_void_std__optional_std__string_`.
++   * The pointer has to be a retained opaque `Unmanaged<Func_void_std__optional_std__string_>`.
++   * This removes one strong reference from the object!
++   */
++  @inline(__always)
++  public static func fromUnsafe(_ pointer: UnsafeMutableRawPointer) -> Func_void_std__optional_std__string_ {
++    return Unmanaged<Func_void_std__optional_std__string_>.fromOpaque(pointer).takeRetainedValue()
++  }
++}
 diff --git a/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift b/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
-index 73adc8c488a59b3c4c2da1abe557338096f95072..37cc2e873787029caa6cf62d886c8a1ac339078c 100644
+index 73adc8c488a59b3c4c2da1abe557338096f95072..d046747b6d212f12405791344926d83864e29bb4 100644
 --- a/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
 +++ b/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
 @@ -16,6 +16,7 @@ public protocol HybridReadiumViewSpec_protocol: HybridObject, HybridView {
@@ -25696,7 +26258,7 @@ index 73adc8c488a59b3c4c2da1abe557338096f95072..37cc2e873787029caa6cf62d886c8a1a
  
    // Methods
    func goTo(locator: Locator) throws -> Void
-@@ -36,6 +40,10 @@ public protocol HybridReadiumViewSpec_protocol: HybridObject, HybridView {
+@@ -36,6 +40,11 @@ public protocol HybridReadiumViewSpec_protocol: HybridObject, HybridView {
    func ttsSetRate(rate: Double) throws -> Void
    func ttsSkipNext() throws -> Void
    func ttsSkipPrevious() throws -> Void
@@ -25704,11 +26266,12 @@ index 73adc8c488a59b3c4c2da1abe557338096f95072..37cc2e873787029caa6cf62d886c8a1a
 +  func ttsSynthesisFailed(requestId: String, message: String) throws -> Void
 +  func ttsProvideEncodedAudio(requestId: String, data: ArrayBuffer, mimeType: String, isLast: Bool) throws -> Void
 +  func ttsCanDecodeAudio(mimeType: String) throws -> Bool
++  func evaluateJavaScript(script: String) throws -> Promise<String?>
  }
  
  public extension HybridReadiumViewSpec_protocol {
 diff --git a/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift b/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
-index 49b44099332a85865196d6146e9d6a8ecdfb7c18..1f904bec89c461b85bde878349e7adc6ac55efd4 100644
+index 49b44099332a85865196d6146e9d6a8ecdfb7c18..c11b1cb2985862b20c8edeb3602db005ba0d7642 100644
 --- a/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
 +++ b/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
 @@ -271,6 +271,38 @@ open class HybridReadiumViewSpec_cxx {
@@ -25853,7 +26416,7 @@ index 49b44099332a85865196d6146e9d6a8ecdfb7c18..1f904bec89c461b85bde878349e7adc6
  
    // Methods
    @inline(__always)
-@@ -617,6 +745,51 @@ open class HybridReadiumViewSpec_cxx {
+@@ -617,6 +745,76 @@ open class HybridReadiumViewSpec_cxx {
      }
    }
    
@@ -25902,10 +26465,35 @@ index 49b44099332a85865196d6146e9d6a8ecdfb7c18..1f904bec89c461b85bde878349e7adc6
 +    }
 +  }
 +  
++  @inline(__always)
++  public final func evaluateJavaScript(script: std.string) -> bridge.Result_std__shared_ptr_Promise_std__optional_std__string____ {
++    do {
++      let __result = try self.__implementation.evaluateJavaScript(script: String(script))
++      let __resultCpp = { () -> bridge.std__shared_ptr_Promise_std__optional_std__string___ in
++        let __promise = bridge.create_std__shared_ptr_Promise_std__optional_std__string___()
++        let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_std__optional_std__string___(__promise)
++        __result
++          .then({ __result in __promiseHolder.resolve({ () -> bridge.std__optional_std__string_ in
++              if let __unwrappedValue = __result {
++                return bridge.create_std__optional_std__string_(std.string(__unwrappedValue))
++              } else {
++                return .init()
++              }
++            }()) })
++          .catch({ __error in __promiseHolder.reject(__error.toCpp()) })
++        return __promise
++      }()
++      return bridge.create_Result_std__shared_ptr_Promise_std__optional_std__string____(__resultCpp)
++    } catch (let __error) {
++      let __exceptionPtr = __error.toCpp()
++      return bridge.create_Result_std__shared_ptr_Promise_std__optional_std__string____(__exceptionPtr)
++    }
++  }
++  
    public final func getView() -> UnsafeMutableRawPointer {
      return Unmanaged.passRetained(__implementation.view).toOpaque()
    }
-@@ -633,4 +806,8 @@ open class HybridReadiumViewSpec_cxx {
+@@ -633,4 +831,8 @@ open class HybridReadiumViewSpec_cxx {
      guard let recyclable = __implementation as? any RecyclableView else { return }
      recyclable.prepareForRecycle()
    }
@@ -26055,7 +26643,7 @@ index 0000000000000000000000000000000000000000..2d52c4fe3dd5956c079ee6195dcb5ea9
 +  }
 +}
 diff --git a/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp b/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
-index e637a969e0d09ef994a79cb68a0785a611fb3bf0..27bf99b9499840f2b28ae893722e08b954da88a2 100644
+index e637a969e0d09ef994a79cb68a0785a611fb3bf0..884b6ba0c1f639c26ac26ca9a926aa6e1b63da17 100644
 --- a/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
 +++ b/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
 @@ -26,6 +26,8 @@ namespace margelo::nitro::readium {
@@ -26080,7 +26668,7 @@ index e637a969e0d09ef994a79cb68a0785a611fb3bf0..27bf99b9499840f2b28ae893722e08b9
        prototype.registerHybridMethod("goTo", &HybridReadiumViewSpec::goTo);
        prototype.registerHybridMethod("goForward", &HybridReadiumViewSpec::goForward);
        prototype.registerHybridMethod("goBackward", &HybridReadiumViewSpec::goBackward);
-@@ -51,6 +59,10 @@ namespace margelo::nitro::readium {
+@@ -51,6 +59,11 @@ namespace margelo::nitro::readium {
        prototype.registerHybridMethod("ttsSetRate", &HybridReadiumViewSpec::ttsSetRate);
        prototype.registerHybridMethod("ttsSkipNext", &HybridReadiumViewSpec::ttsSkipNext);
        prototype.registerHybridMethod("ttsSkipPrevious", &HybridReadiumViewSpec::ttsSkipPrevious);
@@ -26088,11 +26676,12 @@ index e637a969e0d09ef994a79cb68a0785a611fb3bf0..27bf99b9499840f2b28ae893722e08b9
 +      prototype.registerHybridMethod("ttsSynthesisFailed", &HybridReadiumViewSpec::ttsSynthesisFailed);
 +      prototype.registerHybridMethod("ttsProvideEncodedAudio", &HybridReadiumViewSpec::ttsProvideEncodedAudio);
 +      prototype.registerHybridMethod("ttsCanDecodeAudio", &HybridReadiumViewSpec::ttsCanDecodeAudio);
++      prototype.registerHybridMethod("evaluateJavaScript", &HybridReadiumViewSpec::evaluateJavaScript);
      });
    }
  
 diff --git a/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp b/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
-index 46b00aff3941c6335235f5933759955a4d94797b..42a18aff582345516fdcbcb8b37904fd26e5b855 100644
+index 46b00aff3941c6335235f5933759955a4d94797b..b5269cdbb2e69b8e402f274e4627bfedca717628 100644
 --- a/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
 +++ b/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
 @@ -35,6 +35,10 @@ namespace margelo::nitro::readium { struct SelectionActionEvent; }
@@ -26106,7 +26695,7 @@ index 46b00aff3941c6335235f5933759955a4d94797b..42a18aff582345516fdcbcb8b37904fd
  // Forward declaration of `TTSConfig` to properly resolve imports.
  namespace margelo::nitro::readium { struct TTSConfig; }
  
-@@ -53,7 +57,10 @@ namespace margelo::nitro::readium { struct TTSConfig; }
+@@ -53,7 +57,11 @@ namespace margelo::nitro::readium { struct TTSConfig; }
  #include "TTSState.hpp"
  #include "TTSUtteranceEvent.hpp"
  #include <string>
@@ -26114,10 +26703,11 @@ index 46b00aff3941c6335235f5933759955a4d94797b..42a18aff582345516fdcbcb8b37904fd
 +#include "TTSUpcomingEvent.hpp"
  #include "TTSConfig.hpp"
 +#include <NitroModules/ArrayBuffer.hpp>
++#include <NitroModules/Promise.hpp>
  
  namespace margelo::nitro::readium {
  
-@@ -94,6 +101,8 @@ namespace margelo::nitro::readium {
+@@ -94,6 +102,8 @@ namespace margelo::nitro::readium {
        virtual void setSuppressNativeSelectionMenu(std::optional<bool> suppressNativeSelectionMenu) = 0;
        virtual std::optional<std::function<void(const Locator& /* locator */)>> getOnLocationChange() = 0;
        virtual void setOnLocationChange(const std::optional<std::function<void(const Locator& /* locator */)>>& onLocationChange) = 0;
@@ -26126,7 +26716,7 @@ index 46b00aff3941c6335235f5933759955a4d94797b..42a18aff582345516fdcbcb8b37904fd
        virtual std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> getOnPublicationReady() = 0;
        virtual void setOnPublicationReady(const std::optional<std::function<void(const PublicationReadyEvent& /* event */)>>& onPublicationReady) = 0;
        virtual std::optional<std::function<void(const DecorationActivatedEvent& /* event */)>> getOnDecorationActivated() = 0;
-@@ -108,6 +117,12 @@ namespace margelo::nitro::readium {
+@@ -108,6 +118,12 @@ namespace margelo::nitro::readium {
        virtual void setOnTTSUtterance(const std::optional<std::function<void(const TTSUtteranceEvent& /* event */)>>& onTTSUtterance) = 0;
        virtual std::optional<std::function<void(const std::string& /* error */)>> getOnTTSError() = 0;
        virtual void setOnTTSError(const std::optional<std::function<void(const std::string& /* error */)>>& onTTSError) = 0;
@@ -26139,7 +26729,7 @@ index 46b00aff3941c6335235f5933759955a4d94797b..42a18aff582345516fdcbcb8b37904fd
  
      public:
        // Methods
-@@ -122,6 +137,10 @@ namespace margelo::nitro::readium {
+@@ -122,6 +138,11 @@ namespace margelo::nitro::readium {
        virtual void ttsSetRate(double rate) = 0;
        virtual void ttsSkipNext() = 0;
        virtual void ttsSkipPrevious() = 0;
@@ -26147,6 +26737,7 @@ index 46b00aff3941c6335235f5933759955a4d94797b..42a18aff582345516fdcbcb8b37904fd
 +      virtual void ttsSynthesisFailed(const std::string& requestId, const std::string& message) = 0;
 +      virtual void ttsProvideEncodedAudio(const std::string& requestId, const std::shared_ptr<ArrayBuffer>& data, const std::string& mimeType, bool isLast) = 0;
 +      virtual bool ttsCanDecodeAudio(const std::string& mimeType) = 0;
++      virtual std::shared_ptr<Promise<std::optional<std::string>>> evaluateJavaScript(const std::string& script) = 0;
  
      protected:
        // Hybrid Setup
@@ -26480,7 +27071,7 @@ index fdc9d3100e0605f724fd09898e437b39c777d973..0e23d7699b7c68ed11e562e862873c43
    }
  }
 diff --git a/src/components/ReadiumView.tsx b/src/components/ReadiumView.tsx
-index 1a0e8180a7247f8a945207da5eb43a6102849ea7..4276730b696c1064afe65c5fd9a89b6a7cd2cdeb 100644
+index 1a0e8180a7247f8a945207da5eb43a6102849ea7..6c6d43ff021666faaa3b54415b1b94807336c30a 100644
 --- a/src/components/ReadiumView.tsx
 +++ b/src/components/ReadiumView.tsx
 @@ -20,6 +20,7 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
@@ -26501,7 +27092,7 @@ index 1a0e8180a7247f8a945207da5eb43a6102849ea7..4276730b696c1064afe65c5fd9a89b6a
        preferences,
        decorations,
        selectionActions,
-@@ -80,6 +84,23 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
+@@ -80,6 +84,33 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
          ttsSetRate: (rate) => hybridRef.current?.ttsSetRate(rate),
          ttsSkipNext: () => hybridRef.current?.ttsSkipNext(),
          ttsSkipPrevious: () => hybridRef.current?.ttsSkipPrevious(),
@@ -26522,10 +27113,20 @@ index 1a0e8180a7247f8a945207da5eb43a6102849ea7..4276730b696c1064afe65c5fd9a89b6a
 +            return false;
 +          }
 +        },
++        // Asked the same way: a binary built before it existed answers undefined.
++        evaluateJavaScript: async (script) => {
++          const native = hybridRef.current;
++          if (typeof native?.evaluateJavaScript !== 'function') return undefined;
++          try {
++            return (await native.evaluateJavaScript(script)) ?? undefined;
++          } catch {
++            return undefined;
++          }
++        },
        }),
        []
      );
-@@ -102,6 +123,7 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
+@@ -102,6 +133,7 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
              decorations={decorations}
              selectionActions={selectionActions ?? []}
              onLocationChange={callback(onLocationChange ?? noop)}
@@ -26533,7 +27134,7 @@ index 1a0e8180a7247f8a945207da5eb43a6102849ea7..4276730b696c1064afe65c5fd9a89b6a
              onPublicationReady={callback(handlePublicationReady)}
              onDecorationActivated={callback(onDecorationActivated ?? noop)}
              onSelectionChange={callback(onSelectionChange ?? noop)}
-@@ -109,6 +131,9 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
+@@ -109,6 +141,9 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
              onTTSStateChange={callback(onTTSStateChange ?? noop)}
              onTTSUtterance={callback(onTTSUtterance ?? noop)}
              onTTSError={callback(onTTSError ?? noop)}
@@ -26544,7 +27145,7 @@ index 1a0e8180a7247f8a945207da5eb43a6102849ea7..4276730b696c1064afe65c5fd9a89b6a
                hybridRef.current = ref;
              })}
 diff --git a/src/components/ReadiumView.types.ts b/src/components/ReadiumView.types.ts
-index 9307c2db0d84519fb13c7f2aa9310350ce67fed2..b30608fcd13b5e2cd8b00238d01f1a6151ec646e 100644
+index 9307c2db0d84519fb13c7f2aa9310350ce67fed2..d4a1c8426dce44c4142616698eb4ddbd0ec9b129 100644
 --- a/src/components/ReadiumView.types.ts
 +++ b/src/components/ReadiumView.types.ts
 @@ -11,6 +11,8 @@ import type {
@@ -26556,7 +27157,7 @@ index 9307c2db0d84519fb13c7f2aa9310350ce67fed2..b30608fcd13b5e2cd8b00238d01f1a61
  } from '../interfaces';
  
  export type ReadiumViewRef = {
-@@ -24,6 +26,12 @@ export type ReadiumViewRef = {
+@@ -24,6 +26,14 @@ export type ReadiumViewRef = {
    ttsSetRate: (rate: number) => void;
    ttsSkipNext: () => void;
    ttsSkipPrevious: () => void;
@@ -26566,10 +27167,12 @@ index 9307c2db0d84519fb13c7f2aa9310350ce67fed2..b30608fcd13b5e2cd8b00238d01f1a61
 +  ttsProvideEncodedAudio: (requestId: string, data: ArrayBuffer, mimeType: string, isLast: boolean) => void;
 +  /** Whether this build and device can take `ttsProvideEncodedAudio` for this type. False on a build without it. */
 +  ttsCanDecodeAudio: (mimeType: string) => boolean;
++  /** Runs `script` in the HTML resource on screen; its result as a string, or undefined. */
++  evaluateJavaScript: (script: string) => Promise<string | undefined>;
  };
  
  export type ReadiumProps = {
-@@ -34,6 +42,12 @@ export type ReadiumProps = {
+@@ -34,6 +44,12 @@ export type ReadiumProps = {
    suppressNativeSelectionMenu?: boolean;
    style?: any;
    onLocationChange?: (locator: Locator) => void;
@@ -26582,7 +27185,7 @@ index 9307c2db0d84519fb13c7f2aa9310350ce67fed2..b30608fcd13b5e2cd8b00238d01f1a61
    onPublicationReady?: (event: PublicationReadyEvent) => void;
    onDecorationActivated?: (event: DecorationActivatedEvent) => void;
    onSelectionChange?: (event: SelectionEvent) => void;
-@@ -41,4 +55,8 @@ export type ReadiumProps = {
+@@ -41,4 +57,8 @@ export type ReadiumProps = {
    onTTSStateChange?: (state: TTSState) => void;
    onTTSUtterance?: (event: TTSUtteranceEvent) => void;
    onTTSError?: (error: string) => void;
@@ -26615,7 +27218,7 @@ index 06b8fd65a525584fcf9a27548dd4d418ee4b2e60..ad85c433e7368b0b861787cd07d3aa91
 +  TTSUpcomingEvent,
  } from '../specs/ReadiumView.nitro';
 diff --git a/src/specs/ReadiumView.nitro.ts b/src/specs/ReadiumView.nitro.ts
-index 27d61c141971f707c4a249ef9f25c62570d2fd83..08a9ce0888dc79a088043cb75b125ecfaae76800 100644
+index 27d61c141971f707c4a249ef9f25c62570d2fd83..2f9e30e0b7b8c644e331d52bd617f88e7d5fbe9a 100644
 --- a/src/specs/ReadiumView.nitro.ts
 +++ b/src/specs/ReadiumView.nitro.ts
 @@ -239,6 +239,35 @@ export interface TTSUtteranceEvent {
@@ -26679,7 +27282,7 @@ index 27d61c141971f707c4a249ef9f25c62570d2fd83..08a9ce0888dc79a088043cb75b125ecf
  }
  
  export interface ReadiumViewMethods extends HybridViewMethods {
-@@ -276,6 +316,18 @@ export interface ReadiumViewMethods extends HybridViewMethods {
+@@ -276,6 +316,25 @@ export interface ReadiumViewMethods extends HybridViewMethods {
    ttsSetRate(rate: number): void;
    ttsSkipNext(): void;
    ttsSkipPrevious(): void;
@@ -26695,6 +27298,13 @@ index 27d61c141971f707c4a249ef9f25c62570d2fd83..08a9ce0888dc79a088043cb75b125ecf
 +  ttsProvideEncodedAudio(requestId: string, data: ArrayBuffer, mimeType: string, isLast: boolean): void;
 +  /** Whether `ttsProvideEncodedAudio` can take this type on this device. */
 +  ttsCanDecodeAudio(mimeType: string): boolean;
++  /**
++   * Runs `script` in the HTML resource on screen and answers what it
++   * evaluates to, as a string (have the script return one, e.g. a
++   * `JSON.stringify`); undefined when there is no resource to run it in or the
++   * script failed. Readium's own `evaluateJavascript` on both platforms.
++   */
++  evaluateJavaScript(script: string): Promise<string | undefined>;
  }
  
  export type ReadiumView = HybridView<ReadiumViewProps, ReadiumViewMethods>;

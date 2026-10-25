@@ -106,15 +106,18 @@ export async function skipSentence(by: 1 | -1): Promise<void> {
   if (to && current() === s) jumpTo(s, to, 0);
 }
 
-/** Plays from a page of the book: "Listen from here" in the reader, from the page on screen. */
-export async function playFromLocator(locator: SpineLocator): Promise<void> {
+/**
+ * Plays from a page of the book: "Listen from here" in the reader, from the
+ * page on screen, placed exactly by `text` (its first visible text) when known.
+ */
+export async function playFromLocator(locator: SpineLocator, text?: string | null): Promise<void> {
   const s = current();
   if (!s || !store().loaded) {
     const now = selectBook(store());
-    if (now) await beginBook(now.bookId, { fromLocator: locator });
+    if (now) await beginBook(now.bookId, { fromLocator: locator, fromText: text });
     return;
   }
-  const sentence = await sentenceAtLocator(s.script, locator);
+  const sentence = await sentenceAtLocator(s.script, locator, text);
   if (!sentence || current() !== s) return;
   s.wantsToPlay = true;
   jumpTo(s, sentence, 0);
