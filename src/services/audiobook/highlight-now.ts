@@ -11,10 +11,11 @@
  */
 import TrackPlayer from '@rntp/player';
 
-import { highlightLocator, highlightTarget, sectionText, type LocatorSection } from '@/features/audiobook/utils/sentence-locator';
+import { highlightTarget, type LocatorSection } from '@/features/audiobook/utils/sentence-locator';
 import type { ScriptParagraph, Sentence } from '@/features/audiobook/utils/sentences-of';
 import { queryClient } from '@/lib/query-client';
 import { audiobookKeys } from '@/query-manager/audiobook/keys';
+import { sentenceLocator } from '@/services/audiobook/position';
 import { current, playingEntry, type BookSession } from '@/services/audiobook/session';
 import type { ChapterText } from '@/services/audiobook/text';
 import { useAudiobook } from '@/stores/audiobook';
@@ -67,7 +68,7 @@ export async function highlightSentence(bookId: string, chapter: ChapterText, se
 async function highlightIn(bookId: string, place: HighlightPlace, sentence: Sentence): Promise<HighlightResult> {
   const known = useAudiobook.getState().highlighted[sentence.id];
   if (known) return { kind: 'already', highlightId: known, sentenceId: sentence.id };
-  const locator = highlightLocator(place.section, sentence, sectionText(place.paragraphs));
+  const locator = sentenceLocator(place.section, place.paragraphs, sentence);
   const highlightId = await useReaderStore.getState().addHighlight(sentence.text, locator as never, undefined, undefined, bookId);
   if (!highlightId) return { kind: 'none' };
   const { highlighted } = useAudiobook.getState();

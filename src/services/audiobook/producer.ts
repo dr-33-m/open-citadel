@@ -49,6 +49,20 @@ export async function sentenceAfter(s: BookSession, sentence: Sentence): Promise
   return null;
 }
 
+/** The sentence before this one in the book, across sections. Null at the start. */
+export async function sentenceBefore(s: BookSession, sentence: Sentence): Promise<Sentence | null> {
+  const script = await s.script.load(sentence.section);
+  const at = script?.sentences.findIndex((x) => x.id === sentence.id) ?? -1;
+  if (at > 0) return script?.sentences[at - 1] ?? null;
+  let section = s.script.previousSection(sentence.section);
+  while (section) {
+    const last = (await s.script.load(section.index))?.sentences.at(-1);
+    if (last) return last;
+    section = s.script.previousSection(section.index);
+  }
+  return null;
+}
+
 /** The next sentence to make: the one a jump is waiting on, or the one after the last queued. */
 async function nextToMake(s: BookSession): Promise<Sentence | null> {
   if (s.pending) return s.pending.sentence;

@@ -7,7 +7,8 @@
 import TrackPlayer from '@rntp/player';
 
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
-import { bookRow, infoOf, newSession, nowPlayingOf, publish, startSentence } from '@/services/audiobook/lifecycle';
+import { bookRow, infoOf, newSession, nowPlayingOf, publish } from '@/services/audiobook/lifecycle';
+import { startSentence } from '@/services/audiobook/start';
 import { isBookItem, parseBookMediaId } from '@/services/audiobook/media-id';
 import { produce } from '@/services/audiobook/producer';
 import type { BookItemExtras } from '@/services/audiobook/queue';
@@ -18,7 +19,6 @@ import { applyCommands } from '@/services/player/commands';
 import { readyPlayer } from '@/services/player/events';
 import { store } from '@/services/player/session';
 import { useAudiobook } from '@/stores/audiobook';
-import { selectBook } from '@/stores/player';
 import { useSettingsStore } from '@/stores/settings';
 
 /**
@@ -57,21 +57,11 @@ export async function restoreBook(): Promise<void> {
   await showPaused(remembered.bookId, () => !store().current);
 }
 
-/**
- * The book read on in the reader (its read-aloud) while it waited in the mini
- * player: the mini player and the player show where it got to, which is where
- * play goes on from (`startSentence`).
- */
-export async function catchUpBook(bookId: string): Promise<void> {
-  const waiting = () => selectBook(store())?.bookId === bookId && !store().loaded;
-  if (waiting()) await showPaused(bookId, waiting);
-}
-
 /** The book in the mini player, paused and not loaded, at the sentence play would start from. */
 async function showPaused(bookId: string, stillWanted: () => boolean): Promise<void> {
   const row = bookRow(bookId);
   const script = row ? await loadScript(row) : null;
-  const sentence = script ? await startSentence(script, bookId, null) : null;
+  const sentence = script ? await startSentence(script, bookId) : null;
   if (!row || !script || !sentence) return;
   const s = await newSession(infoOf(row), script, '', { modelId: '', voice: '', speed: null, maxCharacters: 0, format: 'mp3' });
   s.pending = { sentence, offsetSec: 0 };

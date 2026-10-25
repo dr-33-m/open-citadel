@@ -3,15 +3,14 @@ import React from 'react';
 
 import { useHighlightNow } from '@/features/audiobook/hooks/use-highlight-now';
 import type { BookPlayerAction } from '@/features/audiobook/utils/player-menu';
-import { readAlongLocator } from '@/services/audiobook';
 import { stopPlayback } from '@/services/player';
 import { useBooksStore } from '@/stores/books';
 import type { BookNowPlaying } from '@/stores/player';
 
 /**
  * What only a book's player does: its favourite, Highlight, and its menu
- * (read along in the book, where the voice hands over to the reader's
- * read-aloud at the sentence being heard, or stop listening).
+ * (read along in the book, which opens on the sentence being heard and
+ * follows the voice, or stop listening).
  */
 export function useBookPlayerActions(current: BookNowPlaying | null) {
   const router = useRouter();
@@ -25,8 +24,9 @@ export function useBookPlayerActions(current: BookNowPlaying | null) {
         void stopPlayback();
         return;
       }
-      const locator = readAlongLocator();
-      router.push({ pathname: '/reader/[id]', params: { id: bookId, ...(locator ? { locator: JSON.stringify(locator) } : {}) } } as never);
+      // No place to jump to: the reader opens on the sentence being heard itself
+      // (`useReadAlong`), so it is not a jump with a way back to the saved place.
+      router.push({ pathname: '/reader/[id]', params: { id: bookId } });
     },
     [bookId, router],
   );

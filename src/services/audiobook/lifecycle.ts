@@ -9,16 +9,15 @@ import { db } from '@/db/client';
 import { books } from '@/db/schema';
 import { bookVoice } from '@/features/audiobook/utils/book-voice';
 import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
-import { matchSentence } from '@/features/audiobook/utils/match-sentence';
-import { startIndex, startPlace } from '@/features/audiobook/utils/start-place';
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
 import { queryClient } from '@/lib/query-client';
 import { billingKeys } from '@/query-manager/billing/keys';
 import { SentenceLengths } from '@/services/audiobook/lengths';
-import { savedLocator, saveBookPlace } from '@/services/audiobook/position';
+import { saveBookPlace } from '@/services/audiobook/position';
 import { produce } from '@/services/audiobook/producer';
 import { unpinQueue } from '@/services/audiobook/queue';
 import { loadScript, type BookScript } from '@/services/audiobook/script';
+import { startSentence, type StartFrom } from '@/services/audiobook/start';
 import {
   book,
   bookSecondsAt,
@@ -29,7 +28,7 @@ import {
   type BookSession,
 
 } from '@/services/audiobook/session';
-import { readCurrent, readPace, readReadAloudPlace, writeCurrent, writeHeardVoice } from '@/services/audiobook/settings';
+import { readPace, writeCurrent, writeHeardVoice } from '@/services/audiobook/settings';
 import { clearWavCopies } from '@/services/audiobook/track-file';
 import type { PlanPreview } from '@/services/billing-plans';
 import { PieceSource } from '@/services/cloud-tts/piece-source';
@@ -101,44 +100,7 @@ export async function newSession(info: BookInfo, script: BookScript, voiceKey: s
     wantsToPlay: false,
     pending: null,
     lastSavedAt: 0,
-    keepQueue: false,
   };
-}
-
-/** The sentence read-aloud in the reader got to, if it read on after the player last did. */
-async function readAloudSentence(script: BookScript, bookId: string) {
-  const place = readReadAloudPlace(bookId);
-  const heard = readCurrent();
-  if (!place || (heard?.bookId === bookId && (heard.at ?? 0) >= place.at)) return null;
-  const href = place.href.split('#')[0];
-  const section = script.sections.find((s) => s.href.split('#')[0] === href);
-  const sentences = section ? (await script.load(section.index))?.sentences : null;
-  return sentences ? matchSentence(sentences, place.text) : null;
-}
-
-/**
- * Where to start: a sentence asked for; else where read-aloud in the reader
- * got to, when it read on after the player; else the sentence the book was
- * last heard at; else its saved place; else its first chapter.
- */
-export async function startSentence(script: BookScript, bookId: string, fromSentenceId: string | null) {
-  if (!fromSentenceId) {
-    const readOn = await readAloudSentence(script, bookId);
-    if (readOn) return readOn;
-  }
-  const remembered = fromSentenceId ?? (readCurrent()?.bookId === bookId ? (readCurrent()?.sentenceId ?? null) : null);
-  if (remembered) {
-    const section = Number.parseInt(remembered.split(':')[0] ?? '', 10);
-    const hit = (await script.load(section))?.sentences.find((x) => x.id === remembered);
-    if (hit) return hit;
-  }
-  const place = startPlace(script.listened, savedLocator(bookId));
-  if (!place) return null;
-  const at = await script.load(place.section);
-  const index = at ? startIndex(at.sentences, place.offset) : -1;
-  if (at && index >= 0) return at.sentences[index];
-  const next = script.nextSection(place.section);
-  return next ? ((await script.load(next.index))?.sentences[0] ?? null) : null;
 }
 
 /** The ways starting can end without sound. */
@@ -149,7 +111,7 @@ export type StartResult = 'playing' | 'no-voice' | 'unreadable' | 'unavailable';
  * at once and shows its loader while the book is read into the index and the
  * first sentence is made.
  */
-export async function startBook(bookId: string, options: { fromSentenceId?: string | null } = {}): Promise<StartResult> {
+export async function startBook(bookId: string, options: StartFrom = {}): Promise<StartResult> {
   const row = bookRow(bookId);
   if (!row) return 'unreadable';
   const voice = currentBookVoice();
@@ -163,8 +125,20 @@ export async function startBook(bookId: string, options: { fromSentenceId?: stri
   if (wasLoaded) TrackPlayer.pause();
   markStarting();
   const info = infoOf(row);
+  // The same book, shown already (paused in the mini player): its clock stays
+  // where it is while the book is made ready, rather than dropping to zero.
+  const shown = selectBook(store())?.bookId === bookId ? selectBook(store()) : null;
   store().patch({
-    current: { kind: 'book', bookId, title: info.title, author: info.author, coverUrl: info.coverUrl, chapterTitle: null, durationSec: 0, positionSec: 0 },
+    current: {
+      kind: 'book',
+      bookId,
+      title: info.title,
+      author: info.author,
+      coverUrl: info.coverUrl,
+      chapterTitle: shown?.chapterTitle ?? null,
+      durationSec: shown?.durationSec ?? 0,
+      positionSec: shown?.positionSec ?? 0,
+    },
     loaded: true,
     error: null,
     sleep: null,
@@ -177,7 +151,7 @@ export async function startBook(bookId: string, options: { fromSentenceId?: stri
     await stopBook();
     return 'unreadable';
   }
-  const first = await startSentence(script, bookId, options.fromSentenceId ?? null);
+  const first = await startSentence(script, bookId, options);
   if (!first) {
     await stopBook();
     return 'unreadable';
@@ -192,6 +166,16 @@ export async function startBook(bookId: string, options: { fromSentenceId?: stri
   publish(s);
   void produce(s);
   return 'playing';
+}
+
+/**
+ * Starts the book from the player's controls. Without a plan that reaches a
+ * cloud voice (one that lapsed since the book was last heard), the plans rise
+ * instead, so the press is never answered by nothing.
+ */
+export async function beginBook(bookId: string, options: StartFrom = {}): Promise<void> {
+  const result = await startBook(bookId, options);
+  if (result === 'no-voice') useAudiobook.getState().patch({ plansAsked: useAudiobook.getState().plansAsked + 1 });
 }
 
 /** Puts the book down: the place saved, every fetch stopped, the cache free to trim it. */

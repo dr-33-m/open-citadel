@@ -1,5 +1,5 @@
 diff --git a/android/build.gradle b/android/build.gradle
-index d980fe94a06e00f78e758aac92b4c99dcd433abc..24480a58412379935a2fef92fcb290f6f79a054d 100644
+index d980fe94a06e00f78e758aac92b4c99dcd433abc..2af4352f0be80cfbb244c6bb28d07d5714c0a51a 100644
 --- a/android/build.gradle
 +++ b/android/build.gradle
 @@ -39,7 +39,24 @@ android {
@@ -28,7 +28,7 @@ index d980fe94a06e00f78e758aac92b4c99dcd433abc..24480a58412379935a2fef92fcb290f6
        }
      }
    }
-@@ -164,8 +181,15 @@ dependencies {
+@@ -164,8 +181,12 @@ dependencies {
      // transitive deps to avoid potential collisions with other projects.
      exclude group: "com.google.android.exoplayer"
    }
@@ -39,14 +39,11 @@ index d980fe94a06e00f78e758aac92b4c99dcd433abc..24480a58412379935a2fef92fcb290f6
 +  // media3-common has to be on the compile classpath explicitly here.
    implementation "org.readium.kotlin-toolkit:readium-navigator-media-tts:$readium_version"
 +  implementation "androidx.media3:media3-common:1.9.0"
-+  // PATCHED (Open Citadel): finds the element a handed-over sentence is in
-+  // (BaseReaderFragment.withElement). Readium ships it at runtime only.
-+  implementation "org.jsoup:jsoup:1.18.1"
  
    // other deps
    implementation "androidx.core:core-ktx:1.13.1"
 diff --git a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt b/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
-index 67d86a62e7b8a80070aa55f8a259079649b37aaf..f64ca21eb32b047233ce8e2261826de76c524aaf 100644
+index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b215ba916b0 100644
 --- a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
 +++ b/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
 @@ -6,6 +6,7 @@ import android.view.View
@@ -67,17 +64,7 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..f64ca21eb32b047233ce8e2261826de7
  
    private fun ensureService() {
      if (svc == null) {
-@@ -179,7 +183,8 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
-     fragment?.ttsStart(
-       rate = config.rate?.toFloat(),
-       language = config.language,
--      voice = config.voice
-+      voice = config.voice,
-+      fromLocatorJson = config.fromLocator
-     )
-   }
-   override fun ttsStop() { fragment?.ttsStop() }
-@@ -188,6 +193,27 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -188,6 +192,27 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
    override fun ttsSetRate(rate: Double) { fragment?.ttsSetRate(rate.toFloat()) }
    override fun ttsSkipNext() { fragment?.ttsSkipNext() }
    override fun ttsSkipPrevious() { fragment?.ttsSkipPrevious() }
@@ -105,7 +92,7 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..f64ca21eb32b047233ce8e2261826de7
    override fun destroy() {
      if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
        cleanup()
-@@ -395,6 +421,24 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -395,6 +420,24 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
          is ReaderViewModel.Event.TTSError -> {
            onTTSError?.invoke(event.message)
          }
@@ -131,37 +118,10 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..f64ca21eb32b047233ce8e2261826de7
      }
    }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-index 4ebb74c21c404bba938d72982e6cfd41492c935c..021b94fb8dfcd86e5978d8eefc9ea55f6ffaf04a 100644
+index 4ebb74c21c404bba938d72982e6cfd41492c935c..432d6642929cd1b9f24a9ee190e35646fbd13624 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-@@ -21,6 +21,7 @@ import org.readium.r2.navigator.OverflowableNavigator
- import org.readium.r2.navigator.SelectableNavigator
- import org.readium.r2.navigator.VisualNavigator
- import org.readium.r2.shared.publication.Locator
-+import org.readium.r2.shared.publication.html.cssSelector
- import org.readium.r2.shared.publication.services.cover
- import org.readium.r2.shared.publication.services.positions
- import java.io.File
-@@ -232,7 +233,17 @@ abstract class BaseReaderFragment : Fragment() {
- 
-   // MARK: - TTS
- 
--  fun ttsStart(rate: Float?, language: String?, voice: String?) {
-+  fun ttsStart(rate: Float?, language: String?, voice: String?, fromLocatorJson: String? = null) {
-+    // PATCHED (Open Citadel): a place to start from, handed over by the
-+    // audiobook (the sentence being heard when the book was opened). Read
-+    // here, so a locator that cannot be read falls back to the screen's.
-+    val handedOver = fromLocatorJson?.let {
-+      try {
-+        Locator.fromJSON(org.json.JSONObject(it))
-+      } catch (e: Exception) {
-+        null
-+      }
-+    }
-     val viewScope = viewLifecycleOwner.lifecycleScope
-     if (ttsManager == null) {
-       val app = requireActivity().application
-@@ -247,6 +258,15 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -247,6 +247,15 @@ abstract class BaseReaderFragment : Fragment() {
          },
          onUtterance = { locator, text ->
            applyTTSDecoration(locator) // Apply decoration natively — no JS round-trip
@@ -177,7 +137,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..021b94fb8dfcd86e5978d8eefc9ea55f
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSUtterance(locator, text, null, null))
            }
-@@ -255,6 +275,21 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -255,6 +264,21 @@ abstract class BaseReaderFragment : Fragment() {
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSError(message))
            }
@@ -199,28 +159,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..021b94fb8dfcd86e5978d8eefc9ea55f
          }
        )
      }
-@@ -264,11 +299,18 @@ abstract class BaseReaderFragment : Fragment() {
-       // currentLocator may still point to the resource start when the book
-       // is first opened from a saved position.
-       if (ttsManager?.isRunning() != true) delay(400)
--      val startLocator = if (isNavigatorReady) {
-+      val startLocator = handedOver?.let { withElement(it) } ?: if (isNavigatorReady) {
-         (navigator as? VisualNavigator)?.firstVisibleElementLocator()
-           ?: navigator.currentLocator.value
-       } else null
--      ttsManager?.start(rate = rate, language = language, voice = voice, fromLocator = startLocator)
-+      ttsManager?.start(
-+        rate = rate,
-+        language = language,
-+        voice = voice,
-+        fromLocator = startLocator,
-+        // PATCHED (Open Citadel): begin on the handed-over sentence itself, not its paragraph.
-+        startAtText = handedOver?.text?.highlight,
-+      )
-     }
-   }
- 
-@@ -281,6 +323,51 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -281,6 +305,15 @@ abstract class BaseReaderFragment : Fragment() {
    fun ttsSetRate(rate: Float) { ttsManager?.setRate(rate) }
    fun ttsSkipNext() { ttsManager?.skipNext() }
    fun ttsSkipPrevious() { ttsManager?.skipPrevious() }
@@ -232,42 +171,6 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..021b94fb8dfcd86e5978d8eefc9ea55f
 +  }
 +  fun ttsSynthesisFailed(requestId: String, message: String) {
 +    ttsManager?.synthesisFailed(requestId, message)
-+  }
-+
-+  /**
-+   * PATCHED (Open Citadel): a locator handed over by the audiobook names its
-+   * sentence (`text.highlight`) and how far into the resource it is, but not
-+   * its element. Readium's TTS starts a resource at the locator's element
-+   * (`cssSelector`) and, without one, at the resource's top: in a book whose
-+   * first file holds seven chapters, that was the start of the book. Finds the
-+   * smallest element whose text holds the sentence's opening words, so
-+   * read-aloud starts at the paragraph being heard. Any trouble leaves the
-+   * locator as it was.
-+   */
-+  private suspend fun withElement(locator: Locator): Locator {
-+    if (locator.locations.cssSelector != null) return locator
-+    // Spaces of every kind, as one: the index and the page can differ in them.
-+    val spaces = Regex("[\\s\\u00A0]+")
-+    val words = locator.text.highlight?.replace(spaces, " ")?.trim()?.take(80)
-+    if (words.isNullOrEmpty()) return locator
-+    return try {
-+      val publication = model.publication
-+      val link = publication.linkWithHref(locator.href) ?: return locator
-+      val resource = publication.get(link) ?: return locator
-+      val bytes = try { resource.read().getOrNull() } finally { resource.close() } ?: return locator
-+      // A chapter file can be a few hundred thousand characters: read off the main thread.
-+      val selector = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-+        org.jsoup.Jsoup.parse(String(bytes, Charsets.UTF_8)).body().select("*")
-+          .filter { it.text().replace(spaces, " ").contains(words) }
-+          .minByOrNull { it.text().length }
-+          ?.cssSelector()
-+      } ?: return locator
-+      locator.copy(
-+        locations = locator.locations.copy(otherLocations = locator.locations.otherLocations + ("cssSelector" to selector))
-+      )
-+    } catch (e: Exception) {
-+      locator
-+    }
 +  }
  
    private fun applyTTSDecoration(locator: Locator) {
@@ -344,10 +247,10 @@ index a2a697646e1c8384b1d246877c06fdbb577ec352..2ed1db2fd407265210e2583e20258d41
      }
  }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt b/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt
-index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1af58808ca 100644
+index 687dea2ec24b6e0338716e2a56d95c990fa53196..4585f2d43c26b39979618f064bf0305f2d4b1edc 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/TTSManager.kt
-@@ -1,9 +1,16 @@
+@@ -1,7 +1,13 @@
  package com.reactnativereadium.reader
  
  import android.app.Application
@@ -360,11 +263,8 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
 +import kotlinx.coroutines.channels.Channel
  import kotlinx.coroutines.Job
  import kotlinx.coroutines.flow.distinctUntilChanged
-+import kotlinx.coroutines.flow.first
  import kotlinx.coroutines.flow.launchIn
- import kotlinx.coroutines.flow.map
- import kotlinx.coroutines.flow.onEach
-@@ -11,15 +18,49 @@ import kotlinx.coroutines.launch
+@@ -11,15 +17,40 @@ import kotlinx.coroutines.launch
  import org.readium.navigator.media.common.MediaNavigator
  import org.readium.navigator.media.tts.AndroidTtsNavigator
  import org.readium.navigator.media.tts.AndroidTtsNavigatorFactory
@@ -387,15 +287,6 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
 + */
 +private const val UPCOMING_COUNT = 3
 +
-+/** PATCHED (Open Citadel): how far `skipTo` looks for the sentence to begin on. */
-+private const val MAX_SKIPS = 60
-+/** How long one skip may take to land. */
-+private const val SKIP_WAIT_MS = 1_000L
-+/** How many of a sentence's opening characters identify it. */
-+private const val MATCH_CHARS = 40
-+/** Anything that is not a letter or a digit, for comparing sentences cut and spaced differently. */
-+private val NOT_WORDS = Regex("[^\\p{L}\\p{N}]+")
-+
 +private typealias KokoroTtsNavigatorFactory = TtsNavigatorFactory<
 +    com.reactnativereadium.reader.tts.KokoroTtsSettings,
 +    KokoroTtsPreferences,
@@ -415,7 +306,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
  @OptIn(ExperimentalReadiumApi::class)
  class TTSManager(
      private val application: Application,
-@@ -27,14 +68,37 @@ class TTSManager(
+@@ -27,14 +58,37 @@ class TTSManager(
      private val scope: CoroutineScope,
      private val onStateChange: (isPlaying: Boolean, isPaused: Boolean, rate: Float) -> Unit,
      private val onUtterance: (locator: Locator, text: String) -> Unit,
@@ -457,14 +348,12 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
  
      override fun onStopRequested() {
          stop()
-@@ -44,10 +108,13 @@ class TTSManager(
+@@ -44,10 +98,11 @@ class TTSManager(
          rate: Float? = null,
          language: String? = null,
          voice: String? = null,
 -        fromLocator: Locator? = null
 +        fromLocator: Locator? = null,
-+        // PATCHED (Open Citadel): the sentence to begin on (`skipTo`).
-+        startAtText: String? = null,
      ) {
 -        if (navigator != null) {
 +        if (navigator != null || systemNavigator != null) {
@@ -473,7 +362,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
              navigator?.play()
              return
          }
-@@ -55,8 +122,55 @@ class TTSManager(
+@@ -55,8 +110,54 @@ class TTSManager(
          rate?.let { currentRate = it.coerceIn(0.25f, 4.0f) }
  
          try {
@@ -508,7 +397,6 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
 +                }
 +                val deviceNavigator = result.getOrNull()!!
 +                systemNavigator = deviceNavigator
-+                startAtText?.let { skipTo(deviceNavigator, it, fromLocator) }
 +                observeNavigator(deviceNavigator)
 +                deviceNavigator.play()
 +                return
@@ -530,7 +418,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
                  if (f == null) {
                      onError("TTS is not available for this publication")
                      return
-@@ -65,21 +179,14 @@ class TTSManager(
+@@ -65,21 +166,14 @@ class TTSManager(
                  f
              }
  
@@ -555,11 +443,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
              )
  
              if (navigatorResult.isFailure) {
-@@ -89,16 +196,51 @@ class TTSManager(
- 
-             val ttsNavigator = navigatorResult.getOrNull()!!
-             navigator = ttsNavigator
-+            startAtText?.let { skipTo(ttsNavigator, it, fromLocator) }
+@@ -92,13 +186,12 @@ class TTSManager(
              observeNavigator(ttsNavigator)
  
              ttsNavigator.play()
@@ -570,46 +454,11 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
      }
  
 -    private fun observeNavigator(ttsNavigator: AndroidTtsNavigator) {
-+    /**
-+     * PATCHED (Open Citadel): puts a navigator that has not started yet on the
-+     * utterance that begins `text`, so read-aloud taking over from the
-+     * audiobook says that sentence first and nothing before it. Readium
-+     * starts at an element, a paragraph, and the sentence may be its fourth.
-+     * Done before the navigator is observed or played, so the sentences passed
-+     * over are never spoken, lit or reported. Matched on letters and digits
-+     * only, since the book's text index and Readium cut and space sentences a
-+     * little differently. Not found nearby: back to where it started.
-+     */
-+    private suspend fun <S : TtsEngine.Settings, P : TtsEngine.Preferences<P>, F : TtsEngine.Error, V : TtsEngine.Voice> skipTo(
-+        ttsNavigator: TtsNavigator<S, P, F, V>,
-+        text: String,
-+        fromLocator: Locator?,
-+    ) {
-+        val target = comparable(text)
-+        if (target.isEmpty()) return
-+        val head = target.take(MATCH_CHARS)
-+        repeat(MAX_SKIPS) {
-+            val said = comparable(ttsNavigator.location.value.utterance)
-+            if (said.isNotEmpty() && (target.startsWith(said.take(MATCH_CHARS)) || said.contains(head))) return
-+            if (!ttsNavigator.hasNextUtterance()) return
-+            val before = ttsNavigator.location.value
-+            ttsNavigator.skipToNextUtterance()
-+            // The skip lands a moment later, on Readium's own scope.
-+            kotlinx.coroutines.withTimeoutOrNull(SKIP_WAIT_MS) {
-+                ttsNavigator.location.first { it != before }
-+            } ?: return
-+        }
-+        fromLocator?.let { ttsNavigator.go(it) }
-+    }
-+
-+    private fun comparable(text: String): String =
-+        text.lowercase().replace(NOT_WORDS, " ").trim()
-+
 +    private fun <S : TtsEngine.Settings, P : TtsEngine.Preferences<P>, F : TtsEngine.Error, V : TtsEngine.Voice> observeNavigator(ttsNavigator: TtsNavigator<S, P, F, V>) {
          observeJob?.cancel()
          observeJob = scope.launch {
              // Observe playback state
-@@ -110,6 +252,30 @@ class TTSManager(
+@@ -110,6 +203,30 @@ class TTSManager(
                  }
                  .launchIn(this)
  
@@ -640,7 +489,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
              // Observe utterance-level locator (sentence, not word).
              // TtsNavigator.currentLocator returns tokenLocator ?: utteranceLocator — the
              // word-level locator — which has incomplete CSS selectors and cannot be rendered
-@@ -121,16 +287,19 @@ class TTSManager(
+@@ -121,16 +238,19 @@ class TTSManager(
                  .onEach { locator ->
                      val text = locator.text.highlight ?: ""
                      onUtterance(locator, text)
@@ -660,7 +509,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
          navigator?.play()
      }
  
-@@ -138,6 +307,11 @@ class TTSManager(
+@@ -138,6 +258,11 @@ class TTSManager(
          observeJob?.cancel()
          observeJob = null
          navigator?.close()
@@ -672,7 +521,7 @@ index 687dea2ec24b6e0338716e2a56d95c990fa53196..53f6f2ae9d94e9222f58fd430f444f1a
          navigator = null
          onStateChange(false, false, currentRate)
      }
-@@ -145,20 +319,52 @@ class TTSManager(
+@@ -145,20 +270,52 @@ class TTSManager(
      fun setRate(rate: Float) {
          currentRate = rate.coerceIn(0.25f, 4.0f)
          navigator?.submitPreferences(
@@ -1734,7 +1583,7 @@ index 0000000000000000000000000000000000000000..f46fe9eeae873a3be4e44cb65bf9a457
 +    }
 +}
 diff --git a/ios/HybridReadiumView.swift b/ios/HybridReadiumView.swift
-index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..dad39b82b256bd0f61411cb42da4595fc50469c6 100644
+index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd2ffe192a 100644
 --- a/ios/HybridReadiumView.swift
 +++ b/ios/HybridReadiumView.swift
 @@ -55,6 +55,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
@@ -1796,40 +1645,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..dad39b82b256bd0f61411cb42da4595f
        vc.ttsManager = manager
      }
      return vc.ttsManager
-@@ -348,6 +374,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
-     let rate = config.rate.map { Float($0) }
-     let language = config.language
-     let voice = config.voice
-+    // PATCHED (Open Citadel): a place to start from, handed over by the
-+    // audiobook (the sentence being heard when the book was opened).
-+    let handedOver: RLocator? = config.fromLocator.flatMap { try? RLocator(jsonString: $0) }
- 
-     Task { @MainActor [weak self] in
-       guard let self = self else { return }
-@@ -359,8 +388,11 @@ class HybridReadiumView: HybridReadiumViewSpec {
-       // firstVisibleElementLocator() is anchored to an actual DOM element.
-       // Without either, iOS passed nil and TTSManager fell back to
-       // synth.start() (from the start of the publication).
-+      // PATCHED (Open Citadel): a handed-over sentence starts at its element,
-+      // and the sentences before it there are passed over (`startAtText`).
-       var fromLocator: RLocator? = nil
--      if let visual = self.readerViewController?.navigator as? VisualNavigator {
-+      if let handedOver = handedOver { fromLocator = await manager.elementStart(for: handedOver) }
-+      if fromLocator == nil, let visual = self.readerViewController?.navigator as? VisualNavigator {
-         fromLocator = await visual.firstVisibleElementLocator()
-       }
-       if fromLocator == nil {
-@@ -370,7 +402,8 @@ class HybridReadiumView: HybridReadiumViewSpec {
-         rate: rate,
-         language: language,
-         voice: voice,
--        fromLocator: fromLocator
-+        fromLocator: fromLocator,
-+        startAtText: handedOver?.text.highlight
-       )
-     }
-   }
-@@ -410,6 +443,37 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -410,6 +436,37 @@ class HybridReadiumView: HybridReadiumViewSpec {
        self?.readerViewController?.ttsManager?.skipPrevious()
      }
    }
@@ -1869,10 +1685,10 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..dad39b82b256bd0f61411cb42da4595f
    func cleanup() {
 diff --git a/ios/Reader/TTS/KokoroTTSEngine.swift b/ios/Reader/TTS/KokoroTTSEngine.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..d6b79edc1385b6c9a169dabe1023cdec05f0af8b
+index 0000000000000000000000000000000000000000..b848bfd080973a206728aac294649e31257fd325
 --- /dev/null
 +++ b/ios/Reader/TTS/KokoroTTSEngine.swift
-@@ -0,0 +1,281 @@
+@@ -0,0 +1,276 @@
 +import AVFoundation
 +import Foundation
 +import ReadiumNavigator
@@ -1911,10 +1727,6 @@ index 0000000000000000000000000000000000000000..d6b79edc1385b6c9a169dabe1023cdec
 +
 +    var onSynthesisRequest: ((TTSSynthesisRequest) -> Void)?
 +    var onSynthesisCancel: ((String) -> Void)?
-+    /// PATCHED (Open Citadel): true for an utterance read-aloud is passing over
-+    /// on its way to the sentence handed over by the audiobook (`TTSManager.startAt`):
-+    /// it finishes at once, with nothing asked of JS and nothing played.
-+    var passOver: ((String) -> Bool)?
 +
 +    /// A page turn `HybridReadiumView` already dispatched for the utterance
 +    /// about to be spoken. Kokoro's audio starts as soon as
@@ -1979,7 +1791,6 @@ index 0000000000000000000000000000000000000000..d6b79edc1385b6c9a169dabe1023cdec
 +        _ utterance: TTSUtterance,
 +        onSpeakRange: @escaping (Range<String.Index>) -> Void
 +    ) async -> Result<Void, TTSError> {
-+        if passOver?(utterance.text) == true { return .success(()) }
 +        let task = Task()
 +        tasks[task.requestId] = task
 +
@@ -2350,10 +2161,10 @@ index 0000000000000000000000000000000000000000..82cd8c06fcbd303d9b4b7ad7f7b75346
 +    }
 +}
 diff --git a/ios/Reader/TTS/TTSManager.swift b/ios/Reader/TTS/TTSManager.swift
-index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..589986c5a8ac47b10615bc348e3a74116abf5864 100644
+index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..c71a6a974eda8b4cea2cb7f38b5fdb994eaf2031 100644
 --- a/ios/Reader/TTS/TTSManager.swift
 +++ b/ios/Reader/TTS/TTSManager.swift
-@@ -10,16 +10,100 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -10,10 +10,30 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
      private var synthesizer: PublicationSpeechSynthesizer?
      private let publication: Publication
      private var currentRate: Float = 1.0
@@ -2381,81 +2192,10 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..589986c5a8ac47b10615bc348e3a7411
 +    private var tokenizerLanguage: Language?
 +    private var lookaheadFor: ReadiumShared.Locator?
 +    private var lookaheadTask: Swift.Task<Void, Never>?
-+
-+    /// PATCHED (Open Citadel): the sentence read-aloud is to begin on, until
-+    /// it is reached, held comparable (`comparable`). The ones before it in
-+    /// its paragraph are passed over: never spoken, lit or reported.
-+    private var startAt: String?
-+    private var passedOver = 0
-+    /// Asked twice a sentence (the delegate and the engine), so sixty sentences.
-+    private static let maxPassedOver = 120
-+    private static let maxElements = 4_000
-+    /// How many of a sentence's opening characters identify it.
-+    private static let matchChars = 40
  
      init(publication: Publication) {
          self.publication = publication
-     }
- 
--    func start(rate: Float?, language: String?, voice: String?, fromLocator: ReadiumShared.Locator?) {
-+    /// Letters and digits only: the book's text index and Readium cut and
-+    /// space sentences a little differently.
-+    private static func comparable(_ text: String) -> String {
-+        text.lowercased()
-+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-+            .filter { !$0.isEmpty }
-+            .joined(separator: " ")
-+    }
-+
-+    /// PATCHED (Open Citadel): where a sentence handed over by the audiobook
-+    /// is, as an element the synthesizer can start at. The locator names the
-+    /// sentence (`text.highlight`) but not its element, and the synthesizer
-+    /// starts a resource at a locator's element or else at its top, which in
-+    /// a book with seven chapters to a file is the start of the book. Walks
-+    /// the resource's content, as `UpcomingUtterances` does, to the element
-+    /// holding the sentence's opening words. Not found: the locator as given.
-+    func elementStart(for handedOver: ReadiumShared.Locator) async -> ReadiumShared.Locator {
-+        if handedOver.locations.otherLocations["cssSelector"] != nil { return handedOver }
-+        guard let highlight = handedOver.text.highlight else { return handedOver }
-+        let target = Self.comparable(highlight)
-+        guard !target.isEmpty else { return handedOver }
-+        let head = String(target.prefix(Self.matchChars))
-+        var top = handedOver
-+        top.locations = ReadiumShared.Locator.Locations()
-+        top.text = ReadiumShared.Locator.Text()
-+        guard let iterator = publication.content(from: top)?.iterator() else { return handedOver }
-+        for _ in 0..<Self.maxElements {
-+            guard let element = try? await iterator.next() else { break }
-+            guard element.locator.href == handedOver.href else { break }
-+            if let textual = element as? TextualContentElement, let text = textual.text,
-+               Self.comparable(text).contains(head) {
-+                return element.locator
-+            }
-+        }
-+        return handedOver
-+    }
-+
-+    /// Whether an utterance comes before the one to begin on. Asked by the
-+    /// delegate as the synthesizer reaches each utterance, and by the engine
-+    /// before it speaks one; the first to see the sentence itself ends it.
-+    private func passesOver(_ text: String) -> Bool {
-+        guard let target = startAt else { return false }
-+        let said = Self.comparable(text)
-+        let reached = !said.isEmpty
-+            && (target.hasPrefix(String(said.prefix(Self.matchChars))) || said.contains(target.prefix(Self.matchChars)))
-+        passedOver += 1
-+        if reached || passedOver > Self.maxPassedOver {
-+            startAt = nil
-+            return false
-+        }
-+        return true
-+    }
-+
-+    func start(rate: Float?, language: String?, voice: String?, fromLocator: ReadiumShared.Locator?, startAtText: String? = nil) {
-         if let rate = rate {
-             currentRate = min(max(rate, 0.25), 4.0)
-         }
-@@ -35,24 +119,51 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -35,24 +55,47 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
          }
  
          var config = PublicationSpeechSynthesizer.Configuration()
@@ -2502,21 +2242,16 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..589986c5a8ac47b10615bc348e3a7411
  
          synth.delegate = self
          synthesizer = synth
-+        // Only the JS-backed engine can let a sentence by without a sound.
-+        startAt = kokoro == nil ? nil : startAtText.map(Self.comparable).flatMap { $0.isEmpty ? nil : $0 }
-+        passedOver = 0
-+        kokoro?.passOver = { [weak self] text in self?.passesOver(text) ?? false }
 +        tokenizerLanguage = config.defaultLanguage ?? publication.metadata.language
  
          if let locator = fromLocator {
              synth.start(from: locator)
-@@ -72,12 +183,18 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -72,12 +115,17 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
      func stop() {
          synthesizer?.stop()
          synthesizer = nil
 +        kokoroEngine = nil
 +        lookaheadFor = nil
-+        startAt = nil
 +        upcomingUtterances.reset()
          onStateChange?(false, false, currentRate)
      }
@@ -2530,7 +2265,7 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..589986c5a8ac47b10615bc348e3a7411
      }
  
      func skipNext() {
-@@ -92,6 +209,80 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -92,6 +140,80 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
          stop()
      }
  
@@ -2611,15 +2346,7 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..589986c5a8ac47b10615bc348e3a7411
      // MARK: - PublicationSpeechSynthesizerDelegate
  
      func publicationSpeechSynthesizer(
-@@ -102,12 +293,15 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
-         case .stopped:
-             onStateChange?(false, false, currentRate)
-         case .paused(let utterance):
-+            if passesOver(utterance.text) { return }
-             onStateChange?(false, true, currentRate)
-             onUtterance?(utterance.locator, utterance.text)
-         case .playing(let utterance, let range):
-+            if passesOver(utterance.text) { return }
+@@ -108,6 +230,7 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
              onStateChange?(true, false, currentRate)
              let loc = range ?? utterance.locator
              onUtterance?(loc, utterance.text)
@@ -2627,7 +2354,7 @@ index f5cb749e202897b10cd6cc8db14b7251b4efe4f8..589986c5a8ac47b10615bc348e3a7411
          }
      }
  
-@@ -116,6 +310,20 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
+@@ -116,6 +239,20 @@ class TTSManager: PublicationSpeechSynthesizerDelegate {
          utterance: PublicationSpeechSynthesizer.Utterance,
          didFailWithError error: PublicationSpeechSynthesizer.Error
      ) {
@@ -21485,18 +21212,10 @@ index 4e1e8943c2bcabe032e7fb6ab13fec4b82239588..d064d58af11d482d7d01ae42a5818a2c
 -export type { TTSConfig, TTSState, TTSUtteranceEvent, } from '../specs/ReadiumView.nitro';
 +export type { TTSConfig, TTSState, TTSUtteranceEvent, TTSSynthesisRequest, TTSUpcomingEvent, } from '../specs/ReadiumView.nitro';
 diff --git a/lib/src/specs/ReadiumView.nitro.d.ts b/lib/src/specs/ReadiumView.nitro.d.ts
-index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..3d22e3cdffeccefa1636db8633f9950ffc8ed731 100644
+index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..1272b633d1c40a27179ef6f5c08cf25ffe303e18 100644
 --- a/lib/src/specs/ReadiumView.nitro.d.ts
 +++ b/lib/src/specs/ReadiumView.nitro.d.ts
-@@ -179,6 +179,7 @@ export interface TTSConfig {
-     rate?: number;
-     language?: string;
-     voice?: string;
-+    fromLocator?: string;
- }
- export interface TTSState {
-     isPlaying: boolean;
-@@ -191,6 +192,21 @@ export interface TTSUtteranceEvent {
+@@ -191,6 +191,21 @@ export interface TTSUtteranceEvent {
      rangeStart?: number;
      rangeLength?: number;
  }
@@ -21518,7 +21237,7 @@ index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..3d22e3cdffeccefa1636db8633f9950f
  export interface ReadiumFile {
      url: string;
      initialLocation?: Locator;
-@@ -209,6 +225,9 @@ export interface ReadiumViewProps extends HybridViewProps {
+@@ -209,6 +224,9 @@ export interface ReadiumViewProps extends HybridViewProps {
      onTTSStateChange?: (state: TTSState) => void;
      onTTSUtterance?: (event: TTSUtteranceEvent) => void;
      onTTSError?: (error: string) => void;
@@ -21528,7 +21247,7 @@ index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..3d22e3cdffeccefa1636db8633f9950f
  }
  export interface ReadiumViewMethods extends HybridViewMethods {
      goTo(locator: Locator): void;
-@@ -222,5 +241,9 @@ export interface ReadiumViewMethods extends HybridViewMethods {
+@@ -222,5 +240,9 @@ export interface ReadiumViewMethods extends HybridViewMethods {
      ttsSetRate(rate: number): void;
      ttsSkipNext(): void;
      ttsSkipPrevious(): void;
@@ -23288,7 +23007,7 @@ index f66e2ef3db2b68faf3fe5ae67380d4ec1b8aa3d2..21bf1ffe19463f87a502c8bd821fc2f6
    public:
      /**
 diff --git a/nitrogen/generated/android/c++/JTTSConfig.hpp b/nitrogen/generated/android/c++/JTTSConfig.hpp
-index dd85069b7ebdaff087c0273694f0d7ff50ccfc42..66ad7fdc975e3f195077bcf76699e07a35820927 100644
+index dd85069b7ebdaff087c0273694f0d7ff50ccfc42..ef23784fa3e4e455d34fa273d85b42340cbaefe1 100644
 --- a/nitrogen/generated/android/c++/JTTSConfig.hpp
 +++ b/nitrogen/generated/android/c++/JTTSConfig.hpp
 @@ -22,7 +22,7 @@ namespace margelo::nitro::readium {
@@ -23300,39 +23019,6 @@ index dd85069b7ebdaff087c0273694f0d7ff50ccfc42..66ad7fdc975e3f195077bcf76699e07a
  
    public:
      /**
-@@ -38,10 +38,13 @@ namespace margelo::nitro::readium {
-       jni::local_ref<jni::JString> language = this->getFieldValue(fieldLanguage);
-       static const auto fieldVoice = clazz->getField<jni::JString>("voice");
-       jni::local_ref<jni::JString> voice = this->getFieldValue(fieldVoice);
-+      static const auto fieldFromLocator = clazz->getField<jni::JString>("fromLocator");
-+      jni::local_ref<jni::JString> fromLocator = this->getFieldValue(fieldFromLocator);
-       return TTSConfig(
-         rate != nullptr ? std::make_optional(rate->value()) : std::nullopt,
-         language != nullptr ? std::make_optional(language->toStdString()) : std::nullopt,
--        voice != nullptr ? std::make_optional(voice->toStdString()) : std::nullopt
-+        voice != nullptr ? std::make_optional(voice->toStdString()) : std::nullopt,
-+        fromLocator != nullptr ? std::make_optional(fromLocator->toStdString()) : std::nullopt
-       );
-     }
- 
-@@ -51,14 +54,15 @@ namespace margelo::nitro::readium {
-      */
-     [[maybe_unused]]
-     static jni::local_ref<JTTSConfig::javaobject> fromCpp(const TTSConfig& value) {
--      using JSignature = JTTSConfig(jni::alias_ref<jni::JDouble>, jni::alias_ref<jni::JString>, jni::alias_ref<jni::JString>);
-+      using JSignature = JTTSConfig(jni::alias_ref<jni::JDouble>, jni::alias_ref<jni::JString>, jni::alias_ref<jni::JString>, jni::alias_ref<jni::JString>);
-       static const auto clazz = javaClassStatic();
-       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
-       return create(
-         clazz,
-         value.rate.has_value() ? jni::JDouble::valueOf(value.rate.value()) : nullptr,
-         value.language.has_value() ? jni::make_jstring(value.language.value()) : nullptr,
--        value.voice.has_value() ? jni::make_jstring(value.voice.value()) : nullptr
-+        value.voice.has_value() ? jni::make_jstring(value.voice.value()) : nullptr,
-+        value.fromLocator.has_value() ? jni::make_jstring(value.fromLocator.value()) : nullptr
-       );
-     }
-   };
 diff --git a/nitrogen/generated/android/c++/JTTSState.hpp b/nitrogen/generated/android/c++/JTTSState.hpp
 index 03330c54d8639d3202ce7d1a6b04a932ec82cfe3..30bc9226c54da7bee4fdf4a403829f6cc2d529e3 100644
 --- a/nitrogen/generated/android/c++/JTTSState.hpp
@@ -24740,7 +24426,7 @@ index 8bbc1e304f88b308a6f8169c8be215376bebec68..589a8056d3fe6d9719ba2ff040a05081
      /**
       * Constructor called from C++
 diff --git a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSConfig.kt b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSConfig.kt
-index 5ff53491b8b567ff6f0e7d8e0f0b80b4d1b36286..2f358d82a8cafde7bd70b4bd7b6c2170acb6b7e3 100644
+index 5ff53491b8b567ff6f0e7d8e0f0b80b4d1b36286..ce106f1e1986484f7e727b267de648321fb3bf82 100644
 --- a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSConfig.kt
 +++ b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSConfig.kt
 @@ -9,6 +9,7 @@ package com.margelo.nitro.reactnativereadium
@@ -24751,15 +24437,7 @@ index 5ff53491b8b567ff6f0e7d8e0f0b80b4d1b36286..2f358d82a8cafde7bd70b4bd7b6c2170
  
  
  /**
-@@ -25,10 +26,31 @@ data class TTSConfig(
-   val language: String?,
-   @DoNotStrip
-   @Keep
--  val voice: String?
-+  val voice: String?,
-+  @DoNotStrip
-+  @Keep
-+  val fromLocator: String?
+@@ -29,6 +30,22 @@ data class TTSConfig(
  ) {
    /* primary constructor */
  
@@ -24769,32 +24447,19 @@ index 5ff53491b8b567ff6f0e7d8e0f0b80b4d1b36286..2f358d82a8cafde7bd70b4bd7b6c2170
 +    return Objects.deepEquals(this.rate, other.rate)
 +      && Objects.deepEquals(this.language, other.language)
 +      && Objects.deepEquals(this.voice, other.voice)
-+      && Objects.deepEquals(this.fromLocator, other.fromLocator)
 +  }
 +
 +  override fun hashCode(): Int {
 +    return arrayOf<Any?>(
 +      rate,
 +      language,
-+      voice,
-+      fromLocator
++      voice
 +    ).contentDeepHashCode()
 +  }
 +
    companion object {
      /**
       * Constructor called from C++
-@@ -37,8 +59,8 @@ data class TTSConfig(
-     @Keep
-     @Suppress("unused")
-     @JvmStatic
--    private fun fromCpp(rate: Double?, language: String?, voice: String?): TTSConfig {
--      return TTSConfig(rate, language, voice)
-+    private fun fromCpp(rate: Double?, language: String?, voice: String?, fromLocator: String?): TTSConfig {
-+      return TTSConfig(rate, language, voice, fromLocator)
-     }
-   }
- }
 diff --git a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSState.kt b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSState.kt
 index 30e0ea18f0793cc48f7a03af4de1eba2f730745a..f30d3a363bd81eb3d9ba22d044668d20edae22a8 100644
 --- a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/TTSState.kt
@@ -25687,49 +25352,6 @@ index 49b44099332a85865196d6146e9d6a8ecdfb7c18..d7f95062b9c5fc1a15b396d838f1ce84
 +    __implementation.onDropView()
 +  }
  }
-diff --git a/nitrogen/generated/ios/swift/TTSConfig.swift b/nitrogen/generated/ios/swift/TTSConfig.swift
-index 7d4343023b42c836e856a31efee685168d40edd9..bc8be08cd83b424fabb54c04372dd95dd1ce093c 100644
---- a/nitrogen/generated/ios/swift/TTSConfig.swift
-+++ b/nitrogen/generated/ios/swift/TTSConfig.swift
-@@ -18,7 +18,7 @@ public extension TTSConfig {
-   /**
-    * Create a new instance of `TTSConfig`.
-    */
--  init(rate: Double?, language: String?, voice: String?) {
-+  init(rate: Double?, language: String?, voice: String?, fromLocator: String?) {
-     self.init({ () -> bridge.std__optional_double_ in
-       if let __unwrappedValue = rate {
-         return bridge.create_std__optional_double_(__unwrappedValue)
-@@ -37,6 +37,12 @@ public extension TTSConfig {
-       } else {
-         return .init()
-       }
-+    }(), { () -> bridge.std__optional_std__string_ in
-+      if let __unwrappedValue = fromLocator {
-+        return bridge.create_std__optional_std__string_(std.string(__unwrappedValue))
-+      } else {
-+        return .init()
-+      }
-     }())
-   }
- 
-@@ -75,4 +81,16 @@ public extension TTSConfig {
-       }
-     }()
-   }
-+  
-+  @inline(__always)
-+  var fromLocator: String? {
-+    return { () -> String? in
-+      if bridge.has_value_std__optional_std__string_(self.__fromLocator) {
-+        let __unwrapped = bridge.get_std__optional_std__string_(self.__fromLocator)
-+        return String(__unwrapped)
-+      } else {
-+        return nil
-+      }
-+    }()
-+  }
- }
 diff --git a/nitrogen/generated/ios/swift/TTSSynthesisRequest.swift b/nitrogen/generated/ios/swift/TTSSynthesisRequest.swift
 new file mode 100644
 index 0000000000000000000000000000000000000000..ce7660f403cde4645156ed177351c920d9b2f242
@@ -25948,49 +25570,6 @@ index 46b00aff3941c6335235f5933759955a4d94797b..5a6bf8fec1b9c5a76e8b54efa888d923
  
      protected:
        // Hybrid Setup
-diff --git a/nitrogen/generated/shared/c++/TTSConfig.hpp b/nitrogen/generated/shared/c++/TTSConfig.hpp
-index 0686d8b055d70fa571f7b05e39aa834bb8d08fd9..c739f637b946e763e3b8808ccbdf9bca9164cfe6 100644
---- a/nitrogen/generated/shared/c++/TTSConfig.hpp
-+++ b/nitrogen/generated/shared/c++/TTSConfig.hpp
-@@ -43,10 +43,11 @@ namespace margelo::nitro::readium {
-     std::optional<double> rate     SWIFT_PRIVATE;
-     std::optional<std::string> language     SWIFT_PRIVATE;
-     std::optional<std::string> voice     SWIFT_PRIVATE;
-+    std::optional<std::string> fromLocator     SWIFT_PRIVATE;
- 
-   public:
-     TTSConfig() = default;
--    explicit TTSConfig(std::optional<double> rate, std::optional<std::string> language, std::optional<std::string> voice): rate(rate), language(language), voice(voice) {}
-+    explicit TTSConfig(std::optional<double> rate, std::optional<std::string> language, std::optional<std::string> voice, std::optional<std::string> fromLocator): rate(rate), language(language), voice(voice), fromLocator(fromLocator) {}
- 
-   public:
-     friend bool operator==(const TTSConfig& lhs, const TTSConfig& rhs) = default;
-@@ -64,7 +65,8 @@ namespace margelo::nitro {
-       return margelo::nitro::readium::TTSConfig(
-         JSIConverter<std::optional<double>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "rate"))),
-         JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "language"))),
--        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "voice")))
-+        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "voice"))),
-+        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "fromLocator")))
-       );
-     }
-     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::readium::TTSConfig& arg) {
-@@ -72,6 +74,7 @@ namespace margelo::nitro {
-       obj.setProperty(runtime, PropNameIDCache::get(runtime, "rate"), JSIConverter<std::optional<double>>::toJSI(runtime, arg.rate));
-       obj.setProperty(runtime, PropNameIDCache::get(runtime, "language"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.language));
-       obj.setProperty(runtime, PropNameIDCache::get(runtime, "voice"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.voice));
-+      obj.setProperty(runtime, PropNameIDCache::get(runtime, "fromLocator"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.fromLocator));
-       return obj;
-     }
-     static inline bool canConvert(jsi::Runtime& runtime, const jsi::Value& value) {
-@@ -85,6 +88,7 @@ namespace margelo::nitro {
-       if (!JSIConverter<std::optional<double>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "rate")))) return false;
-       if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "language")))) return false;
-       if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "voice")))) return false;
-+      if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "fromLocator")))) return false;
-       return true;
-     }
-   };
 diff --git a/nitrogen/generated/shared/c++/TTSSynthesisRequest.hpp b/nitrogen/generated/shared/c++/TTSSynthesisRequest.hpp
 new file mode 100644
 index 0000000000000000000000000000000000000000..7cd3428694cc1e52e0df43efa7d90e0be13f99d0
@@ -26386,23 +25965,10 @@ index 06b8fd65a525584fcf9a27548dd4d418ee4b2e60..ad85c433e7368b0b861787cd07d3aa91
 +  TTSUpcomingEvent,
  } from '../specs/ReadiumView.nitro';
 diff --git a/src/specs/ReadiumView.nitro.ts b/src/specs/ReadiumView.nitro.ts
-index 27d61c141971f707c4a249ef9f25c62570d2fd83..ba659843ff85c3eaa8df98050437a1125bab37f2 100644
+index 27d61c141971f707c4a249ef9f25c62570d2fd83..189cde1ccf2323e79bcfb00bdd793a640df32380 100644
 --- a/src/specs/ReadiumView.nitro.ts
 +++ b/src/specs/ReadiumView.nitro.ts
-@@ -224,6 +224,12 @@ export interface TTSConfig {
-   rate?: number;
-   language?: string;
-   voice?: string;
-+  /**
-+   * PATCHED (Open Citadel): a locator, as JSON, to start reading at: the
-+   * sentence an audiobook was at when the book was opened. The first element
-+   * on screen otherwise.
-+   */
-+  fromLocator?: string;
- }
- 
- export interface TTSState {
-@@ -239,6 +245,35 @@ export interface TTSUtteranceEvent {
+@@ -239,6 +239,35 @@ export interface TTSUtteranceEvent {
    rangeLength?: number;
  }
  
@@ -26438,7 +26004,7 @@ index 27d61c141971f707c4a249ef9f25c62570d2fd83..ba659843ff85c3eaa8df98050437a112
  // ── File ─────────────────────────────────────────────────────────────────────
  
  export interface ReadiumFile {
-@@ -262,6 +297,11 @@ export interface ReadiumViewProps extends HybridViewProps {
+@@ -262,6 +291,11 @@ export interface ReadiumViewProps extends HybridViewProps {
    onTTSStateChange?: (state: TTSState) => void;
    onTTSUtterance?: (event: TTSUtteranceEvent) => void;
    onTTSError?: (error: string) => void;
@@ -26450,7 +26016,7 @@ index 27d61c141971f707c4a249ef9f25c62570d2fd83..ba659843ff85c3eaa8df98050437a112
  }
  
  export interface ReadiumViewMethods extends HybridViewMethods {
-@@ -276,6 +316,18 @@ export interface ReadiumViewMethods extends HybridViewMethods {
+@@ -276,6 +310,18 @@ export interface ReadiumViewMethods extends HybridViewMethods {
    ttsSetRate(rate: number): void;
    ttsSkipNext(): void;
    ttsSkipPrevious(): void;

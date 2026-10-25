@@ -35,8 +35,8 @@ import { useCSSVariable } from "uniwind";
 import { useCloudVoiceFailure } from "@/features/reader/hooks/use-cloud-voice-failure";
 import { useReadAloudBridge } from "@/features/reader/hooks/use-read-aloud-bridge";
 import { readerVoiceId } from "@/services/device-tts/catalogue";
-import { useAudiobookHandover } from "@/features/audiobook/hooks/use-audiobook-handover";
-import { noteReadAloud } from "@/services/audiobook/settings";
+import { useReadAlong } from "@/features/audiobook/hooks/use-read-along";
+import { ReadAloudBanner } from "@/features/reader/components/read-aloud-banner";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
 import { SelectionBar } from "@/components/reader/selection-bar";
@@ -214,6 +214,10 @@ export default function ReaderScreen() {
   // TTS
   const [ttsState, setTtsState] = useState<TTSState | null>(null);
   const isTTSActive = ttsState !== null;
+  // A book being heard in the player: the reader follows its voice, and its
+  // read-aloud controls are the player's.
+  const readAlong = useReadAlong({ bookId: id, readerRef, ready: readerPainted, tint: asColor(primary) ?? "#f2ca50" });
+  const speaking = readAlong.following ? readAlong.controls.active : isTTSActive;
   // Tracks the last known TTS utterance locator
   const ttsLastLocatorRef = useRef<Locator | null>(null);
   // Tracks the last utterance TEXT seen during TTS. iOS fires many word-level
@@ -343,6 +347,7 @@ export default function ReaderScreen() {
     (loc: Locator) => {
       currentLocatorRef.current = loc;
       updateProgress(loc);
+      readAlong.onLocationChange(loc);
       // Detect mismatch: TTS is paused but user navigated away (different chapter OR page)
       if (ttsPausedLocatorRef.current) {
         const sameLocation =
@@ -352,7 +357,7 @@ export default function ReaderScreen() {
         setTtsMismatch(!sameLocation);
       }
     },
-    [updateProgress],
+    [updateProgress, readAlong],
   );
 
   const handlePublicationReady = useCallback(
@@ -582,8 +587,6 @@ export default function ReaderScreen() {
     }
   }, []);
 
-  // A book being heard in the player hands its voice over to read-aloud here.
-  useAudiobookHandover({ bookId: id, painted: readerPainted, readerRef, book: currentBook, onStarted: setTtsState });
 
   const handleTTSUtterance = useCallback((event: TTSUtteranceEvent) => {
     // Dedup: iOS fires many word-level events per sentence (same text, different
@@ -592,8 +595,6 @@ export default function ReaderScreen() {
     if (event.utterance === ttsLastUtteranceRef.current) return;
     ttsLastUtteranceRef.current = event.utterance;
     ttsLastLocatorRef.current = event.locator;
-    // Where the player goes on from, for a book also heard there.
-    if (id) noteReadAloud(id, event.locator.href, event.utterance);
     // The rest of the paragraph, for a cloud voice to fetch ahead from.
     onUtterance(event.locator.text?.after);
 
@@ -604,7 +605,7 @@ export default function ReaderScreen() {
     // calling goTo from here could only ever race the audio, not sequence
     // before it. currentLocatorRef still updates from the native
     // onLocationChange event this navigation fires either way.
-  }, [id, onUtterance]);
+  }, [onUtterance]);
 
   const handleTTSToggle = useCallback(() => {
     if (!isTTSActive) {
@@ -781,7 +782,8 @@ export default function ReaderScreen() {
           },
         })),
     },
-  ], [highlights, primary]);
+    readAlong.decorations,
+  ], [highlights, primary, readAlong.decorations]);
 
   // iOS: onSelectionChange never fires, so selection is handled via the native
   // menu. These become the menu items (Readium replaces the default iOS actions
@@ -800,9 +802,20 @@ export default function ReaderScreen() {
     [],
   );
 
+  // The read-aloud bar: the player's controls while the reader follows it.
+  const ttsBar = readAlong.following
+    ? readAlong.controls
+    : {
+        isPlaying: ttsState?.isPlaying ?? false,
+        working: readAloud.cloud.working,
+        onPlayPause: handleTTSPlayPause,
+        onSkipPrevious: () => readerRef.current?.ttsSkipPrevious(),
+        onSkipNext: () => readerRef.current?.ttsSkipNext(),
+      };
+
   const initialLocation = useMemo(
-    () => jumpLocator ?? savedLocator ?? undefined,
-    [jumpLocator, savedLocator],
+    () => jumpLocator ?? readAlong.initialLocator ?? savedLocator ?? undefined,
+    [jumpLocator, readAlong.initialLocator, savedLocator],
   );
 
   // The header zone is a transparent tap strip above the reading area.
@@ -983,14 +996,14 @@ export default function ReaderScreen() {
           title={currentBook.title}
           progress={progress ?? undefined}
           isBookmarked={isBookmarked}
-          isTTSActive={isTTSActive}
+          isTTSActive={speaking}
           onBookmarkToggle={handleBookmarkToggle}
           onBack={() => leave("back")}
           onContents={() => {
             showHeader();
             setShowToc(true);
           }}
-          onTTSToggle={handleTTSToggle}
+          onTTSToggle={readAlong.following ? readAlong.controls.onPlayPause : handleTTSToggle}
           onTTSLongPress={() => setShowTtsSettings(true)}
           onToggle={toggleHeader}
         />
@@ -1000,7 +1013,7 @@ export default function ReaderScreen() {
           when read-aloud is switched on and go back down past it when it is
           switched off, as the mini player does (`slideUpFromEdge`); inside
           that, they follow the header as it hides and shows. */}
-      {isTTSActive && (
+      {speaking && (
         <ReanimatedView.View
           entering={slideUpFromEdge}
           exiting={slideDownPastEdge}
@@ -1025,11 +1038,11 @@ export default function ReaderScreen() {
             pointerEvents="box-none"
           >
             <TTSControls
-              isPlaying={ttsState?.isPlaying ?? false}
-              working={readAloud.cloud.working}
-              onPlayPause={handleTTSPlayPause}
-              onSkipPrevious={() => readerRef.current?.ttsSkipPrevious()}
-              onSkipNext={() => readerRef.current?.ttsSkipNext()}
+              isPlaying={ttsBar.isPlaying}
+              working={ttsBar.working}
+              onPlayPause={ttsBar.onPlayPause}
+              onSkipPrevious={ttsBar.onSkipPrevious}
+              onSkipNext={ttsBar.onSkipNext}
             />
           </Animated.View>
         </ReanimatedView.View>
@@ -1132,29 +1145,25 @@ export default function ReaderScreen() {
         </View>
       )}
 
-      {/* TTS page-mismatch banner — shown when TTS is paused and user navigates away */}
+      {/* The page has moved away from the voice: read-aloud paused and left
+          behind, or a book heard in the player whose pages were turned by hand. */}
       {ttsMismatch && isTTSActive && (
-        <View
-          className="absolute left-6 right-6 flex-row items-center border border-surface-tertiary bg-card px-4 py-3"
-          style={{ bottom: insets.bottom + spacing[4] + 60 }}
-        >
-          <Touchable
-            className="flex-1"
-            onPress={handleTTSResumeFromPaused}
-          >
-            <ThemedText type="labelSm" color={asColor(primary)}>
-              ← RESUME FROM PAUSED
-            </ThemedText>
-          </Touchable>
-          <Touchable
-            className="flex-1"
-            onPress={handleTTSContinueFromHere}
-          >
-            <ThemedText type="labelSm" color={asColor(mutedForeground)}>
-              READ FROM HERE
-            </ThemedText>
-          </Touchable>
-        </View>
+        <ReadAloudBanner
+          backLabel="← RESUME FROM PAUSED"
+          onBack={handleTTSResumeFromPaused}
+          hereLabel="READ FROM HERE"
+          onHere={handleTTSContinueFromHere}
+          bottom={insets.bottom + spacing[4] + 60}
+        />
+      )}
+      {readAlong.banner && (
+        <ReadAloudBanner
+          backLabel="← BACK TO NOW"
+          onBack={readAlong.banner.onBackToNow}
+          hereLabel="LISTEN FROM HERE"
+          onHere={readAlong.banner.onListenFromHere}
+          bottom={insets.bottom + spacing[4] + 60}
+        />
       )}
 
       <TocSheet

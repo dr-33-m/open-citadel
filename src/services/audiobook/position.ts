@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { readingProgress } from '@/db/schema';
-import { bookFraction, placeLocator } from '@/features/audiobook/utils/sentence-locator';
+import { bookFraction, highlightLocator, placeLocator, sectionText, type SentenceLocator } from '@/features/audiobook/utils/sentence-locator';
 import type { Sentence } from '@/features/audiobook/utils/sentences-of';
 import { current, placeSentence, type BookSession } from '@/services/audiobook/session';
 import { writeCurrent } from '@/services/audiobook/settings';
@@ -48,11 +48,20 @@ export async function saveBookPlace(s: BookSession, force = false): Promise<void
   await saveReadingPosition(s.info.id, { ...placeLocator(section, sentence, fraction) }, fraction);
 }
 
-/** Where the voice is, as the reader opens on it: for reading along in the book, and the handover to read-aloud. */
-export function readAlongLocator(): ReturnType<typeof placeLocator> | null {
+/**
+ * A sentence as the reader finds it: its file, and its words with the words
+ * either side, so the reader anchors it by its text (exactly, on the page it
+ * is on) rather than by an estimate of how far through the file it is.
+ */
+export function sentenceLocator(section: { href: string; title: string | null; chars: number }, paragraphs: Parameters<typeof sectionText>[0], sentence: Sentence): SentenceLocator {
+  return highlightLocator(section, sentence, sectionText(paragraphs));
+}
+
+/** Where the voice is, as the reader opens on it to read along. */
+export function readAlongLocator(): SentenceLocator | null {
   const s = current();
   const sentence = s ? placeSentence(s) : null;
-  const section = s && sentence ? s.script.section(sentence.section) : null;
-  if (!s || !sentence || !section) return null;
-  return placeLocator(section, sentence, fractionAt(s, sentence));
+  const script = s && sentence ? s.script.peek(sentence.section) : null;
+  if (!s || !sentence || !script) return null;
+  return sentenceLocator(script.section, script.paragraphs, sentence);
 }
