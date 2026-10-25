@@ -9,6 +9,7 @@ import { db } from '@/db/client';
 import { books } from '@/db/schema';
 import { bookVoice } from '@/features/audiobook/utils/book-voice';
 import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
+import { matchSentence } from '@/features/audiobook/utils/match-sentence';
 import { startIndex, startPlace } from '@/features/audiobook/utils/start-place';
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
 import { queryClient } from '@/lib/query-client';
@@ -28,7 +29,7 @@ import {
   type BookSession,
 
 } from '@/services/audiobook/session';
-import { readCurrent, readPace, writeCurrent, writeHeardVoice } from '@/services/audiobook/settings';
+import { readCurrent, readPace, readReadAloudPlace, writeCurrent, writeHeardVoice } from '@/services/audiobook/settings';
 import { clearWavCopies } from '@/services/audiobook/track-file';
 import type { PlanPreview } from '@/services/billing-plans';
 import { PieceSource } from '@/services/cloud-tts/piece-source';
@@ -100,11 +101,31 @@ export async function newSession(info: BookInfo, script: BookScript, voiceKey: s
     wantsToPlay: false,
     pending: null,
     lastSavedAt: 0,
+    keepQueue: false,
   };
 }
 
-/** Where to start: the sentence the book was last heard at, else its saved place, else its first chapter. */
-async function startSentence(script: BookScript, bookId: string, fromSentenceId: string | null) {
+/** The sentence read-aloud in the reader got to, if it read on after the player last did. */
+async function readAloudSentence(script: BookScript, bookId: string) {
+  const place = readReadAloudPlace(bookId);
+  const heard = readCurrent();
+  if (!place || (heard?.bookId === bookId && (heard.at ?? 0) >= place.at)) return null;
+  const href = place.href.split('#')[0];
+  const section = script.sections.find((s) => s.href.split('#')[0] === href);
+  const sentences = section ? (await script.load(section.index))?.sentences : null;
+  return sentences ? matchSentence(sentences, place.text) : null;
+}
+
+/**
+ * Where to start: a sentence asked for; else where read-aloud in the reader
+ * got to, when it read on after the player; else the sentence the book was
+ * last heard at; else its saved place; else its first chapter.
+ */
+export async function startSentence(script: BookScript, bookId: string, fromSentenceId: string | null) {
+  if (!fromSentenceId) {
+    const readOn = await readAloudSentence(script, bookId);
+    if (readOn) return readOn;
+  }
   const remembered = fromSentenceId ?? (readCurrent()?.bookId === bookId ? (readCurrent()?.sentenceId ?? null) : null);
   if (remembered) {
     const section = Number.parseInt(remembered.split(':')[0] ?? '', 10);

@@ -7,17 +7,18 @@
 import TrackPlayer from '@rntp/player';
 
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
-import { bookRow, infoOf, newSession, nowPlayingOf, publish } from '@/services/audiobook/lifecycle';
+import { bookRow, infoOf, newSession, nowPlayingOf, publish, startSentence } from '@/services/audiobook/lifecycle';
 import { isBookItem, parseBookMediaId } from '@/services/audiobook/media-id';
 import { produce } from '@/services/audiobook/producer';
 import type { BookItemExtras } from '@/services/audiobook/queue';
 import { loadScript } from '@/services/audiobook/script';
 import { book, current, type BookSession, type QueuedSentence } from '@/services/audiobook/session';
 import { readCurrent, writeCurrent } from '@/services/audiobook/settings';
-import { useAudiobook } from '@/stores/audiobook';
 import { applyCommands } from '@/services/player/commands';
 import { readyPlayer } from '@/services/player/events';
 import { store } from '@/services/player/session';
+import { useAudiobook } from '@/stores/audiobook';
+import { selectBook } from '@/stores/player';
 import { useSettingsStore } from '@/stores/settings';
 
 /**
@@ -53,16 +54,30 @@ export async function restoreBook(): Promise<void> {
     if (remembered) writeCurrent(null);
     return;
   }
-  const info = infoOf(row);
-  const script = await loadScript(row);
-  if (!script) return;
-  const s = await newSession(info, script, '', { modelId: '', voice: '', speed: null, maxCharacters: 0, format: 'mp3' });
-  const sentence = (await s.script.load(Number.parseInt(remembered.sentenceId, 10)))?.sentences.find((x) => x.id === remembered.sentenceId);
-  if (!sentence) return;
+  await showPaused(remembered.bookId, () => !store().current);
+}
+
+/**
+ * The book read on in the reader (its read-aloud) while it waited in the mini
+ * player: the mini player and the player show where it got to, which is where
+ * play goes on from (`startSentence`).
+ */
+export async function catchUpBook(bookId: string): Promise<void> {
+  const waiting = () => selectBook(store())?.bookId === bookId && !store().loaded;
+  if (waiting()) await showPaused(bookId, waiting);
+}
+
+/** The book in the mini player, paused and not loaded, at the sentence play would start from. */
+async function showPaused(bookId: string, stillWanted: () => boolean): Promise<void> {
+  const row = bookRow(bookId);
+  const script = row ? await loadScript(row) : null;
+  const sentence = script ? await startSentence(script, bookId, null) : null;
+  if (!row || !script || !sentence) return;
+  const s = await newSession(infoOf(row), script, '', { modelId: '', voice: '', speed: null, maxCharacters: 0, format: 'mp3' });
   s.pending = { sentence, offsetSec: 0 };
   const now = nowPlayingOf(s);
   s.source.dispose();
-  if (store().current) return;
+  if (!stillWanted()) return;
   store().patch({ current: now, loaded: false, speed: useSettingsStore.getState().ttsRate });
   // The text sheet opens on it, and a tap there starts the book from where it is tapped.
   useAudiobook.getState().patch({ sentenceId: sentence.id });

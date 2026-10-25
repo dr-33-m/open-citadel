@@ -2,6 +2,7 @@ import type { ReadiumViewRef } from '@dr33m/react-native-readium';
 import React from 'react';
 
 import { beginHandover, cancelHandover } from '@/services/audiobook/handover';
+import { catchUpBook } from '@/services/audiobook/resume';
 import { readerVoiceId } from '@/services/device-tts/catalogue';
 import { releasePlayerForSpeech } from '@/services/player';
 import { startMediaSession } from '@/services/tts-media-session';
@@ -66,5 +67,13 @@ export function useAudiobookHandover({
     void begin();
   }, [handing, painted, bookId, readerRef, onStarted]);
 
-  React.useEffect(() => () => cancelHandover(), []);
+  // Leaving the book: a handover not yet done is called off, and a book
+  // waiting in the mini player catches up with where read-aloud got to.
+  React.useEffect(
+    () => () => {
+      cancelHandover();
+      if (bookId) void catchUpBook(bookId);
+    },
+    [bookId],
+  );
 }

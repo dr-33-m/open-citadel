@@ -281,6 +281,21 @@ describe('sentenceMarks', () => {
   });
 });
 
+describe('matchSentence', () => {
+  it('finds the sentence an utterance is, however it is spaced or punctuated', async () => {
+    const { matchSentence } = await import('@/features/audiobook/utils/match-sentence');
+    const sentences = [
+      sentence('1:205:3', 'My mother was always looking to home influences as the best means.'),
+      sentence('1:205:4', 'She used to say that the first step in this direction was to make home pleasant.'),
+    ];
+    expect(matchSentence(sentences, 'She used to say that  the first step in this direction—was to make home pleasant;')?.id).toBe('1:205:4');
+    // Readium cut the sentence shorter than the index did.
+    expect(matchSentence(sentences, 'My mother was always looking')?.id).toBe('1:205:3');
+    expect(matchSentence(sentences, 'Nothing like either.')).toBeNull();
+    expect(matchSentence(sentences, '  ')).toBeNull();
+  });
+});
+
 describe('listenStats', () => {
   it('draws the time left and the Neurons, and leaves out an unpriced voice', async () => {
     const { listenStats } = await import('@/features/audiobook/utils/listen-estimate');

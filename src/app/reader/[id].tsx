@@ -36,6 +36,7 @@ import { useCloudVoiceFailure } from "@/features/reader/hooks/use-cloud-voice-fa
 import { useReadAloudBridge } from "@/features/reader/hooks/use-read-aloud-bridge";
 import { readerVoiceId } from "@/services/device-tts/catalogue";
 import { useAudiobookHandover } from "@/features/audiobook/hooks/use-audiobook-handover";
+import { noteReadAloud } from "@/services/audiobook/settings";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
 import { ReaderHeader, READER_HEADER_HEIGHT } from "@/components/reader/reader-header";
 import { SelectionBar } from "@/components/reader/selection-bar";
@@ -591,6 +592,8 @@ export default function ReaderScreen() {
     if (event.utterance === ttsLastUtteranceRef.current) return;
     ttsLastUtteranceRef.current = event.utterance;
     ttsLastLocatorRef.current = event.locator;
+    // Where the player goes on from, for a book also heard there.
+    if (id) noteReadAloud(id, event.locator.href, event.utterance);
     // The rest of the paragraph, for a cloud voice to fetch ahead from.
     onUtterance(event.locator.text?.after);
 
@@ -601,7 +604,7 @@ export default function ReaderScreen() {
     // calling goTo from here could only ever race the audio, not sequence
     // before it. currentLocatorRef still updates from the native
     // onLocationChange event this navigation fires either way.
-  }, [onUtterance]);
+  }, [id, onUtterance]);
 
   const handleTTSToggle = useCallback(() => {
     if (!isTTSActive) {

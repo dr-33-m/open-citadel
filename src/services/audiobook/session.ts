@@ -73,6 +73,12 @@ export interface BookSession {
   wantsToPlay: boolean;
   pending: PendingStart | null;
   lastSavedAt: number;
+  /**
+   * Read-aloud is taking over at a queued sentence: the queue keeps its items
+   * where they are, since the player has been told to stop after one of them
+   * by its index.
+   */
+  keepQueue: boolean;
 }
 
 export const book = {

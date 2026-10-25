@@ -81,7 +81,7 @@ export function appendToQueue(s: BookSession, entry: QueuedSentence): void {
 export function followTransition(s: BookSession, sentenceId: string): number {
   const at = s.queue.findIndex((entry) => entry.sentence.id === sentenceId);
   if (at < 0) return -1;
-  const drop = at - KEEP_BEHIND;
+  const drop = s.keepQueue ? 0 : at - KEEP_BEHIND;
   if (drop > 0) {
     TrackPlayer.removeMediaItems(0, drop);
     s.queue.splice(0, drop);
