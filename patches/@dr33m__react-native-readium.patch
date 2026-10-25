@@ -137,10 +137,18 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..efb58cc378c52f7297ff1594f407ea47
      }
    }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-index 4ebb74c21c404bba938d72982e6cfd41492c935c..16c94c816e0d09003ab1d726d2c27a105d6e7a9d 100644
+index 4ebb74c21c404bba938d72982e6cfd41492c935c..674edf9a4fdd485f2ddad12d658ec49cb9d3d1fb 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-@@ -20,6 +20,10 @@ import org.readium.r2.navigator.Navigator
+@@ -10,6 +10,7 @@ import com.reactnativereadium.utils.EventChannel
+ import com.reactnativereadium.utils.LinkOrLocator
+ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.channels.Channel
++import kotlinx.coroutines.flow.filter
+ import kotlinx.coroutines.flow.launchIn
+ import kotlinx.coroutines.flow.onEach
+ import kotlinx.coroutines.launch
+@@ -20,7 +21,12 @@ import org.readium.r2.navigator.Navigator
  import org.readium.r2.navigator.OverflowableNavigator
  import org.readium.r2.navigator.SelectableNavigator
  import org.readium.r2.navigator.VisualNavigator
@@ -149,9 +157,37 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..16c94c816e0d09003ab1d726d2c27a10
 +import org.readium.r2.navigator.input.KeyEvent
 +import org.readium.r2.navigator.input.TapEvent
  import org.readium.r2.shared.publication.Locator
++import org.readium.r2.shared.publication.Publication
  import org.readium.r2.shared.publication.services.cover
  import org.readium.r2.shared.publication.services.positions
-@@ -57,6 +61,29 @@ abstract class BaseReaderFragment : Fragment() {
+ import java.io.File
+@@ -31,6 +37,25 @@ import java.io.FileOutputStream
+  *
+  * Provides common menu items and saves last location on stop.
+  */
++/** Marks the locator a navigator opens on: see `openingLocator`. */
++private const val OPENING_KEY = "rnReadiumOpening"
++
++/**
++ * The locator to open the navigator on, marked. Readium's `currentLocator`
++ * starts out holding it, before anything is laid out, and only later the
++ * place it actually computed once the page has loaded there. The mark (an
++ * entry in `otherLocations`, which landing ignores) tells the two apart, and
++ * makes the computed one always differ, so it is always emitted even when it
++ * is the very same place. With no locator to open on, the navigator's own
++ * default: the start of the reading order.
++ */
++fun openingLocator(locator: Locator?, publication: Publication): Locator? {
++  val base = locator ?: publication.readingOrder.firstOrNull()?.let { publication.locatorFromLink(it) } ?: return null
++  return base.copy(locations = base.locations.copy(otherLocations = base.locations.otherLocations + (OPENING_KEY to true)))
++}
++
++private fun isOpeningLocator(locator: Locator): Boolean = locator.locations.otherLocations.containsKey(OPENING_KEY)
++
+ abstract class BaseReaderFragment : Fragment() {
+   val channel = EventChannel(
+     Channel<ReaderViewModel.Event>(Channel.BUFFERED),
+@@ -57,6 +82,29 @@ abstract class BaseReaderFragment : Fragment() {
    // Store decorations if they're set before navigator is ready
    private var pendingDecorations: Map<String, List<Decoration>>? = null
  
@@ -181,18 +217,22 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..16c94c816e0d09003ab1d726d2c27a10
    // Check if navigator is ready to use
    private val isNavigatorReady: Boolean
      get() {
-@@ -110,8 +137,9 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -110,8 +158,13 @@ abstract class BaseReaderFragment : Fragment() {
      }
  
      navigator.currentLocator
 -      .onEach { channel.send(ReaderViewModel.Event.LocatorUpdate(it)) }
++      // The navigator holds the locator it was opened on until it has landed
++      // and worked out where it is; that echo is marked (`openingLocator`) and
++      // is not a place on screen, so JS never hears it as one.
++      .filter { !isOpeningLocator(it) }
 +      .onEach { channel.send(ReaderViewModel.Event.LocatorUpdate(it, byUser = movedByUser)) }
        .launchIn(viewScope)
 +    (navigator as? VisualNavigator)?.addInputListener(userInputListener)
  
      // Apply any pending decorations now that navigator is ready
      pendingDecorations?.let { applyDecorations(it) }
-@@ -153,18 +181,21 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -153,18 +206,21 @@ abstract class BaseReaderFragment : Fragment() {
        return true
      }
  
@@ -214,7 +254,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..16c94c816e0d09003ab1d726d2c27a10
      return overflowNav.goBackward(animated = true)
    }
  
-@@ -233,6 +264,7 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -233,6 +289,7 @@ abstract class BaseReaderFragment : Fragment() {
    // MARK: - TTS
  
    fun ttsStart(rate: Float?, language: String?, voice: String?) {
@@ -222,7 +262,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..16c94c816e0d09003ab1d726d2c27a10
      val viewScope = viewLifecycleOwner.lifecycleScope
      if (ttsManager == null) {
        val app = requireActivity().application
-@@ -247,6 +279,16 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -247,6 +304,16 @@ abstract class BaseReaderFragment : Fragment() {
          },
          onUtterance = { locator, text ->
            applyTTSDecoration(locator) // Apply decoration natively — no JS round-trip
@@ -239,7 +279,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..16c94c816e0d09003ab1d726d2c27a10
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSUtterance(locator, text, null, null))
            }
-@@ -255,6 +297,21 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -255,6 +322,21 @@ abstract class BaseReaderFragment : Fragment() {
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSError(message))
            }
@@ -261,7 +301,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..16c94c816e0d09003ab1d726d2c27a10
          }
        )
      }
-@@ -281,6 +338,15 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -281,6 +363,15 @@ abstract class BaseReaderFragment : Fragment() {
    fun ttsSetRate(rate: Float) { ttsManager?.setRate(rate) }
    fun ttsSkipNext() { ttsManager?.skipNext() }
    fun ttsSkipPrevious() { ttsManager?.skipPrevious() }
@@ -278,7 +318,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..16c94c816e0d09003ab1d726d2c27a10
    private fun applyTTSDecoration(locator: Locator) {
      if (!isNavigatorReady) return
 diff --git a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
-index 78b3513728f4ca50b980cd095d9acddfd0e098e6..39329f9164f51c09ac38b332a93f894cfc5dd53d 100644
+index 78b3513728f4ca50b980cd095d9acddfd0e098e6..60e42334534a0ba8b409f48b9faf602c73096f5e 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/EpubReaderFragment.kt
 @@ -6,6 +6,8 @@
@@ -321,9 +361,12 @@ index 78b3513728f4ca50b980cd095d9acddfd0e098e6..39329f9164f51c09ac38b332a93f894c
      override lateinit var model: ReaderViewModel
      override lateinit var navigator: Navigator
      private lateinit var publication: Publication
-@@ -128,6 +147,7 @@ class EpubReaderFragment : VisualReaderFragment() {
+@@ -126,8 +145,9 @@ class EpubReaderFragment : VisualReaderFragment() {
+ 
+           childFragmentManager.fragmentFactory =
              navigatorFactory.createFragmentFactory(
-               initialLocator = model.initialLocation,
+-              initialLocator = model.initialLocation,
++              initialLocator = openingLocator(model.initialLocation, publication),
                initialPreferences = userPreferences,
 +              listener = externalLinkListener,
                configuration = EpubNavigatorFragment.Configuration {

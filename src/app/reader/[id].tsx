@@ -184,9 +184,11 @@ export default function ReaderScreen() {
    * Neither signal Readium gives is "painted". `publicationReady` says the
    * publication is loaded, and the first location report can come later
    * still: a cover timed from `publicationReady` lifted on a blank page that
-   * then drew wherever Readium was landing. The location report says it knows
-   * *where* it is, which happens before it has drawn anything — measured on
-   * an A33, the text lands roughly 450ms after it.
+   * then drew wherever Readium was landing. The first location report is
+   * where Readium landed (the Readium patch keeps back Android's echo of the
+   * opening locator, which it holds before it has moved anywhere), but it
+   * says it knows *where* it is, which happens before it has drawn anything —
+   * measured on an A33, the text lands roughly 450ms after it.
    *
    * So the cover waits for the report and then that measured time, which is
    * worth being plain about: there is no "first paint" callback on the view

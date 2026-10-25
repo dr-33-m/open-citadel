@@ -7,14 +7,14 @@
 import TrackPlayer from '@rntp/player';
 
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
-import { bookRow, infoOf, newSession, nowPlayingOf, publish } from '@/services/audiobook/lifecycle';
+import { bookRow, currentBookVoice, infoOf, newSession, nowPlayingOf, publish } from '@/services/audiobook/lifecycle';
 import { startSentence } from '@/services/audiobook/start';
 import { isBookItem, parseBookMediaId } from '@/services/audiobook/media-id';
 import { produce } from '@/services/audiobook/producer';
 import type { BookItemExtras } from '@/services/audiobook/queue';
 import { loadScript } from '@/services/audiobook/script';
 import { book, current, type BookSession, type QueuedSentence } from '@/services/audiobook/session';
-import { readCurrent, writeCurrent } from '@/services/audiobook/settings';
+import { readCurrent, readHeardVoice, writeCurrent } from '@/services/audiobook/settings';
 import { applyCommands } from '@/services/player/commands';
 import { readyPlayer } from '@/services/player/events';
 import { store } from '@/services/player/session';
@@ -57,13 +57,28 @@ export async function restoreBook(): Promise<void> {
   await showPaused(remembered.bookId, () => !store().current);
 }
 
+/**
+ * The voice play will start the book in, so the paused clock is laid out as
+ * the playing one will be (each voice has its own pace and sentence lengths,
+ * and a clock laid out by another jumps when play starts): the plan's book
+ * voice, or, before the plan is known at launch, the one it was last heard in.
+ */
+function voiceToPlay(bookId: string): { key: string; choice: BookSession['choice'] } | null {
+  const voice = currentBookVoice();
+  if (voice) return { key: voice.key, choice: voice.choice };
+  const key = readHeardVoice(bookId);
+  const choice = key ? cloudChoiceFor(key, null, 1, 'mp3') : null;
+  return key && choice ? { key, choice } : null;
+}
+
 /** The book in the mini player, paused and not loaded, at the sentence play would start from. */
 async function showPaused(bookId: string, stillWanted: () => boolean): Promise<void> {
   const row = bookRow(bookId);
   const script = row ? await loadScript(row) : null;
   const sentence = script ? await startSentence(script, bookId) : null;
   if (!row || !script || !sentence) return;
-  const s = await newSession(infoOf(row), script, '', { modelId: '', voice: '', speed: null, maxCharacters: 0, format: 'mp3' });
+  const voice = voiceToPlay(bookId);
+  const s = await newSession(infoOf(row), script, voice?.key ?? '', voice?.choice ?? { modelId: '', voice: '', speed: null, maxCharacters: 0, format: 'mp3' });
   s.pending = { sentence, offsetSec: 0 };
   const now = nowPlayingOf(s);
   s.source.dispose();
