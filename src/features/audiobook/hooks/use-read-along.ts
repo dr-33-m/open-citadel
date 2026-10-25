@@ -5,16 +5,9 @@ import React from 'react';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
 import { createChapterTextQueryOptions } from '@/query-manager/audiobook';
 import { playFromLocator, readAlongLocator, sentenceLocator, skipSentence } from '@/services/audiobook';
-import { togglePlayback } from '@/services/player';
+import { stopPlayback, togglePlayback } from '@/services/player';
 import { useAudiobook } from '@/stores/audiobook';
 import { selectBook, selectPlaying, usePlayer, usePlayerLoader } from '@/stores/player';
-
-/**
- * A page turned within this long of the reader being moved to the voice is
- * that move landing (Readium reports a page or two as it settles), not the
- * reader turning it.
- */
-const OWN_TURN_MS = 1_200;
 
 /**
  * Reading along with a book heard in the player: one voice, the player's,
@@ -29,6 +22,10 @@ const OWN_TURN_MS = 1_200;
  *
  * Turning a page by hand stops the pages following the voice (`detached`):
  * BACK TO NOW brings them back, LISTEN FROM HERE moves the voice to the page.
+ * "By hand" is Readium's word, not a guess: the reader reports a page the
+ * user moved (a swipe, a key, an edge tap) apart from the ones the app moved
+ * (`onNavigatedByUser`). The reader's own jumps (a chapter, a bookmark, a
+ * highlight) are the user's too, and say so through `detach`.
  *
  * `initialLocator` is the sentence being heard as the reader opens, for it to
  * open on that page rather than on the saved place and then move.
@@ -41,7 +38,7 @@ export function useReadAlong({
 }: {
   bookId: string | undefined;
   readerRef: React.RefObject<ReadiumViewRef | null>;
-  /** The book is laid out and can be moved about. */
+  /** Readium has said where it is, so it can be moved: still under the reader's cover, so the move is not seen. */
   ready: boolean;
   tint: string;
 }) {
@@ -60,29 +57,18 @@ export function useReadAlong({
   }, [chapter, sentenceId]);
 
   const [detached, setDetached] = React.useState(false);
-  const movedAt = React.useRef(0);
-  const landedAt = React.useRef<number | undefined>(undefined);
   const onPage = React.useRef<Locator | null>(null);
 
   React.useEffect(() => {
     if (!following || !ready || !locator || detached) return;
-    movedAt.current = Date.now();
     readerRef.current?.goTo(locator);
   }, [following, ready, locator, detached, readerRef]);
 
-  const onLocationChange = React.useCallback(
-    (loc: Locator) => {
-      onPage.current = loc;
-      if (!following) return;
-      const position = loc.locations?.position;
-      if (Date.now() - movedAt.current < OWN_TURN_MS) {
-        landedAt.current = position;
-        return;
-      }
-      if (movedAt.current > 0 && position !== landedAt.current) setDetached(true);
-    },
-    [following],
-  );
+  const onLocationChange = React.useCallback((loc: Locator) => {
+    onPage.current = loc;
+  }, []);
+
+  const detach = React.useCallback(() => setDetached(true), []);
 
   const decorations: DecorationGroup = React.useMemo(
     () => ({
@@ -97,6 +83,8 @@ export function useReadAlong({
     initialLocator,
     decorations,
     onLocationChange,
+    /** The user moved the page (Readium's `onNavigatedByUser`), or the reader jumped for them: stop following. */
+    detach,
     /** The reader's read-aloud controls, driving the player. Shown once the book is in it, playing or paused. */
     controls: {
       active: following && loaded,
@@ -105,6 +93,8 @@ export function useReadAlong({
       onPlayPause: () => void togglePlayback(),
       onSkipPrevious: () => void skipSentence(-1),
       onSkipNext: () => void skipSentence(1),
+      /** The read-aloud icon: stop listening, as it stops read-aloud anywhere in the reader. */
+      onStop: () => void stopPlayback(),
     },
     /** The pages have stopped following the voice: back to it, or the voice to the page. */
     banner:

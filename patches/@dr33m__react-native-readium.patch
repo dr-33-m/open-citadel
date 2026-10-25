@@ -43,7 +43,7 @@ index d980fe94a06e00f78e758aac92b4c99dcd433abc..2af4352f0be80cfbb244c6bb28d07d57
    // other deps
    implementation "androidx.core:core-ktx:1.13.1"
 diff --git a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt b/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
-index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b215ba916b0 100644
+index 67d86a62e7b8a80070aa55f8a259079649b37aaf..efb58cc378c52f7297ff1594f407ea472f931cb9 100644
 --- a/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
 +++ b/android/src/main/java/com/reactnativereadium/HybridReadiumView.kt
 @@ -6,6 +6,7 @@ import android.view.View
@@ -54,7 +54,15 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b21
  import com.reactnativereadium.reader.BaseReaderFragment
  import com.reactnativereadium.reader.EpubReaderFragment
  import com.reactnativereadium.reader.ReaderService
-@@ -112,6 +113,9 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -105,6 +106,7 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+     }
+ 
+   override var onLocationChange: ((locator: Locator) -> Unit)? = null
++  override var onNavigatedByUser: ((locator: Locator) -> Unit)? = null
+   override var onPublicationReady: ((event: PublicationReadyEvent) -> Unit)? = null
+   override var onDecorationActivated: ((event: DecorationActivatedEvent) -> Unit)? = null
+   override var onSelectionChange: ((event: SelectionEvent) -> Unit)? = null
+@@ -112,6 +114,9 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
    override var onTTSStateChange: ((state: TTSState) -> Unit)? = null
    override var onTTSUtterance: ((event: TTSUtteranceEvent) -> Unit)? = null
    override var onTTSError: ((error: String) -> Unit)? = null
@@ -64,7 +72,7 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b21
  
    private fun ensureService() {
      if (svc == null) {
-@@ -188,6 +192,27 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -188,6 +193,27 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
    override fun ttsSetRate(rate: Double) { fragment?.ttsSetRate(rate.toFloat()) }
    override fun ttsSkipNext() { fragment?.ttsSkipNext() }
    override fun ttsSkipPrevious() { fragment?.ttsSkipPrevious() }
@@ -92,7 +100,18 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b21
    override fun destroy() {
      if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
        cleanup()
-@@ -395,6 +420,24 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+@@ -342,7 +368,9 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
+     frag.channel.receive(frag) { event ->
+       when (event) {
+         is ReaderViewModel.Event.LocatorUpdate -> {
+-          onLocationChange?.invoke(readiumLocatorToNitro(event.locator))
++          val locator = readiumLocatorToNitro(event.locator)
++          onLocationChange?.invoke(locator)
++          if (event.byUser) onNavigatedByUser?.invoke(locator)
+         }
+         is ReaderViewModel.Event.PublicationReady -> {
+           onPublicationReady?.invoke(PublicationReadyEvent(
+@@ -395,6 +423,24 @@ class HybridReadiumView(private val context: android.content.Context) : HybridRe
          is ReaderViewModel.Event.TTSError -> {
            onTTSError?.invoke(event.message)
          }
@@ -118,10 +137,92 @@ index 67d86a62e7b8a80070aa55f8a259079649b37aaf..4fb0990cdbfe2adf963ed5848dfd4b21
      }
    }
 diff --git a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-index 4ebb74c21c404bba938d72982e6cfd41492c935c..432d6642929cd1b9f24a9ee190e35646fbd13624 100644
+index 4ebb74c21c404bba938d72982e6cfd41492c935c..16c94c816e0d09003ab1d726d2c27a105d6e7a9d 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/BaseReaderFragment.kt
-@@ -247,6 +247,15 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -20,6 +20,10 @@ import org.readium.r2.navigator.Navigator
+ import org.readium.r2.navigator.OverflowableNavigator
+ import org.readium.r2.navigator.SelectableNavigator
+ import org.readium.r2.navigator.VisualNavigator
++import org.readium.r2.navigator.input.DragEvent
++import org.readium.r2.navigator.input.InputListener
++import org.readium.r2.navigator.input.KeyEvent
++import org.readium.r2.navigator.input.TapEvent
+ import org.readium.r2.shared.publication.Locator
+ import org.readium.r2.shared.publication.services.cover
+ import org.readium.r2.shared.publication.services.positions
+@@ -57,6 +61,29 @@ abstract class BaseReaderFragment : Fragment() {
+   // Store decorations if they're set before navigator is ready
+   private var pendingDecorations: Map<String, List<Decoration>>? = null
+ 
++  /**
++   * Who moved the page last: the reader's user, or the app. Set by the user's
++   * own input on the page (a drag or a key, as Readium reports them), cleared
++   * by every move the app makes (`go`, `goForward`, `goBackward`, read-aloud).
++   * A location reported while it is set was the user's doing, which is what
++   * `onNavigatedByUser` tells JS. Readium also reports a location by itself
++   * (as a page lays out); that carries whichever move came before it.
++   */
++  @Volatile private var movedByUser = false
++
++  /** Watches the user's input and never consumes it, so swiping and keys work as before. */
++  private val userInputListener = object : InputListener {
++    override fun onTap(event: TapEvent): Boolean = false
++    override fun onDrag(event: DragEvent): Boolean {
++      movedByUser = true
++      return false
++    }
++    override fun onKey(event: KeyEvent): Boolean {
++      movedByUser = true
++      return false
++    }
++  }
++
+   // Check if navigator is ready to use
+   private val isNavigatorReady: Boolean
+     get() {
+@@ -110,8 +137,9 @@ abstract class BaseReaderFragment : Fragment() {
+     }
+ 
+     navigator.currentLocator
+-      .onEach { channel.send(ReaderViewModel.Event.LocatorUpdate(it)) }
++      .onEach { channel.send(ReaderViewModel.Event.LocatorUpdate(it, byUser = movedByUser)) }
+       .launchIn(viewScope)
++    (navigator as? VisualNavigator)?.addInputListener(userInputListener)
+ 
+     // Apply any pending decorations now that navigator is ready
+     pendingDecorations?.let { applyDecorations(it) }
+@@ -153,18 +181,21 @@ abstract class BaseReaderFragment : Fragment() {
+       return true
+     }
+ 
++    movedByUser = false
+     return navigator.go(locator, animated)
+   }
+ 
+   fun goForward(): Boolean {
+     if (!isNavigatorReady) return false
+     val overflowNav = navigator as? OverflowableNavigator ?: return false
++    movedByUser = false
+     return overflowNav.goForward(animated = true)
+   }
+ 
+   fun goBackward(): Boolean {
+     if (!isNavigatorReady) return false
+     val overflowNav = navigator as? OverflowableNavigator ?: return false
++    movedByUser = false
+     return overflowNav.goBackward(animated = true)
+   }
+ 
+@@ -233,6 +264,7 @@ abstract class BaseReaderFragment : Fragment() {
+   // MARK: - TTS
+ 
+   fun ttsStart(rate: Float?, language: String?, voice: String?) {
++    movedByUser = false
+     val viewScope = viewLifecycleOwner.lifecycleScope
+     if (ttsManager == null) {
+       val app = requireActivity().application
+@@ -247,6 +279,16 @@ abstract class BaseReaderFragment : Fragment() {
          },
          onUtterance = { locator, text ->
            applyTTSDecoration(locator) // Apply decoration natively — no JS round-trip
@@ -133,11 +234,12 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..432d6642929cd1b9f24a9ee190e35646
 +          // `EPUBNavigatorViewController.go(to:)`), so this doesn't yet gate
 +          // `KokoroTtsEngine`'s synthesis on it the way iOS's
 +          // `pendingNavigation` does.
++          movedByUser = false
 +          navigator.go(locator, animated = false)
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSUtterance(locator, text, null, null))
            }
-@@ -255,6 +264,21 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -255,6 +297,21 @@ abstract class BaseReaderFragment : Fragment() {
            viewScope.launch {
              channel.send(ReaderViewModel.Event.TTSError(message))
            }
@@ -159,7 +261,7 @@ index 4ebb74c21c404bba938d72982e6cfd41492c935c..432d6642929cd1b9f24a9ee190e35646
          }
        )
      }
-@@ -281,6 +305,15 @@ abstract class BaseReaderFragment : Fragment() {
+@@ -281,6 +338,15 @@ abstract class BaseReaderFragment : Fragment() {
    fun ttsSetRate(rate: Float) { ttsManager?.setRate(rate) }
    fun ttsSkipNext() { ttsManager?.skipNext() }
    fun ttsSkipPrevious() { ttsManager?.skipPrevious() }
@@ -228,10 +330,20 @@ index 78b3513728f4ca50b980cd095d9acddfd0e098e6..39329f9164f51c09ac38b332a93f894c
                  when {
                    suppressNativeSelectionMenu -> selectionActionModeCallback = object : ActionMode.Callback {
 diff --git a/android/src/main/java/com/reactnativereadium/reader/ReaderViewModel.kt b/android/src/main/java/com/reactnativereadium/reader/ReaderViewModel.kt
-index a2a697646e1c8384b1d246877c06fdbb577ec352..2ed1db2fd407265210e2583e20258d410e7df779 100644
+index a2a697646e1c8384b1d246877c06fdbb577ec352..1cabdc5220c26722718abe1f5310bd26e2cc9750 100644
 --- a/android/src/main/java/com/reactnativereadium/reader/ReaderViewModel.kt
 +++ b/android/src/main/java/com/reactnativereadium/reader/ReaderViewModel.kt
-@@ -74,5 +74,14 @@ class ReaderViewModel(
+@@ -40,7 +40,8 @@ class ReaderViewModel(
+     }
+ 
+     sealed class Event {
+-        class LocatorUpdate(val locator: Locator) : Event()
++        /** `byUser`: the reader's user moved the page (see `BaseReaderFragment.movedByUser`). */
++        class LocatorUpdate(val locator: Locator, val byUser: Boolean = false) : Event()
+         class PublicationReady(
+             val tableOfContents: List<Link>,
+             val positions: List<Locator>,
+@@ -74,5 +75,14 @@ class ReaderViewModel(
              val rangeLength: Int?
          ) : Event()
          class TTSError(val message: String) : Event()
@@ -1583,10 +1695,18 @@ index 0000000000000000000000000000000000000000..f46fe9eeae873a3be4e44cb65bf9a457
 +    }
 +}
 diff --git a/ios/HybridReadiumView.swift b/ios/HybridReadiumView.swift
-index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd2ffe192a 100644
+index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..9afe34725cbf18adb7a5d4c015a9ec7f0fd96b95 100644
 --- a/ios/HybridReadiumView.swift
 +++ b/ios/HybridReadiumView.swift
-@@ -55,6 +55,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -48,6 +48,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
+   var suppressNativeSelectionMenu: Bool? = nil
+ 
+   var onLocationChange: ((Locator) -> Void)? = nil
++  var onNavigatedByUser: ((Locator) -> Void)? = nil
+   var onPublicationReady: ((PublicationReadyEvent) -> Void)? = nil
+   var onDecorationActivated: ((DecorationActivatedEvent) -> Void)? = nil
+   var onSelectionChange: ((SelectionEvent) -> Void)? = nil
+@@ -55,6 +56,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
    var onTTSStateChange: ((TTSState) -> Void)? = nil
    var onTTSUtterance: ((TTSUtteranceEvent) -> Void)? = nil
    var onTTSError: ((String) -> Void)? = nil
@@ -1596,7 +1716,43 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd
  
    // MARK: - Private state
  
-@@ -319,8 +322,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -193,6 +197,11 @@ class HybridReadiumView: HybridReadiumViewSpec {
+     })
+     .store(in: &subscriptions)
+ 
++    vc.userMovePublisher.sink(receiveValue: { [weak self] locator in
++      self?.onNavigatedByUser?(readiumLocatorToNitro(locator))
++    })
++    .store(in: &subscriptions)
++
+     readerViewController = vc
+ 
+     // Apply pending state
+@@ -275,6 +284,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
+       guard let self else { return }
+       guard let navigator = self.readerViewController?.navigator else { return }
+       guard let readiumLocator = nitroLocatorToReadium(locator) else { return }
++      self.readerViewController?.appWillMove()
+       _ = await navigator.go(to: readiumLocator, options: .animated)
+     }
+   }
+@@ -282,6 +292,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
+   func goForward() {
+     Task { @MainActor in
+       guard let navigator = readerViewController?.navigator else { return }
++      readerViewController?.appWillMove()
+       _ = await navigator.goForward(options: .animated)
+     }
+   }
+@@ -289,6 +300,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
+   func goBackward() {
+     Task { @MainActor in
+       guard let navigator = readerViewController?.navigator else { return }
++      readerViewController?.appWillMove()
+       _ = await navigator.goBackward(options: .animated)
+     }
+   }
+@@ -319,8 +331,9 @@ class HybridReadiumView: HybridReadiumViewSpec {
          ))
        }
        manager.onUtterance = { [weak self] locator, text in
@@ -1607,7 +1763,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd
            let tint = UIColor(red: 0.949, green: 0.792, blue: 0.314, alpha: 0.35) // #f2ca50 @ 35%
            let decoration = RDecoration(
              id: "tts-current",
-@@ -329,7 +333,20 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -329,7 +342,22 @@ class HybridReadiumView: HybridReadiumViewSpec {
            )
            nav.apply(decorations: [decoration], in: "tts")
          }
@@ -1620,7 +1776,9 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd
 +        // therefore audio) the moment it's called; without this, a short
 +        // utterance's audio could start before the page holding it was shown.
 +        if let navigator = self.readerViewController?.navigator {
++          let reader = self.readerViewController
 +          let navigation = Task { @MainActor in
++            reader?.appWillMove()
 +            _ = await navigator.go(to: locator, options: NavigatorGoOptions())
 +          }
 +          self.readerViewController?.ttsManager?.setPendingNavigation(navigation)
@@ -1629,7 +1787,7 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd
            locator: readiumLocatorToNitro(locator),
            utterance: text,
            rangeStart: nil,
-@@ -339,6 +356,15 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -339,6 +367,15 @@ class HybridReadiumView: HybridReadiumViewSpec {
        manager.onError = { [weak self] message in
          self?.onTTSError?(message)
        }
@@ -1645,7 +1803,15 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd
        vc.ttsManager = manager
      }
      return vc.ttsManager
-@@ -410,6 +436,37 @@ class HybridReadiumView: HybridReadiumViewSpec {
+@@ -352,6 +389,7 @@ class HybridReadiumView: HybridReadiumViewSpec {
+     Task { @MainActor [weak self] in
+       guard let self = self else { return }
+       guard let manager = self.ensureTTSManager() else { return }
++      self.readerViewController?.appWillMove()
+       // Start TTS from the first element visible on screen — the same approach
+       // as Readium's TestApp TTSViewModel. The navigator's currentLocation is a
+       // coarse resource-level progression that the speech synthesizer maps back
+@@ -410,6 +448,37 @@ class HybridReadiumView: HybridReadiumViewSpec {
        self?.readerViewController?.ttsManager?.skipPrevious()
      }
    }
@@ -1683,6 +1849,96 @@ index d3e226c63fb4c0aa6b59c091bc5ce39e37f6293c..516e25944589107eb32987f7be9816dd
  
    // Cleanup
    func cleanup() {
+diff --git a/ios/Reader/Common/ReaderViewController.swift b/ios/Reader/Common/ReaderViewController.swift
+index 5ea9efc1b1211560259b91f212eded89fdefcffb..365b7757ea9daf9844368b86834be12351bf65a0 100644
+--- a/ios/Reader/Common/ReaderViewController.swift
++++ b/ios/Reader/Common/ReaderViewController.swift
+@@ -26,6 +26,21 @@ class ReaderViewController: UIViewController, Loggable {
+   private var lastKnownLocator: ReadiumShared.Locator?
+   private var navigatorInputObserverTokens = Set<InputObservableToken>()
+ 
++  /// Who moved the page last: the reader's user, or the app. Set by the user's
++  /// own input on the page (a touch or a key, as Readium reports them, which
++  /// includes the edge taps `DirectionalNavigationAdapter` turns pages with),
++  /// cleared by every move the app makes (`appWillMove`). A location reported
++  /// while it is set was the user's doing, and goes out on `userMovePublisher`
++  /// too. Mirrors `BaseReaderFragment.movedByUser` on Android.
++  private(set) var movedByUser = false
++  private let userMoveSubject = PassthroughSubject<ReadiumShared.Locator, Never>()
++  lazy var userMovePublisher = userMoveSubject.eraseToAnyPublisher()
++
++  /// The app is about to move the page (`goTo`, `goForward`, `goBackward`, read-aloud).
++  func appWillMove() {
++    movedByUser = false
++  }
++
+   /// This regex matches any string with at least 2 consecutive letters (not limited to ASCII).
+   /// It's used when evaluating whether to display the body of a noteref referrer as the note's title.
+   /// I.e. a `*` or `1` would not be used as a title, but `on` or `好書` would.
+@@ -200,6 +215,13 @@ class ReaderViewController: UIViewController, Loggable {
+       return
+     }
+ 
++    // First, so it sees every event before an observer below consumes it
++    // (the adapter consumes the edge taps it turns pages with).
++    visualNavigator.addObserver(UserInputObserver { [weak self] in
++      self?.movedByUser = true
++    })
++    .store(in: &navigatorInputObserverTokens)
++
+     DirectionalNavigationAdapter(
+       pointerPolicy: .init(edges: .all),
+       animatedTransition: true
+@@ -243,13 +265,16 @@ class ReaderViewController: UIViewController, Loggable {
+     }
+   }
+ 
++  // The accessibility toolbar's buttons: the user turning the page.
+   @MainActor
+   private func navigateBackwardAnimated() async {
++    movedByUser = true
+     _ = await navigator.goBackward(options: .animated)
+   }
+ 
+   @MainActor
+   private func navigateForwardAnimated() async {
++    movedByUser = true
+     _ = await navigator.goForward(options: .animated)
+   }
+ 
+@@ -258,6 +283,9 @@ class ReaderViewController: UIViewController, Loggable {
+ extension ReaderViewController: NavigatorDelegate {
+   func navigator(_ navigator: Navigator, locationDidChange locator: ReadiumShared.Locator) {
+     subject.send(locator)
++    if movedByUser {
++      userMoveSubject.send(locator)
++    }
+     updatePositionLabel(with: locator)
+   }
+ 
+@@ -376,3 +404,22 @@ extension ReaderViewController {
+     positionLabel.text = positionLabelText(for: locator)
+   }
+ }
++
++/// Notes that the reader's user touched or keyed the page, and lets the event
++/// go on to the observers after it: it never consumes anything.
++@MainActor
++private struct UserInputObserver: InputObserving {
++  let onInput: @MainActor () -> Void
++
++  func didReceive(_ event: PointerEvent) async -> Bool {
++    if event.phase == .down || event.phase == .move {
++      onInput()
++    }
++    return false
++  }
++
++  func didReceive(_ event: KeyEvent) async -> Bool {
++    onInput()
++    return false
++  }
++}
 diff --git a/ios/Reader/TTS/KokoroTTSEngine.swift b/ios/Reader/TTS/KokoroTTSEngine.swift
 new file mode 100644
 index 0000000000000000000000000000000000000000..b848bfd080973a206728aac294649e31257fd325
@@ -4460,10 +4716,10 @@ index 0000000000000000000000000000000000000000..bf25ed462251b29a52da1e19a7190a3f
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp b/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..69036442c05dfebe4008521eec22593b1db78fa0
+index 0000000000000000000000000000000000000000..7171991095938c63957960613aa3e059e33c20f9
 --- /dev/null
 +++ b/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
-@@ -0,0 +1,504 @@
+@@ -0,0 +1,521 @@
 +///
 +/// JHybridReadiumViewSpec.cpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -4733,6 +4989,23 @@ index 0000000000000000000000000000000000000000..69036442c05dfebe4008521eec22593b
 +    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_Locator::javaobject> /* onLocationChange */)>("setOnLocationChange_cxx");
 +    method(_javaPart, onLocationChange.has_value() ? JFunc_void_Locator_cxx::fromCpp(onLocationChange.value()) : nullptr);
 +  }
++  std::optional<std::function<void(const Locator& /* locator */)>> JHybridReadiumViewSpec::getOnNavigatedByUser() {
++    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_Locator::javaobject>()>("getOnNavigatedByUser_cxx");
++    auto __result = method(_javaPart);
++    return __result != nullptr ? std::make_optional([&]() -> std::function<void(const Locator& /* locator */)> {
++      if (__result->isInstanceOf(JFunc_void_Locator_cxx::javaClassStatic())) [[likely]] {
++        auto downcast = jni::static_ref_cast<JFunc_void_Locator_cxx::javaobject>(__result);
++        return downcast->cthis()->getFunction();
++      } else {
++        auto __resultRef = jni::make_global(__result);
++        return JNICallable<JFunc_void_Locator, void(Locator)>(std::move(__resultRef));
++      }
++    }()) : std::nullopt;
++  }
++  void JHybridReadiumViewSpec::setOnNavigatedByUser(const std::optional<std::function<void(const Locator& /* locator */)>>& onNavigatedByUser) {
++    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_Locator::javaobject> /* onNavigatedByUser */)>("setOnNavigatedByUser_cxx");
++    method(_javaPart, onNavigatedByUser.has_value() ? JFunc_void_Locator_cxx::fromCpp(onNavigatedByUser.value()) : nullptr);
++  }
 +  std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> JHybridReadiumViewSpec::getOnPublicationReady() {
 +    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_PublicationReadyEvent::javaobject>()>("getOnPublicationReady_cxx");
 +    auto __result = method(_javaPart);
@@ -4970,10 +5243,10 @@ index 0000000000000000000000000000000000000000..69036442c05dfebe4008521eec22593b
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp b/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..bf75e7bbf35fcb00d123da704071a87561ccf244
+index 0000000000000000000000000000000000000000..1a8b9906a608e0f32bb986f2740e22a5eb06e640
 --- /dev/null
 +++ b/lib/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,110 @@
 +///
 +/// HybridReadiumViewSpec.hpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -5038,6 +5311,8 @@ index 0000000000000000000000000000000000000000..bf75e7bbf35fcb00d123da704071a875
 +    void setSuppressNativeSelectionMenu(std::optional<bool> suppressNativeSelectionMenu) override;
 +    std::optional<std::function<void(const Locator& /* locator */)>> getOnLocationChange() override;
 +    void setOnLocationChange(const std::optional<std::function<void(const Locator& /* locator */)>>& onLocationChange) override;
++    std::optional<std::function<void(const Locator& /* locator */)>> getOnNavigatedByUser() override;
++    void setOnNavigatedByUser(const std::optional<std::function<void(const Locator& /* locator */)>>& onNavigatedByUser) override;
 +    std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> getOnPublicationReady() override;
 +    void setOnPublicationReady(const std::optional<std::function<void(const PublicationReadyEvent& /* event */)>>& onPublicationReady) override;
 +    std::optional<std::function<void(const DecorationActivatedEvent& /* event */)>> getOnDecorationActivated() override;
@@ -7168,10 +7443,10 @@ index 0000000000000000000000000000000000000000..4de5f6e9724d2f54f1ad5a5d89baa475
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/android/c++/views/JHybridReadiumViewStateUpdater.cpp b/lib/nitrogen/generated/android/c++/views/JHybridReadiumViewStateUpdater.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..38b4652b49163aadb55526ac8447e79948ff4160
+index 0000000000000000000000000000000000000000..fb74ff7237f0f647b17453355373b1cd40de6673
 --- /dev/null
 +++ b/lib/nitrogen/generated/android/c++/views/JHybridReadiumViewStateUpdater.cpp
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,120 @@
 +///
 +/// JHybridReadiumViewStateUpdater.cpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -7234,6 +7509,10 @@ index 0000000000000000000000000000000000000000..38b4652b49163aadb55526ac8447e799
 +  if (props->onLocationChange.isDirty) {
 +    hybridView->setOnLocationChange(props->onLocationChange.value);
 +    props->onLocationChange.isDirty = false;
++  }
++  if (props->onNavigatedByUser.isDirty) {
++    hybridView->setOnNavigatedByUser(props->onNavigatedByUser.value);
++    props->onNavigatedByUser.isDirty = false;
 +  }
 +  if (props->onPublicationReady.isDirty) {
 +    hybridView->setOnPublicationReady(props->onPublicationReady.value);
@@ -8796,10 +9075,10 @@ index 0000000000000000000000000000000000000000..e74c2982892a9734448cc2d26933ceef
 +}
 diff --git a/lib/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt b/lib/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..383b24d3739b3d445574a54c3dd9c6cd5dc19e8f
+index 0000000000000000000000000000000000000000..1e761ce2ae946e11771729474f21f6463e107304
 --- /dev/null
 +++ b/lib/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,308 @@
 +///
 +/// HybridReadiumViewSpec.kt
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -8871,6 +9150,20 @@ index 0000000000000000000000000000000000000000..383b24d3739b3d445574a54c3dd9c6cd
 +    @DoNotStrip
 +    set(value) {
 +      onLocationChange = value?.let { it }
++    }
++  
++  abstract var onNavigatedByUser: ((locator: Locator) -> Unit)?
++  
++  private var onNavigatedByUser_cxx: Func_void_Locator?
++    @Keep
++    @DoNotStrip
++    get() {
++      return onNavigatedByUser?.let { Func_void_Locator_java(it) }
++    }
++    @Keep
++    @DoNotStrip
++    set(value) {
++      onNavigatedByUser = value?.let { it }
 +    }
 +  
 +  abstract var onPublicationReady: ((event: PublicationReadyEvent) -> Unit)?
@@ -12247,10 +12540,10 @@ index 0000000000000000000000000000000000000000..d6f256683c111c4b039e3721a802a936
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp b/lib/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..a6878bd0d8ae6e2513fcb5e68076462291bef5fa
+index 0000000000000000000000000000000000000000..1df2b4a1c5552d7c84769c4ac28b41dde2afeec8
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
-@@ -0,0 +1,368 @@
+@@ -0,0 +1,375 @@
 +///
 +/// HybridReadiumViewSpecSwift.hpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -12448,6 +12741,13 @@ index 0000000000000000000000000000000000000000..a6878bd0d8ae6e2513fcb5e680764622
 +    inline void setOnLocationChange(const std::optional<std::function<void(const Locator& /* locator */)>>& onLocationChange) noexcept override {
 +      _swiftPart.setOnLocationChange(onLocationChange);
 +    }
++    inline std::optional<std::function<void(const Locator& /* locator */)>> getOnNavigatedByUser() noexcept override {
++      auto __result = _swiftPart.getOnNavigatedByUser();
++      return __result;
++    }
++    inline void setOnNavigatedByUser(const std::optional<std::function<void(const Locator& /* locator */)>>& onNavigatedByUser) noexcept override {
++      _swiftPart.setOnNavigatedByUser(onNavigatedByUser);
++    }
 +    inline std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> getOnPublicationReady() noexcept override {
 +      auto __result = _swiftPart.getOnPublicationReady();
 +      return __result;
@@ -12621,10 +12921,10 @@ index 0000000000000000000000000000000000000000..a6878bd0d8ae6e2513fcb5e680764622
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/ios/c++/views/HybridReadiumViewComponent.mm b/lib/nitrogen/generated/ios/c++/views/HybridReadiumViewComponent.mm
 new file mode 100644
-index 0000000000000000000000000000000000000000..91ad336914d2f002c993c7145a9c2cef5baab0a9
+index 0000000000000000000000000000000000000000..926f44f459450511115cd59d3372986a94972399
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/c++/views/HybridReadiumViewComponent.mm
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,202 @@
 +///
 +/// HybridReadiumViewComponent.mm
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -12735,6 +13035,11 @@ index 0000000000000000000000000000000000000000..91ad336914d2f002c993c7145a9c2cef
 +  if (newViewProps.onLocationChange.isDirty) {
 +    swiftPart.setOnLocationChange(newViewProps.onLocationChange.value);
 +    newViewProps.onLocationChange.isDirty = false;
++  }
++  // onNavigatedByUser: optional
++  if (newViewProps.onNavigatedByUser.isDirty) {
++    swiftPart.setOnNavigatedByUser(newViewProps.onNavigatedByUser.value);
++    newViewProps.onNavigatedByUser.isDirty = false;
 +  }
 +  // onPublicationReady: optional
 +  if (newViewProps.onPublicationReady.isDirty) {
@@ -14138,10 +14443,10 @@ index 0000000000000000000000000000000000000000..a29a07be38bd48da53b23bc902c0f306
 +}
 diff --git a/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift b/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..adf188320af9d1bc927f9c667fed0ea34ddd3c99
+index 0000000000000000000000000000000000000000..37cc2e873787029caa6cf62d886c8a1ac339078c
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,85 @@
 +///
 +/// HybridReadiumViewSpec.swift
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -14160,6 +14465,7 @@ index 0000000000000000000000000000000000000000..adf188320af9d1bc927f9c667fed0ea3
 +  var selectionActions: [SelectionAction]? { get set }
 +  var suppressNativeSelectionMenu: Bool? { get set }
 +  var onLocationChange: ((_ locator: Locator) -> Void)? { get set }
++  var onNavigatedByUser: ((_ locator: Locator) -> Void)? { get set }
 +  var onPublicationReady: ((_ event: PublicationReadyEvent) -> Void)? { get set }
 +  var onDecorationActivated: ((_ event: DecorationActivatedEvent) -> Void)? { get set }
 +  var onSelectionChange: ((_ event: SelectionEvent) -> Void)? { get set }
@@ -14228,10 +14534,10 @@ index 0000000000000000000000000000000000000000..adf188320af9d1bc927f9c667fed0ea3
 +public typealias HybridReadiumViewSpec = HybridReadiumViewSpec_protocol & HybridReadiumViewSpec_base
 diff --git a/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift b/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
 new file mode 100644
-index 0000000000000000000000000000000000000000..d7f95062b9c5fc1a15b396d838f1ce8454d3b8c9
+index 0000000000000000000000000000000000000000..1f904bec89c461b85bde878349e7adc6ac55efd4
 --- /dev/null
 +++ b/lib/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
-@@ -0,0 +1,781 @@
+@@ -0,0 +1,813 @@
 +///
 +/// HybridReadiumViewSpec_cxx.swift
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -14490,6 +14796,38 @@ index 0000000000000000000000000000000000000000..d7f95062b9c5fc1a15b396d838f1ce84
 +    @inline(__always)
 +    set {
 +      self.__implementation.onLocationChange = { () -> ((_ locator: Locator) -> Void)? in
++        if bridge.has_value_std__optional_std__function_void_const_Locator_____locator______(newValue) {
++          let __unwrapped = bridge.get_std__optional_std__function_void_const_Locator_____locator______(newValue)
++          return { () -> (Locator) -> Void in
++            let __wrappedFunction = bridge.wrap_Func_void_Locator(__unwrapped)
++            return { (__locator: Locator) -> Void in
++              __wrappedFunction.call(__locator)
++            }
++          }()
++        } else {
++          return nil
++        }
++      }()
++    }
++  }
++  
++  public final var onNavigatedByUser: bridge.std__optional_std__function_void_const_Locator_____locator______ {
++    @inline(__always)
++    get {
++      return { () -> bridge.std__optional_std__function_void_const_Locator_____locator______ in
++        if let __unwrappedValue = self.__implementation.onNavigatedByUser {
++          return bridge.create_std__optional_std__function_void_const_Locator_____locator______({ () -> bridge.Func_void_Locator in
++            let __closureWrapper = Func_void_Locator(__unwrappedValue)
++            return bridge.create_Func_void_Locator(__closureWrapper.toUnsafe())
++          }())
++        } else {
++          return .init()
++        }
++      }()
++    }
++    @inline(__always)
++    set {
++      self.__implementation.onNavigatedByUser = { () -> ((_ locator: Locator) -> Void)? in
 +        if bridge.has_value_std__optional_std__function_void_const_Locator_____locator______(newValue) {
 +          let __unwrapped = bridge.get_std__optional_std__function_void_const_Locator_____locator______(newValue)
 +          return { () -> (Locator) -> Void in
@@ -18227,10 +18565,10 @@ index 0000000000000000000000000000000000000000..3cd97a6507b5a003df6b51aec675ee20
 +} // namespace margelo::nitro
 diff --git a/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp b/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..2f7cbd6fcb2510d0dea27dfdb753da8eca3c6703
+index 0000000000000000000000000000000000000000..27bf99b9499840f2b28ae893722e08b954da88a2
 --- /dev/null
 +++ b/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,69 @@
 +///
 +/// HybridReadiumViewSpec.cpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -18259,6 +18597,8 @@ index 0000000000000000000000000000000000000000..2f7cbd6fcb2510d0dea27dfdb753da8e
 +      prototype.registerHybridSetter("suppressNativeSelectionMenu", &HybridReadiumViewSpec::setSuppressNativeSelectionMenu);
 +      prototype.registerHybridGetter("onLocationChange", &HybridReadiumViewSpec::getOnLocationChange);
 +      prototype.registerHybridSetter("onLocationChange", &HybridReadiumViewSpec::setOnLocationChange);
++      prototype.registerHybridGetter("onNavigatedByUser", &HybridReadiumViewSpec::getOnNavigatedByUser);
++      prototype.registerHybridSetter("onNavigatedByUser", &HybridReadiumViewSpec::setOnNavigatedByUser);
 +      prototype.registerHybridGetter("onPublicationReady", &HybridReadiumViewSpec::getOnPublicationReady);
 +      prototype.registerHybridSetter("onPublicationReady", &HybridReadiumViewSpec::setOnPublicationReady);
 +      prototype.registerHybridGetter("onDecorationActivated", &HybridReadiumViewSpec::getOnDecorationActivated);
@@ -18300,10 +18640,10 @@ index 0000000000000000000000000000000000000000..2f7cbd6fcb2510d0dea27dfdb753da8e
 +} // namespace margelo::nitro::readium
 diff --git a/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp b/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..5a6bf8fec1b9c5a76e8b54efa888d923369453d9
+index 0000000000000000000000000000000000000000..42a18aff582345516fdcbcb8b37904fd26e5b855
 --- /dev/null
 +++ b/lib/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,154 @@
 +///
 +/// HybridReadiumViewSpec.hpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -18407,6 +18747,8 @@ index 0000000000000000000000000000000000000000..5a6bf8fec1b9c5a76e8b54efa888d923
 +      virtual void setSuppressNativeSelectionMenu(std::optional<bool> suppressNativeSelectionMenu) = 0;
 +      virtual std::optional<std::function<void(const Locator& /* locator */)>> getOnLocationChange() = 0;
 +      virtual void setOnLocationChange(const std::optional<std::function<void(const Locator& /* locator */)>>& onLocationChange) = 0;
++      virtual std::optional<std::function<void(const Locator& /* locator */)>> getOnNavigatedByUser() = 0;
++      virtual void setOnNavigatedByUser(const std::optional<std::function<void(const Locator& /* locator */)>>& onNavigatedByUser) = 0;
 +      virtual std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> getOnPublicationReady() = 0;
 +      virtual void setOnPublicationReady(const std::optional<std::function<void(const PublicationReadyEvent& /* event */)>>& onPublicationReady) = 0;
 +      virtual std::optional<std::function<void(const DecorationActivatedEvent& /* event */)>> getOnDecorationActivated() = 0;
@@ -20671,10 +21013,10 @@ index 0000000000000000000000000000000000000000..3a6183c225a3152a1981325614bd6b14
 +} // namespace margelo::nitro
 diff --git a/lib/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.cpp b/lib/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..e707206ef0c15121cd5542e364ef897a811f61a4
+index 0000000000000000000000000000000000000000..13f65ffacc67f8dbd30bed693f52f0825211249b
 --- /dev/null
 +++ b/lib/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.cpp
-@@ -0,0 +1,248 @@
+@@ -0,0 +1,259 @@
 +///
 +/// HybridReadiumViewComponent.cpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -20761,6 +21103,16 @@ index 0000000000000000000000000000000000000000..e707206ef0c15121cd5542e364ef897a
 +        return CachedProp<std::optional<std::function<void(const Locator& /* locator */)>>>::fromRawValue(*runtime, value.asObject(*runtime).getProperty(*runtime, PropNameIDCache::get(*runtime, "f")), sourceProps.onLocationChange);
 +      } catch (const std::exception& exc) {
 +        throw std::runtime_error(std::string("ReadiumView.onLocationChange: ") + exc.what());
++      }
++    }()),
++    onNavigatedByUser([&]() -> CachedProp<std::optional<std::function<void(const Locator& /* locator */)>>> {
++      try {
++        const react::RawValue* rawValue = rawProps.at("onNavigatedByUser", nullptr, nullptr);
++        if (rawValue == nullptr) return sourceProps.onNavigatedByUser;
++        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
++        return CachedProp<std::optional<std::function<void(const Locator& /* locator */)>>>::fromRawValue(*runtime, value.asObject(*runtime).getProperty(*runtime, PropNameIDCache::get(*runtime, "f")), sourceProps.onNavigatedByUser);
++      } catch (const std::exception& exc) {
++        throw std::runtime_error(std::string("ReadiumView.onNavigatedByUser: ") + exc.what());
 +      }
 +    }()),
 +    onPublicationReady([&]() -> CachedProp<std::optional<std::function<void(const PublicationReadyEvent& /* event */)>>> {
@@ -20882,6 +21234,7 @@ index 0000000000000000000000000000000000000000..e707206ef0c15121cd5542e364ef897a
 +      case hashString("selectionActions"): return true;
 +      case hashString("suppressNativeSelectionMenu"): return true;
 +      case hashString("onLocationChange"): return true;
++      case hashString("onNavigatedByUser"): return true;
 +      case hashString("onPublicationReady"): return true;
 +      case hashString("onDecorationActivated"): return true;
 +      case hashString("onSelectionChange"): return true;
@@ -20925,10 +21278,10 @@ index 0000000000000000000000000000000000000000..e707206ef0c15121cd5542e364ef897a
 +} // namespace margelo::nitro::readium::views
 diff --git a/lib/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.hpp b/lib/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.hpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..7b002f1f39f2e69aa0e0773a05ab45ffc0454049
+index 0000000000000000000000000000000000000000..7a3b556cbcb08a4df15636b4c552ec45eb291f2c
 --- /dev/null
 +++ b/lib/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.hpp
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,141 @@
 +///
 +/// HybridReadiumViewComponent.hpp
 +/// This file was generated by nitrogen. DO NOT MODIFY THIS FILE.
@@ -20993,6 +21346,7 @@ index 0000000000000000000000000000000000000000..7b002f1f39f2e69aa0e0773a05ab45ff
 +    CachedProp<std::optional<std::vector<SelectionAction>>> selectionActions;
 +    CachedProp<std::optional<bool>> suppressNativeSelectionMenu;
 +    CachedProp<std::optional<std::function<void(const Locator& /* locator */)>>> onLocationChange;
++    CachedProp<std::optional<std::function<void(const Locator& /* locator */)>>> onNavigatedByUser;
 +    CachedProp<std::optional<std::function<void(const PublicationReadyEvent& /* event */)>>> onPublicationReady;
 +    CachedProp<std::optional<std::function<void(const DecorationActivatedEvent& /* event */)>>> onDecorationActivated;
 +    CachedProp<std::optional<std::function<void(const SelectionEvent& /* event */)>>> onSelectionChange;
@@ -21070,10 +21424,10 @@ index 0000000000000000000000000000000000000000..7b002f1f39f2e69aa0e0773a05ab45ff
 +
 +} // namespace margelo::nitro::readium::views
 diff --git a/lib/nitrogen/generated/shared/json/ReadiumViewConfig.json b/lib/nitrogen/generated/shared/json/ReadiumViewConfig.json
-index 2dfa2f529d2f70db70ffecdb4df97c4d2fb5f9ec..a23698b8d55a25d1978c1725e4c8d5f9a4f17c2d 100644
+index 2dfa2f529d2f70db70ffecdb4df97c4d2fb5f9ec..0e23d7699b7c68ed11e562e862873c43af0caeed 100644
 --- a/lib/nitrogen/generated/shared/json/ReadiumViewConfig.json
 +++ b/lib/nitrogen/generated/shared/json/ReadiumViewConfig.json
-@@ -1,22 +1,25 @@
+@@ -1,22 +1,26 @@
  {
 -    "uiViewClassName": "ReadiumView",
 -    "supportsRawText": false,
@@ -21106,6 +21460,7 @@ index 2dfa2f529d2f70db70ffecdb4df97c4d2fb5f9ec..a23698b8d55a25d1978c1725e4c8d5f9
 +    "selectionActions": true,
 +    "suppressNativeSelectionMenu": true,
 +    "onLocationChange": true,
++    "onNavigatedByUser": true,
 +    "onPublicationReady": true,
 +    "onDecorationActivated": true,
 +    "onSelectionChange": true,
@@ -21120,7 +21475,7 @@ index 2dfa2f529d2f70db70ffecdb4df97c4d2fb5f9ec..a23698b8d55a25d1978c1725e4c8d5f9
 +  }
  }
 diff --git a/lib/src/components/ReadiumView.js b/lib/src/components/ReadiumView.js
-index 48decb736d8036732e04ebc4bb48937684295f44..6bb4e0cce9ef9b728e188e606c04c0af04655003 100644
+index 48decb736d8036732e04ebc4bb48937684295f44..1f03e1cc32fcf543f73eb67cad1575942c74e7c7 100644
 --- a/lib/src/components/ReadiumView.js
 +++ b/lib/src/components/ReadiumView.js
 @@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
@@ -21128,7 +21483,7 @@ index 48decb736d8036732e04ebc4bb48937684295f44..6bb4e0cce9ef9b728e188e606c04c0af
  import { buildLinkTree } from '../utils/buildLinkTree';
  import { NitroReadiumView } from './NitroReadiumView';
 -export const ReadiumView = forwardRef(({ onLocationChange, onPublicationReady, onDecorationActivated, onSelectionChange, onSelectionAction, onTTSStateChange, onTTSUtterance, onTTSError, preferences, decorations, selectionActions, ...props }, forwardedRef) => {
-+export const ReadiumView = forwardRef(({ onLocationChange, onPublicationReady, onDecorationActivated, onSelectionChange, onSelectionAction, onTTSStateChange, onTTSUtterance, onTTSError, onTTSSynthesisRequest, onTTSSynthesisCancel, onTTSUpcoming, preferences, decorations, selectionActions, ...props }, forwardedRef) => {
++export const ReadiumView = forwardRef(({ onLocationChange, onNavigatedByUser, onPublicationReady, onDecorationActivated, onSelectionChange, onSelectionAction, onTTSStateChange, onTTSUtterance, onTTSError, onTTSSynthesisRequest, onTTSSynthesisCancel, onTTSUpcoming, preferences, decorations, selectionActions, ...props }, forwardedRef) => {
      const hybridRef = useRef(null);
      const [{ height, width }, setDimensions] = useState({
          width: 0,
@@ -21158,12 +21513,12 @@ index 48decb736d8036732e04ebc4bb48937684295f44..6bb4e0cce9ef9b728e188e606c04c0af
      const isReady = width > 0 && height > 0;
      return (<View style={styles.container} onLayout={onLayout}>
 -        {isReady && (<NitroReadiumView style={{ width, height }} {...props} preferences={preferences} decorations={decorations} selectionActions={selectionActions ?? []} onLocationChange={callback(onLocationChange ?? noop)} onPublicationReady={callback(handlePublicationReady)} onDecorationActivated={callback(onDecorationActivated ?? noop)} onSelectionChange={callback(onSelectionChange ?? noop)} onSelectionAction={callback(onSelectionAction ?? noop)} onTTSStateChange={callback(onTTSStateChange ?? noop)} onTTSUtterance={callback(onTTSUtterance ?? noop)} onTTSError={callback(onTTSError ?? noop)} hybridRef={callback((ref) => {
-+        {isReady && (<NitroReadiumView style={{ width, height }} {...props} preferences={preferences} decorations={decorations} selectionActions={selectionActions ?? []} onLocationChange={callback(onLocationChange ?? noop)} onPublicationReady={callback(handlePublicationReady)} onDecorationActivated={callback(onDecorationActivated ?? noop)} onSelectionChange={callback(onSelectionChange ?? noop)} onSelectionAction={callback(onSelectionAction ?? noop)} onTTSStateChange={callback(onTTSStateChange ?? noop)} onTTSUtterance={callback(onTTSUtterance ?? noop)} onTTSError={callback(onTTSError ?? noop)} onTTSSynthesisRequest={callback(onTTSSynthesisRequest ?? noop)} onTTSSynthesisCancel={callback(onTTSSynthesisCancel ?? noop)} onTTSUpcoming={callback(onTTSUpcoming ?? noop)} hybridRef={callback((ref) => {
++        {isReady && (<NitroReadiumView style={{ width, height }} {...props} preferences={preferences} decorations={decorations} selectionActions={selectionActions ?? []} onLocationChange={callback(onLocationChange ?? noop)} onNavigatedByUser={callback(onNavigatedByUser ?? noop)} onPublicationReady={callback(handlePublicationReady)} onDecorationActivated={callback(onDecorationActivated ?? noop)} onSelectionChange={callback(onSelectionChange ?? noop)} onSelectionAction={callback(onSelectionAction ?? noop)} onTTSStateChange={callback(onTTSStateChange ?? noop)} onTTSUtterance={callback(onTTSUtterance ?? noop)} onTTSError={callback(onTTSError ?? noop)} onTTSSynthesisRequest={callback(onTTSSynthesisRequest ?? noop)} onTTSSynthesisCancel={callback(onTTSSynthesisCancel ?? noop)} onTTSUpcoming={callback(onTTSUpcoming ?? noop)} hybridRef={callback((ref) => {
                  hybridRef.current = ref;
              })}/>)}
        </View>);
 diff --git a/lib/src/components/ReadiumView.types.d.ts b/lib/src/components/ReadiumView.types.d.ts
-index c67e934e07e5965f7e7a52e17beb9e56f6323496..0ac7c0a593d68355208c4aeda522a31f17336a2f 100644
+index c67e934e07e5965f7e7a52e17beb9e56f6323496..b58533806e160ab6f83f298f047c745289f1d949 100644
 --- a/lib/src/components/ReadiumView.types.d.ts
 +++ b/lib/src/components/ReadiumView.types.d.ts
 @@ -1,4 +1,4 @@
@@ -21183,7 +21538,20 @@ index c67e934e07e5965f7e7a52e17beb9e56f6323496..0ac7c0a593d68355208c4aeda522a31f
  };
  export type ReadiumProps = {
      file: File;
-@@ -26,4 +30,7 @@ export type ReadiumProps = {
+@@ -19,6 +23,12 @@ export type ReadiumProps = {
+     suppressNativeSelectionMenu?: boolean;
+     style?: any;
+     onLocationChange?: (locator: Locator) => void;
++    /**
++     * The page moved because the reader's user moved it (a swipe, a key, an edge
++     * tap), not because the app asked (`goTo`, `goForward`, `goBackward`,
++     * read-aloud). Fires alongside `onLocationChange`, with the same locator.
++     */
++    onNavigatedByUser?: (locator: Locator) => void;
+     onPublicationReady?: (event: PublicationReadyEvent) => void;
+     onDecorationActivated?: (event: DecorationActivatedEvent) => void;
+     onSelectionChange?: (event: SelectionEvent) => void;
+@@ -26,4 +36,7 @@ export type ReadiumProps = {
      onTTSStateChange?: (state: TTSState) => void;
      onTTSUtterance?: (event: TTSUtteranceEvent) => void;
      onTTSError?: (error: string) => void;
@@ -21212,7 +21580,7 @@ index 4e1e8943c2bcabe032e7fb6ab13fec4b82239588..d064d58af11d482d7d01ae42a5818a2c
 -export type { TTSConfig, TTSState, TTSUtteranceEvent, } from '../specs/ReadiumView.nitro';
 +export type { TTSConfig, TTSState, TTSUtteranceEvent, TTSSynthesisRequest, TTSUpcomingEvent, } from '../specs/ReadiumView.nitro';
 diff --git a/lib/src/specs/ReadiumView.nitro.d.ts b/lib/src/specs/ReadiumView.nitro.d.ts
-index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..1272b633d1c40a27179ef6f5c08cf25ffe303e18 100644
+index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..4df327e59f330f5f758c527ede70f03cb81b06ab 100644
 --- a/lib/src/specs/ReadiumView.nitro.d.ts
 +++ b/lib/src/specs/ReadiumView.nitro.d.ts
 @@ -191,6 +191,21 @@ export interface TTSUtteranceEvent {
@@ -21237,7 +21605,20 @@ index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..1272b633d1c40a27179ef6f5c08cf25f
  export interface ReadiumFile {
      url: string;
      initialLocation?: Locator;
-@@ -209,6 +224,9 @@ export interface ReadiumViewProps extends HybridViewProps {
+@@ -202,6 +217,12 @@ export interface ReadiumViewProps extends HybridViewProps {
+     selectionActions?: SelectionAction[];
+     suppressNativeSelectionMenu?: boolean;
+     onLocationChange?: (locator: Locator) => void;
++    /**
++     * The page moved because the reader's user moved it (a swipe, a key, an edge
++     * tap), not because the app asked (`goTo`, `goForward`, `goBackward`,
++     * read-aloud). Fires alongside `onLocationChange`, with the same locator.
++     */
++    onNavigatedByUser?: (locator: Locator) => void;
+     onPublicationReady?: (event: PublicationReadyEvent) => void;
+     onDecorationActivated?: (event: DecorationActivatedEvent) => void;
+     onSelectionChange?: (event: SelectionEvent) => void;
+@@ -209,6 +230,9 @@ export interface ReadiumViewProps extends HybridViewProps {
      onTTSStateChange?: (state: TTSState) => void;
      onTTSUtterance?: (event: TTSUtteranceEvent) => void;
      onTTSError?: (error: string) => void;
@@ -21247,7 +21628,7 @@ index 51aa5c0f7cc16e4705545e7b5f3164d9b6313da4..1272b633d1c40a27179ef6f5c08cf25f
  }
  export interface ReadiumViewMethods extends HybridViewMethods {
      goTo(locator: Locator): void;
-@@ -222,5 +240,9 @@ export interface ReadiumViewMethods extends HybridViewMethods {
+@@ -222,5 +246,9 @@ export interface ReadiumViewMethods extends HybridViewMethods {
      ttsSetRate(rate: number): void;
      ttsSkipNext(): void;
      ttsSkipPrevious(): void;
@@ -22010,7 +22391,7 @@ index 28527978402d2aa67fdf3ed662fce7caaa251624..bf25ed462251b29a52da1e19a7190a3f
        registerHybrid({makeNativeMethod("invoke_cxx", JFunc_void_std__string_cxx::invoke_cxx)});
      }
 diff --git a/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp b/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
-index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..69036442c05dfebe4008521eec22593b1db78fa0 100644
+index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..7171991095938c63957960613aa3e059e33c20f9 100644
 --- a/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
 +++ b/nitrogen/generated/android/c++/JHybridReadiumViewSpec.cpp
 @@ -57,6 +57,10 @@ namespace margelo::nitro::readium { struct SelectionActionEvent; }
@@ -22114,7 +22495,31 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..69036442c05dfebe4008521eec22593b
    }
    std::optional<bool> JHybridReadiumViewSpec::getSuppressNativeSelectionMenu() {
      static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getSuppressNativeSelectionMenu");
-@@ -374,6 +386,57 @@ namespace margelo::nitro::readium {
+@@ -255,6 +267,23 @@ namespace margelo::nitro::readium {
+     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_Locator::javaobject> /* onLocationChange */)>("setOnLocationChange_cxx");
+     method(_javaPart, onLocationChange.has_value() ? JFunc_void_Locator_cxx::fromCpp(onLocationChange.value()) : nullptr);
+   }
++  std::optional<std::function<void(const Locator& /* locator */)>> JHybridReadiumViewSpec::getOnNavigatedByUser() {
++    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_Locator::javaobject>()>("getOnNavigatedByUser_cxx");
++    auto __result = method(_javaPart);
++    return __result != nullptr ? std::make_optional([&]() -> std::function<void(const Locator& /* locator */)> {
++      if (__result->isInstanceOf(JFunc_void_Locator_cxx::javaClassStatic())) [[likely]] {
++        auto downcast = jni::static_ref_cast<JFunc_void_Locator_cxx::javaobject>(__result);
++        return downcast->cthis()->getFunction();
++      } else {
++        auto __resultRef = jni::make_global(__result);
++        return JNICallable<JFunc_void_Locator, void(Locator)>(std::move(__resultRef));
++      }
++    }()) : std::nullopt;
++  }
++  void JHybridReadiumViewSpec::setOnNavigatedByUser(const std::optional<std::function<void(const Locator& /* locator */)>>& onNavigatedByUser) {
++    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_Locator::javaobject> /* onNavigatedByUser */)>("setOnNavigatedByUser_cxx");
++    method(_javaPart, onNavigatedByUser.has_value() ? JFunc_void_Locator_cxx::fromCpp(onNavigatedByUser.value()) : nullptr);
++  }
+   std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> JHybridReadiumViewSpec::getOnPublicationReady() {
+     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_PublicationReadyEvent::javaobject>()>("getOnPublicationReady_cxx");
+     auto __result = method(_javaPart);
+@@ -374,6 +403,57 @@ namespace margelo::nitro::readium {
      static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_std__string::javaobject> /* onTTSError */)>("setOnTTSError_cxx");
      method(_javaPart, onTTSError.has_value() ? JFunc_void_std__string_cxx::fromCpp(onTTSError.value()) : nullptr);
    }
@@ -22172,7 +22577,7 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..69036442c05dfebe4008521eec22593b
  
    // Methods
    void JHybridReadiumViewSpec::goTo(const Locator& locator) {
-@@ -420,5 +483,22 @@ namespace margelo::nitro::readium {
+@@ -420,5 +500,22 @@ namespace margelo::nitro::readium {
      static const auto method = _javaPart->javaClassStatic()->getMethod<void()>("ttsSkipPrevious");
      method(_javaPart);
    }
@@ -22196,7 +22601,7 @@ index 74ee42a521458a9c3b6cd30d654dd9d7fce2225c..69036442c05dfebe4008521eec22593b
  
  } // namespace margelo::nitro::readium
 diff --git a/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp b/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
-index d5ba5ac97c2f7f28d096c5e7b9836c3ade6b54c6..bf75e7bbf35fcb00d123da704071a87561ccf244 100644
+index d5ba5ac97c2f7f28d096c5e7b9836c3ade6b54c6..1a8b9906a608e0f32bb986f2740e22a5eb06e640 100644
 --- a/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
 +++ b/nitrogen/generated/android/c++/JHybridReadiumViewSpec.hpp
 @@ -21,11 +21,11 @@ namespace margelo::nitro::readium {
@@ -22213,7 +22618,16 @@ index d5ba5ac97c2f7f28d096c5e7b9836c3ade6b54c6..bf75e7bbf35fcb00d123da704071a875
        static jni::local_ref<jhybriddata> initHybrid(jni::alias_ref<jhybridobject> jThis);
        static void registerNatives();
        using HybridBase::HybridBase;
-@@ -76,6 +76,12 @@ namespace margelo::nitro::readium {
+@@ -62,6 +62,8 @@ namespace margelo::nitro::readium {
+     void setSuppressNativeSelectionMenu(std::optional<bool> suppressNativeSelectionMenu) override;
+     std::optional<std::function<void(const Locator& /* locator */)>> getOnLocationChange() override;
+     void setOnLocationChange(const std::optional<std::function<void(const Locator& /* locator */)>>& onLocationChange) override;
++    std::optional<std::function<void(const Locator& /* locator */)>> getOnNavigatedByUser() override;
++    void setOnNavigatedByUser(const std::optional<std::function<void(const Locator& /* locator */)>>& onNavigatedByUser) override;
+     std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> getOnPublicationReady() override;
+     void setOnPublicationReady(const std::optional<std::function<void(const PublicationReadyEvent& /* event */)>>& onPublicationReady) override;
+     std::optional<std::function<void(const DecorationActivatedEvent& /* event */)>> getOnDecorationActivated() override;
+@@ -76,6 +78,12 @@ namespace margelo::nitro::readium {
      void setOnTTSUtterance(const std::optional<std::function<void(const TTSUtteranceEvent& /* event */)>>& onTTSUtterance) override;
      std::optional<std::function<void(const std::string& /* error */)>> getOnTTSError() override;
      void setOnTTSError(const std::optional<std::function<void(const std::string& /* error */)>>& onTTSError) override;
@@ -22226,7 +22640,7 @@ index d5ba5ac97c2f7f28d096c5e7b9836c3ade6b54c6..bf75e7bbf35fcb00d123da704071a875
  
    public:
      // Methods
-@@ -90,6 +96,10 @@ namespace margelo::nitro::readium {
+@@ -90,6 +98,10 @@ namespace margelo::nitro::readium {
      void ttsSetRate(double rate) override;
      void ttsSkipNext() override;
      void ttsSkipPrevious() override;
@@ -23212,10 +23626,21 @@ index b22122c84a1773929629cd5f640be95870a0d4e7..4de5f6e9724d2f54f1ad5a5d89baa475
    public:
      /**
 diff --git a/nitrogen/generated/android/c++/views/JHybridReadiumViewStateUpdater.cpp b/nitrogen/generated/android/c++/views/JHybridReadiumViewStateUpdater.cpp
-index 93ae03df55ae3642df706ee7f2733bea955980ff..38b4652b49163aadb55526ac8447e79948ff4160 100644
+index 93ae03df55ae3642df706ee7f2733bea955980ff..fb74ff7237f0f647b17453355373b1cd40de6673 100644
 --- a/nitrogen/generated/android/c++/views/JHybridReadiumViewStateUpdater.cpp
 +++ b/nitrogen/generated/android/c++/views/JHybridReadiumViewStateUpdater.cpp
-@@ -89,6 +89,18 @@ void JHybridReadiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass>
+@@ -61,6 +61,10 @@ void JHybridReadiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass>
+     hybridView->setOnLocationChange(props->onLocationChange.value);
+     props->onLocationChange.isDirty = false;
+   }
++  if (props->onNavigatedByUser.isDirty) {
++    hybridView->setOnNavigatedByUser(props->onNavigatedByUser.value);
++    props->onNavigatedByUser.isDirty = false;
++  }
+   if (props->onPublicationReady.isDirty) {
+     hybridView->setOnPublicationReady(props->onPublicationReady.value);
+     props->onPublicationReady.isDirty = false;
+@@ -89,6 +93,18 @@ void JHybridReadiumViewStateUpdater::updateViewProps(jni::alias_ref<jni::JClass>
      hybridView->setOnTTSError(props->onTTSError.value);
      props->onTTSError.isDirty = false;
    }
@@ -23709,7 +24134,7 @@ index 0000000000000000000000000000000000000000..8feb483a644d140a61754777b28cc7dd
 +  }
 +}
 diff --git a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
-index 4f109c9f1b0973b00ec7691ebadc222279e4a17c..383b24d3739b3d445574a54c3dd9c6cd5dc19e8f 100644
+index 4f109c9f1b0973b00ec7691ebadc222279e4a17c..1e761ce2ae946e11771729474f21f6463e107304 100644
 --- a/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
 +++ b/nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativereadium/HybridReadiumViewSpec.kt
 @@ -10,6 +10,7 @@ package com.margelo.nitro.reactnativereadium
@@ -23720,7 +24145,28 @@ index 4f109c9f1b0973b00ec7691ebadc222279e4a17c..383b24d3739b3d445574a54c3dd9c6cd
  import com.margelo.nitro.core.HybridObject
  import com.margelo.nitro.views.HybridView
  
-@@ -167,6 +168,48 @@ abstract class HybridReadiumViewSpec: HybridView() {
+@@ -70,6 +71,20 @@ abstract class HybridReadiumViewSpec: HybridView() {
+       onLocationChange = value?.let { it }
+     }
+   
++  abstract var onNavigatedByUser: ((locator: Locator) -> Unit)?
++  
++  private var onNavigatedByUser_cxx: Func_void_Locator?
++    @Keep
++    @DoNotStrip
++    get() {
++      return onNavigatedByUser?.let { Func_void_Locator_java(it) }
++    }
++    @Keep
++    @DoNotStrip
++    set(value) {
++      onNavigatedByUser = value?.let { it }
++    }
++  
+   abstract var onPublicationReady: ((event: PublicationReadyEvent) -> Unit)?
+   
+   private var onPublicationReady_cxx: Func_void_PublicationReadyEvent?
+@@ -167,6 +182,48 @@ abstract class HybridReadiumViewSpec: HybridView() {
      set(value) {
        onTTSError = value?.let { it }
      }
@@ -23769,7 +24215,7 @@ index 4f109c9f1b0973b00ec7691ebadc222279e4a17c..383b24d3739b3d445574a54c3dd9c6cd
  
    // Methods
    @DoNotStrip
-@@ -212,6 +255,22 @@ abstract class HybridReadiumViewSpec: HybridView() {
+@@ -212,6 +269,22 @@ abstract class HybridReadiumViewSpec: HybridView() {
    @DoNotStrip
    @Keep
    abstract fun ttsSkipPrevious(): Unit
@@ -24911,7 +25357,7 @@ index 69182707549e0a0b5c36299df67b9a1a0bd398ce..5e8a3d1805ea582d64fb5a355e1b7075
  #include <exception>
  #include <functional>
 diff --git a/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp b/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
-index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..a6878bd0d8ae6e2513fcb5e68076462291bef5fa 100644
+index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..1df2b4a1c5552d7c84769c4ac28b41dde2afeec8 100644
 --- a/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
 +++ b/nitrogen/generated/ios/c++/HybridReadiumViewSpecSwift.hpp
 @@ -62,8 +62,14 @@ namespace margelo::nitro::readium { struct SelectionActionEvent; }
@@ -24941,7 +25387,21 @@ index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..a6878bd0d8ae6e2513fcb5e680764622
  
  #include "NitroReadium-Swift-Cxx-Umbrella.hpp"
  
-@@ -234,6 +244,27 @@ namespace margelo::nitro::readium {
+@@ -185,6 +195,13 @@ namespace margelo::nitro::readium {
+     inline void setOnLocationChange(const std::optional<std::function<void(const Locator& /* locator */)>>& onLocationChange) noexcept override {
+       _swiftPart.setOnLocationChange(onLocationChange);
+     }
++    inline std::optional<std::function<void(const Locator& /* locator */)>> getOnNavigatedByUser() noexcept override {
++      auto __result = _swiftPart.getOnNavigatedByUser();
++      return __result;
++    }
++    inline void setOnNavigatedByUser(const std::optional<std::function<void(const Locator& /* locator */)>>& onNavigatedByUser) noexcept override {
++      _swiftPart.setOnNavigatedByUser(onNavigatedByUser);
++    }
+     inline std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> getOnPublicationReady() noexcept override {
+       auto __result = _swiftPart.getOnPublicationReady();
+       return __result;
+@@ -234,6 +251,27 @@ namespace margelo::nitro::readium {
      inline void setOnTTSError(const std::optional<std::function<void(const std::string& /* error */)>>& onTTSError) noexcept override {
        _swiftPart.setOnTTSError(onTTSError);
      }
@@ -24969,7 +25429,7 @@ index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..a6878bd0d8ae6e2513fcb5e680764622
  
    public:
      // Methods
-@@ -303,6 +334,32 @@ namespace margelo::nitro::readium {
+@@ -303,6 +341,32 @@ namespace margelo::nitro::readium {
          std::rethrow_exception(__result.error());
        }
      }
@@ -25003,7 +25463,7 @@ index 1ee3c960c5ff38aad6a9d4db1ef98d867d0fa6fb..a6878bd0d8ae6e2513fcb5e680764622
    private:
      NitroReadium::HybridReadiumViewSpec_cxx _swiftPart;
 diff --git a/nitrogen/generated/ios/c++/views/HybridReadiumViewComponent.mm b/nitrogen/generated/ios/c++/views/HybridReadiumViewComponent.mm
-index ebb0e5ce5c0b25e7149dfd31c79197e1e4c48446..91ad336914d2f002c993c7145a9c2cef5baab0a9 100644
+index ebb0e5ce5c0b25e7149dfd31c79197e1e4c48446..926f44f459450511115cd59d3372986a94972399 100644
 --- a/nitrogen/generated/ios/c++/views/HybridReadiumViewComponent.mm
 +++ b/nitrogen/generated/ios/c++/views/HybridReadiumViewComponent.mm
 @@ -17,6 +17,13 @@
@@ -25020,7 +25480,19 @@ index ebb0e5ce5c0b25e7149dfd31c79197e1e4c48446..91ad336914d2f002c993c7145a9c2cef
  using namespace facebook;
  using namespace margelo::nitro::readium;
  using namespace margelo::nitro::readium::views;
-@@ -137,6 +144,21 @@ using namespace margelo::nitro::readium::views;
+@@ -102,6 +109,11 @@ using namespace margelo::nitro::readium::views;
+     swiftPart.setOnLocationChange(newViewProps.onLocationChange.value);
+     newViewProps.onLocationChange.isDirty = false;
+   }
++  // onNavigatedByUser: optional
++  if (newViewProps.onNavigatedByUser.isDirty) {
++    swiftPart.setOnNavigatedByUser(newViewProps.onNavigatedByUser.value);
++    newViewProps.onNavigatedByUser.isDirty = false;
++  }
+   // onPublicationReady: optional
+   if (newViewProps.onPublicationReady.isDirty) {
+     swiftPart.setOnPublicationReady(newViewProps.onPublicationReady.value);
+@@ -137,6 +149,21 @@ using namespace margelo::nitro::readium::views;
      swiftPart.setOnTTSError(newViewProps.onTTSError.value);
      newViewProps.onTTSError.isDirty = false;
    }
@@ -25042,7 +25514,7 @@ index ebb0e5ce5c0b25e7149dfd31c79197e1e4c48446..91ad336914d2f002c993c7145a9c2cef
  
    swiftPart.afterUpdate();
  
-@@ -164,4 +186,12 @@ using namespace margelo::nitro::readium::views;
+@@ -164,4 +191,12 @@ using namespace margelo::nitro::readium::views;
    swiftPart.maybePrepareForRecycle();
  }
  
@@ -25160,10 +25632,18 @@ index 0000000000000000000000000000000000000000..fcb8fbadf54fb72732f4de312bb0e6d1
 +  }
 +}
 diff --git a/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift b/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
-index 73adc8c488a59b3c4c2da1abe557338096f95072..adf188320af9d1bc927f9c667fed0ea34ddd3c99 100644
+index 73adc8c488a59b3c4c2da1abe557338096f95072..37cc2e873787029caa6cf62d886c8a1ac339078c 100644
 --- a/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
 +++ b/nitrogen/generated/ios/swift/HybridReadiumViewSpec.swift
-@@ -23,6 +23,9 @@ public protocol HybridReadiumViewSpec_protocol: HybridObject, HybridView {
+@@ -16,6 +16,7 @@ public protocol HybridReadiumViewSpec_protocol: HybridObject, HybridView {
+   var selectionActions: [SelectionAction]? { get set }
+   var suppressNativeSelectionMenu: Bool? { get set }
+   var onLocationChange: ((_ locator: Locator) -> Void)? { get set }
++  var onNavigatedByUser: ((_ locator: Locator) -> Void)? { get set }
+   var onPublicationReady: ((_ event: PublicationReadyEvent) -> Void)? { get set }
+   var onDecorationActivated: ((_ event: DecorationActivatedEvent) -> Void)? { get set }
+   var onSelectionChange: ((_ event: SelectionEvent) -> Void)? { get set }
+@@ -23,6 +24,9 @@ public protocol HybridReadiumViewSpec_protocol: HybridObject, HybridView {
    var onTTSStateChange: ((_ state: TTSState) -> Void)? { get set }
    var onTTSUtterance: ((_ event: TTSUtteranceEvent) -> Void)? { get set }
    var onTTSError: ((_ error: String) -> Void)? { get set }
@@ -25173,7 +25653,7 @@ index 73adc8c488a59b3c4c2da1abe557338096f95072..adf188320af9d1bc927f9c667fed0ea3
  
    // Methods
    func goTo(locator: Locator) throws -> Void
-@@ -36,6 +39,10 @@ public protocol HybridReadiumViewSpec_protocol: HybridObject, HybridView {
+@@ -36,6 +40,10 @@ public protocol HybridReadiumViewSpec_protocol: HybridObject, HybridView {
    func ttsSetRate(rate: Double) throws -> Void
    func ttsSkipNext() throws -> Void
    func ttsSkipPrevious() throws -> Void
@@ -25185,10 +25665,49 @@ index 73adc8c488a59b3c4c2da1abe557338096f95072..adf188320af9d1bc927f9c667fed0ea3
  
  public extension HybridReadiumViewSpec_protocol {
 diff --git a/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift b/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
-index 49b44099332a85865196d6146e9d6a8ecdfb7c18..d7f95062b9c5fc1a15b396d838f1ce8454d3b8c9 100644
+index 49b44099332a85865196d6146e9d6a8ecdfb7c18..1f904bec89c461b85bde878349e7adc6ac55efd4 100644
 --- a/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
 +++ b/nitrogen/generated/ios/swift/HybridReadiumViewSpec_cxx.swift
-@@ -494,6 +494,102 @@ open class HybridReadiumViewSpec_cxx {
+@@ -271,6 +271,38 @@ open class HybridReadiumViewSpec_cxx {
+     }
+   }
+   
++  public final var onNavigatedByUser: bridge.std__optional_std__function_void_const_Locator_____locator______ {
++    @inline(__always)
++    get {
++      return { () -> bridge.std__optional_std__function_void_const_Locator_____locator______ in
++        if let __unwrappedValue = self.__implementation.onNavigatedByUser {
++          return bridge.create_std__optional_std__function_void_const_Locator_____locator______({ () -> bridge.Func_void_Locator in
++            let __closureWrapper = Func_void_Locator(__unwrappedValue)
++            return bridge.create_Func_void_Locator(__closureWrapper.toUnsafe())
++          }())
++        } else {
++          return .init()
++        }
++      }()
++    }
++    @inline(__always)
++    set {
++      self.__implementation.onNavigatedByUser = { () -> ((_ locator: Locator) -> Void)? in
++        if bridge.has_value_std__optional_std__function_void_const_Locator_____locator______(newValue) {
++          let __unwrapped = bridge.get_std__optional_std__function_void_const_Locator_____locator______(newValue)
++          return { () -> (Locator) -> Void in
++            let __wrappedFunction = bridge.wrap_Func_void_Locator(__unwrapped)
++            return { (__locator: Locator) -> Void in
++              __wrappedFunction.call(__locator)
++            }
++          }()
++        } else {
++          return nil
++        }
++      }()
++    }
++  }
++  
+   public final var onPublicationReady: bridge.std__optional_std__function_void_const_PublicationReadyEvent_____event______ {
+     @inline(__always)
+     get {
+@@ -494,6 +526,102 @@ open class HybridReadiumViewSpec_cxx {
        }()
      }
    }
@@ -25291,7 +25810,7 @@ index 49b44099332a85865196d6146e9d6a8ecdfb7c18..d7f95062b9c5fc1a15b396d838f1ce84
  
    // Methods
    @inline(__always)
-@@ -617,6 +713,51 @@ open class HybridReadiumViewSpec_cxx {
+@@ -617,6 +745,51 @@ open class HybridReadiumViewSpec_cxx {
      }
    }
    
@@ -25343,7 +25862,7 @@ index 49b44099332a85865196d6146e9d6a8ecdfb7c18..d7f95062b9c5fc1a15b396d838f1ce84
    public final func getView() -> UnsafeMutableRawPointer {
      return Unmanaged.passRetained(__implementation.view).toOpaque()
    }
-@@ -633,4 +774,8 @@ open class HybridReadiumViewSpec_cxx {
+@@ -633,4 +806,8 @@ open class HybridReadiumViewSpec_cxx {
      guard let recyclable = __implementation as? any RecyclableView else { return }
      recyclable.prepareForRecycle()
    }
@@ -25493,10 +26012,19 @@ index 0000000000000000000000000000000000000000..2d52c4fe3dd5956c079ee6195dcb5ea9
 +  }
 +}
 diff --git a/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp b/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
-index e637a969e0d09ef994a79cb68a0785a611fb3bf0..2f7cbd6fcb2510d0dea27dfdb753da8eca3c6703 100644
+index e637a969e0d09ef994a79cb68a0785a611fb3bf0..27bf99b9499840f2b28ae893722e08b954da88a2 100644
 --- a/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
 +++ b/nitrogen/generated/shared/c++/HybridReadiumViewSpec.cpp
-@@ -40,6 +40,12 @@ namespace margelo::nitro::readium {
+@@ -26,6 +26,8 @@ namespace margelo::nitro::readium {
+       prototype.registerHybridSetter("suppressNativeSelectionMenu", &HybridReadiumViewSpec::setSuppressNativeSelectionMenu);
+       prototype.registerHybridGetter("onLocationChange", &HybridReadiumViewSpec::getOnLocationChange);
+       prototype.registerHybridSetter("onLocationChange", &HybridReadiumViewSpec::setOnLocationChange);
++      prototype.registerHybridGetter("onNavigatedByUser", &HybridReadiumViewSpec::getOnNavigatedByUser);
++      prototype.registerHybridSetter("onNavigatedByUser", &HybridReadiumViewSpec::setOnNavigatedByUser);
+       prototype.registerHybridGetter("onPublicationReady", &HybridReadiumViewSpec::getOnPublicationReady);
+       prototype.registerHybridSetter("onPublicationReady", &HybridReadiumViewSpec::setOnPublicationReady);
+       prototype.registerHybridGetter("onDecorationActivated", &HybridReadiumViewSpec::getOnDecorationActivated);
+@@ -40,6 +42,12 @@ namespace margelo::nitro::readium {
        prototype.registerHybridSetter("onTTSUtterance", &HybridReadiumViewSpec::setOnTTSUtterance);
        prototype.registerHybridGetter("onTTSError", &HybridReadiumViewSpec::getOnTTSError);
        prototype.registerHybridSetter("onTTSError", &HybridReadiumViewSpec::setOnTTSError);
@@ -25509,7 +26037,7 @@ index e637a969e0d09ef994a79cb68a0785a611fb3bf0..2f7cbd6fcb2510d0dea27dfdb753da8e
        prototype.registerHybridMethod("goTo", &HybridReadiumViewSpec::goTo);
        prototype.registerHybridMethod("goForward", &HybridReadiumViewSpec::goForward);
        prototype.registerHybridMethod("goBackward", &HybridReadiumViewSpec::goBackward);
-@@ -51,6 +57,10 @@ namespace margelo::nitro::readium {
+@@ -51,6 +59,10 @@ namespace margelo::nitro::readium {
        prototype.registerHybridMethod("ttsSetRate", &HybridReadiumViewSpec::ttsSetRate);
        prototype.registerHybridMethod("ttsSkipNext", &HybridReadiumViewSpec::ttsSkipNext);
        prototype.registerHybridMethod("ttsSkipPrevious", &HybridReadiumViewSpec::ttsSkipPrevious);
@@ -25521,7 +26049,7 @@ index e637a969e0d09ef994a79cb68a0785a611fb3bf0..2f7cbd6fcb2510d0dea27dfdb753da8e
    }
  
 diff --git a/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp b/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
-index 46b00aff3941c6335235f5933759955a4d94797b..5a6bf8fec1b9c5a76e8b54efa888d923369453d9 100644
+index 46b00aff3941c6335235f5933759955a4d94797b..42a18aff582345516fdcbcb8b37904fd26e5b855 100644
 --- a/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
 +++ b/nitrogen/generated/shared/c++/HybridReadiumViewSpec.hpp
 @@ -35,6 +35,10 @@ namespace margelo::nitro::readium { struct SelectionActionEvent; }
@@ -25546,7 +26074,16 @@ index 46b00aff3941c6335235f5933759955a4d94797b..5a6bf8fec1b9c5a76e8b54efa888d923
  
  namespace margelo::nitro::readium {
  
-@@ -108,6 +115,12 @@ namespace margelo::nitro::readium {
+@@ -94,6 +101,8 @@ namespace margelo::nitro::readium {
+       virtual void setSuppressNativeSelectionMenu(std::optional<bool> suppressNativeSelectionMenu) = 0;
+       virtual std::optional<std::function<void(const Locator& /* locator */)>> getOnLocationChange() = 0;
+       virtual void setOnLocationChange(const std::optional<std::function<void(const Locator& /* locator */)>>& onLocationChange) = 0;
++      virtual std::optional<std::function<void(const Locator& /* locator */)>> getOnNavigatedByUser() = 0;
++      virtual void setOnNavigatedByUser(const std::optional<std::function<void(const Locator& /* locator */)>>& onNavigatedByUser) = 0;
+       virtual std::optional<std::function<void(const PublicationReadyEvent& /* event */)>> getOnPublicationReady() = 0;
+       virtual void setOnPublicationReady(const std::optional<std::function<void(const PublicationReadyEvent& /* event */)>>& onPublicationReady) = 0;
+       virtual std::optional<std::function<void(const DecorationActivatedEvent& /* event */)>> getOnDecorationActivated() = 0;
+@@ -108,6 +117,12 @@ namespace margelo::nitro::readium {
        virtual void setOnTTSUtterance(const std::optional<std::function<void(const TTSUtteranceEvent& /* event */)>>& onTTSUtterance) = 0;
        virtual std::optional<std::function<void(const std::string& /* error */)>> getOnTTSError() = 0;
        virtual void setOnTTSError(const std::optional<std::function<void(const std::string& /* error */)>>& onTTSError) = 0;
@@ -25559,7 +26096,7 @@ index 46b00aff3941c6335235f5933759955a4d94797b..5a6bf8fec1b9c5a76e8b54efa888d923
  
      public:
        // Methods
-@@ -122,6 +135,10 @@ namespace margelo::nitro::readium {
+@@ -122,6 +137,10 @@ namespace margelo::nitro::readium {
        virtual void ttsSetRate(double rate) = 0;
        virtual void ttsSkipNext() = 0;
        virtual void ttsSkipPrevious() = 0;
@@ -25771,10 +26308,27 @@ index 0000000000000000000000000000000000000000..d1fd60d77a4e6530b38b86e8b7ac4987
 +
 +} // namespace margelo::nitro
 diff --git a/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.cpp b/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.cpp
-index e7757d9d31cd001e23eaf1bea8a048114ef60b56..e707206ef0c15121cd5542e364ef897a811f61a4 100644
+index e7757d9d31cd001e23eaf1bea8a048114ef60b56..13f65ffacc67f8dbd30bed693f52f0825211249b 100644
 --- a/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.cpp
 +++ b/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.cpp
-@@ -156,6 +156,36 @@ namespace margelo::nitro::readium::views {
+@@ -86,6 +86,16 @@ namespace margelo::nitro::readium::views {
+         throw std::runtime_error(std::string("ReadiumView.onLocationChange: ") + exc.what());
+       }
+     }()),
++    onNavigatedByUser([&]() -> CachedProp<std::optional<std::function<void(const Locator& /* locator */)>>> {
++      try {
++        const react::RawValue* rawValue = rawProps.at("onNavigatedByUser", nullptr, nullptr);
++        if (rawValue == nullptr) return sourceProps.onNavigatedByUser;
++        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
++        return CachedProp<std::optional<std::function<void(const Locator& /* locator */)>>>::fromRawValue(*runtime, value.asObject(*runtime).getProperty(*runtime, PropNameIDCache::get(*runtime, "f")), sourceProps.onNavigatedByUser);
++      } catch (const std::exception& exc) {
++        throw std::runtime_error(std::string("ReadiumView.onNavigatedByUser: ") + exc.what());
++      }
++    }()),
+     onPublicationReady([&]() -> CachedProp<std::optional<std::function<void(const PublicationReadyEvent& /* event */)>>> {
+       try {
+         const react::RawValue* rawValue = rawProps.at("onPublicationReady", nullptr, nullptr);
+@@ -156,6 +166,36 @@ namespace margelo::nitro::readium::views {
          throw std::runtime_error(std::string("ReadiumView.onTTSError: ") + exc.what());
        }
      }()),
@@ -25811,7 +26365,15 @@ index e7757d9d31cd001e23eaf1bea8a048114ef60b56..e707206ef0c15121cd5542e364ef897a
      hybridRef([&]() -> CachedProp<std::optional<std::function<void(const std::shared_ptr<HybridReadiumViewSpec>& /* ref */)>>> {
        try {
          const react::RawValue* rawValue = rawProps.at("hybridRef", nullptr, nullptr);
-@@ -182,6 +212,9 @@ namespace margelo::nitro::readium::views {
+@@ -175,6 +215,7 @@ namespace margelo::nitro::readium::views {
+       case hashString("selectionActions"): return true;
+       case hashString("suppressNativeSelectionMenu"): return true;
+       case hashString("onLocationChange"): return true;
++      case hashString("onNavigatedByUser"): return true;
+       case hashString("onPublicationReady"): return true;
+       case hashString("onDecorationActivated"): return true;
+       case hashString("onSelectionChange"): return true;
+@@ -182,6 +223,9 @@ namespace margelo::nitro::readium::views {
        case hashString("onTTSStateChange"): return true;
        case hashString("onTTSUtterance"): return true;
        case hashString("onTTSError"): return true;
@@ -25822,7 +26384,7 @@ index e7757d9d31cd001e23eaf1bea8a048114ef60b56..e707206ef0c15121cd5542e364ef897a
        default: return false;
      }
 diff --git a/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.hpp b/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.hpp
-index 5d91be19a52883ff577e545072a6356303df757d..7b002f1f39f2e69aa0e0773a05ab45ffc0454049 100644
+index 5d91be19a52883ff577e545072a6356303df757d..7a3b556cbcb08a4df15636b4c552ec45eb291f2c 100644
 --- a/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.hpp
 +++ b/nitrogen/generated/shared/c++/views/HybridReadiumViewComponent.hpp
 @@ -31,6 +31,8 @@
@@ -25834,7 +26396,15 @@ index 5d91be19a52883ff577e545072a6356303df757d..7b002f1f39f2e69aa0e0773a05ab45ff
  #include <memory>
  #include "HybridReadiumViewSpec.hpp"
  
-@@ -67,6 +69,9 @@ namespace margelo::nitro::readium::views {
+@@ -60,6 +62,7 @@ namespace margelo::nitro::readium::views {
+     CachedProp<std::optional<std::vector<SelectionAction>>> selectionActions;
+     CachedProp<std::optional<bool>> suppressNativeSelectionMenu;
+     CachedProp<std::optional<std::function<void(const Locator& /* locator */)>>> onLocationChange;
++    CachedProp<std::optional<std::function<void(const Locator& /* locator */)>>> onNavigatedByUser;
+     CachedProp<std::optional<std::function<void(const PublicationReadyEvent& /* event */)>>> onPublicationReady;
+     CachedProp<std::optional<std::function<void(const DecorationActivatedEvent& /* event */)>>> onDecorationActivated;
+     CachedProp<std::optional<std::function<void(const SelectionEvent& /* event */)>>> onSelectionChange;
+@@ -67,6 +70,9 @@ namespace margelo::nitro::readium::views {
      CachedProp<std::optional<std::function<void(const TTSState& /* state */)>>> onTTSStateChange;
      CachedProp<std::optional<std::function<void(const TTSUtteranceEvent& /* event */)>>> onTTSUtterance;
      CachedProp<std::optional<std::function<void(const std::string& /* error */)>>> onTTSError;
@@ -25845,10 +26415,18 @@ index 5d91be19a52883ff577e545072a6356303df757d..7b002f1f39f2e69aa0e0773a05ab45ff
  
    private:
 diff --git a/nitrogen/generated/shared/json/ReadiumViewConfig.json b/nitrogen/generated/shared/json/ReadiumViewConfig.json
-index fdc9d3100e0605f724fd09898e437b39c777d973..a23698b8d55a25d1978c1725e4c8d5f9a4f17c2d 100644
+index fdc9d3100e0605f724fd09898e437b39c777d973..0e23d7699b7c68ed11e562e862873c43af0caeed 100644
 --- a/nitrogen/generated/shared/json/ReadiumViewConfig.json
 +++ b/nitrogen/generated/shared/json/ReadiumViewConfig.json
-@@ -17,6 +17,9 @@
+@@ -10,6 +10,7 @@
+     "selectionActions": true,
+     "suppressNativeSelectionMenu": true,
+     "onLocationChange": true,
++    "onNavigatedByUser": true,
+     "onPublicationReady": true,
+     "onDecorationActivated": true,
+     "onSelectionChange": true,
+@@ -17,6 +18,9 @@
      "onTTSStateChange": true,
      "onTTSUtterance": true,
      "onTTSError": true,
@@ -25859,10 +26437,18 @@ index fdc9d3100e0605f724fd09898e437b39c777d973..a23698b8d55a25d1978c1725e4c8d5f9
    }
  }
 diff --git a/src/components/ReadiumView.tsx b/src/components/ReadiumView.tsx
-index 1a0e8180a7247f8a945207da5eb43a6102849ea7..0c54a4f9285356031f7fdd5b11bf1b87760e0bee 100644
+index 1a0e8180a7247f8a945207da5eb43a6102849ea7..4276730b696c1064afe65c5fd9a89b6a7cd2cdeb 100644
 --- a/src/components/ReadiumView.tsx
 +++ b/src/components/ReadiumView.tsx
-@@ -27,6 +27,9 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
+@@ -20,6 +20,7 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
+   (
+     {
+       onLocationChange,
++      onNavigatedByUser,
+       onPublicationReady,
+       onDecorationActivated,
+       onSelectionChange,
+@@ -27,6 +28,9 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
        onTTSStateChange,
        onTTSUtterance,
        onTTSError,
@@ -25872,7 +26458,7 @@ index 1a0e8180a7247f8a945207da5eb43a6102849ea7..0c54a4f9285356031f7fdd5b11bf1b87
        preferences,
        decorations,
        selectionActions,
-@@ -80,6 +83,23 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
+@@ -80,6 +84,23 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
          ttsSetRate: (rate) => hybridRef.current?.ttsSetRate(rate),
          ttsSkipNext: () => hybridRef.current?.ttsSkipNext(),
          ttsSkipPrevious: () => hybridRef.current?.ttsSkipPrevious(),
@@ -25896,7 +26482,15 @@ index 1a0e8180a7247f8a945207da5eb43a6102849ea7..0c54a4f9285356031f7fdd5b11bf1b87
        }),
        []
      );
-@@ -109,6 +129,9 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
+@@ -102,6 +123,7 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
+             decorations={decorations}
+             selectionActions={selectionActions ?? []}
+             onLocationChange={callback(onLocationChange ?? noop)}
++            onNavigatedByUser={callback(onNavigatedByUser ?? noop)}
+             onPublicationReady={callback(handlePublicationReady)}
+             onDecorationActivated={callback(onDecorationActivated ?? noop)}
+             onSelectionChange={callback(onSelectionChange ?? noop)}
+@@ -109,6 +131,9 @@ export const ReadiumView = forwardRef<ReadiumViewRef, ReadiumProps>(
              onTTSStateChange={callback(onTTSStateChange ?? noop)}
              onTTSUtterance={callback(onTTSUtterance ?? noop)}
              onTTSError={callback(onTTSError ?? noop)}
@@ -25907,7 +26501,7 @@ index 1a0e8180a7247f8a945207da5eb43a6102849ea7..0c54a4f9285356031f7fdd5b11bf1b87
                hybridRef.current = ref;
              })}
 diff --git a/src/components/ReadiumView.types.ts b/src/components/ReadiumView.types.ts
-index 9307c2db0d84519fb13c7f2aa9310350ce67fed2..d09621b6ce5a86c8a0b26ab0f50a01385f0d13fb 100644
+index 9307c2db0d84519fb13c7f2aa9310350ce67fed2..b30608fcd13b5e2cd8b00238d01f1a6151ec646e 100644
 --- a/src/components/ReadiumView.types.ts
 +++ b/src/components/ReadiumView.types.ts
 @@ -11,6 +11,8 @@ import type {
@@ -25932,7 +26526,20 @@ index 9307c2db0d84519fb13c7f2aa9310350ce67fed2..d09621b6ce5a86c8a0b26ab0f50a0138
  };
  
  export type ReadiumProps = {
-@@ -41,4 +49,8 @@ export type ReadiumProps = {
+@@ -34,6 +42,12 @@ export type ReadiumProps = {
+   suppressNativeSelectionMenu?: boolean;
+   style?: any;
+   onLocationChange?: (locator: Locator) => void;
++  /**
++   * The page moved because the reader's user moved it (a swipe, a key, an edge
++   * tap), not because the app asked (`goTo`, `goForward`, `goBackward`,
++   * read-aloud). Fires alongside `onLocationChange`, with the same locator.
++   */
++  onNavigatedByUser?: (locator: Locator) => void;
+   onPublicationReady?: (event: PublicationReadyEvent) => void;
+   onDecorationActivated?: (event: DecorationActivatedEvent) => void;
+   onSelectionChange?: (event: SelectionEvent) => void;
+@@ -41,4 +55,8 @@ export type ReadiumProps = {
    onTTSStateChange?: (state: TTSState) => void;
    onTTSUtterance?: (event: TTSUtteranceEvent) => void;
    onTTSError?: (error: string) => void;
@@ -25965,7 +26572,7 @@ index 06b8fd65a525584fcf9a27548dd4d418ee4b2e60..ad85c433e7368b0b861787cd07d3aa91
 +  TTSUpcomingEvent,
  } from '../specs/ReadiumView.nitro';
 diff --git a/src/specs/ReadiumView.nitro.ts b/src/specs/ReadiumView.nitro.ts
-index 27d61c141971f707c4a249ef9f25c62570d2fd83..189cde1ccf2323e79bcfb00bdd793a640df32380 100644
+index 27d61c141971f707c4a249ef9f25c62570d2fd83..08a9ce0888dc79a088043cb75b125ecfaae76800 100644
 --- a/src/specs/ReadiumView.nitro.ts
 +++ b/src/specs/ReadiumView.nitro.ts
 @@ -239,6 +239,35 @@ export interface TTSUtteranceEvent {
@@ -26004,7 +26611,20 @@ index 27d61c141971f707c4a249ef9f25c62570d2fd83..189cde1ccf2323e79bcfb00bdd793a64
  // ── File ─────────────────────────────────────────────────────────────────────
  
  export interface ReadiumFile {
-@@ -262,6 +291,11 @@ export interface ReadiumViewProps extends HybridViewProps {
+@@ -255,6 +284,12 @@ export interface ReadiumViewProps extends HybridViewProps {
+   selectionActions?: SelectionAction[];
+   suppressNativeSelectionMenu?: boolean;
+   onLocationChange?: (locator: Locator) => void;
++  /**
++   * The page moved because the reader's user moved it (a swipe, a key, an edge
++   * tap), not because the app asked (`goTo`, `goForward`, `goBackward`,
++   * read-aloud). Fires alongside `onLocationChange`, with the same locator.
++   */
++  onNavigatedByUser?: (locator: Locator) => void;
+   onPublicationReady?: (event: PublicationReadyEvent) => void;
+   onDecorationActivated?: (event: DecorationActivatedEvent) => void;
+   onSelectionChange?: (event: SelectionEvent) => void;
+@@ -262,6 +297,11 @@ export interface ReadiumViewProps extends HybridViewProps {
    onTTSStateChange?: (state: TTSState) => void;
    onTTSUtterance?: (event: TTSUtteranceEvent) => void;
    onTTSError?: (error: string) => void;
@@ -26016,7 +26636,7 @@ index 27d61c141971f707c4a249ef9f25c62570d2fd83..189cde1ccf2323e79bcfb00bdd793a64
  }
  
  export interface ReadiumViewMethods extends HybridViewMethods {
-@@ -276,6 +310,18 @@ export interface ReadiumViewMethods extends HybridViewMethods {
+@@ -276,6 +316,18 @@ export interface ReadiumViewMethods extends HybridViewMethods {
    ttsSetRate(rate: number): void;
    ttsSkipNext(): void;
    ttsSkipPrevious(): void;

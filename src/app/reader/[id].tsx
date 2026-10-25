@@ -71,8 +71,8 @@ import {
 // for it, and an under-guess is invisible in code and very visible on a page.
 const HEADER_CONTENT_HEIGHT = READER_HEADER_HEIGHT;
 
-/** How long the reading placeholder is held after Readium reports the
- * publication — see `readerPainted`. Measured, not guessed. */
+/** How long the reading placeholder is held after Readium first reports
+ * where it is — see `readerPainted`. Measured, not guessed. */
 const PAINT_GRACE_MS = 450;
 
 // Reserved space above the bottom safe area for the floating TTS controls /
@@ -175,21 +175,23 @@ export default function ReaderScreen() {
   const [preJumpLocator, setPreJumpLocator] = useState<Locator | null>(null);
   const [publicationReady, setPublicationReady] = useState(false);
 
+  /** Readium has said where it is: the first location report since the book opened. */
+  const [readerLocated, setReaderLocated] = useState(false);
+
   /**
    * Whether Readium has had time to actually draw a page behind the cover.
    *
-   * `publicationReady` says the publication is loaded, not that anything has
-   * been painted with it — measured on an A33, the first text lands roughly
-   * 450ms later. Dropping the cover on that signal, or a frame or two after
-   * it, let the skeleton leave before the passage arrived: the blank between
-   * them.
+   * Neither signal Readium gives is "painted". `publicationReady` says the
+   * publication is loaded, and the first location report can come later
+   * still: a cover timed from `publicationReady` lifted on a blank page that
+   * then drew wherever Readium was landing. The location report says it knows
+   * *where* it is, which happens before it has drawn anything — measured on
+   * an A33, the text lands roughly 450ms after it.
    *
-   * `onLocationChange` looked like the honest signal and is worse — it reports
-   * that Readium knows *where* it is, which happens before it has drawn
-   * anything, so it uncovers even earlier.
-   *
-   * So this is a measured wait rather than an event, which is worth being
-   * plain about: there is no "first paint" callback on the view to hang it on.
+   * So the cover waits for the report and then that measured time, which is
+   * worth being plain about: there is no "first paint" callback on the view
+   * to hang it on. A book being read along is moved to the voice at the
+   * report (`useReadAlong`), so that move lands under the cover too.
    * Overshooting is close to free — the cover is a placeholder the reader is
    * already looking at — while undershooting is the flash this exists to
    * remove, so the number leans long. Re-measure if the reader's mount path
@@ -201,10 +203,10 @@ export default function ReaderScreen() {
   // here, so this effect only ever schedules — an effect that also writes state
   // synchronously is the cascading-render pattern the compiler warns about.
   useEffect(() => {
-    if (!publicationReady) return undefined;
+    if (!publicationReady || !readerLocated) return undefined;
     const timer = setTimeout(() => setReaderPainted(true), PAINT_GRACE_MS);
     return () => clearTimeout(timer);
-  }, [publicationReady]);
+  }, [publicationReady, readerLocated]);
   // Bookmark note prompt — shown after adding a bookmark
   const [bookmarkNotePrompt, setBookmarkNotePrompt] = useState<{
     id: string;
@@ -216,7 +218,8 @@ export default function ReaderScreen() {
   const isTTSActive = ttsState !== null;
   // A book being heard in the player: the reader follows its voice, and its
   // read-aloud controls are the player's.
-  const readAlong = useReadAlong({ bookId: id, readerRef, ready: readerPainted, tint: asColor(primary) ?? "#f2ca50" });
+  const readAlong = useReadAlong({ bookId: id, readerRef, ready: readerLocated, tint: asColor(primary) ?? "#f2ca50" });
+  const detachReadAlong = readAlong.detach;
   const speaking = readAlong.following ? readAlong.controls.active : isTTSActive;
   // Tracks the last known TTS utterance locator
   const ttsLastLocatorRef = useRef<Locator | null>(null);
@@ -291,6 +294,7 @@ export default function ReaderScreen() {
 
   useEffect(() => {
     setPublicationReady(false);
+    setReaderLocated(false);
     setReaderPainted(false);
     if (id) openBook(id);
     return () => closeBook();
@@ -346,6 +350,7 @@ export default function ReaderScreen() {
   const handleLocationChange = useCallback(
     (loc: Locator) => {
       currentLocatorRef.current = loc;
+      setReaderLocated(true);
       updateProgress(loc);
       readAlong.onLocationChange(loc);
       // Detect mismatch: TTS is paused but user navigated away (different chapter OR page)
@@ -535,6 +540,7 @@ export default function ReaderScreen() {
         (currentLocator.href.includes(link.href.split("#")[0]) ||
           link.href.split("#")[0].endsWith(currentLocator.href.split("#")[0]));
       if (currentLocator && !sameChapter) setPreJumpLocator(currentLocator);
+      detachReadAlong();
       readerRef.current?.goTo({
         href: link.href,
         type: "application/xhtml+xml",
@@ -542,7 +548,7 @@ export default function ReaderScreen() {
       setShowToc(false);
       showHeader();
     },
-    [currentLocator, showHeader],
+    [currentLocator, showHeader, detachReadAlong],
   );
 
   const handleHighlightPress = useCallback(
@@ -552,11 +558,12 @@ export default function ReaderScreen() {
         currentLocator?.locations?.position === locator.locations?.position &&
         currentLocator?.href === locator.href;
       if (currentLocator && !samePage) setPreJumpLocator(currentLocator);
+      detachReadAlong();
       readerRef.current?.goTo(locator);
       setShowToc(false);
       showHeader();
     },
-    [currentLocator, showHeader],
+    [currentLocator, showHeader, detachReadAlong],
   );
 
   const handleReturnToProgress = useCallback(() => {
@@ -759,11 +766,12 @@ export default function ReaderScreen() {
         currentLocator?.locations?.position === locator.locations?.position &&
         currentLocator?.href === locator.href;
       if (currentLocator && !samePage) setPreJumpLocator(currentLocator);
+      detachReadAlong();
       readerRef.current?.goTo(locator);
       setShowToc(false);
       showHeader();
     },
-    [currentLocator, showHeader],
+    [currentLocator, showHeader, detachReadAlong],
   );
 
   // TTS decoration is now applied natively (BaseReaderFragment / HybridReadiumView),
@@ -925,6 +933,7 @@ export default function ReaderScreen() {
             selectionActions={selectionActions}
             suppressNativeSelectionMenu={true}
             onLocationChange={handleLocationChange}
+            onNavigatedByUser={detachReadAlong}
             onPublicationReady={handlePublicationReady}
             onSelectionChange={handleSelectionChange}
             onSelectionAction={handleSelectionAction}
@@ -1003,7 +1012,7 @@ export default function ReaderScreen() {
             showHeader();
             setShowToc(true);
           }}
-          onTTSToggle={readAlong.following ? readAlong.controls.onPlayPause : handleTTSToggle}
+          onTTSToggle={readAlong.following ? readAlong.controls.onStop : handleTTSToggle}
           onTTSLongPress={() => setShowTtsSettings(true)}
           onToggle={toggleHeader}
         />
