@@ -1,7 +1,8 @@
 /**
  * What the audiobook keeps between runs, in `app_settings`: the book in the
- * mini player and where, each voice's learned pace, and which voice each book
- * was last heard in (the Listen sheet shows again when it changes).
+ * mini player and where, each voice's learned pace, which voice each book
+ * was last heard in (the Listen sheet shows again when it changes), and the
+ * clock each book last showed.
  */
 import { eq } from 'drizzle-orm';
 
@@ -12,6 +13,7 @@ import { NO_PACE, type PaceStats } from '@/features/audiobook/utils/book-clock';
 const CURRENT = 'audiobook.current';
 const paceKey = (modelId: string, voice: string) => `audiobook.pace.${modelId}.${voice}`;
 const heardKey = (bookId: string) => `audiobook.heard.${bookId}`;
+const clockKey = (bookId: string) => `audiobook.clock.${bookId}`;
 
 function read(key: string): string | null {
   return db.select().from(appSettings).where(eq(appSettings.key, key)).get()?.value ?? null;
@@ -62,4 +64,31 @@ export function readHeardVoice(bookId: string): string | null {
 
 export function writeHeardVoice(bookId: string, voiceKey: string): void {
   write(heardKey(bookId), voiceKey);
+}
+
+/**
+ * The clock a book last showed, at the sentence it was left at and in the
+ * voice it was heard in: what the player draws when the book starts again
+ * there, before it has been read and laid out. Kept through a stop, as the
+ * book's saved place is.
+ */
+export interface HeardClock {
+  voiceKey: string;
+  sentenceId: string;
+  /** The sentence's words: a saved place written by listening carries them, one written by the reader does not. */
+  sentenceText: string;
+  positionSec: number;
+  durationSec: number;
+  chapterTitle: string | null;
+  /** The pace the clock was laid out by (`steadyPace`), for the next session to go on from it. */
+  clockPace: number | null;
+}
+
+export function readHeardClock(bookId: string): HeardClock | null {
+  const value = readJson<HeardClock>(clockKey(bookId));
+  return value && typeof value.sentenceId === 'string' && value.durationSec > 0 ? value : null;
+}
+
+export function writeHeardClock(bookId: string, clock: HeardClock): void {
+  write(clockKey(bookId), JSON.stringify(clock));
 }

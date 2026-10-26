@@ -8,7 +8,8 @@ import TrackPlayer from '@rntp/player';
 
 import { sectionAt, sentenceAt } from '@/features/audiobook/utils/book-clock';
 import type { Sentence } from '@/features/audiobook/utils/sentences-of';
-import { beginBook, publish } from '@/services/audiobook/lifecycle';
+import { beginBook } from '@/services/audiobook/begin';
+import { publish } from '@/services/audiobook/lifecycle';
 import { sentenceAtLocator } from '@/services/audiobook/start';
 import { saveBookPlace } from '@/services/audiobook/position';
 import { produce, sentenceAfter, sentenceBefore } from '@/services/audiobook/producer';

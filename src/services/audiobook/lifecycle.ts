@@ -1,6 +1,6 @@
 /**
- * Starting a book, stopping it, and stepping aside for something else. Taking
- * it back up is `resume.ts`.
+ * A book's session, stopping it, and stepping aside for something else.
+ * Starting it is `begin.ts`; taking it back up is `resume.ts`.
  */
 import TrackPlayer from '@rntp/player';
 import { eq } from 'drizzle-orm';
@@ -8,39 +8,26 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { books } from '@/db/schema';
 import { bookVoice } from '@/features/audiobook/utils/book-voice';
-import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
 import { queryClient } from '@/lib/query-client';
 import { billingKeys } from '@/query-manager/billing/keys';
 import { SentenceLengths } from '@/services/audiobook/lengths';
 import { saveBookPlace } from '@/services/audiobook/position';
-import { produce } from '@/services/audiobook/producer';
 import { unpinQueue } from '@/services/audiobook/queue';
-import { loadScript, type BookScript } from '@/services/audiobook/script';
-import { startSentence, type StartFrom } from '@/services/audiobook/start';
-import {
-  book,
-  bookSecondsAt,
-  current,
-  placeSentence,
-  timelineOf,
-  type BookInfo,
-  type BookSession,
-
-} from '@/services/audiobook/session';
-import { readPace, writeCurrent, writeHeardVoice } from '@/services/audiobook/settings';
+import type { BookScript } from '@/services/audiobook/script';
+import { nowPlayingOf } from '@/services/audiobook/now-playing';
+import { book, current, placeSentence, type BookInfo, type BookSession } from '@/services/audiobook/session';
+import { readPace, writeCurrent } from '@/services/audiobook/settings';
 import { clearWavCopies } from '@/services/audiobook/track-file';
 import type { PlanPreview } from '@/services/billing-plans';
 import { PieceSource } from '@/services/cloud-tts/piece-source';
-import { applyCommands } from '@/services/player/commands';
-import { readyPlayer } from '@/services/player/events';
-import { clearWaits, markStarting, onTakenOver, store, takePlayerFor } from '@/services/player/session';
+import { clearWaits, onTakenOver, store } from '@/services/player/session';
 import { useAudiobook } from '@/stores/audiobook';
-import { selectBook, type BookNowPlaying } from '@/stores/player';
+import { selectBook } from '@/stores/player';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
 
-type BookRow = typeof books.$inferSelect;
+export type BookRow = typeof books.$inferSelect;
 
 export function bookRow(bookId: string): BookRow | null {
   return db.select().from(books).where(eq(books.id, bookId)).get() ?? null;
@@ -57,22 +44,6 @@ export function currentBookVoice() {
   const voice = bookVoice(useSettingsStore.getState().ttsCloudVoice, figures, plan);
   const choice = voice ? cloudChoiceFor(voice.key, figures?.models, 1, 'mp3') : null;
   return voice && choice ? { ...voice, choice } : null;
-}
-
-/** What the mini player and the player draw for the book, from the session as it is now. */
-export function nowPlayingOf(s: BookSession): BookNowPlaying {
-  const sentence = placeSentence(s);
-  const section = sentence ? s.script.section(sentence.section) : null;
-  return {
-    kind: 'book',
-    bookId: s.info.id,
-    title: s.info.title,
-    author: s.info.author,
-    coverUrl: s.info.coverUrl,
-    chapterTitle: chapterTitle(section?.title, s.info.title),
-    durationSec: timelineOf(s).total,
-    positionSec: sentence ? bookSecondsAt(s, sentence, 0) : 0,
-  };
 }
 
 /** Tells the screens what is playing now. */
@@ -103,83 +74,8 @@ export async function newSession(info: BookInfo, script: BookScript, voiceKey: s
   };
 }
 
-/** The ways starting can end without sound. */
-export type StartResult = 'playing' | 'no-voice' | 'unreadable' | 'unavailable';
-
-/**
- * Plays a book in the cloud voice from where it was left. The player opens
- * at once and shows its loader while the book is read into the index and the
- * first sentence is made.
- */
-export async function startBook(bookId: string, options: StartFrom = {}): Promise<StartResult> {
-  const row = bookRow(bookId);
-  if (!row) return 'unreadable';
-  const voice = currentBookVoice();
-  if (!voice) return 'no-voice';
-  if (!readyPlayer()) return 'unavailable';
-  const wasLoaded = store().loaded;
-  // Whatever was in the player saves its place and steps aside (an episode,
-  // or this or another book), and stops sounding while this one is prepared.
-  await takePlayerFor('book');
-  await letGoOfBook();
-  if (wasLoaded) TrackPlayer.pause();
-  markStarting();
-  const info = infoOf(row);
-  // The same book, shown already (paused in the mini player): its clock stays
-  // where it is while the book is made ready, rather than dropping to zero.
-  const shown = selectBook(store())?.bookId === bookId ? selectBook(store()) : null;
-  store().patch({
-    current: {
-      kind: 'book',
-      bookId,
-      title: info.title,
-      author: info.author,
-      coverUrl: info.coverUrl,
-      chapterTitle: shown?.chapterTitle ?? null,
-      durationSec: shown?.durationSec ?? 0,
-      positionSec: shown?.positionSec ?? 0,
-    },
-    loaded: true,
-    error: null,
-    sleep: null,
-    speed: useSettingsStore.getState().ttsRate,
-  });
-  useAudiobook.getState().patch({ preparing: true, failure: null, highlighted: {} });
-  const script = await loadScript(row);
-  useAudiobook.getState().patch({ preparing: false });
-  if (!script) {
-    await stopBook();
-    return 'unreadable';
-  }
-  const first = await startSentence(script, bookId, options);
-  if (!first) {
-    await stopBook();
-    return 'unreadable';
-  }
-  const s = await newSession(info, script, voice.key, voice.choice);
-  s.pending = { sentence: first, offsetSec: 0 };
-  s.wantsToPlay = true;
-  book.session = s;
-  writeHeardVoice(bookId, voice.key);
-  writeCurrent({ bookId, sentenceId: first.id });
-  applyCommands('book');
-  publish(s);
-  void produce(s);
-  return 'playing';
-}
-
-/**
- * Starts the book from the player's controls. Without a plan that reaches a
- * cloud voice (one that lapsed since the book was last heard), the plans rise
- * instead, so the press is never answered by nothing.
- */
-export async function beginBook(bookId: string, options: StartFrom = {}): Promise<void> {
-  const result = await startBook(bookId, options);
-  if (result === 'no-voice') useAudiobook.getState().patch({ plansAsked: useAudiobook.getState().plansAsked + 1 });
-}
-
 /** Puts the book down: the place saved, every fetch stopped, the cache free to trim it. */
-async function letGoOfBook(): Promise<void> {
+export async function letGoOfBook(): Promise<void> {
   const s = current();
   if (!s) return;
   await saveBookPlace(s, true);

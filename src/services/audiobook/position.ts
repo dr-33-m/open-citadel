@@ -13,7 +13,8 @@ import type { Sentence } from '@/features/audiobook/utils/sentences-of';
 import { directionTo, startPlace } from '@/features/audiobook/utils/start-place';
 import { offsetOfText } from '@/features/audiobook/utils/text-offset';
 import { current, placeSentence, type BookSession } from '@/services/audiobook/session';
-import { writeCurrent } from '@/services/audiobook/settings';
+import { nowPlayingOf } from '@/services/audiobook/now-playing';
+import { writeCurrent, writeHeardClock } from '@/services/audiobook/settings';
 import type { SpineLocator } from '@/services/epub-spine';
 import { saveReadingPosition } from '@/services/reading-position';
 
@@ -46,6 +47,17 @@ export async function saveBookPlace(s: BookSession, force = false): Promise<void
   const section = s.script.section(sentence.section);
   if (!section) return;
   writeCurrent({ bookId: s.info.id, sentenceId: sentence.id });
+  // The clock as it shows at the sentence, for the player to open on it next time (`rememberedClock`).
+  const { positionSec, durationSec, chapterTitle } = nowPlayingOf(s);
+  writeHeardClock(s.info.id, {
+    voiceKey: s.voiceKey,
+    sentenceId: sentence.id,
+    sentenceText: sentence.text,
+    positionSec,
+    durationSec,
+    chapterTitle,
+    clockPace: s.clockPace,
+  });
   const fraction = fractionAt(s, sentence);
   await saveReadingPosition(s.info.id, { ...placeLocator(section, sentence, fraction) }, fraction);
 }

@@ -62,6 +62,7 @@ export function BookPlayer({ landed }: { landed: boolean }) {
           controls={controls}
           chapterTitle={current.chapterTitle}
           hasChapters={player.chapters.length > 0}
+          chapterRoom
           middleLabel={player.timeLeft}
           live={landed}
           tools={

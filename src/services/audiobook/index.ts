@@ -28,7 +28,8 @@ export {
   skipSentence,
 } from '@/services/audiobook/moves';
 export { highlightNow, highlightSentence, toggleHighlightNow, undoHighlight, type HighlightResult } from '@/services/audiobook/highlight-now';
-export { currentBookVoice, releaseBookForSpeech, startBook, stopBook, type StartResult } from '@/services/audiobook/lifecycle';
+export { showBook, startBook, type StartResult } from '@/services/audiobook/begin';
+export { currentBookVoice, releaseBookForSpeech, stopBook } from '@/services/audiobook/lifecycle';
 export { restoreBook } from '@/services/audiobook/resume';
 export { isBookItem } from '@/services/audiobook/media-id';
 export { readAlongLocator, sentenceLocator, voiceDirectionFrom } from '@/services/audiobook/position';

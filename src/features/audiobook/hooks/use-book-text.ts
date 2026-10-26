@@ -13,9 +13,14 @@ import { selectBook, usePlayer } from '@/stores/player';
 
 const NO_ROWS: SentenceRow[] = [];
 
-/** The chapter over the book and its author; the book over its author when the chapter has no name of its own. */
-function textHeader(title: string | null | undefined, book: { title: string; author: string | null } | null) {
-  const chapter = book ? chapterTitle(title, book.title) : null;
+/**
+ * The chapter over the book and its author; the book over its author when the
+ * chapter has no name of its own. Until the chapter's text is read, the
+ * chapter the player already names (`known`), so the header is right from
+ * the first frame rather than the book's and then the chapter's.
+ */
+function textHeader(title: string | null | undefined, book: { title: string; author: string | null } | null, known: string | null) {
+  const chapter = book ? (title === undefined ? known : chapterTitle(title, book.title)) : null;
   if (chapter) return { title: chapter, line: [book?.title, book?.author].filter(Boolean).join(' · ') };
   return { title: book?.title ?? 'Text', line: book?.author ?? '' };
 }
@@ -53,7 +58,7 @@ export function useBookText(visible: boolean) {
   );
 
   return {
-    ...textHeader(chapter?.title, book),
+    ...textHeader(chapter ? chapter.title : undefined, book, book?.chapterTitle ?? null),
     rows: data,
     lit: sentenceId,
     marks: actions.marks,

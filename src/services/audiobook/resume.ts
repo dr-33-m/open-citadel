@@ -7,7 +7,8 @@
 import TrackPlayer from '@rntp/player';
 
 import { cloudChoiceFor } from '@/features/tts/utils/cloud-voices';
-import { bookRow, currentBookVoice, infoOf, newSession, nowPlayingOf, publish } from '@/services/audiobook/lifecycle';
+import { bookRow, currentBookVoice, infoOf, newSession, publish } from '@/services/audiobook/lifecycle';
+import { nowPlayingOf } from '@/services/audiobook/now-playing';
 import { startSentence } from '@/services/audiobook/start';
 import { isBookItem, parseBookMediaId } from '@/services/audiobook/media-id';
 import { produce } from '@/services/audiobook/producer';

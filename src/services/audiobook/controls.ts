@@ -3,7 +3,8 @@ import TrackPlayer from '@rntp/player';
 
 import { atRate } from '@/features/audiobook/utils/book-clock';
 import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
-import { beginBook, currentBookVoice } from '@/services/audiobook/lifecycle';
+import { beginBook } from '@/services/audiobook/begin';
+import { currentBookVoice } from '@/services/audiobook/lifecycle';
 import { bookPositionNow } from '@/services/audiobook/moves';
 import { saveBookPlace } from '@/services/audiobook/position';
 import { produce } from '@/services/audiobook/producer';

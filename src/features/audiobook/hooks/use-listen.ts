@@ -12,10 +12,9 @@ import { landOnCloud } from '@/features/tts/hooks/use-voice-source';
 import { cloudVoiceLabel } from '@/features/tts/utils/cloud-voice-names';
 import { createListenFiguresQueryOptions } from '@/query-manager/audiobook';
 import { createCloudVoicesQueryOptions } from '@/query-manager/cloud-voices';
-import { currentBookVoice, startBook, type StartResult } from '@/services/audiobook';
+import { currentBookVoice, showBook, startBook, type StartResult } from '@/services/audiobook';
 import { readHeardVoice, readPace } from '@/services/audiobook/settings';
 import type { Book } from '@/stores/books';
-import { selectBook, usePlayer } from '@/stores/player';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
 import { parseCloudVoiceKey } from 'samwell-shared';
@@ -62,21 +61,15 @@ export function useListen() {
 
   const begin = React.useCallback(
     async (bookId: string) => {
-      // The player opens the moment the book is in it, with its loader, not
-      // once the book has been read into the index and its first sentence made.
-      let opened = false;
-      const open = () => {
-        if (opened) return;
-        opened = true;
-        router.push('/podcasts/player');
-      };
-      const unsubscribe = usePlayer.subscribe((s) => {
-        if (selectBook(s)?.bookId === bookId) open();
-      });
+      // In one moment, the book in the player and the player opening on it: it
+      // rises with the book already drawn, its loader on, rather than the mini
+      // player arriving first and the player after it.
+      const shown = showBook(bookId);
+      if (shown) router.push('/podcasts/player');
       const result = await startBook(bookId);
-      unsubscribe();
-      if (result === 'playing') open();
-      else if (result === 'no-voice') setSelling(true);
+      if (result === 'playing') {
+        if (!shown) router.push('/podcasts/player');
+      } else if (result === 'no-voice') setSelling(true);
       else showToast({ key: TOAST, message: WHY_NOT[result] ?? "This book can't be read aloud yet." });
     },
     [router],

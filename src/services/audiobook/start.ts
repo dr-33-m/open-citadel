@@ -9,7 +9,7 @@ import { startIndex, startPlace } from '@/features/audiobook/utils/start-place';
 import { offsetOfText } from '@/features/audiobook/utils/text-offset';
 import { savedLocator } from '@/services/audiobook/position';
 import type { BookScript } from '@/services/audiobook/script';
-import { readCurrent } from '@/services/audiobook/settings';
+import { readCurrent, readHeardClock, type HeardClock } from '@/services/audiobook/settings';
 import type { SpineLocator } from '@/services/epub-spine';
 
 /**
@@ -48,3 +48,17 @@ export async function sentenceAtLocator(script: BookScript, locator: SpineLocato
   return next ? ((await script.load(next.index))?.sentences[0] ?? null) : null;
 }
 
+/**
+ * The clock a book last showed, while it still says where play will start
+ * (see `startSentence`): the sentence it was left at, in the same voice (a
+ * voice paces the clock its own way). Gone once the reader has moved the
+ * saved place on, so the player never opens on numbers it would then change.
+ */
+export function rememberedClock(bookId: string, voiceKey: string): HeardClock | null {
+  const clock = readHeardClock(bookId);
+  if (!clock || clock.voiceKey !== voiceKey) return null;
+  const now = readCurrent();
+  if (now?.bookId === bookId) return now.sentenceId === clock.sentenceId ? clock : null;
+  const saved = savedLocator(bookId) as { text?: { highlight?: string } } | null;
+  return saved?.text?.highlight === clock.sentenceText ? clock : null;
+}

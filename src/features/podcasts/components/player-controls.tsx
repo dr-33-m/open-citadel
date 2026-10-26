@@ -13,6 +13,8 @@ type PlayerControlsProps = {
   /** The chapter playing, over the scrubber; it opens the list. */
   chapterTitle: string | null;
   hasChapters: boolean;
+  /** Keep the chapter line's room before a chapter is known (`PlayerProgress`). */
+  chapterRoom?: boolean;
   /** Between the scrubber's two times: a book's "About 6 h 12 m left". */
   middleLabel?: string | null;
   /**
@@ -30,12 +32,13 @@ type PlayerControlsProps = {
  * Where the listener is and what they can do, for an episode or a book: the
  * scrubber, the transport, then one quiet row of tools.
  */
-export function PlayerControls({ player, controls, chapterTitle, hasChapters, middleLabel = null, live, tools }: PlayerControlsProps) {
+export function PlayerControls({ player, controls, chapterTitle, hasChapters, chapterRoom = false, middleLabel = null, live, tools }: PlayerControlsProps) {
   return (
     <View className="gap-8">
       <PlayerProgress
         chapterTitle={chapterTitle}
         hasChapters={hasChapters}
+        chapterRoom={chapterRoom}
         position={player.clock.position}
         duration={player.clock.duration}
         middleLabel={middleLabel}

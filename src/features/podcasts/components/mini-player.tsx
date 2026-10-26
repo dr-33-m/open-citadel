@@ -1,8 +1,9 @@
 import React from 'react';
 import { View } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { type EntryAnimationsValues } from 'react-native-reanimated';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Transition from 'react-native-screen-transitions';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
@@ -91,10 +92,25 @@ export function MiniPlayer({
   ]);
   const book = item.kind === 'book';
   const swipe = useDismissSwipe(onClose, MINI_PLAYER_CLEARANCE + bottomInset + EDGE_SHADOW_ROOM);
+  // A card still sliding in is not yet something to grow the player out of:
+  // the player opened as playback starts (Listen, from a book's menu) would
+  // grow out of a card in motion, half arrived. Until it has landed the
+  // player rises from the bottom edge instead (`playerTransition`).
+  const [landed, setLanded] = React.useState(!arrives);
+  const entering = React.useMemo(
+    () =>
+      arrives
+        ? (values: EntryAnimationsValues) => {
+            'worklet';
+            return { ...slideUpFromEdge(values), callback: () => scheduleOnRN(setLanded, true) };
+          }
+        : undefined,
+    [arrives],
+  );
 
   return (
     <Animated.View
-      entering={arrives ? slideUpFromEdge : undefined}
+      entering={entering}
       exiting={slideDownPastEdge}
       className="absolute left-4 right-4"
       style={{ bottom: bottomInset + MINI_PLAYER_GAP }}
@@ -115,7 +131,7 @@ export function MiniPlayer({
             >
               <MiniPlayerProgress positionSec={item.positionSec} durationSec={item.durationSec} />
               {/* What the full player grows out of (`playerTransition`). */}
-              <Transition.Boundary id={NOW_PLAYING_ART}>
+              <Transition.Boundary id={NOW_PLAYING_ART} enabled={landed}>
                 <SquareArtwork
                   uri={item.artworkUrl}
                   size={ART}
