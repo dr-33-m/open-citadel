@@ -11,6 +11,7 @@ import { readingProgress } from '@/db/schema';
 import { bookFraction, highlightLocator, placeLocator, sectionText, type SentenceLocator } from '@/features/audiobook/utils/sentence-locator';
 import type { Sentence } from '@/features/audiobook/utils/sentences-of';
 import { directionTo, startPlace } from '@/features/audiobook/utils/start-place';
+import { offsetOfText } from '@/features/audiobook/utils/text-offset';
 import { current, placeSentence, type BookSession } from '@/services/audiobook/session';
 import { writeCurrent } from '@/services/audiobook/settings';
 import type { SpineLocator } from '@/services/epub-spine';
@@ -60,16 +61,19 @@ export function sentenceLocator(section: { href: string; title: string | null; c
 
 /**
  * Which way the voice is from a page of the reader: 1 further on in the book,
- * -1 further back, 0 on it, or null when nothing is being heard. The page is
- * placed as a start place is (an estimate within its chapter), which is
- * plenty to tell which side of it the voice is.
+ * -1 further back, 0 at its first words, or null when nothing is being heard.
+ * The page is placed exactly by `text`, the text from its first character on
+ * screen found in the chapter's own, and only estimated without it (the
+ * estimate can be a page out, enough to point the wrong way).
  */
-export function voiceDirectionFrom(page: SpineLocator): -1 | 0 | 1 | null {
+export async function voiceDirectionFrom(page: SpineLocator, text?: string | null): Promise<-1 | 0 | 1 | null> {
   const s = current();
   const sentence = s ? placeSentence(s) : null;
   const place = s ? startPlace(s.script.listened, page) : null;
-  if (!sentence || !place) return null;
-  return directionTo(place, { section: sentence.section, offset: sentence.offset });
+  if (!s || !sentence || !place) return null;
+  const chapter = text ? await s.script.load(place.section) : null;
+  const exact = chapter && text ? offsetOfText(sectionText(chapter.paragraphs), text, place.offset) : null;
+  return directionTo({ section: place.section, offset: exact ?? place.offset }, { section: sentence.section, offset: sentence.offset });
 }
 
 /** Where the voice is, as the reader opens on it to read along. */

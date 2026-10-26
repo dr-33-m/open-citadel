@@ -62,9 +62,8 @@ export function useReadAlong({
   const [detached, setDetached] = React.useState(false);
   /** The page on screen, as the reader last reported it. */
   const [page, setPage] = React.useState<Locator | null>(null);
-  // Which way BACK TO NOW goes: worked out again as the voice moves on, since
-  // it can catch up with a page read ahead and pass it.
-  const voiceWay = React.useMemo(() => (detached && page && sentenceId ? voiceDirectionFrom(page as never) : null), [detached, page, sentenceId]);
+  /** Which way BACK TO NOW goes: 1 the voice is further on, -1 further back, null not known yet. */
+  const [voiceWay, setVoiceWay] = React.useState<-1 | 0 | 1 | null>(null);
 
   React.useEffect(() => {
     if (!following || !ready || !locator || detached) return;
@@ -73,14 +72,25 @@ export function useReadAlong({
 
   const onLocationChange = React.useCallback((loc: Locator) => setPage(loc), []);
 
-  // Off the voice's page and then back on it (swiped back, or the voice came
-  // to the page being read): the pages follow again.
+  // While off the voice's page, the page is asked about it whenever either
+  // moves: back on it (swiped back, or the voice came to the page being read)
+  // the pages follow again; else which way it is, from the page's first words,
+  // since the voice can catch up with a page read ahead and pass it.
   React.useEffect(() => {
     if (!detached || !page) return undefined;
     let live = true;
-    void readerRef.current?.evaluateJavaScript(VOICE_ON_SCREEN_SCRIPT).then((on) => {
-      if (live && on === 'on') setDetached(false);
-    });
+    const reader = readerRef.current;
+    void (async () => {
+      const on = await reader?.evaluateJavaScript(VOICE_ON_SCREEN_SCRIPT);
+      if (!live) return;
+      if (on === 'on') {
+        setDetached(false);
+        return;
+      }
+      const text = await reader?.evaluateJavaScript(FIRST_VISIBLE_TEXT_SCRIPT);
+      const way = await voiceDirectionFrom(page as never, text);
+      if (live) setVoiceWay(way);
+    })();
     return () => {
       live = false;
     };
@@ -119,7 +129,7 @@ export function useReadAlong({
       following && detached
         ? {
             onBackToNow: () => setDetached(false),
-            /** Where the voice is from the page: 1 further on, -1 further back, 0 on it, null unknown. */
+            /** Where the voice is from the page: 1 further on, -1 further back, null not known yet. */
             voiceWay,
             onListenFromHere: async () => {
               const text = await readerRef.current?.evaluateJavaScript(FIRST_VISIBLE_TEXT_SCRIPT);
