@@ -16,11 +16,17 @@ import { clearSeeking, clearStarting, store } from '@/services/player/session';
 
 export type PlayerEventHandler = (event: BackgroundEvent) => Promise<void>;
 
-const handlers = new Set<PlayerEventHandler>();
+/**
+ * One handler a kind, kept by kind so that a module run again (a hot reload in
+ * development) replaces its handler rather than adding a second: the stale
+ * copy went on answering every event, and since each is awaited in turn it
+ * held the live one back by seconds.
+ */
+const handlers = new Map<'episode' | 'book', PlayerEventHandler>();
 
 /** A kind of thing that plays (episodes, books) hears every event after the shared state is updated. */
-export function addPlayerHandler(handler: PlayerEventHandler): void {
-  handlers.add(handler);
+export function addPlayerHandler(kind: 'episode' | 'book', handler: PlayerEventHandler): void {
+  handlers.set(kind, handler);
 }
 
 async function handleEvent(event: BackgroundEvent): Promise<void> {
@@ -42,7 +48,7 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
     default:
       break;
   }
-  for (const handler of handlers) await handler(event).catch(() => {});
+  for (const handler of handlers.values()) await handler(event).catch(() => {});
 }
 
 const FOREGROUND_EVENTS = [
@@ -102,5 +108,5 @@ export function readyPlayer(): boolean {
 
 /** Android: the same handling while the app is in the background. Module level, before render. */
 export function registerPlayerBackgroundHandler(): void {
-  registerAudioBackgroundHandler(handleEvent);
+  registerAudioBackgroundHandler('player', handleEvent);
 }

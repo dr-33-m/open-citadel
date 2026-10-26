@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { estimatedPlayback, playbackPosition } from '@/features/podcasts/hooks/use-playback-clock';
+import { clockRate, estimatedPlayback, playbackPosition } from '@/features/podcasts/hooks/use-playback-clock';
 import { segmentIndexAt } from '@/features/podcasts/utils/transcript-rows';
 import { usePlayer } from '@/stores/player';
 
@@ -30,7 +30,8 @@ const BORROW_MS = 600;
 const PLACE_HOLD_MS = 2500;
 
 /**
- * The transcript line being spoken, for the lit line.
+ * The transcript line being spoken, for the lit line: an episode's
+ * transcript, or a book's text (a line a sentence, `sentenceStarts`).
  *
  * Not polled on a fixed beat, which lit each line up to half a second late:
  * every reading works out when the next line starts at the current speed and
@@ -42,7 +43,8 @@ const PLACE_HOLD_MS = 2500;
  */
 export function useCurrentSegment(starts: readonly number[], active: boolean) {
   const isPlaying = usePlayer((s) => s.isPlaying);
-  const speed = usePlayer((s) => s.speed);
+  // How fast the clock runs: an episode's at its speed, a book's already at the listener's.
+  const rate = usePlayer((s) => clockRate(s.current, s.speed));
   // Without asking the player: this runs while rendering.
   const seed = () =>
     segmentIndexAt(starts, (estimatedPlayback()?.position ?? usePlayer.getState().current?.positionSec ?? 0) + LEAD_SEC);
@@ -73,12 +75,12 @@ export function useCurrentSegment(starts: readonly number[], active: boolean) {
         ? PAUSED_MS
         : next === undefined
           ? RESYNC_MS
-          : Math.min(RESYNC_MS, Math.max(MIN_WAIT_MS, ((next - position) / Math.max(speed, 0.1)) * 1000));
+          : Math.min(RESYNC_MS, Math.max(MIN_WAIT_MS, ((next - position) / Math.max(rate, 0.1)) * 1000));
       timer = setTimeout(read, wait);
     };
     timer = setTimeout(read, 0);
     return () => clearTimeout(timer);
-  }, [active, isPlaying, speed, starts]);
+  }, [active, isPlaying, rate, starts]);
 
   /**
    * A line the audio has just been sent to, lit at once rather than when the

@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
 import { useBookTextActions } from '@/features/audiobook/hooks/use-book-text-actions';
+import { useHeardRow } from '@/features/audiobook/hooks/use-heard-row';
 import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
-import { rowOf, sentenceRows, type SentenceRow } from '@/features/audiobook/utils/sentence-rows';
+import { sentenceRows, type SentenceRow } from '@/features/audiobook/utils/sentence-rows';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
 import { useFollowAlong } from '@/hooks/use-follow-along';
 import { createChapterTextQueryOptions } from '@/query-manager/audiobook';
@@ -29,7 +30,8 @@ function textHeader(title: string | null | undefined, book: { title: string; aut
  * The book's text sheet, read like lyrics: the chapter being heard, a row a
  * sentence (as a transcript is a row a line), the one being spoken lit and
  * held a third of the way down (`useFollowAlong`), exactly as a transcript
- * follows its episode. The next chapter takes its place as the voice crosses
+ * follows its episode, and lit by the book's clock as its lines are
+ * (`useHeardRow`). The next chapter takes its place as the voice crosses
  * into it, and the list starts over there. A tap on any sentence goes there;
  * a long press highlights it, or opens its highlight (`useBookTextActions`).
  */
@@ -41,7 +43,8 @@ export function useBookText(visible: boolean) {
   const query = useQuery(createChapterTextQueryOptions(bookId, section ?? -1, { enabled: visible && !!bookId && section !== null }));
   const chapter = query.data ?? null;
   const rows = React.useMemo(() => (chapter ? sentenceRows(chapter.sentences) : NO_ROWS), [chapter]);
-  const current = rowOf(rows, sentenceId);
+  const heard = useHeardRow(rows, sentenceId, visible);
+  const { current, place } = heard;
 
   const actions = useBookTextActions({ visible, book, chapter });
   const follow = useFollowAlong<SentenceRow>({ visible, current, resetKey: chapter?.index ?? null });
@@ -51,16 +54,17 @@ export function useBookText(visible: boolean) {
   const onSentence = React.useCallback(
     (id: string) => {
       startFollowing();
+      place(id);
       useAudiobook.getState().patch({ sentenceId: id });
       void playFromSentence(id);
     },
-    [startFollowing],
+    [place, startFollowing],
   );
 
   return {
     ...textHeader(chapter ? chapter.title : undefined, book, book?.chapterTitle ?? null),
     rows: data,
-    lit: sentenceId,
+    lit: rows[current]?.sentence.id ?? null,
     marks: actions.marks,
     onLongPress: actions.onLongPress,
     menu: actions.menu,

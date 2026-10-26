@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 import { showToast } from '@/components/toast/toast-provider';
 import { paceOf } from '@/features/audiobook/utils/book-clock';
 import { bookVoice } from '@/features/audiobook/utils/book-voice';
-import { listenInfo } from '@/features/audiobook/utils/listen-info';
+import { listenInfo, listenPlansLine } from '@/features/audiobook/utils/listen-info';
 import { listenEstimate, listenStats } from '@/features/audiobook/utils/listen-estimate';
 import { landOnCloud } from '@/features/tts/hooks/use-voice-source';
 import { cloudVoiceLabel } from '@/features/tts/utils/cloud-voice-names';
@@ -107,7 +107,7 @@ export function useListen() {
     plans: {
       visible: selling,
       onClose: () => setSelling(false),
-      line: book?.post ? 'Listening to posts comes with every plan.' : 'Listening to books comes with every plan.',
+      line: listenPlansLine(book?.post ?? false),
       infoOpensOn: 'voices' as const,
       onActivated: () => {
         const bought = useSubscriptionStore.getState().plan;

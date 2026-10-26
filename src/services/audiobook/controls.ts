@@ -1,14 +1,14 @@
 /** What the player's controls do to a book: play and pause, speed, the end of a chapter, the voice, its clock. Moving about it is `moves`. */
 import TrackPlayer from '@rntp/player';
 
-import { atRate } from '@/features/audiobook/utils/book-clock';
+import { atRate, orderOf, sentenceSeconds } from '@/features/audiobook/utils/book-clock';
 import { chapterTitle } from '@/features/audiobook/utils/chapter-title';
 import { beginBook } from '@/services/audiobook/begin';
 import { currentBookVoice } from '@/services/audiobook/lifecycle';
 import { bookPositionNow } from '@/services/audiobook/moves';
 import { saveBookPlace } from '@/services/audiobook/position';
 import { produce } from '@/services/audiobook/producer';
-import { current, placeSentence, playingEntry, timelineOf, type BookSession } from '@/services/audiobook/session';
+import { clockPaceOf, current, placeSentence, playingEntry, timelineOf, type BookSession } from '@/services/audiobook/session';
 import { markStarting, store } from '@/services/player/session';
 import { useAudiobook } from '@/stores/audiobook';
 import { selectBook, selectPlaying } from '@/stores/player';
@@ -103,6 +103,32 @@ export function bookClockNow(): { position: number; duration: number } {
     return { position: atRate(now?.positionSec ?? 0, rate), duration: atRate(now?.durationSec ?? 0, rate) };
   }
   return { position: atRate(bookPositionNow(s), rate), duration: atRate(timelineOf(s).total, rate) };
+}
+
+/**
+ * Where each sentence of a section starts on the book's clock, at the
+ * listener's speed, by sentence id: what the follow-along sheet lights its
+ * rows by, as a transcript's lines are lit by their times
+ * (`useCurrentSegment`), rather than by the player saying it has moved on,
+ * which can only come once the words have begun. Laid out as the clock is
+ * (`bookClockNow`), so the two always agree. Null for a section not in hand.
+ */
+export function sentenceStarts(section: number): Map<string, number> | null {
+  const s = current();
+  const script = s?.script.peek(section);
+  if (!s || !script) return null;
+  const line = timelineOf(s);
+  const order = orderOf(line, section);
+  if (order < 0) return null;
+  const pace = clockPaceOf(s);
+  const rate = store().speed;
+  const starts = new Map<string, number>();
+  let at = line.starts[order];
+  for (const sentence of script.sentences) {
+    starts.set(sentence.id, atRate(at, rate));
+    at += sentenceSeconds(sentence, s.lengths.map, pace);
+  }
+  return starts;
 }
 
 export interface BookChapter {

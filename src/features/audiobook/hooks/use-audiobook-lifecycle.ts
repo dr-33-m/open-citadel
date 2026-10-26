@@ -4,10 +4,12 @@ import { AppState } from 'react-native';
 import { RotateCcw } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
 import { failureToast } from '@/features/audiobook/utils/failure-toast';
+import { listenPlansLine } from '@/features/audiobook/utils/listen-info';
 import { CAN_SELL_PLANS } from '@/features/billing/utils/can-sell';
 import { landOnCloud } from '@/features/tts/hooks/use-voice-source';
 import { restoreBook, retryBook } from '@/services/audiobook';
 import { useAudiobook } from '@/stores/audiobook';
+import { selectBook, usePlayer } from '@/stores/player';
 import { useSubscriptionStore } from '@/stores/subscription';
 import { haptics } from '@/utils/haptics';
 
@@ -27,6 +29,8 @@ export function useAudiobookLifecycle(ready: boolean) {
   const failure = useAudiobook((s) => s.failure);
   const plansAsked = useAudiobook((s) => s.plansAsked);
   const [selling, setSelling] = React.useState(false);
+  // The plans line says what is in the player: a book, or a blog post.
+  const post = usePlayer((s) => selectBook(s)?.post ?? false);
   // Play pressed with no plan that reaches a cloud voice: the plans, in place.
   const [answered, setAnswered] = React.useState(plansAsked);
   if (answered !== plansAsked) {
@@ -65,7 +69,7 @@ export function useAudiobookLifecycle(ready: boolean) {
   return {
     visible: selling,
     onClose: () => setSelling(false),
-    line: 'Listening to books comes with every plan.',
+    line: listenPlansLine(post),
     infoOpensOn: 'voices' as const,
     onActivated: () => {
       const bought = useSubscriptionStore.getState().plan;

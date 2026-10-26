@@ -14,7 +14,7 @@ let isSetup = false;
  * and idempotent there.
  */
 export function registerTTSBackgroundHandler(): void {
-  registerAudioBackgroundHandler(async () => {});
+  registerAudioBackgroundHandler('read-aloud', async () => {});
 }
 
 /**

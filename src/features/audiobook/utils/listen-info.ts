@@ -20,3 +20,8 @@ export function listenInfo(platform: 'ios' | 'android' | string): InfoContent {
     ],
   };
 }
+
+/** The line over the plans where listening asks for one: a book's, or a blog post's. */
+export function listenPlansLine(post: boolean): string {
+  return post ? 'Listening to posts comes with every plan.' : 'Listening to books comes with every plan.';
+}

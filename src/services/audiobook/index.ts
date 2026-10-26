@@ -12,6 +12,7 @@ import '@/services/audiobook/events';
 export {
   bookChapters,
   bookClockNow,
+  sentenceStarts,
   followBookVoice,
   retryBook,
   setBookSpeed,

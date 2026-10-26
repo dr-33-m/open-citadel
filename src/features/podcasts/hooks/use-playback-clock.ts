@@ -31,7 +31,7 @@ const itemIdOf = (current: NowPlaying | null) => (current?.kind === 'book' ? `bo
  * seconds, so it runs at the playback speed; a book's is already divided by
  * the speed (`bookClockNow`), so it runs at one second a second.
  */
-const clockRate = (current: NowPlaying | null, speed: number) => (current?.kind === 'book' ? 1 : speed);
+export const clockRate = (current: NowPlaying | null, speed: number) => (current?.kind === 'book' ? 1 : speed);
 
 /**
  * Asks the native player where it is: its reported position, or a seek's
@@ -144,8 +144,10 @@ export function usePlaybackClock(storedPosition: number, storedDuration: number,
       position.set(animate ? withTiming(ahead, { duration: POLL_MS, easing: Easing.linear }) : ahead);
     };
     // A book's shown length moves toward the estimate by at most a step a
-    // poll (`LENGTH_ABSORB`), gliding across the poll as the position does.
-    // Anything else, or a book just put in the player, takes it at once.
+    // poll (`LENGTH_ABSORB`), gliding across the poll as the position does,
+    // and only while it plays: paused (or back on a player left paused, the
+    // voice having moved on meanwhile) nothing on it moves. Anything else, or
+    // a book just put in the player, takes it at once.
     const settleLength = (next: number) => {
       const held = shown.current;
       if (!book || held.of !== shownOf || !(held.length > 0)) {
@@ -153,6 +155,7 @@ export function usePlaybackClock(storedPosition: number, storedDuration: number,
         duration.set(next);
         return;
       }
+      if (!isPlaying) return;
       const step = (LENGTH_ABSORB * POLL_MS) / 1000;
       const to = held.length + Math.min(step, Math.max(-step, next - held.length));
       if (to === held.length) return;

@@ -164,4 +164,4 @@ setProducerHooks({
   },
 });
 
-addPlayerHandler(handleBookEvent);
+addPlayerHandler('book', handleBookEvent);

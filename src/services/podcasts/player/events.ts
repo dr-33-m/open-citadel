@@ -105,7 +105,7 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
   }
 }
 
-addPlayerHandler(handleEvent);
+addPlayerHandler('episode', handleEvent);
 
 /**
  * Puts the last episode back in the mini player after a restart, paused and
