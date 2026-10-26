@@ -1,6 +1,31 @@
 /**
- * Run in the reader's page (`ReadiumViewRef.evaluateJavaScript`): the text
- * from the first character on screen, about 200 characters of it, or null.
+ * Scripts run in the reader's page (`ReadiumViewRef.evaluateJavaScript`),
+ * for what only the page can say exactly.
+ */
+
+/** The decoration group the sentence being heard is lit in. */
+export const READ_ALONG_GROUP = 'read-along';
+
+/**
+ * Whether the sentence being heard is on screen: 'on' or 'off'. Readium draws
+ * a decoration group's boxes inside an element marked with its name (the same
+ * decorator script on Android and iOS), so this asks whether any of them is
+ * inside the screen. A sentence that runs over two pages is on both.
+ */
+export const VOICE_ON_SCREEN_SCRIPT = `(function () {
+  var w = window.innerWidth, h = window.innerHeight;
+  var group = document.querySelector('[data-group="${READ_ALONG_GROUP}"]');
+  var boxes = group ? group.querySelectorAll('*') : [];
+  for (var i = 0; i < boxes.length; i++) {
+    var r = boxes[i].getBoundingClientRect();
+    if (r.width > 0 && r.height > 0 && r.right > 0 && r.left < w && r.bottom > 0 && r.top < h) return 'on';
+  }
+  return 'off';
+})()`;
+
+/**
+ * The text from the first character on screen, about 200 characters of it,
+ * or null.
  *
  * Exact where Readium's own answers are not: the page's progression is a
  * share of its pages, which a share of the text only estimates, and its

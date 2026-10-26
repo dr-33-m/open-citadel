@@ -2,7 +2,7 @@ import type { DecorationGroup, Locator, ReadiumViewRef } from '@dr33m/react-nati
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
-import { FIRST_VISIBLE_TEXT_SCRIPT } from '@/features/audiobook/utils/first-visible-text';
+import { FIRST_VISIBLE_TEXT_SCRIPT, READ_ALONG_GROUP, VOICE_ON_SCREEN_SCRIPT } from '@/features/audiobook/utils/page-scripts';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
 import { createChapterTextQueryOptions } from '@/query-manager/audiobook';
 import { playFromLocator, readAlongLocator, sentenceLocator, skipSentence, voiceDirectionFrom } from '@/services/audiobook';
@@ -22,7 +22,9 @@ import { selectBook, selectPlaying, usePlayer, usePlayerLoader } from '@/stores/
  * said twice, and going back to the player finds it exactly as it was.
  *
  * Turning a page by hand stops the pages following the voice (`detached`):
- * BACK TO NOW brings them back, LISTEN FROM HERE moves the voice to the page.
+ * BACK TO NOW brings them back, LISTEN FROM HERE moves the voice to the page,
+ * and coming back onto the voice's page (by hand, or the voice reaching the
+ * page being read) has them follow again on their own.
  * "By hand" is Readium's word, not a guess: the reader reports a page the
  * user moved (a swipe, a key, an edge tap) apart from the ones the app moved
  * (`onNavigatedByUser`). The reader's own jumps (a chapter, a bookmark, a
@@ -71,12 +73,25 @@ export function useReadAlong({
 
   const onLocationChange = React.useCallback((loc: Locator) => setPage(loc), []);
 
+  // Off the voice's page and then back on it (swiped back, or the voice came
+  // to the page being read): the pages follow again.
+  React.useEffect(() => {
+    if (!detached || !page) return undefined;
+    let live = true;
+    void readerRef.current?.evaluateJavaScript(VOICE_ON_SCREEN_SCRIPT).then((on) => {
+      if (live && on === 'on') setDetached(false);
+    });
+    return () => {
+      live = false;
+    };
+  }, [detached, page, sentenceId, readerRef]);
+
   const detach = React.useCallback(() => setDetached(true), []);
 
   const decorations: DecorationGroup = React.useMemo(
     () => ({
-      name: 'read-along',
-      decorations: following && locator ? [{ id: 'read-along', locator, style: { type: 'highlight', tint } }] : [],
+      name: READ_ALONG_GROUP,
+      decorations: following && locator ? [{ id: READ_ALONG_GROUP, locator, style: { type: 'highlight', tint } }] : [],
     }),
     [following, locator, tint],
   );
