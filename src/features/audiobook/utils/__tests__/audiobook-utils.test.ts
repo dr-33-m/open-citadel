@@ -25,7 +25,7 @@ import {
   sectionText,
 } from '@/features/audiobook/utils/sentence-locator';
 import { sectionOfId, sentencesOf, type ScriptParagraph, type Sentence } from '@/features/audiobook/utils/sentences-of';
-import { startIndex, startPlace, type PlaceSection } from '@/features/audiobook/utils/start-place';
+import { directionTo, startIndex, startPlace, type PlaceSection } from '@/features/audiobook/utils/start-place';
 import { CHARACTERS_PER_SECOND } from 'samwell-shared';
 
 const paragraphs = (section: number, texts: string[]): ScriptParagraph[] => {
@@ -160,6 +160,14 @@ describe('listenEstimate', () => {
 });
 
 describe('start place', () => {
+  it('tells which way one place lies from another in reading order', () => {
+    expect(directionTo({ section: 2, offset: 500 }, { section: 3, offset: 0 })).toBe(1);
+    expect(directionTo({ section: 2, offset: 500 }, { section: 1, offset: 900 })).toBe(-1);
+    expect(directionTo({ section: 2, offset: 500 }, { section: 2, offset: 700 })).toBe(1);
+    expect(directionTo({ section: 2, offset: 500 }, { section: 2, offset: 100 })).toBe(-1);
+    expect(directionTo({ section: 2, offset: 500 }, { section: 2, offset: 500 })).toBe(0);
+  });
+
   const sections: PlaceSection[] = [
     { index: 0, href: 'OEBPS/cover.xhtml', chars: 10, frontMatter: true },
     { index: 1, href: 'OEBPS/ch1.xhtml', chars: 1000, frontMatter: false },

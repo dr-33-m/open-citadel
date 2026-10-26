@@ -10,6 +10,7 @@ import { db } from '@/db/client';
 import { readingProgress } from '@/db/schema';
 import { bookFraction, highlightLocator, placeLocator, sectionText, type SentenceLocator } from '@/features/audiobook/utils/sentence-locator';
 import type { Sentence } from '@/features/audiobook/utils/sentences-of';
+import { directionTo, startPlace } from '@/features/audiobook/utils/start-place';
 import { current, placeSentence, type BookSession } from '@/services/audiobook/session';
 import { writeCurrent } from '@/services/audiobook/settings';
 import type { SpineLocator } from '@/services/epub-spine';
@@ -55,6 +56,20 @@ export async function saveBookPlace(s: BookSession, force = false): Promise<void
  */
 export function sentenceLocator(section: { href: string; title: string | null; chars: number }, paragraphs: Parameters<typeof sectionText>[0], sentence: Sentence): SentenceLocator {
   return highlightLocator(section, sentence, sectionText(paragraphs));
+}
+
+/**
+ * Which way the voice is from a page of the reader: 1 further on in the book,
+ * -1 further back, 0 on it, or null when nothing is being heard. The page is
+ * placed as a start place is (an estimate within its chapter), which is
+ * plenty to tell which side of it the voice is.
+ */
+export function voiceDirectionFrom(page: SpineLocator): -1 | 0 | 1 | null {
+  const s = current();
+  const sentence = s ? placeSentence(s) : null;
+  const place = s ? startPlace(s.script.listened, page) : null;
+  if (!sentence || !place) return null;
+  return directionTo(place, { section: sentence.section, offset: sentence.offset });
 }
 
 /** Where the voice is, as the reader opens on it to read along. */

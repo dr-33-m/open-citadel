@@ -51,3 +51,10 @@ export function startPlace(sections: readonly PlaceSection[], locator: SpineLoca
 export function startIndex(script: readonly Sentence[], offset: number): number {
   return script.findIndex((sentence) => sentence.offset >= offset);
 }
+
+/** Which way `to` lies from `from` in reading order: 1 further on, -1 further back, 0 at the same place. */
+export function directionTo(from: Place, to: Place): -1 | 0 | 1 {
+  if (to.section !== from.section) return to.section > from.section ? 1 : -1;
+  if (to.offset === from.offset) return 0;
+  return to.offset > from.offset ? 1 : -1;
+}

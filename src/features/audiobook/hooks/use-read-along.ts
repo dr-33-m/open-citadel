@@ -5,7 +5,7 @@ import React from 'react';
 import { FIRST_VISIBLE_TEXT_SCRIPT } from '@/features/audiobook/utils/first-visible-text';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
 import { createChapterTextQueryOptions } from '@/query-manager/audiobook';
-import { playFromLocator, readAlongLocator, sentenceLocator, skipSentence } from '@/services/audiobook';
+import { playFromLocator, readAlongLocator, sentenceLocator, skipSentence, voiceDirectionFrom } from '@/services/audiobook';
 import { stopPlayback, togglePlayback } from '@/services/player';
 import { useAudiobook } from '@/stores/audiobook';
 import { selectBook, selectPlaying, usePlayer, usePlayerLoader } from '@/stores/player';
@@ -58,16 +58,18 @@ export function useReadAlong({
   }, [chapter, sentenceId]);
 
   const [detached, setDetached] = React.useState(false);
-  const onPage = React.useRef<Locator | null>(null);
+  /** The page on screen, as the reader last reported it. */
+  const [page, setPage] = React.useState<Locator | null>(null);
+  // Which way BACK TO NOW goes: worked out again as the voice moves on, since
+  // it can catch up with a page read ahead and pass it.
+  const voiceWay = React.useMemo(() => (detached && page && sentenceId ? voiceDirectionFrom(page as never) : null), [detached, page, sentenceId]);
 
   React.useEffect(() => {
     if (!following || !ready || !locator || detached) return;
     readerRef.current?.goTo(locator);
   }, [following, ready, locator, detached, readerRef]);
 
-  const onLocationChange = React.useCallback((loc: Locator) => {
-    onPage.current = loc;
-  }, []);
+  const onLocationChange = React.useCallback((loc: Locator) => setPage(loc), []);
 
   const detach = React.useCallback(() => setDetached(true), []);
 
@@ -102,8 +104,9 @@ export function useReadAlong({
       following && detached
         ? {
             onBackToNow: () => setDetached(false),
+            /** Where the voice is from the page: 1 further on, -1 further back, 0 on it, null unknown. */
+            voiceWay,
             onListenFromHere: async () => {
-              const page = onPage.current;
               const text = await readerRef.current?.evaluateJavaScript(FIRST_VISIBLE_TEXT_SCRIPT);
               setDetached(false);
               if (page) void playFromLocator(page as never, text);

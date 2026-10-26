@@ -31,5 +31,5 @@ export { highlightNow, highlightSentence, toggleHighlightNow, undoHighlight, typ
 export { currentBookVoice, releaseBookForSpeech, startBook, stopBook, type StartResult } from '@/services/audiobook/lifecycle';
 export { restoreBook } from '@/services/audiobook/resume';
 export { isBookItem } from '@/services/audiobook/media-id';
-export { readAlongLocator, sentenceLocator } from '@/services/audiobook/position';
+export { readAlongLocator, sentenceLocator, voiceDirectionFrom } from '@/services/audiobook/position';
 export { current as currentBookSession, placeSentence, timelineOf } from '@/services/audiobook/session';

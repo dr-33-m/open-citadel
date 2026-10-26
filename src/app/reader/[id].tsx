@@ -223,6 +223,8 @@ export default function ReaderScreen() {
   const readAlong = useReadAlong({ bookId: id, readerRef, ready: readerLocated, tint: asColor(primary) ?? "#f2ca50" });
   const detachReadAlong = readAlong.detach;
   const speaking = readAlong.following ? readAlong.controls.active : isTTSActive;
+  // BACK TO NOW points the way the voice is: on when the page fell behind it, back when it was read ahead.
+  const backToNowLabel = readAlong.banner?.voiceWay === 1 ? "BACK TO NOW →" : readAlong.banner?.voiceWay === -1 ? "← BACK TO NOW" : "BACK TO NOW";
   // Tracks the last known TTS utterance locator
   const ttsLastLocatorRef = useRef<Locator | null>(null);
   // Tracks the last utterance TEXT seen during TTS. iOS fires many word-level
@@ -1169,7 +1171,7 @@ export default function ReaderScreen() {
       )}
       {readAlong.banner && (
         <ReadAloudBanner
-          backLabel="← BACK TO NOW"
+          backLabel={backToNowLabel}
           onBack={readAlong.banner.onBackToNow}
           hereLabel="LISTEN FROM HERE"
           onHere={readAlong.banner.onListenFromHere}
