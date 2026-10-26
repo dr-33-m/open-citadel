@@ -13,6 +13,10 @@ describe('offsetOfText', () => {
     expect(offsetOfText(chapter, '  to explain   that I did\nnot know Pittsburgh.  He asked', 0)).toBe(chapter.indexOf('to explain'));
   });
 
+  it('finds text whose paragraphs the page ran together', () => {
+    expect(offsetOfText(chapter, 'not know Pittsburgh.He asked me how soon', 0)).toBe(chapter.indexOf('not know'));
+  });
+
   it('ignores soft hyphens the page breaks words with', () => {
     expect(offsetOfText(chapter, 'Pitts­burgh. He asked me how soon', 0)).toBe(chapter.indexOf('Pittsburgh'));
   });

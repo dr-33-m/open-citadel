@@ -2,10 +2,11 @@ import type { DecorationGroup, Locator, ReadiumViewRef } from '@dr33m/react-nati
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
-import { FIRST_VISIBLE_TEXT_SCRIPT, READ_ALONG_GROUP, VOICE_ON_SCREEN_SCRIPT } from '@/features/audiobook/utils/page-scripts';
+import { useOffTheVoice } from '@/features/audiobook/hooks/use-off-the-voice';
+import { FIRST_VISIBLE_TEXT_SCRIPT, READ_ALONG_GROUP } from '@/features/audiobook/utils/page-scripts';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
 import { createChapterTextQueryOptions } from '@/query-manager/audiobook';
-import { playFromLocator, readAlongLocator, sentenceLocator, skipSentence, voiceDirectionFrom } from '@/services/audiobook';
+import { playFromLocator, readAlongLocator, sentenceLocator, skipSentence } from '@/services/audiobook';
 import { stopPlayback, togglePlayback } from '@/services/player';
 import { useAudiobook } from '@/stores/audiobook';
 import { selectBook, selectPlaying, usePlayer, usePlayerLoader } from '@/stores/player';
@@ -21,14 +22,12 @@ import { selectBook, selectPlaying, usePlayer, usePlayerLoader } from '@/stores/
  * voice crosses it. Nothing is handed over, so nothing can stop, wait or be
  * said twice, and going back to the player finds it exactly as it was.
  *
- * Turning a page by hand stops the pages following the voice (`detached`):
- * BACK TO NOW brings them back, LISTEN FROM HERE moves the voice to the page,
- * and coming back onto the voice's page (by hand, or the voice reaching the
- * page being read) has them follow again on their own.
- * "By hand" is Readium's word, not a guess: the reader reports a page the
- * user moved (a swipe, a key, an edge tap) apart from the ones the app moved
- * (`onNavigatedByUser`). The reader's own jumps (a chapter, a bookmark, a
- * highlight) are the user's too, and say so through `detach`.
+ * Turning a page by hand stops the pages following the voice: BACK TO NOW
+ * brings them back, LISTEN FROM HERE moves the voice to the page, and coming
+ * back onto the voice's page has them follow again on their own
+ * (`useOffTheVoice`). "By hand" is Readium's word, not a guess: the reader
+ * reports a page the user moved (a swipe, a key, an edge tap) apart from the
+ * ones the app moved (`onNavigatedByUser`).
  *
  * `initialLocator` is the sentence being heard as the reader opens, for it to
  * open on that page rather than on the saved place and then move.
@@ -59,44 +58,12 @@ export function useReadAlong({
     return chapter && sentence ? (sentenceLocator(chapter, chapter.paragraphs, sentence) as Locator) : null;
   }, [chapter, sentenceId]);
 
-  const [detached, setDetached] = React.useState(false);
-  /** The page on screen, as the reader last reported it. */
-  const [page, setPage] = React.useState<Locator | null>(null);
-  /** Which way BACK TO NOW goes: 1 the voice is further on, -1 further back, null not known yet. */
-  const [voiceWay, setVoiceWay] = React.useState<-1 | 0 | 1 | null>(null);
+  const { detached, page, voiceWay, onLocationChange, follow, detach, onNavigatedByUser } = useOffTheVoice({ readerRef, sentenceId });
 
   React.useEffect(() => {
     if (!following || !ready || !locator || detached) return;
     readerRef.current?.goTo(locator);
   }, [following, ready, locator, detached, readerRef]);
-
-  const onLocationChange = React.useCallback((loc: Locator) => setPage(loc), []);
-
-  // While off the voice's page, the page is asked about it whenever either
-  // moves: back on it (swiped back, or the voice came to the page being read)
-  // the pages follow again; else which way it is, from the page's first words,
-  // since the voice can catch up with a page read ahead and pass it.
-  React.useEffect(() => {
-    if (!detached || !page) return undefined;
-    let live = true;
-    const reader = readerRef.current;
-    void (async () => {
-      const on = await reader?.evaluateJavaScript(VOICE_ON_SCREEN_SCRIPT);
-      if (!live) return;
-      if (on === 'on') {
-        setDetached(false);
-        return;
-      }
-      const text = await reader?.evaluateJavaScript(FIRST_VISIBLE_TEXT_SCRIPT);
-      const way = await voiceDirectionFrom(page as never, text);
-      if (live) setVoiceWay(way);
-    })();
-    return () => {
-      live = false;
-    };
-  }, [detached, page, sentenceId, readerRef]);
-
-  const detach = React.useCallback(() => setDetached(true), []);
 
   const decorations: DecorationGroup = React.useMemo(
     () => ({
@@ -111,8 +78,10 @@ export function useReadAlong({
     initialLocator,
     decorations,
     onLocationChange,
-    /** The user moved the page (Readium's `onNavigatedByUser`), or the reader jumped for them: stop following. */
+    /** The reader jumped for the user (a chapter, a highlight, a bookmark): stop following. */
     detach,
+    /** Readium's `onNavigatedByUser`: the user turned the page. Stop following. */
+    onNavigatedByUser,
     /** The reader's read-aloud controls, driving the player. Shown once the book is in it, playing or paused. */
     controls: {
       active: following && loaded,
@@ -128,13 +97,15 @@ export function useReadAlong({
     banner:
       following && detached
         ? {
-            onBackToNow: () => setDetached(false),
+            onBackToNow: follow,
             /** Where the voice is from the page: 1 further on, -1 further back, null not known yet. */
             voiceWay,
             onListenFromHere: async () => {
               const text = await readerRef.current?.evaluateJavaScript(FIRST_VISIBLE_TEXT_SCRIPT);
-              setDetached(false);
-              if (page) void playFromLocator(page as never, text);
+              // Followed again once the voice has moved, or the pages would go
+              // back to where it was first and then come to the page.
+              if (page) await playFromLocator(page as never, text);
+              follow();
             },
           }
         : null,

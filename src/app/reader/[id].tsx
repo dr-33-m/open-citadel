@@ -222,6 +222,7 @@ export default function ReaderScreen() {
   // read-aloud controls are the player's.
   const readAlong = useReadAlong({ bookId: id, readerRef, ready: readerLocated, tint: asColor(primary) ?? "#f2ca50" });
   const detachReadAlong = readAlong.detach;
+  const followLocation = readAlong.onLocationChange;
   const speaking = readAlong.following ? readAlong.controls.active : isTTSActive;
   // BACK TO NOW points the way the voice is: on when the page fell behind it, back when it was read ahead.
   const backToNowLabel = readAlong.banner?.voiceWay === 1 ? "BACK TO NOW →" : readAlong.banner?.voiceWay === -1 ? "← BACK TO NOW" : "BACK TO NOW";
@@ -356,7 +357,7 @@ export default function ReaderScreen() {
       currentLocatorRef.current = loc;
       setReaderLocated(true);
       updateProgress(loc);
-      readAlong.onLocationChange(loc);
+      followLocation(loc);
       // Detect mismatch: TTS is paused but user navigated away (different chapter OR page)
       if (ttsPausedLocatorRef.current) {
         const sameLocation =
@@ -366,7 +367,7 @@ export default function ReaderScreen() {
         setTtsMismatch(!sameLocation);
       }
     },
-    [updateProgress, readAlong],
+    [updateProgress, followLocation],
   );
 
   const handlePublicationReady = useCallback(
@@ -825,6 +826,15 @@ export default function ReaderScreen() {
         onSkipNext: () => readerRef.current?.ttsSkipNext(),
       };
 
+  // The read-aloud icon, for a book heard in the player: stops it while its
+  // controls are up, else (paused in the mini player) starts it, as an
+  // unlit icon would read aloud.
+  const ttsToggle = readAlong.following
+    ? readAlong.controls.active
+      ? readAlong.controls.onStop
+      : readAlong.controls.onPlayPause
+    : handleTTSToggle;
+
   const initialLocation = useMemo(
     () => jumpLocator ?? readAlong.initialLocator ?? savedLocator ?? undefined,
     [jumpLocator, readAlong.initialLocator, savedLocator],
@@ -937,7 +947,7 @@ export default function ReaderScreen() {
             selectionActions={selectionActions}
             suppressNativeSelectionMenu={true}
             onLocationChange={handleLocationChange}
-            onNavigatedByUser={detachReadAlong}
+            onNavigatedByUser={readAlong.onNavigatedByUser}
             onPublicationReady={handlePublicationReady}
             onSelectionChange={handleSelectionChange}
             onSelectionAction={handleSelectionAction}
@@ -1016,7 +1026,7 @@ export default function ReaderScreen() {
             showHeader();
             setShowToc(true);
           }}
-          onTTSToggle={readAlong.following ? readAlong.controls.onStop : handleTTSToggle}
+          onTTSToggle={ttsToggle}
           onTTSLongPress={() => setShowTtsSettings(true)}
           onToggle={toggleHeader}
         />
@@ -1136,7 +1146,7 @@ export default function ReaderScreen() {
       )}
 
       {/* Return to progress banner — hidden when TTS is active to avoid conflicting banners */}
-      {preJumpLocator && publicationReady && !isTTSActive && (
+      {preJumpLocator && publicationReady && !speaking && (
         <View
           className="absolute left-6 right-6 flex-row items-center border border-surface-tertiary bg-card px-4 py-3"
           style={{ bottom: insets.bottom + spacing[4] }}

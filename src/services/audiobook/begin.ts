@@ -52,13 +52,17 @@ function present(row: BookRow, voiceKey: string): void {
  * Puts the book in the player now, synchronously, so a screen can open the
  * player in the same moment and it rises with the book drawn in it, rather
  * than the mini player arriving first and the player after. False when the
- * book cannot start (no book, no voice, no player), or when an episode is in
- * the player: it must step aside first, so the book is shown by `startBook`.
+ * book cannot start (no book, no voice, no player), or when something else
+ * is in the player (an episode, another book): it must step aside first,
+ * still sounding until it has, and could draw itself back over this one, so
+ * the book is shown by `startBook` once it has.
  */
 export function showBook(bookId: string): boolean {
   const row = bookRow(bookId);
   const voice = currentBookVoice();
-  if (!row || !voice || !readyPlayer() || store().current?.kind === 'episode') return false;
+  if (!row || !voice || !readyPlayer()) return false;
+  const inPlayer = store().current;
+  if (inPlayer && !(inPlayer.kind === 'book' && inPlayer.bookId === bookId)) return false;
   markStarting();
   present(row, voice.key);
   return true;

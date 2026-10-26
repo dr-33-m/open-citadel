@@ -1,18 +1,18 @@
 import React from 'react';
 import { View } from 'react-native';
-import Animated, { type EntryAnimationsValues } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Transition from 'react-native-screen-transitions';
-import { scheduleOnRN } from 'react-native-worklets';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
-import { EDGE_SHADOW_ROOM, elevation, fontFamily, slideDownPastEdge, slideUpFromEdge, spacing } from '@/constants/theme';
+import { EDGE_SHADOW_ROOM, elevation, fontFamily, slideDownPastEdge, spacing } from '@/constants/theme';
 import { BookOpen, MicSignal } from '@/components/icons';
 import { SquareArtwork } from '@/components/square-artwork';
 import { MiniPlayerControls } from '@/features/podcasts/components/mini-player-controls';
 import { MiniPlayerProgress } from '@/features/podcasts/components/mini-player-progress';
+import { useCardArrival } from '@/features/podcasts/hooks/use-card-arrival';
 import { useDismissSwipe } from '@/features/podcasts/hooks/use-dismiss-swipe';
 import { NOW_PLAYING_ART } from '@/navigation/transitions';
 import type { MiniPlayerItem } from '@/features/podcasts/utils/mini-player-item';
@@ -92,21 +92,7 @@ export function MiniPlayer({
   ]);
   const book = item.kind === 'book';
   const swipe = useDismissSwipe(onClose, MINI_PLAYER_CLEARANCE + bottomInset + EDGE_SHADOW_ROOM);
-  // A card still sliding in is not yet something to grow the player out of:
-  // the player opened as playback starts (Listen, from a book's menu) would
-  // grow out of a card in motion, half arrived. Until it has landed the
-  // player rises from the bottom edge instead (`playerTransition`).
-  const [landed, setLanded] = React.useState(!arrives);
-  const entering = React.useMemo(
-    () =>
-      arrives
-        ? (values: EntryAnimationsValues) => {
-            'worklet';
-            return { ...slideUpFromEdge(values), callback: () => scheduleOnRN(setLanded, true) };
-          }
-        : undefined,
-    [arrives],
-  );
+  const { entering, landed } = useCardArrival(arrives);
 
   return (
     <Animated.View
