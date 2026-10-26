@@ -58,7 +58,7 @@ export function useReadAlong({
     return chapter && sentence ? (sentenceLocator(chapter, chapter.paragraphs, sentence) as Locator) : null;
   }, [chapter, sentenceId]);
 
-  const { detached, page, voiceWay, onLocationChange, follow, detach, onNavigatedByUser } = useOffTheVoice({ readerRef, sentenceId });
+  const { detached, page, voiceWay, onLocationChange, follow, followOnceAt, detach, onNavigatedByUser } = useOffTheVoice({ readerRef, sentenceId });
 
   React.useEffect(() => {
     if (!following || !ready || !locator || detached) return;
@@ -102,10 +102,9 @@ export function useReadAlong({
             voiceWay,
             onListenFromHere: async () => {
               const text = await readerRef.current?.evaluateJavaScript(FIRST_VISIBLE_TEXT_SCRIPT);
-              // Followed again once the voice has moved, or the pages would go
-              // back to where it was first and then come to the page.
-              if (page) await playFromLocator(page as never, text);
-              follow();
+              // Followed again once the voice is heard on the page, or the
+              // pages would go back to where it was first and then come here.
+              followOnceAt(page ? await playFromLocator(page as never, text) : null);
             },
           }
         : null,

@@ -110,16 +110,20 @@ export async function skipSentence(by: 1 | -1): Promise<void> {
 /**
  * Plays from a page of the book: "Listen from here" in the reader, from the
  * page on screen, placed exactly by `text` (its first visible text) when known.
+ * Answers the sentence the voice was sent to, or null when it is already there
+ * (a book started afresh) or went nowhere: a sentence already made is played
+ * from the queue, and is only heard there once the player has moved to it.
  */
-export async function playFromLocator(locator: SpineLocator, text?: string | null): Promise<void> {
+export async function playFromLocator(locator: SpineLocator, text?: string | null): Promise<string | null> {
   const s = current();
   if (!s || !store().loaded) {
     const now = selectBook(store());
     if (now) await beginBook(now.bookId, { fromLocator: locator, fromText: text });
-    return;
+    return null;
   }
   const sentence = await sentenceAtLocator(s.script, locator, text);
-  if (!sentence || current() !== s) return;
+  if (!sentence || current() !== s) return null;
   s.wantsToPlay = true;
   jumpTo(s, sentence, 0);
+  return sentence.id;
 }

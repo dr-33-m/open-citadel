@@ -38,10 +38,29 @@ export function useOffTheVoice({ readerRef, sentenceId }: { readerRef: React.Ref
     pageRef.current = loc;
     setPage(loc);
   }, []);
+  /** A sentence the voice was sent to and is not heard at yet. */
+  const awaited = React.useRef<string | null>(null);
   const follow = React.useCallback(() => {
     leftAt.current = null;
+    awaited.current = null;
     setDetached(false);
   }, []);
+  /**
+   * Follows again once the voice is heard at `target` (LISTEN FROM HERE): a
+   * sentence already made plays from the queue, and is reported a moment after
+   * the jump, so following at once would send the pages back to the old one
+   * first. Null: the voice is there already.
+   */
+  const followOnceAt = React.useCallback(
+    (target: string | null) => {
+      if (target === null || target === sentenceRef.current) follow();
+      else awaited.current = target;
+    },
+    [follow],
+  );
+  React.useEffect(() => {
+    if (sentenceId !== null && sentenceId === awaited.current) follow();
+  }, [sentenceId, follow]);
 
   // While off the voice's page, the page is asked about it whenever either
   // moves: back on it (swiped back, or the voice came to the page being read)
@@ -81,5 +100,5 @@ export function useOffTheVoice({ readerRef, sentenceId }: { readerRef: React.Ref
   const onNavigatedByUser = React.useCallback(() => setDetached(true), []);
 
 
-  return { detached, page, voiceWay, onLocationChange, follow, detach, onNavigatedByUser };
+  return { detached, page, voiceWay, onLocationChange, follow, followOnceAt, detach, onNavigatedByUser };
 }
