@@ -9,6 +9,8 @@ import {
   CircleMinus,
   Clock,
   ExternalLink,
+  Headphones,
+  Lock,
   Newspaper,
   RotateCcw,
   Share,
@@ -26,6 +28,9 @@ import type { ArticleItem } from '@/services/blogs/records';
 
 const ICONS: Record<ArticleAction, LucideIcon> = {
   open: BookOpen,
+  // The book menu's marks for Listen.
+  listen: Headphones,
+  'listen-locked': Lock,
   // His mark, wherever a row is him.
   chat: ZodiacPisces,
   // The book menu's marks for the rows a book has too.
@@ -48,6 +53,8 @@ type ArticleActionSheetProps = {
   article: ArticleItem | null;
   /** Off on the blog's own page, where going to the blog goes nowhere. */
   blogLink?: boolean;
+  /** Listening in a cloud voice: open with a plan, locked without. */
+  listen?: 'open' | 'locked';
   onClose: () => void;
   onAction: (action: ArticleAction, article: ArticleItem) => void;
 };
@@ -57,7 +64,7 @@ type ArticleActionSheetProps = {
  * appears. The same menu on every surface; which rows appear is
  * `articleMenu`'s decision.
  */
-export function ArticleActionSheet({ visible, article, blogLink = true, onClose, onAction }: ArticleActionSheetProps) {
+export function ArticleActionSheet({ visible, article, blogLink = true, listen, onClose, onAction }: ArticleActionSheetProps) {
   const tokens = useThemeTokens();
   // Held content through the close: the shell keeps the last children while
   // it animates away, so this renders nothing rather than unmounting.
@@ -79,7 +86,7 @@ export function ArticleActionSheet({ visible, article, blogLink = true, onClose,
             {article.title}
           </ThemedText>
         </View>
-        <MenuList rows={articleMenu(article, { blogLink })} icons={ICONS} onSelect={select} />
+        <MenuList rows={articleMenu(article, { blogLink, listen })} icons={ICONS} onSelect={select} />
       </View>
     </Sheet>
   );

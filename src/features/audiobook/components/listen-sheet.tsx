@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
-import { BookOpen, Headphones, Info } from '@/components/icons';
+import { BookOpen, Headphones, Info, Newspaper } from '@/components/icons';
 import { SquareArtwork } from '@/components/square-artwork';
 import { StatGrid } from '@/components/stage/stat-grid';
 import { TrustLine } from '@/components/stage/trust-line';
@@ -15,12 +15,14 @@ import { ListenStatsSkeleton } from '@/features/audiobook/components/listen-stat
 import type { ListenState } from '@/features/audiobook/hooks/use-listen';
 import { VoicePickerRow } from '@/features/tts/components/voice-picker-row';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { coverAspect } from '@/utils/cover-aspect';
 import { monogramOf } from '@/utils/monogram';
 
 const COVER_HEIGHT = 132;
 
 /**
- * Before a book is first heard: what it will take. The cover, the book, the
+ * Before a book (or a blog post) is first heard: what it will take. The
+ * cover (a post's picture, square), the book, the
  * time left and the Neurons as figures, the voice it will be read in, and
  * LISTEN where the thumb is. How it is paid for is one tap deeper, behind
  * the "i"; what happens to the text is said in one line at the foot.
@@ -29,7 +31,9 @@ export function ListenSheet({ sheet }: { sheet: ListenState['sheet'] }) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
   const { book } = sheet;
-  const monogram = book ? monogramOf(book.title) : null;
+  const monogram = book && !book.post ? monogramOf(book.title) : null;
+  const aspect = coverAspect(book?.post ?? false);
+  const fallbackIcon = book?.post ? Newspaper : BookOpen;
 
   return (
     <Sheet visible={sheet.visible} onClose={sheet.onClose}>
@@ -39,8 +43,8 @@ export function ListenSheet({ sheet }: { sheet: ListenState['sheet'] }) {
             <SquareArtwork
               uri={book.coverUrl}
               size={COVER_HEIGHT}
-              aspect={2 / 3}
-              fallbackIcon={BookOpen}
+              aspect={aspect}
+              fallbackIcon={fallbackIcon}
               monogram={monogram}
               placeholderColor={tokens['--color-surface-tertiary']}
             />

@@ -6,7 +6,6 @@ import { timeLeftLabel } from '@/features/audiobook/utils/listen-estimate';
 import { sectionOfId } from '@/features/audiobook/utils/sentences-of';
 import { bookChapters, bookClockNow, type BookChapter } from '@/services/audiobook';
 import { selectSentenceHighlighted, useAudiobook } from '@/stores/audiobook';
-import { useBooksStore } from '@/stores/books';
 import { selectBook, usePlayer } from '@/stores/player';
 
 const NO_CHAPTERS: BookChapter[] = [];
@@ -15,8 +14,7 @@ const NO_CHAPTERS: BookChapter[] = [];
  * Everything the full player draws for a book: the player's own state
  * (`usePlayerState`, whose clock is the whole book's at the listener's speed),
  * the chapter being heard, the chapters on the book's clock, the time left in
- * words, whether the sentence being heard is highlighted, and the book as the
- * Library keeps it (for its favourite).
+ * words, and whether the sentence being heard is highlighted.
  *
  * The chapters and the time left are worked out again as each sentence
  * starts, and only once the player has landed: nothing is asked of the book
@@ -31,7 +29,6 @@ export function useBookPlayer(landed: boolean) {
   const preparing = useAudiobook((s) => s.preparing);
   const version = useAudiobook((s) => s.timelineVersion);
   const bookId = current?.bookId ?? null;
-  const favorite = useBooksStore((s) => (bookId ? s.books.find((b) => b.id === bookId)?.isFavorite === 1 : false));
 
   const chapters = React.useMemo(
     () => (landed && bookId ? bookChapters() : NO_CHAPTERS),
@@ -51,7 +48,6 @@ export function useBookPlayer(landed: boolean) {
   return {
     ...state,
     current,
-    favorite,
     highlighted,
     preparing,
     chapters,

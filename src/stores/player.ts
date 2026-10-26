@@ -31,6 +31,8 @@ export type BookNowPlaying = {
   title: string;
   author: string | null;
   coverUrl: string | null;
+  /** A blog post rather than a book: its picture is square, its favourite the post's. */
+  post: boolean;
   /** The section being heard, which is the book's chapter here. */
   chapterTitle: string | null;
   durationSec: number;

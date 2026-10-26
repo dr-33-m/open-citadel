@@ -1,21 +1,20 @@
 import React from 'react';
 import { useWindowDimensions, View } from 'react-native';
 
-import { BookOpen } from '@/components/icons';
+import { BookOpen, Newspaper } from '@/components/icons';
 import { contentColumn } from '@/constants/theme';
 import { BookPlayerSheets } from '@/features/audiobook/components/book-player-sheets';
 import { BookPlayerTools } from '@/features/audiobook/components/book-player-tools';
 import { useBookPlayer } from '@/features/audiobook/hooks/use-book-player';
 import { useBookPlayerActions } from '@/features/audiobook/hooks/use-book-player-actions';
+import { useHeardFavorite } from '@/features/audiobook/hooks/use-heard-favorite';
 import { PlayerArtwork } from '@/features/podcasts/components/player-artwork';
 import { PlayerControls } from '@/features/podcasts/components/player-controls';
 import { PlayerHeader } from '@/features/podcasts/components/player-header';
 import { PlayerTitle } from '@/features/podcasts/components/player-title';
 import { usePlayerControls } from '@/features/podcasts/hooks/use-player-controls';
+import { coverAspect } from '@/utils/cover-aspect';
 import { monogramOf } from '@/utils/monogram';
-
-/** A book's cover, width over height. */
-const COVER = 2 / 3;
 
 /**
  * The full player for a book heard in a cloud voice: the same player an
@@ -31,11 +30,13 @@ export function BookPlayer({ landed }: { landed: boolean }) {
   const player = useBookPlayer(landed);
   const controls = usePlayerControls(player);
   const actions = useBookPlayerActions(player.current);
+  const star = useHeardFavorite(player.current);
   const { current } = player;
 
   if (!current) return null;
+  const aspect = coverAspect(current.post);
   // As tall as an episode's artwork, so the controls keep their place.
-  const art = Math.min((width - 48) / COVER, height * 0.42, 380);
+  const art = Math.min((width - 48) / aspect, height * 0.42, 380);
 
   return (
     <>
@@ -45,17 +46,17 @@ export function BookPlayer({ landed }: { landed: boolean }) {
           <PlayerArtwork
             uri={current.coverUrl}
             size={art}
-            aspect={COVER}
+            aspect={aspect}
             playing={player.isPlaying}
-            fallbackIcon={BookOpen}
-            monogram={monogramOf(current.title)}
+            fallbackIcon={current.post ? Newspaper : BookOpen}
+            monogram={current.post ? null : monogramOf(current.title)}
           />
         </View>
         <PlayerTitle
           title={current.title}
           subtitle={current.author ?? ''}
-          favorite={player.favorite}
-          onToggleFavorite={actions.toggleFavorite}
+          favorite={star.favorite}
+          onToggleFavorite={star.toggle}
         />
         <PlayerControls
           player={player}

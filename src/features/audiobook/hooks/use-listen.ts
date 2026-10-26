@@ -14,20 +14,21 @@ import { createListenFiguresQueryOptions } from '@/query-manager/audiobook';
 import { createCloudVoicesQueryOptions } from '@/query-manager/cloud-voices';
 import { currentBookVoice, showBook, startBook, type StartResult } from '@/services/audiobook';
 import { readHeardVoice, readPace } from '@/services/audiobook/settings';
-import type { Book } from '@/stores/books';
+import type { BookInfo } from '@/services/audiobook/session';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
 import { parseCloudVoiceKey } from 'samwell-shared';
 
 const TOAST = 'audiobook-listen';
 
-const WHY_NOT: Partial<Record<StartResult, string>> = {
-  unreadable: "This book can't be read aloud yet.",
-  unavailable: 'Audio is not available on this phone.',
-};
+/** What Listen is given: a book from the Library, or a blog post's reader copy (`listenItem`). */
+export type ListenTarget = Pick<BookInfo, 'id' | 'title' | 'author' | 'coverUrl'> & { post?: boolean };
+
+const whyNot = (result: StartResult, post: boolean) =>
+  result === 'unavailable' ? 'Audio is not available on this phone.' : `This ${post ? 'post' : 'book'} can't be read aloud yet.`;
 
 /**
- * Listen, from a book's menu.
+ * Listen, from a book's menu or a blog post's.
  *
  * With a plan and a book already heard in this voice, it simply plays, and
  * the player opens. The first time (or after the voice has changed) the
@@ -37,7 +38,7 @@ const WHY_NOT: Partial<Record<StartResult, string>> = {
  */
 export function useListen() {
   const router = useRouter();
-  const [book, setBook] = React.useState<Book | null>(null);
+  const [book, setBook] = React.useState<ListenTarget | null>(null);
   const [open, setOpen] = React.useState(false);
   const [selling, setSelling] = React.useState(false);
   const [choosingVoice, setChoosingVoice] = React.useState(false);
@@ -60,7 +61,7 @@ export function useListen() {
   const voiceName = parsed ? [cloudVoiceLabel(parsed.voice), voice?.model?.label].filter(Boolean).join(' · ') : '';
 
   const begin = React.useCallback(
-    async (bookId: string) => {
+    async (bookId: string, post: boolean) => {
       // In one moment, the book in the player and the player opening on it: it
       // rises with the book already drawn, its loader on, rather than the mini
       // player arriving first and the player after it.
@@ -70,18 +71,18 @@ export function useListen() {
       if (result === 'playing') {
         if (!shown) router.push('/podcasts/player');
       } else if (result === 'no-voice') setSelling(true);
-      else showToast({ key: TOAST, message: WHY_NOT[result] ?? "This book can't be read aloud yet." });
+      else showToast({ key: TOAST, message: whyNot(result, post) });
     },
     [router],
   );
 
   const listen = React.useCallback(
-    (next: Book) => {
+    (next: ListenTarget) => {
       setBook(next);
       const now = currentBookVoice();
       if (!now) setSelling(true);
       else if (readHeardVoice(next.id) !== now.key) setOpen(true);
-      else void begin(next.id);
+      else void begin(next.id, next.post ?? false);
     },
     [begin],
   );
@@ -91,14 +92,14 @@ export function useListen() {
     sheet: {
       visible: open,
       onClose: () => setOpen(false),
-      book: book ? { title: book.title, author: book.author, coverUrl: book.coverUrl } : null,
+      book: book ? { title: book.title, author: book.author, coverUrl: book.coverUrl, post: book.post ?? false } : null,
       stats,
       voiceName,
       onVoice: () => setChoosingVoice(true),
       onInfo: () => setInfoOpen(true),
       onListen: () => {
         setOpen(false);
-        if (book) void begin(book.id);
+        if (book) void begin(book.id, book.post ?? false);
       },
     },
     voice: { visible: choosingVoice, onClose: () => setChoosingVoice(false) },
@@ -106,7 +107,7 @@ export function useListen() {
     plans: {
       visible: selling,
       onClose: () => setSelling(false),
-      line: 'Listening to books comes with every plan.',
+      line: book?.post ? 'Listening to posts comes with every plan.' : 'Listening to books comes with every plan.',
       infoOpensOn: 'voices' as const,
       onActivated: () => {
         const bought = useSubscriptionStore.getState().plan;

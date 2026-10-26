@@ -1,10 +1,10 @@
 import React from 'react';
 
 import { useListen } from '@/features/audiobook/hooks/use-listen';
+import { useListenState } from '@/features/audiobook/hooks/use-listen-state';
 import { useOpenReader } from '@/features/library/hooks/use-open-reader';
 import { useBooksStore, type Book } from '@/stores/books';
 import { useCollectionsStore } from '@/stores/collections';
-import { useSubscriptionStore } from '@/stores/subscription';
 
 type BookSheetsOptions = {
   /** Offer "Add to collection" in the menu. Off inside a collection, which manages its own. */
@@ -32,9 +32,7 @@ export function useBookSheets({ collections: withCollections = true, onDeleted }
   const updateBookStatus = useBooksStore((s) => s.updateBookStatus);
   const listen = useListen();
   const { listen: startListening } = listen;
-  // Every plan reaches a cloud voice, so the padlock is simply "no plan".
-  // Only once that is known: a plan still being checked is not drawn locked.
-  const listenState = useSubscriptionStore((s): 'open' | 'locked' => (s.status === 'none' ? 'locked' : 'open'));
+  const listenState = useListenState();
 
   const [menuBook, setMenuBook] = React.useState<Book | null>(null);
   const [deleting, setDeleting] = React.useState<Book | null>(null);

@@ -16,6 +16,13 @@ describe('articleMenu', () => {
     expect(kept).toEqual(['open', 'chat', 'unfavorite', 'dequeue', 'finish', 'unread', 'original', 'share']);
   });
 
+  it('offers Listen after Read where it is offered, locked without a plan', () => {
+    expect(articleMenu(FRESH, { blogLink: true, listen: 'open' }).map((r) => r.key).slice(0, 3)).toEqual(['open', 'listen', 'chat']);
+    const locked = articleMenu(FRESH, { blogLink: true, listen: 'locked' })[1];
+    expect(locked).toMatchObject({ key: 'listen-locked', label: 'Listen', tone: 'muted' });
+    expect(articleMenu(FRESH, { blogLink: true, listen: null }).map((r) => r.key)).not.toContain('listen');
+  });
+
   it('keeps a finished post off the queue', () => {
     const keys = articleMenu({ ...FRESH, finishedAt: 'x', readAt: 'x' }, { blogLink: false }).map((r) => r.key);
     expect(keys).not.toContain('queue');

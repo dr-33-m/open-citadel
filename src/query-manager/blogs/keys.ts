@@ -21,6 +21,8 @@ export const blogKeys = {
   followedFeeds: () => [...blogKeys.library(), 'followed-feeds'] as const,
   blog: (id: string) => [...blogKeys.library(), 'blog', id] as const,
   blogArticles: (id: string, filter: BlogArticleFilter) => [...blogKeys.blog(id), 'articles', filter] as const,
+  /** The post a reader copy (a `books` row of kind `article`) was made from. */
+  articleOfBook: (bookId: string) => [...blogKeys.library(), 'article-of-book', bookId] as const,
   /** Every post, for picking one to ask Samwell about. */
   askable: () => [...blogKeys.library(), 'askable'] as const,
 

@@ -13,6 +13,7 @@ export function nowPlayingOf(s: BookSession): BookNowPlaying {
     title: s.info.title,
     author: s.info.author,
     coverUrl: s.info.coverUrl,
+    post: s.info.post,
     chapterTitle: chapterTitle(section?.title, s.info.title),
     durationSec: timelineOf(s).total,
     positionSec: sentence ? bookSecondsAt(s, sentence, 0) : 0,

@@ -8,7 +8,7 @@ import { useCSSVariable } from 'uniwind';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { EDGE_SHADOW_ROOM, elevation, fontFamily, slideDownPastEdge, spacing } from '@/constants/theme';
-import { BookOpen, MicSignal } from '@/components/icons';
+import { BookOpen, MicSignal, Newspaper, type LucideIcon } from '@/components/icons';
 import { SquareArtwork } from '@/components/square-artwork';
 import { MiniPlayerControls } from '@/features/podcasts/components/mini-player-controls';
 import { MiniPlayerProgress } from '@/features/podcasts/components/mini-player-progress';
@@ -27,6 +27,8 @@ export const MINI_PLAYER_GAP = spacing[3];
 export const MINI_PLAYER_CLEARANCE = MINI_PLAYER_HEIGHT + MINI_PLAYER_GAP;
 
 const ART = 44;
+/** What stands in for missing artwork. */
+const ART_ICONS: Record<MiniPlayerItem['art'], LucideIcon> = { book: BookOpen, post: Newspaper, episode: MicSignal };
 
 /** Screen readers get the swipe as an action. */
 const DISMISS_ACTIONS = [{ name: 'dismiss', label: 'Close the player' }];
@@ -91,6 +93,8 @@ export function MiniPlayer({
     '--color-primary',
   ]);
   const book = item.kind === 'book';
+  // A book's initials on its blank cover, as the Library draws one.
+  const monogram = item.art === 'book' ? monogramOf(item.title) : null;
   const swipe = useDismissSwipe(onClose, MINI_PLAYER_CLEARANCE + bottomInset + EDGE_SHADOW_ROOM);
   const { entering, landed } = useCardArrival(arrives);
 
@@ -122,8 +126,8 @@ export function MiniPlayer({
                   uri={item.artworkUrl}
                   size={ART}
                   aspect={item.aspect}
-                  fallbackIcon={book ? BookOpen : MicSignal}
-                  monogram={book ? monogramOf(item.title) : null}
+                  fallbackIcon={ART_ICONS[item.art]}
+                  monogram={monogram}
                   placeholderColor={asColor(surfaceTertiary)}
                 />
               </Transition.Boundary>

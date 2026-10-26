@@ -4,11 +4,10 @@ import React from 'react';
 import { useHighlightNow } from '@/features/audiobook/hooks/use-highlight-now';
 import type { BookPlayerAction } from '@/features/audiobook/utils/player-menu';
 import { stopPlayback } from '@/services/player';
-import { useBooksStore } from '@/stores/books';
 import type { BookNowPlaying } from '@/stores/player';
 
 /**
- * What only a book's player does: its favourite, Highlight, and its menu
+ * What only a book's player does: Highlight, and its menu
  * (read along in the book, which opens on the sentence being heard and
  * follows the voice, or stop listening).
  */
@@ -32,7 +31,6 @@ export function useBookPlayerActions(current: BookNowPlaying | null) {
   );
 
   return {
-    toggleFavorite: () => bookId && void useBooksStore.getState().toggleFavorite(bookId),
     highlight: () => void highlight(),
     onMenu,
   };

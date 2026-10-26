@@ -34,7 +34,13 @@ export function bookRow(bookId: string): BookRow | null {
 }
 
 export function infoOf(row: BookRow): BookInfo {
-  return { id: row.id, title: row.title, author: row.author || null, coverUrl: row.coverUrl };
+  return { id: row.id, title: row.title, author: row.author || null, coverUrl: row.coverUrl, post: row.kind === 'article' };
+}
+
+/** A book or post as Listen shows it, or null when it is not on the phone. */
+export function listenItem(bookId: string): BookInfo | null {
+  const row = bookRow(bookId);
+  return row ? infoOf(row) : null;
 }
 
 /** The voice books are heard in now, and what to ask the server for: always MP3, always 1×. */

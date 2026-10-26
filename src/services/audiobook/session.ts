@@ -28,6 +28,8 @@ export interface BookInfo {
   title: string;
   author: string | null;
   coverUrl: string | null;
+  /** A blog post's reader copy (`openArticleBook`) rather than a book. */
+  post: boolean;
 }
 
 /** A sentence in the native queue: index i here is index i there. */

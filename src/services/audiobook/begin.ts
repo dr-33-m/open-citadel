@@ -36,6 +36,7 @@ function present(row: BookRow, voiceKey: string): void {
       title: info.title,
       author: info.author,
       coverUrl: info.coverUrl,
+      post: info.post,
       chapterTitle: shown?.chapterTitle ?? null,
       durationSec: shown?.durationSec ?? 0,
       positionSec: shown?.positionSec ?? 0,
