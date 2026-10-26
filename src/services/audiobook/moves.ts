@@ -13,8 +13,8 @@ import { publish } from '@/services/audiobook/lifecycle';
 import { sentenceAtLocator } from '@/services/audiobook/start';
 import { saveBookPlace } from '@/services/audiobook/position';
 import { produce, sentenceAfter, sentenceBefore } from '@/services/audiobook/producer';
-import { skipWithinQueue } from '@/services/audiobook/queue';
-import { bookSecondsAt, clockPaceOf, current, placeSentence, playingEntry, timelineOf, type BookSession } from '@/services/audiobook/session';
+import { nativePlace, skipWithinQueue } from '@/services/audiobook/queue';
+import { bookSecondsAt, clockPaceOf, current, placeSentence, timelineOf, type BookSession } from '@/services/audiobook/session';
 import type { SpineLocator } from '@/services/epub-spine';
 import { markStarting, store } from '@/services/player/session';
 import { useAudiobook } from '@/stores/audiobook';
@@ -23,8 +23,9 @@ import { selectBook } from '@/stores/player';
 /** Where the listener is in the book now, in the audio's own seconds. */
 export function bookPositionNow(s: BookSession): number {
   if (s.pending) return bookSecondsAt(s, s.pending.sentence, s.pending.offsetSec);
-  const entry = playingEntry(s);
-  return entry ? bookSecondsAt(s, entry.sentence, TrackPlayer.getProgress().position) : 0;
+  const { index, position } = nativePlace(s);
+  const entry = s.queue[index];
+  return entry ? bookSecondsAt(s, entry.sentence, position) : 0;
 }
 
 /** Moves to a sentence, `offsetSec` into it: within the queue when it is made, else made from there. */

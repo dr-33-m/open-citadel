@@ -11,6 +11,15 @@ import { usePlayer, type NowPlaying } from '@/stores/player';
 const POLL_MS = 500;
 /** How old a reading can be and still be carried forward instead of asking again. */
 const FRESH_MS = 2000;
+/**
+ * How fast a book's length takes a correction in, in seconds of length a
+ * second. A book's length is an estimate that firms up as its sentences are
+ * made (`book-clock`), and in a short one (a blog post) each correction moved
+ * the time left by seconds, back and forth. Taken in at under one second a
+ * second, the time left still only ever counts down while it plays, and the
+ * thumb only moves on.
+ */
+const LENGTH_ABSORB = 0.5;
 
 /** The last reading any surface took, shared so the next surface to mount can start from it. */
 let lastRead: PositionRead | null = null;
@@ -110,6 +119,13 @@ export function usePlaybackClock(storedPosition: number, storedDuration: number,
   const loaded = usePlayer((s) => s.loaded);
   const isPlaying = usePlayer((s) => s.isPlaying);
   const speed = usePlayer((s) => clockRate(s.current, s.speed));
+  const book = usePlayer((s) => s.current?.kind === 'book');
+  // The length shown, kept across runs of the effect below (a pause, the
+  // voice waiting for its next sentence) so a correction is never taken in at
+  // once. Started afresh for another item, or another speed: a book's length
+  // changes at once with its speed (its clock is at the listener's speed).
+  const shown = React.useRef({ of: '', length: 0 });
+  const shownOf = usePlayer((s) => `${itemIdOf(s.current)}|${s.speed}`);
   const [seed] = React.useState(estimatedPlayback);
   const position = useSharedValue(seed?.position ?? fallbackPosition);
   const duration = useSharedValue(seed && seed.duration > 0 ? seed.duration : fallbackDuration);
@@ -127,9 +143,25 @@ export function usePlaybackClock(storedPosition: number, storedDuration: number,
       const ahead = animate ? from + (POLL_MS / 1000) * speed : from;
       position.set(animate ? withTiming(ahead, { duration: POLL_MS, easing: Easing.linear }) : ahead);
     };
+    // A book's shown length moves toward the estimate by at most a step a
+    // poll (`LENGTH_ABSORB`), gliding across the poll as the position does.
+    // Anything else, or a book just put in the player, takes it at once.
+    const settleLength = (next: number) => {
+      const held = shown.current;
+      if (!book || held.of !== shownOf || !(held.length > 0)) {
+        shown.current = { of: shownOf, length: next };
+        duration.set(next);
+        return;
+      }
+      const step = (LENGTH_ABSORB * POLL_MS) / 1000;
+      const to = held.length + Math.min(step, Math.max(-step, next - held.length));
+      if (to === held.length) return;
+      held.length = to;
+      duration.set(withTiming(to, { duration: POLL_MS, easing: Easing.linear }));
+    };
     const read = (animate: boolean) => {
       const progress = readPlayback();
-      if (progress.duration > 0) duration.set(progress.duration);
+      if (progress.duration > 0) settleLength(progress.duration);
       glide(progress.position, animate);
     };
     const estimate = seeded.current ? estimatedPlayback() : null;
@@ -143,7 +175,7 @@ export function usePlaybackClock(storedPosition: number, storedDuration: number,
     // skip or a chapter jump made while paused has to move the bar as well.
     const id = setInterval(() => read(isPlaying), POLL_MS);
     return () => clearInterval(id);
-  }, [active, duration, fallbackDuration, fallbackPosition, isPlaying, loaded, position, speed]);
+  }, [active, book, duration, fallbackDuration, fallbackPosition, isPlaying, loaded, position, shownOf, speed]);
 
   return { position, duration };
 }

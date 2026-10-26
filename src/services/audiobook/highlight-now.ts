@@ -9,14 +9,13 @@
  * capture and the Timeline day all come from there, so it is edited, tagged
  * and noted later like any other.
  */
-import TrackPlayer from '@rntp/player';
-
 import { highlightTarget, type LocatorSection } from '@/features/audiobook/utils/sentence-locator';
 import type { ScriptParagraph, Sentence } from '@/features/audiobook/utils/sentences-of';
 import { queryClient } from '@/lib/query-client';
 import { audiobookKeys } from '@/query-manager/audiobook/keys';
 import { sentenceLocator } from '@/services/audiobook/position';
-import { current, playingEntry, type BookSession } from '@/services/audiobook/session';
+import { nativePlace } from '@/services/audiobook/queue';
+import { current, type BookSession } from '@/services/audiobook/session';
 import type { ChapterText } from '@/services/audiobook/text';
 import { useAudiobook } from '@/stores/audiobook';
 import { useReaderStore } from '@/stores/reader';
@@ -30,10 +29,10 @@ export type HighlightResult =
 
 /** The sentence a Highlight press means: the one playing, or the one just ended for a press in its first second. */
 function targetOf(s: BookSession): Sentence | null {
-  const entry = playingEntry(s);
+  const { index, position } = nativePlace(s);
+  const entry = s.queue[index];
   if (!entry) return null;
-  const index = highlightTarget(s.playing, TrackPlayer.getProgress().position);
-  return s.queue[index]?.sentence ?? entry.sentence;
+  return s.queue[highlightTarget(index, position)]?.sentence ?? entry.sentence;
 }
 
 /** The book's highlights changed: the follow-along sheet marks its sentences again. */

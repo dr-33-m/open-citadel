@@ -57,7 +57,7 @@ export function BookPlayerSheets({ player, controls, onMenu }: BookPlayerSheetsP
       <FollowAlongMenuSheet {...text.menu} />
       {text.editor ? <HighlightMenu {...text.editor} /> : null}
       <TtsSettingsSheet visible={sheet === 'voice'} onClose={closeVoice} cloudOnly />
-      <BookMenuSheet visible={sheet === 'menu'} title={player.current?.title ?? ''} onClose={closeSheet} onSelect={onMenu} />
+      <BookMenuSheet visible={sheet === 'menu'} title={player.current?.title ?? ''} post={player.current?.post ?? false} onClose={closeSheet} onSelect={onMenu} />
     </>
   );
 }

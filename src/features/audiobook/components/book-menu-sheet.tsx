@@ -9,18 +9,22 @@ import { bookPlayerMenu, type BookPlayerAction } from '@/features/audiobook/util
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 const ICONS = { read: BookOpen, stop: CircleX };
-const ROWS = bookPlayerMenu();
+const BOOK_ROWS = bookPlayerMenu(false);
+const POST_ROWS = bookPlayerMenu(true);
 
 type BookMenuSheetProps = {
   visible: boolean;
   title: string;
+  /** A blog post rather than a book. */
+  post: boolean;
   onClose: () => void;
   onSelect: (action: BookPlayerAction) => void;
 };
 
 /** The player's menu for a book. Every row closes it. */
-export function BookMenuSheet({ visible, title, onClose, onSelect }: BookMenuSheetProps) {
+export function BookMenuSheet({ visible, title, post, onClose, onSelect }: BookMenuSheetProps) {
   const muted = useThemeTokens()['--color-muted-foreground'];
+  const rows = post ? POST_ROWS : BOOK_ROWS;
   const select = (action: BookPlayerAction) => {
     onClose();
     onSelect(action);
@@ -31,7 +35,7 @@ export function BookMenuSheet({ visible, title, onClose, onSelect }: BookMenuShe
         <ThemedText type="bodySm" color={muted} numberOfLines={1} className="px-4">
           {title}
         </ThemedText>
-        <MenuList rows={ROWS} icons={ICONS} onSelect={select} />
+        <MenuList rows={rows} icons={ICONS} onSelect={select} />
       </View>
     </Sheet>
   );

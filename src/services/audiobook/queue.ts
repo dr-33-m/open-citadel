@@ -97,6 +97,19 @@ export function skipWithinQueue(index: number, offsetSec: number): void {
   if (offsetSec > 0.3) TrackPlayer.seekTo(offsetSec);
 }
 
+/**
+ * The queue item the native player is on and how far into it, read together.
+ * The player moves on to the next sentence a moment before its event reaches
+ * JS (`followTransition`), and its position is by then the new sentence's:
+ * read against `s.playing`, it put the clock back at the start of the old
+ * sentence for that moment, and a Highlight then meant two sentences back.
+ */
+export function nativePlace(s: BookSession): { index: number; position: number } {
+  const native = TrackPlayer.getActiveMediaItemIndex();
+  const index = native !== null && native >= 0 && native < s.queue.length ? native : s.playing;
+  return { index, position: TrackPlayer.getProgress().position };
+}
+
 /** Lets go of every queued sentence: the cache may trim them again. */
 export function unpinQueue(): void {
   pinPieces([]);
