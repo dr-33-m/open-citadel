@@ -6,7 +6,7 @@ vi.mock('@/db/schema', () => ({ podcastEpisodes: {}, podcasts: {} }));
 vi.mock('@/services/podcasts/records', () => ({ nowIso: () => '' }));
 vi.mock('@/query-manager/podcasts/invalidate', () => ({ invalidatePodcastLibrary: () => undefined }));
 vi.mock('@/services/podcasts/episodes', () => ({ getEpisodeItem: async () => null }));
-vi.mock('@/stores/podcast-player', () => ({ usePodcastPlayer: { getState: () => ({ current: null }) } }));
+vi.mock('@/stores/player', () => ({ usePlayer: { getState: () => ({ current: null }) }, selectEpisode: () => null }));
 
 const { coverNameFor } = await import('@/services/podcasts/download-covers');
 

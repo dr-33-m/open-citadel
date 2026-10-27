@@ -15,7 +15,7 @@ import { TileGridSkeleton } from "@/components/skeletons/tile-grid-skeleton";
 import { ThemedView } from "@/components/themed-view";
 import { SearchBar } from "@/components/ui/search-bar";
 import { LIST_DRAW_DISTANCE, contentColumn, layout } from "@/constants/theme";
-import { ArticleActionSheet } from "@/features/blogs/components/article-action-sheet";
+import { ArticleSheets } from "@/features/blogs/components/article-sheets";
 import { ArticleListSkeleton } from "@/features/blogs/components/article-list-skeleton";
 import { BlogGrid } from "@/features/blogs/components/blog-grid";
 import { useArticleRowRenderer } from "@/features/blogs/hooks/use-article-row-renderer";
@@ -76,7 +76,7 @@ export default function BlogSectionScreen() {
           )}
         </PageFade>
       </Handover>
-      <ArticleActionSheet {...screen.actions.sheet} />
+      <ArticleSheets actions={screen.actions} />
     </ThemedView>
   );
 }

@@ -1,12 +1,15 @@
 /** Starting, moving on from, stopping and handing over the episode in the player. */
 import TrackPlayer from "@rntp/player";
 
-import { ensureAudioPlayer } from "@/services/audio-session";
 import { ensureChapters } from "@/services/podcasts/chapters";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
 import { dequeue, upNextIds } from "@/services/podcasts/queue";
-import { applyCommands, mediaItemFrom, nativeUpNext, nowPlayingFrom, resumePosition } from "@/services/podcasts/player/media";
-import { clearSeeking, clearStarting, finishEpisode, markStarting, persistProgress, session, store, track } from "@/services/podcasts/player/session";
+import { mediaItemFrom, nativeUpNext, nowPlayingFrom, resumePosition } from "@/services/podcasts/player/media";
+import { finishEpisode, persistProgress, session, track } from "@/services/podcasts/player/session";
+import { applyCommands } from "@/services/player/commands";
+import { readyPlayer } from "@/services/player/events";
+import { clearStarting, clearWaits, markStarting, onTakenOver, store, takePlayerFor } from "@/services/player/session";
+import { selectEpisode } from "@/stores/player";
 import type { EpisodeItem } from "@/services/podcasts/records";
 import { getShow } from "@/services/podcasts/shows";
 import { podcastPrefs, usePodcastPrefs } from "@/stores/podcast-prefs";
@@ -38,23 +41,23 @@ export async function becomeCurrent(item: EpisodeItem, startAt: number | null): 
 
 /**
  * Plays an episode from where it was left (or from `startAt`), with Up Next
- * queued behind it. The event listeners are the caller's to attach (see
- * `player.ts`), which keeps this module free of a cycle with the events.
+ * queued behind it.
  */
 export async function startEpisode(episodeId: string, startAt: number | null = null): Promise<void> {
-  if (!ensureAudioPlayer()) {
+  if (!readyPlayer()) {
     store().patch({ error: "Audio playback is not available on this device." });
     return;
   }
   // The press is answered now; loading the episode can take a moment.
   markStarting();
+  await takePlayerFor("episode");
   await persistProgress();
   const item = await getEpisodeItem(episodeId);
   if (!item) {
     clearStarting();
     return;
   }
-  applyCommands();
+  applyCommands("episode");
   const upNext = await nativeUpNext(item.id);
   // Decided before loading, so the queue loads where it starts: where it was
   // left, or past the intro.
@@ -84,7 +87,7 @@ export async function advance(): Promise<void> {
  * would have.
  */
 export async function finishCurrentAndAdvance(): Promise<void> {
-  const id = store().current?.episodeId;
+  const id = selectEpisode(store())?.episodeId;
   if (!id) return;
   session.tracking = null;
   await finishEpisode(id);
@@ -94,13 +97,12 @@ export async function finishCurrentAndAdvance(): Promise<void> {
 
 /** Stops and empties the player; the mini player goes away. */
 export async function stopPlayback(): Promise<void> {
-  const id = store().current?.episodeId;
+  const id = selectEpisode(store())?.episodeId;
   if (id) session.letGo.add(id);
   await persistProgress();
   if (store().loaded) TrackPlayer.clear();
   session.tracking = null;
-  clearStarting();
-  clearSeeking();
+  clearWaits();
   store().patch({ current: null, loaded: false, isPlaying: false, isBuffering: false, sleep: null });
   usePodcastPrefs.getState().set("nowPlayingEpisodeId", null);
   invalidatePodcastLibrary();
@@ -111,15 +113,15 @@ export async function stopPlayback(): Promise<void> {
  * podcast's place and let go, keeping it in the mini player to resume later.
  */
 export function releasePlayerForSpeech(): void {
-  const { loaded, current } = store();
+  const { loaded } = store();
+  const current = selectEpisode(store());
   if (!loaded || !current) return;
   const { position } = TrackPlayer.getProgress();
   session.letGo.add(current.episodeId);
   void persistProgress();
   TrackPlayer.pause();
   session.tracking = null;
-  clearStarting();
-  clearSeeking();
+  clearWaits();
   store().patch({
     current: { ...current, positionSec: position },
     loaded: false,
@@ -134,7 +136,8 @@ export function releasePlayerForSpeech(): void {
  * lock screen's "next" goes where the listener now expects.
  */
 export async function syncNativeQueue(): Promise<void> {
-  const { loaded, current } = store();
+  const { loaded } = store();
+  const current = selectEpisode(store());
   if (!loaded || !current) return;
   const active = TrackPlayer.getActiveMediaItemIndex() ?? 0;
   const length = TrackPlayer.getQueue().length;
@@ -142,3 +145,17 @@ export async function syncNativeQueue(): Promise<void> {
   const upNext = await nativeUpNext(current.episodeId);
   if (upNext.length > 0) TrackPlayer.addMediaItems(upNext);
 }
+
+/**
+ * A book is taking the player: the episode's place is saved and it steps out
+ * of the mini player, as it would for another episode. The book loads its own
+ * queue over this one, so nothing is cleared here.
+ */
+onTakenOver("episode", async () => {
+  const id = selectEpisode(store())?.episodeId;
+  if (id) session.letGo.add(id);
+  await persistProgress();
+  session.tracking = null;
+  usePodcastPrefs.getState().set("nowPlayingEpisodeId", null);
+  invalidatePodcastLibrary();
+});

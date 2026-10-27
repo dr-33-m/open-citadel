@@ -4,26 +4,23 @@ import { ChaptersSheet } from '@/features/podcasts/components/chapters-sheet';
 import { SleepSheet } from '@/features/podcasts/components/sleep-sheet';
 import { SpeedSheet } from '@/features/podcasts/components/speed-sheet';
 import { UpNextSheet } from '@/features/podcasts/components/up-next-sheet';
+import type { EpisodePlayerActions } from '@/features/podcasts/hooks/use-episode-player-actions';
 import type { PlayerControls } from '@/features/podcasts/hooks/use-player-controls';
 import type { usePlayerScreen } from '@/features/podcasts/hooks/use-player-screen';
 
 type PlayerSheetsProps = {
   player: ReturnType<typeof usePlayerScreen>;
   controls: PlayerControls;
+  actions: EpisodePlayerActions;
 };
 
-/** The full player's four sheets: speed, sleep, Up Next and chapters. */
-export function PlayerSheets({ player, controls }: PlayerSheetsProps) {
-  const { sheet, closeSheet, upNext } = controls;
+/** An episode's player's four sheets: speed, sleep, Up Next and chapters. */
+export function PlayerSheets({ player, controls, actions }: PlayerSheetsProps) {
+  const { sheet, closeSheet } = controls;
+  const { upNext } = actions;
   return (
     <>
-      <SpeedSheet
-        visible={sheet === 'speed'}
-        speed={player.speed}
-        showOverride={player.showOverride}
-        onClose={closeSheet}
-        onChange={controls.setSpeed}
-      />
+      <SpeedSheet visible={sheet === 'speed'} speed={player.speed} line={player.speedLine} onClose={closeSheet} onChange={controls.setSpeed} />
       <SleepSheet visible={sheet === 'sleep'} current={controls.sleepChoice} onClose={closeSheet} onChange={controls.setSleep} />
       <UpNextSheet
         visible={sheet === 'upnext'}

@@ -5,20 +5,15 @@
  */
 import TrackPlayer, { Event, PlaybackState, type BackgroundEvent, type MediaItem } from "@rntp/player";
 
-import { ensureAudioPlayer, registerAudioBackgroundHandler } from "@/services/audio-session";
+import { isBookItem } from "@/services/audiobook/media-id";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
 import { advance, becomeCurrent, syncNativeQueue } from "@/services/podcasts/player/lifecycle";
-import { applyCommands, followSkipLengths, nowPlayingFrom, speedFor } from "@/services/podcasts/player/media";
-import {
-  clearSeeking,
-  clearStarting,
-  finishEpisode,
-  persistProgress,
-  ranToTheEnd,
-  session,
-  store,
-  track,
-} from "@/services/podcasts/player/session";
+import { nowPlayingFrom, speedFor } from "@/services/podcasts/player/media";
+import { applyCommands } from "@/services/player/commands";
+import { finishEpisode, persistProgress, ranToTheEnd, session, track } from "@/services/podcasts/player/session";
+import { addPlayerHandler, readyPlayer } from "@/services/player/events";
+import { store } from "@/services/player/session";
+import { selectEpisode } from "@/stores/player";
 import { getShow } from "@/services/podcasts/shows";
 import { podcastPrefs, usePodcastPrefs } from "@/stores/podcast-prefs";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
@@ -28,7 +23,7 @@ const PAUSE_SETTLE_MS = 450;
 
 async function onTransition(item: MediaItem | null): Promise<void> {
   const previous = session.tracking;
-  if (!item?.mediaId || item.mediaId === previous?.episodeId) return;
+  if (!item?.mediaId || item.mediaId === previous?.episodeId || isBookItem(item.mediaId)) return;
   if (previous) {
     if (ranToTheEnd(previous)) await finishEpisode(previous.episodeId);
     session.tracking = null;
@@ -47,7 +42,7 @@ async function onTransition(item: MediaItem | null): Promise<void> {
  * its position would silently stop being saved.
  */
 async function adopt(mediaId: string): Promise<boolean> {
-  if (session.letGo.has(mediaId)) return false;
+  if (session.letGo.has(mediaId) || isBookItem(mediaId)) return false;
   const item = await getEpisodeItem(mediaId);
   if (!item || item.playState === "played") return false;
   const show = await getShow(item.podcastId);
@@ -80,8 +75,6 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
       return;
     }
     case Event.IsPlayingChanged: {
-      store().patch({ isPlaying: event.playing });
-      if (event.playing) clearStarting();
       if (!event.playing) {
         await persistProgress();
         // After the pause has finished animating (the player's artwork steps
@@ -94,10 +87,6 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
       return;
     }
     case Event.PlaybackStateChanged: {
-      store().patch({ isBuffering: event.state === PlaybackState.Buffering });
-      if (event.state === PlaybackState.Error || event.state === PlaybackState.Ended || event.state === PlaybackState.Idle) {
-        clearStarting();
-      }
       if (event.state === PlaybackState.Ended && session.tracking) {
         await finishTrackedAndAdvance(session.tracking.episodeId);
       }
@@ -107,56 +96,16 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
       await onTransition(event.item);
       return;
     case Event.PlaybackError:
-      clearStarting();
-      clearSeeking();
-      store().patch({ error: "This episode could not be played. Check your connection, or download it first." });
+      if (selectEpisode(store())) {
+        store().patch({ error: "This episode could not be played. Check your connection, or download it first." });
+      }
       return;
     default:
       return;
   }
 }
 
-const FOREGROUND_EVENTS = [
-  Event.PlaybackProgressUpdated,
-  Event.IsPlayingChanged,
-  Event.PlaybackStateChanged,
-  Event.MediaItemTransition,
-  Event.PlaybackError,
-] as const;
-
-/**
- * The listeners attached by this runtime, kept outside the module. A hot
- * reload in development runs this module again with a fresh `session`, and
- * the old copy's listeners stayed attached, still holding the episode they
- * were tracking before the reload. Closing the player empties the native
- * queue, which reports "ended", and an old copy took that as the episode
- * finishing: it was marked played and dropped out of Continue Listening.
- * Removing the previous set first leaves one copy listening.
- */
-const attached = globalThis as { __podcastPlayerListeners?: { remove: () => void }[] };
-
-/** Listens to the native player in the foreground. Once per runtime. */
-export function attachListeners(): void {
-  if (session.listenersAttached) return;
-  session.listenersAttached = true;
-  attached.__podcastPlayerListeners?.forEach((listener) => listener.remove());
-  attached.__podcastPlayerListeners = [
-    ...FOREGROUND_EVENTS.map((type) =>
-      TrackPlayer.addEventListener(type, ((payload: object) =>
-        void handleEvent({ ...payload, type } as BackgroundEvent)) as never),
-    ),
-    // Its own listener: this event's payload has a `type` field of its own, so it
-    // cannot travel through the shared handler's `{ ...payload, type }` shape.
-    // It only clears what the screens show, which nothing in the background draws.
-    TrackPlayer.addEventListener(Event.SleepTimerTriggered, () => store().patch({ sleep: null })),
-    { remove: followSkipLengths(() => store().loaded) },
-  ];
-}
-
-/** Android: the same handling while the app is in the background. Module level, before render. */
-export function registerPodcastBackgroundHandler(): void {
-  registerAudioBackgroundHandler(handleEvent);
-}
+addPlayerHandler('episode', handleEvent);
 
 /**
  * Puts the last episode back in the mini player after a restart, paused and
@@ -183,11 +132,10 @@ export async function restoreNowPlaying(): Promise<void> {
       active = null;
     }
   }
-  if (active?.mediaId === item.id && ensureAudioPlayer()) {
-    attachListeners();
+  if (active?.mediaId === item.id && readyPlayer()) {
     // Setting the player up again (above) knows nothing of the lock screen's
     // controls, and nothing else says them again for an episode already playing.
-    applyCommands();
+    applyCommands("episode");
     track(item, TrackPlayer.getProgress().position);
     store().patch({
       current: nowPlayingFrom(item),

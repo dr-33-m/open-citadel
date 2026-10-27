@@ -3,7 +3,7 @@ import type { UseQueryOptions } from '@tanstack/react-query';
 import { queryClient } from '@/lib/query-client';
 import { blogKeys, type BlogSection } from '@/query-manager/blogs/keys';
 import { openDiscoveredBlog } from '@/services/blogs/actions';
-import { listAskableArticles, listBlogArticles, listShelf, type ArticleShelf, type BlogArticleFilter } from '@/services/blogs/articles';
+import { articleOfBook, listAskableArticles, listBlogArticles, listShelf, type ArticleShelf, type BlogArticleFilter } from '@/services/blogs/articles';
 import { followedFeedUrls, getBlog, listFollowedBlogs } from '@/services/blogs/blogs';
 import type { ArticleItem, Blog, BlogItem } from '@/services/blogs/records';
 import { sameSet } from '@/utils/sets';
@@ -145,4 +145,14 @@ export function createDiscoveredBlogQueryOptions(feedUrl: string, options?: Opti
     queryKey: blogKeys.discovered(feedUrl),
     queryFn: ({ signal }) => openDiscoveredBlog(feedUrl, signal),
   } satisfies UseQueryOptions<string>;
+}
+
+/** The post a reader copy was made from (its id and favourite), for the player's star while it is heard. */
+export function createArticleOfBookQueryOptions(bookId: string, options?: Options<Awaited<ReturnType<typeof articleOfBook>>>) {
+  return {
+    ...LIBRARY,
+    ...options,
+    queryKey: blogKeys.articleOfBook(bookId),
+    queryFn: () => articleOfBook(bookId),
+  } satisfies UseQueryOptions<Awaited<ReturnType<typeof articleOfBook>>>;
 }

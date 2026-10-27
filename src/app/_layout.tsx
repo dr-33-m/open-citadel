@@ -39,6 +39,7 @@ import { usePlanSync } from "@/features/billing/hooks/use-plan-sync";
 import { useJourneyWriter } from "@/hooks/use-journey-writer";
 import { useReadingIndex } from "@/hooks/use-reading-index";
 import { ToastProvider } from "@/components/toast/toast-provider";
+import { AudiobookWalls } from "@/features/audiobook/components/audiobook-walls";
 import { ThemeRelease } from "@/components/theme-scope";
 import { RootThemeTokens } from "@/hooks/use-theme-tokens";
 import { ThemeStatusBar } from "@/components/theme-status-bar";
@@ -69,7 +70,7 @@ import {
 import { usePlayerNotificationTap } from "@/features/podcasts/hooks/use-player-notification-tap";
 import { TranscriptionWatch } from "@/features/podcasts/components/transcription-watch";
 import { usePodcastLifecycle } from "@/features/podcasts/hooks/use-podcast-lifecycle";
-import { registerPodcastBackgroundHandler } from "@/services/podcasts/player";
+import { registerPlayerBackgroundHandler } from "@/services/player";
 import { usePodcastPrefs } from "@/stores/podcast-prefs";
 import { useAccountStore } from "@/stores/account";
 import { useGuestStore } from "@/stores/guest";
@@ -85,9 +86,10 @@ SplashScreen.preventAutoHideAsync();
 
 // Register Android background event handler at module level (before app renders)
 registerTTSBackgroundHandler();
-// Podcasts save positions and move through Up Next from the player's events,
-// which on Android arrive through the same headless task while backgrounded.
-registerPodcastBackgroundHandler();
+// Podcasts save positions and move through Up Next, and books are made ahead
+// of the voice, from the player's events, which on Android arrive through the
+// same headless task while backgrounded.
+registerPlayerBackgroundHandler();
 // Explore's kept catalogues start reading back now, while fonts and the
 // database are still loading, and are saved when the app leaves the front.
 startQueryPersist(queryClient);
@@ -429,6 +431,9 @@ function RootLayoutContent() {
                   />
                 </TransitionStack>
                 <ApprovalSheet />
+                {/* A book heard in a cloud voice: back in the mini player after
+                a restart, and the plans in place when the voice stops for want of one. */}
+                <AudiobookWalls ready={dbReady} />
                 {/* Over-the-air updates: checked on return as well as launch,
                 and asked for in a dialog once one is downloaded. */}
                 <AppUpdates />

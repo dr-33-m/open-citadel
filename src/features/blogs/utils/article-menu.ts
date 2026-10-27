@@ -3,6 +3,8 @@ import type { ArticleItem } from '@/services/blogs/records';
 
 export type ArticleAction =
   | 'open'
+  | 'listen'
+  | 'listen-locked'
   | 'chat'
   | 'favorite'
   | 'unfavorite'
@@ -19,6 +21,8 @@ export type ArticleAction =
 type ArticleMenuOptions = {
   /** Off on the blog's own page, where going to the blog goes nowhere. */
   blogLink: boolean;
+  /** Listening in a cloud voice, as a book's menu offers it (`bookMenu`): open with a plan, locked without. Left out where not offered. */
+  listen?: 'open' | 'locked' | null;
 };
 
 type MenuArticle = Pick<ArticleItem, 'savedAt' | 'favoritedAt' | 'finishedAt' | 'readAt'>;
@@ -30,13 +34,16 @@ type MenuArticle = Pick<ArticleItem, 'savedAt' | 'favoritedAt' | 'finishedAt' | 
  */
 export function articleMenu(article: MenuArticle, options: ArticleMenuOptions): MenuRow<ArticleAction>[] {
   const finished = article.finishedAt !== null;
-  const rows: MenuRow<ArticleAction>[] = [
-    { key: 'open', label: 'Read' },
+  const rows: MenuRow<ArticleAction>[] = [{ key: 'open', label: 'Read' }];
+  if (options.listen) {
+    rows.push(options.listen === 'open' ? { key: 'listen', label: 'Listen' } : { key: 'listen-locked', label: 'Listen', tone: 'muted' });
+  }
+  rows.push(
     { key: 'chat', label: 'Ask Samwell About This', tone: 'gold' },
     article.favoritedAt
       ? { key: 'unfavorite', label: 'Remove from Favorites' }
       : { key: 'favorite', label: 'Add to Favorites' },
-  ];
+  );
   // A finished post is off the queue, as a finished book is.
   if (article.savedAt) rows.push({ key: 'dequeue', label: 'Remove from Queue' });
   else if (!finished) rows.push({ key: 'queue', label: 'Add to Queue' });

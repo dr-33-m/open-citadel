@@ -19,13 +19,13 @@
 export {
   playEpisode,
   playEpisodeFrom,
-  seekTo,
-  setSleepTimer,
-  setSpeed,
-  skipBy,
-  togglePlayback,
+  seekEpisode,
+  setEpisodeSpeed,
+  skipEpisode,
+  sleepAtEpisodeEnd,
+  toggleEpisode,
 } from "@/services/podcasts/player/controls";
-export { registerPodcastBackgroundHandler, restoreNowPlaying } from "@/services/podcasts/player/events";
+export { restoreNowPlaying } from "@/services/podcasts/player/events";
 export {
   finishCurrentAndAdvance,
   releasePlayerForSpeech,

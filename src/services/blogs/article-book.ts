@@ -17,6 +17,7 @@ import { documentDirectory, getInfoAsync } from 'expo-file-system/legacy';
 import { db } from '@/db/client';
 import { blogArticles, books } from '@/db/schema';
 import { getArticle, type ArticleDetail } from '@/services/blogs/articles';
+import { keepPostCover } from '@/services/blogs/post-cover';
 import { articleEpubFiles } from '@/services/blogs/epub/package';
 import { toXhtmlBody } from '@/services/blogs/epub/xhtml';
 import { extractArticle, isTeaser } from '@/services/blogs/full-text';
@@ -67,6 +68,7 @@ export async function openArticleBook(articleId: string, signal?: AbortSignal): 
   const ready = await existingCopy(article.bookId);
   if (ready) {
     if (!article.readAt) await db.update(blogArticles).set({ readAt: nowIso() }).where(eq(blogArticles.id, article.id));
+    void keepPostCover(ready);
     return ready;
   }
 
@@ -104,5 +106,7 @@ export async function openArticleBook(articleId: string, signal?: AbortSignal): 
       .where(eq(blogArticles.id, article.id))
       .run();
   });
+  // The row names the blog's address for it until the picture is on the phone.
+  void keepPostCover(bookId);
   return bookId;
 }

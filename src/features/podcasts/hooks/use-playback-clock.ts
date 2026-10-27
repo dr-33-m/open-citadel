@@ -3,16 +3,35 @@ import React from 'react';
 import { Easing, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { positionSince, type PositionRead } from '@/features/podcasts/utils/playback-position';
+import { bookClockNow } from '@/services/audiobook';
 import { heldPosition } from '@/utils/seek-hold';
-import { usePodcastPlayer } from '@/stores/podcast-player';
+import { usePlayer, type NowPlaying } from '@/stores/player';
 
 /** How often the player is asked where it is. */
 const POLL_MS = 500;
 /** How old a reading can be and still be carried forward instead of asking again. */
 const FRESH_MS = 2000;
+/**
+ * How fast a book's length takes a correction in, in seconds of length a
+ * second. A book's length is an estimate that firms up as its sentences are
+ * made (`book-clock`), and in a short one (a blog post) each correction moved
+ * the time left by seconds, back and forth. Taken in at under one second a
+ * second, the time left still only ever counts down while it plays, and the
+ * thumb only moves on.
+ */
+const LENGTH_ABSORB = 0.5;
 
 /** The last reading any surface took, shared so the next surface to mount can start from it. */
 let lastRead: PositionRead | null = null;
+
+const itemIdOf = (current: NowPlaying | null) => (current?.kind === 'book' ? `book:${current.bookId}` : (current?.episodeId ?? null));
+
+/**
+ * How fast the clock moves while playing. An episode's clock is its own
+ * seconds, so it runs at the playback speed; a book's is already divided by
+ * the speed (`bookClockNow`), so it runs at one second a second.
+ */
+export const clockRate = (current: NowPlaying | null, speed: number) => (current?.kind === 'book' ? 1 : speed);
 
 /**
  * Asks the native player where it is: its reported position, or a seek's
@@ -25,18 +44,19 @@ let lastRead: PositionRead | null = null;
  * screen that has landed, never for a render or a screen still opening.
  */
 export function readPlayback(): { position: number; duration: number } {
-  const state = usePodcastPlayer.getState();
-  const progress = TrackPlayer.getProgress();
+  const state = usePlayer.getState();
+  const progress = state.current?.kind === 'book' ? bookClockNow() : TrackPlayer.getProgress();
   const now = Date.now();
   const { position, released } = heldPosition(progress.position, state.seekHold, now);
   if (released) state.patch({ seekHold: null });
-  if (state.current) {
+  const itemId = itemIdOf(state.current);
+  if (itemId) {
     lastRead = {
-      episodeId: state.current.episodeId,
+      itemId,
       position,
       duration: progress.duration,
       at: now,
-      rate: state.isPlaying ? state.speed : 0,
+      rate: state.isPlaying ? clockRate(state.current, state.speed) : 0,
     };
   }
   return { position, duration: progress.duration };
@@ -48,9 +68,11 @@ export function readPlayback(): { position: number; duration: number } {
  * than `maxAgeMs`, and the player has to be asked after all.
  */
 export function estimatedPlayback(maxAgeMs = FRESH_MS): { position: number; duration: number } | null {
-  const { loaded, current } = usePodcastPlayer.getState();
+  const { loaded, current, movedAt } = usePlayer.getState();
   const now = Date.now();
-  if (!loaded || !lastRead || lastRead.episodeId !== current?.episodeId || now - lastRead.at > maxAgeMs) return null;
+  if (!loaded || !lastRead || lastRead.itemId !== itemIdOf(current) || now - lastRead.at > maxAgeMs) return null;
+  // Read before a skip or a scrub: from where the audio was, not where it is.
+  if (lastRead.at < movedAt) return null;
   return { position: positionSince(lastRead, now), duration: lastRead.duration };
 }
 
@@ -62,8 +84,8 @@ export function estimatedPlayback(maxAgeMs = FRESH_MS): { position: number; dura
  * say zero. A seek still landing is only known by asking.
  */
 export function playbackPosition(maxAgeMs = FRESH_MS): number {
-  const { loaded, current, seekHold } = usePodcastPlayer.getState();
-  if (!loaded) return current?.positionSec ?? 0;
+  const { loaded, current, seekHold } = usePlayer.getState();
+  if (!loaded) return current?.kind === 'book' ? bookClockNow().position : (current?.positionSec ?? 0);
   const borrowed = seekHold ? null : estimatedPlayback(maxAgeMs);
   return (borrowed ?? readPlayback()).position;
 }
@@ -91,10 +113,23 @@ export type PlaybackClock = {
  * An episode restored after a restart, not yet loaded, shows where it was
  * left (`fallbackPosition`) rather than zero.
  */
-export function usePlaybackClock(fallbackPosition: number, fallbackDuration: number, active = true): PlaybackClock {
-  const loaded = usePodcastPlayer((s) => s.loaded);
-  const isPlaying = usePodcastPlayer((s) => s.isPlaying);
-  const speed = usePodcastPlayer((s) => s.speed);
+export function usePlaybackClock(storedPosition: number, storedDuration: number, active = true): PlaybackClock {
+  // A book's stored place is in the audio's own seconds; its clock is at the listener's speed.
+  const storedRate = usePlayer((s) => (s.current?.kind === 'book' && s.speed > 0 ? s.speed : 1));
+  const fallbackPosition = storedPosition / storedRate;
+  const fallbackDuration = storedDuration / storedRate;
+  const loaded = usePlayer((s) => s.loaded);
+  const isPlaying = usePlayer((s) => s.isPlaying);
+  const speed = usePlayer((s) => clockRate(s.current, s.speed));
+  const book = usePlayer((s) => s.current?.kind === 'book');
+  // A skip or a scrub: read at once, with the lit line (`useCurrentSegment`).
+  const moved = usePlayer((s) => s.movedAt);
+  // The length shown, kept across runs of the effect below (a pause, the
+  // voice waiting for its next sentence) so a correction is never taken in at
+  // once. Started afresh for another item, or another speed: a book's length
+  // changes at once with its speed (its clock is at the listener's speed).
+  const shown = React.useRef({ of: '', length: 0 });
+  const shownOf = usePlayer((s) => `${itemIdOf(s.current)}|${s.speed}`);
   const [seed] = React.useState(estimatedPlayback);
   const position = useSharedValue(seed?.position ?? fallbackPosition);
   const duration = useSharedValue(seed && seed.duration > 0 ? seed.duration : fallbackDuration);
@@ -112,9 +147,28 @@ export function usePlaybackClock(fallbackPosition: number, fallbackDuration: num
       const ahead = animate ? from + (POLL_MS / 1000) * speed : from;
       position.set(animate ? withTiming(ahead, { duration: POLL_MS, easing: Easing.linear }) : ahead);
     };
+    // A book's shown length moves toward the estimate by at most a step a
+    // poll (`LENGTH_ABSORB`), gliding across the poll as the position does,
+    // and only while it plays: paused (or back on a player left paused, the
+    // voice having moved on meanwhile) nothing on it moves. Anything else, or
+    // a book just put in the player, takes it at once.
+    const settleLength = (next: number) => {
+      const held = shown.current;
+      if (!book || held.of !== shownOf || !(held.length > 0)) {
+        shown.current = { of: shownOf, length: next };
+        duration.set(next);
+        return;
+      }
+      if (!isPlaying) return;
+      const step = (LENGTH_ABSORB * POLL_MS) / 1000;
+      const to = held.length + Math.min(step, Math.max(-step, next - held.length));
+      if (to === held.length) return;
+      held.length = to;
+      duration.set(withTiming(to, { duration: POLL_MS, easing: Easing.linear }));
+    };
     const read = (animate: boolean) => {
       const progress = readPlayback();
-      if (progress.duration > 0) duration.set(progress.duration);
+      if (progress.duration > 0) settleLength(progress.duration);
       glide(progress.position, animate);
     };
     const estimate = seeded.current ? estimatedPlayback() : null;
@@ -128,7 +182,7 @@ export function usePlaybackClock(fallbackPosition: number, fallbackDuration: num
     // skip or a chapter jump made while paused has to move the bar as well.
     const id = setInterval(() => read(isPlaying), POLL_MS);
     return () => clearInterval(id);
-  }, [active, duration, fallbackDuration, fallbackPosition, isPlaying, loaded, position, speed]);
+  }, [active, book, duration, fallbackDuration, fallbackPosition, isPlaying, loaded, moved, position, shownOf, speed]);
 
   return { position, duration };
 }

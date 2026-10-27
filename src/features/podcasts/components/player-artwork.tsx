@@ -3,7 +3,8 @@ import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTimin
 import Transition from 'react-native-screen-transitions';
 
 import { easing, elevation, motion } from '@/constants/theme';
-import { PodcastArtwork } from '@/features/podcasts/components/podcast-artwork';
+import { MicSignal, type LucideIcon } from '@/components/icons';
+import { SquareArtwork } from '@/components/square-artwork';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { NOW_PLAYING_ART } from '@/navigation/transitions';
 
@@ -12,8 +13,14 @@ const PAUSED_SCALE = 0.86;
 
 type PlayerArtworkProps = {
   uri: string | null;
+  /** Its height. */
   size: number;
   playing: boolean;
+  /** Width over height: 1 for an episode, 2/3 for a book's cover. */
+  aspect?: number;
+  /** Drawn with no picture: the microphone for an episode, a book's initials. */
+  fallbackIcon?: LucideIcon;
+  monogram?: string | null;
 };
 
 /**
@@ -29,7 +36,7 @@ type PlayerArtworkProps = {
  * paused step-back, and drawn with no fade, since it has to be there the
  * moment the small one starts growing into it.
  */
-export function PlayerArtwork({ uri, size, playing }: PlayerArtworkProps) {
+export function PlayerArtwork({ uri, size, playing, aspect = 1, fallbackIcon = MicSignal, monogram = null }: PlayerArtworkProps) {
   const tokens = useThemeTokens();
   const reduceMotion = useReducedMotion();
   const scale = useSharedValue(playing || reduceMotion ? 1 : PAUSED_SCALE);
@@ -44,7 +51,14 @@ export function PlayerArtwork({ uri, size, playing }: PlayerArtworkProps) {
   return (
     <Transition.Boundary id={NOW_PLAYING_ART}>
       <Animated.View style={[elevation.card, style]}>
-        <PodcastArtwork uri={uri} size={size} placeholderColor={tokens['--color-surface-tertiary']} />
+        <SquareArtwork
+          uri={uri}
+          size={size}
+          aspect={aspect}
+          fallbackIcon={fallbackIcon}
+          monogram={monogram}
+          placeholderColor={tokens['--color-surface-tertiary']}
+        />
       </Animated.View>
     </Transition.Boundary>
   );

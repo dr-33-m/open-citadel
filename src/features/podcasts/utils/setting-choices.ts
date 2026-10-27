@@ -42,7 +42,7 @@ export const SHOW_SWITCHES: Choice<ShowSwitch>[] = [
 ];
 
 // The sleep timer.
-export type SleepChoice = number | 'episode' | 'off';
+export type SleepChoice = number | 'end' | 'off';
 
 export const SLEEP_CHOICES: Choice<SleepChoice>[] = [
   { value: 'off', label: 'Off' },
@@ -52,5 +52,10 @@ export const SLEEP_CHOICES: Choice<SleepChoice>[] = [
   { value: 30, label: '30 min' },
   { value: 45, label: '45 min' },
   { value: 60, label: '1 hr' },
-  { value: 'episode', label: 'End of episode' },
+  { value: 'end', label: 'End of episode' },
 ];
+
+/** The same, for a book: its chapters are what end. */
+export const BOOK_SLEEP_CHOICES: Choice<SleepChoice>[] = SLEEP_CHOICES.map((choice) =>
+  choice.value === 'end' ? { value: 'end', label: 'End of chapter' } : choice,
+);

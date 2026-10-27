@@ -4,8 +4,10 @@
  *
  * Scribe answers with every word, each timed and labelled with its speaker.
  * A transcript read on a phone wants utterances instead, cut by the shared
- * rules in `mergeTimedText`. Word timings are dropped after this: they would
- * make a two hour transcript about ten times its 200 KB.
+ * rules in `mergeTimedText`. Of each word only its start is kept, in
+ * hundredths of a second into its block, which is what lights a line the
+ * moment it is spoken: Scribe's whole word objects would make a two hour
+ * transcript about ten times its 200 KB, and these about twice.
  *
  * The reply's shape is OpenRouter's documented `verbose_json`. A word's
  * speaker may arrive as a label (`speaker_0`), a number, or not at all, so

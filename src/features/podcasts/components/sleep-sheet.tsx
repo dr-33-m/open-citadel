@@ -4,18 +4,20 @@ import { View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
 import { ChoiceChips } from '@/components/choice-chips';
-import { SLEEP_CHOICES as CHOICES, type SleepChoice } from '@/features/podcasts/utils/setting-choices';
+import { SLEEP_CHOICES, type Choice, type SleepChoice } from '@/features/podcasts/utils/setting-choices';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 type SleepSheetProps = {
   visible: boolean;
   current: SleepChoice;
+  /** An episode's, ending at its end; a book's, at the end of the chapter. */
+  choices?: Choice<SleepChoice>[];
   onClose: () => void;
   onChange: (choice: SleepChoice) => void;
 };
 
 /** Stop playing after a while. The last ten seconds fade out rather than cut off. */
-export function SleepSheet({ visible, current, onClose, onChange }: SleepSheetProps) {
+export function SleepSheet({ visible, current, choices = SLEEP_CHOICES, onClose, onChange }: SleepSheetProps) {
   const tokens = useThemeTokens();
   return (
     <Sheet visible={visible} onClose={onClose}>
@@ -27,7 +29,7 @@ export function SleepSheet({ visible, current, onClose, onChange }: SleepSheetPr
           </ThemedText>
         </View>
         <ChoiceChips
-          choices={CHOICES}
+          choices={choices}
           value={current}
           onChange={(choice) => {
             onChange(choice);

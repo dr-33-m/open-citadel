@@ -46,8 +46,10 @@ export function useScrubber(
     const d = duration.get();
     return d > 0 ? Math.min(1, Math.max(0, position.get() / d)) : 0;
   });
-  const elapsedText = useDerivedValue(() => formatClock(fraction.get() * duration.get()));
-  const remainingText = useDerivedValue(() => `-${formatClock(duration.get() * (1 - fraction.get()))}`);
+  // No numbers while the length is not known (a book still being read), rather
+  // than 0:00 and then the real ones.
+  const elapsedText = useDerivedValue(() => (duration.get() > 0 ? formatClock(fraction.get() * duration.get()) : ''));
+  const remainingText = useDerivedValue(() => (duration.get() > 0 ? `-${formatClock(duration.get() * (1 - fraction.get()))}` : ''));
 
   const grab = (x: number) => {
     'worklet';

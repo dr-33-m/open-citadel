@@ -1,8 +1,8 @@
 import React from 'react';
 
-import { estimatedPlayback, playbackPosition } from '@/features/podcasts/hooks/use-playback-clock';
+import { clockRate, estimatedPlayback, playbackPosition } from '@/features/podcasts/hooks/use-playback-clock';
 import { segmentIndexAt } from '@/features/podcasts/utils/transcript-rows';
-import { usePodcastPlayer } from '@/stores/podcast-player';
+import { usePlayer } from '@/stores/player';
 
 /**
  * How far ahead of the words a line lights: its fade has finished as they
@@ -30,7 +30,8 @@ const BORROW_MS = 600;
 const PLACE_HOLD_MS = 2500;
 
 /**
- * The transcript line being spoken, for the lit line.
+ * The transcript line being spoken, for the lit line: an episode's
+ * transcript, or a book's text (a line a sentence, `sentenceStarts`).
  *
  * Not polled on a fixed beat, which lit each line up to half a second late:
  * every reading works out when the next line starts at the current speed and
@@ -41,11 +42,14 @@ const PLACE_HOLD_MS = 2500;
  * the episode is not the one in the player, or the transcript has no times.
  */
 export function useCurrentSegment(starts: readonly number[], active: boolean) {
-  const isPlaying = usePodcastPlayer((s) => s.isPlaying);
-  const speed = usePodcastPlayer((s) => s.speed);
+  const isPlaying = usePlayer((s) => s.isPlaying);
+  // How fast the clock runs: an episode's at its speed, a book's already at the listener's.
+  const rate = usePlayer((s) => clockRate(s.current, s.speed));
+  // A skip or a scrub: read again at once, not when the next line was due.
+  const moved = usePlayer((s) => s.movedAt);
   // Without asking the player: this runs while rendering.
   const seed = () =>
-    segmentIndexAt(starts, (estimatedPlayback()?.position ?? usePodcastPlayer.getState().current?.positionSec ?? 0) + LEAD_SEC);
+    segmentIndexAt(starts, (estimatedPlayback()?.position ?? usePlayer.getState().current?.positionSec ?? 0) + LEAD_SEC);
   const [index, setIndex] = React.useState(seed);
   const placed = React.useRef<{ line: number; at: number } | null>(null);
   // Opened again: from where the audio is now, not where it was last time.
@@ -73,12 +77,16 @@ export function useCurrentSegment(starts: readonly number[], active: boolean) {
         ? PAUSED_MS
         : next === undefined
           ? RESYNC_MS
-          : Math.min(RESYNC_MS, Math.max(MIN_WAIT_MS, ((next - position) / Math.max(speed, 0.1)) * 1000));
+          : Math.min(RESYNC_MS, Math.max(MIN_WAIT_MS, ((next - position) / Math.max(rate, 0.1)) * 1000));
       timer = setTimeout(read, wait);
     };
-    timer = setTimeout(read, 0);
+    // Read now, not on a timer: after a skip the thread is busy with what
+    // the skip set off (the next sentence asked for, the place saved), and a
+    // timer of nothing waited behind all of it, the line seconds late.
+    read();
     return () => clearTimeout(timer);
-  }, [active, isPlaying, speed, starts]);
+    // `moved` only starts it again, reading at once.
+  }, [active, isPlaying, rate, starts, moved]);
 
   /**
    * A line the audio has just been sent to, lit at once rather than when the

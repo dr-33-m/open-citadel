@@ -7,9 +7,13 @@
  */
 import {
   CLOUD_VOICE_MAX_CHARACTERS,
+  CREDIT_PLANS,
+  PLANS,
+  planRank,
   cloudVoiceKey,
   parseCloudVoiceKey,
   planIncludes,
+  type CreditPlan,
   type PlanId,
   type VoiceFigures,
   type VoiceModelView,
@@ -206,4 +210,19 @@ export function cloudVoiceForPlan(
   const reachable = figures.models.filter((model) => planIncludes(plan, model.minPlan));
   const selection = resolveCloudSelection(remembered, reachable, figures.byPlan[plan]?.defaultModelId ?? null);
   return selection ? selectionKey(selection) : null;
+}
+
+/**
+ * What a locked voice box offers: the plans that open it, above the one held,
+ * the sheet resting on the cheapest, and one line saying why they are shown.
+ */
+export function plansForMaker(
+  maker: string,
+  needed: PlanId,
+  held: PlanId | null,
+): { line: string; plans: CreditPlan[]; initialPlanId: PlanId } {
+  const plans = PLANS.filter(
+    (candidate) => planRank(candidate.id) >= planRank(needed) && (!held || planRank(candidate.id) > planRank(held)),
+  );
+  return { line: `${maker} voices come with ${CREDIT_PLANS[needed].label}.`, plans, initialPlanId: needed };
 }

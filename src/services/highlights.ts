@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { asc, desc, eq } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { DEFAULT_HIGHLIGHT_COLOR } from '@/constants/highlights';
@@ -40,6 +40,13 @@ export async function insertHighlight(highlight: NewHighlight): Promise<string> 
     createdDay: localDayString(new Date(now)),
   });
   return id;
+}
+
+export type HighlightRow = typeof highlights.$inferSelect;
+
+/** A book's highlights, newest first: what the reader's highlight list and menu take. */
+export function listBookHighlights(bookId: string): HighlightRow[] {
+  return db.select().from(highlights).where(eq(highlights.bookId, bookId)).orderBy(desc(highlights.createdAt)).all();
 }
 
 /** A highlight's colour, its tags (a JSON list) or the chat it opened. */

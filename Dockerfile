@@ -12,6 +12,9 @@ ENV VOICE_SAMPLES_DIR=/data/voice-samples
 
 RUN corepack enable
 RUN mkdir -p /data
+# Encodes a voice that makes only PCM (Gemini) to MP3 as it streams, a tenth of
+# the bytes for the phone. See server/src/tts-encode.ts.
+RUN apk add --no-cache ffmpeg
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY patches ./patches

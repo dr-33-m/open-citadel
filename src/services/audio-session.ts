@@ -14,7 +14,8 @@ import TrackPlayer, { type BackgroundEvent } from '@rntp/player';
 
 let ready = false;
 let backgroundRegistered = false;
-const backgroundHandlers = new Set<(event: BackgroundEvent) => Promise<void>>();
+/** By who asked, so a module run again (a hot reload) replaces its handler rather than adding a second. */
+const backgroundHandlers = new Map<'player' | 'read-aloud', (event: BackgroundEvent) => Promise<void>>();
 
 /** Seconds between the native player's progress events while audio is playing. */
 export const PROGRESS_TICK_SEC = 5;
@@ -58,13 +59,14 @@ export function ensureAudioPlayer(): boolean {
  * asked. iOS delivers background events to the ordinary listeners.
  */
 export function registerAudioBackgroundHandler(
+  key: 'player' | 'read-aloud',
   handler: (event: BackgroundEvent) => Promise<void>,
 ): void {
-  backgroundHandlers.add(handler);
+  backgroundHandlers.set(key, handler);
   if (process.env.EXPO_OS !== 'android' || backgroundRegistered) return;
   try {
     TrackPlayer.registerBackgroundEventHandler(() => async (event) => {
-      await Promise.all([...backgroundHandlers].map((h) => h(event).catch(() => {})));
+      await Promise.all([...backgroundHandlers.values()].map((h) => h(event).catch(() => {})));
     });
     backgroundRegistered = true;
   } catch {

@@ -7,7 +7,7 @@ import { ListEmpty } from "@/components/list-empty";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { iconSize, layout } from "@/constants/theme";
-import { ArticleActionSheet } from "@/features/blogs/components/article-action-sheet";
+import { ArticleSheets } from "@/features/blogs/components/article-sheets";
 import { ArticleListSkeleton } from "@/features/blogs/components/article-list-skeleton";
 import { BlogArticleList } from "@/features/blogs/components/blog-article-list";
 import { BlogHero } from "@/features/blogs/components/blog-hero";
@@ -65,7 +65,7 @@ export default function BlogScreen() {
       ) : (
         <BlogPageSkeleton />
       )}
-      {landed ? <ArticleActionSheet {...actions.sheet} blogLink={false} /> : null}
+      {landed ? <ArticleSheets actions={actions} blogLink={false} /> : null}
     </ThemedView>
   );
 }
