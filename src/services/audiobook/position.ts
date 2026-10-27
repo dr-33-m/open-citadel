@@ -57,6 +57,7 @@ export async function saveBookPlace(s: BookSession, force = false): Promise<void
     durationSec,
     chapterTitle,
     clockPace: s.clockPace,
+    ended: s.script.isLast(sentence),
   });
   const fraction = fractionAt(s, sentence);
   await saveReadingPosition(s.info.id, { ...placeLocator(section, sentence, fraction) }, fraction);

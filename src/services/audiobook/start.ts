@@ -2,7 +2,8 @@
  * Where a book starts when it is played: a sentence asked for (a tap in the
  * text sheet, the voice changed), a page of the reader ("Listen from here"),
  * the sentence it was last heard at, or its saved place, wherever that was
- * last written (the reader turning pages, or the player itself).
+ * last written (the reader turning pages, or the player itself), and from
+ * the top again when that place is its last sentence.
  */
 import { sectionText } from '@/features/audiobook/utils/sentence-locator';
 import { startIndex, startPlace } from '@/features/audiobook/utils/start-place';
@@ -19,7 +20,7 @@ import type { SpineLocator } from '@/services/epub-spine';
  */
 export type StartFrom = { fromSentenceId?: string | null; fromLocator?: SpineLocator | null; fromText?: string | null };
 
-/** Where to start: a page or a sentence asked for, else the one the book was last heard at, else its saved place, else its first chapter. */
+/** Where to start: a page or a sentence asked for, else the one the book was last heard at, else its saved place (its start, once that is its end), else its first chapter. */
 export async function startSentence(script: BookScript, bookId: string, from: StartFrom = {}) {
   if (from.fromLocator) return sentenceAtLocator(script, from.fromLocator, from.fromText);
   const remembered = from.fromSentenceId ?? (readCurrent()?.bookId === bookId ? (readCurrent()?.sentenceId ?? null) : null);
@@ -28,7 +29,10 @@ export async function startSentence(script: BookScript, bookId: string, from: St
     const hit = (await script.load(section))?.sentences.find((x) => x.id === remembered);
     if (hit) return hit;
   }
-  return sentenceAtLocator(script, savedLocator(bookId));
+  const saved = await sentenceAtLocator(script, savedLocator(bookId));
+  // Heard (or read) to its end: it starts again from the top. Whether it is
+  // finished is left as it is; listening again does not take it back out.
+  return saved && !script.isLast(saved) ? saved : sentenceAtLocator(script, null);
 }
 
 /**
@@ -56,7 +60,7 @@ export async function sentenceAtLocator(script: BookScript, locator: SpineLocato
  */
 export function rememberedClock(bookId: string, voiceKey: string): HeardClock | null {
   const clock = readHeardClock(bookId);
-  if (!clock || clock.voiceKey !== voiceKey) return null;
+  if (!clock || clock.voiceKey !== voiceKey || clock.ended) return null;
   const now = readCurrent();
   if (now?.bookId === bookId) return now.sentenceId === clock.sentenceId ? clock : null;
   const saved = savedLocator(bookId) as { text?: { highlight?: string } } | null;

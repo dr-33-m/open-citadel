@@ -80,6 +80,8 @@ export interface HeardClock {
   positionSec: number;
   durationSec: number;
   chapterTitle: string | null;
+  /** Left at the book's last sentence: heard to the end, so it starts again from the top, and opens on no clock. */
+  ended?: boolean;
   /** The pace the clock was laid out by (`steadyPace`), for the next session to go on from it. */
   clockPace: number | null;
 }

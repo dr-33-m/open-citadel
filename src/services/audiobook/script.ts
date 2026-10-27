@@ -58,6 +58,12 @@ export class BookScript {
     return [...this.listened].reverse().find((s) => s.index < index) ?? null;
   }
 
+  /** Whether a sentence is the book's last, its section already cut: a book left there was heard to its end. */
+  isLast(sentence: Sentence): boolean {
+    if (this.nextSection(sentence.section)) return false;
+    return this.peek(sentence.section)?.sentences.at(-1)?.id === sentence.id;
+  }
+
   /** A section's sentences if they are already cut, without waiting. */
   peek(index: number): SectionScript | null {
     return this.cut.get(index) ?? null;
