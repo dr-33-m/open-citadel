@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
     TRANSCRIPTION_MODEL,
     TranscriptDocSchema,
+    joinTimed,
+    joinWords,
+    mergeTimedText,
     UNKNOWN_DURATION_SECONDS,
     transcriptionCostUsd,
     transcriptionCredits,
@@ -60,5 +63,54 @@ describe('TranscriptDocSchema', () => {
     };
     expect(TranscriptDocSchema.parse(doc)).toEqual(doc);
     expect(() => TranscriptDocSchema.parse({ ...doc, version: 2 })).toThrow();
+  });
+});
+
+describe('joinTimed', () => {
+  it('starts each word at the piece it begins in, punctuation joining the word before', () => {
+    const { text, starts } = joinTimed([
+      { text: 'Hello', start: 1, end: 1.4 },
+      { text: ',', start: 1.4, end: 1.4 },
+      { text: 'world', start: 2, end: 2.5 },
+      { text: '.', start: 2.5, end: 2.5 },
+    ]);
+    expect(text).toBe('Hello, world.');
+    expect(starts).toEqual([1, 2]);
+  });
+
+  it('places a word inside a phrase as far through its time as through its text', () => {
+    const { text, starts } = joinTimed([{ text: 'one two', start: 10, end: 17 }]);
+    expect(text).toBe('one two');
+    expect(starts[0]).toBe(10);
+    expect(starts[1]).toBeCloseTo(14);
+  });
+
+  it('joins words as joinWords always has', () => {
+    expect(joinWords(['Hello', ',', 'world', '.'])).toBe('Hello, world.');
+    expect(joinWords([' Hello', ' world.', '  '])).toBe('Hello world.');
+  });
+});
+
+describe('mergeTimedText', () => {
+  it('keeps when each word of a block starts, in hundredths after the block', () => {
+    const [block] = mergeTimedText([
+      { text: 'Slowly', start: 5, end: 5.5, speaker: 0 },
+      { text: 'said.', start: 5.6, end: 6, speaker: 0 },
+      { text: 'Then', start: 9.25, end: 9.5, speaker: 0 },
+    ]);
+    expect(block.text).toBe('Slowly said. Then');
+    expect(block.words).toEqual([0, 60, 425]);
+  });
+
+  it('keeps no word times for a transcript without times', () => {
+    const [block] = mergeTimedText([{ text: 'No times here.', start: 0, end: 0, speaker: null }]);
+    expect(block.words).toBeUndefined();
+  });
+
+  it('accepts a transcript with or without word times', () => {
+    const doc = { version: 1, source: 'scribe', language: 'en', durationSec: 10, speakers: [], segments: [] };
+    const segment = { start: 0, end: 2, speaker: null, text: 'Two words' };
+    expect(TranscriptDocSchema.safeParse({ ...doc, segments: [segment] }).success).toBe(true);
+    expect(TranscriptDocSchema.safeParse({ ...doc, segments: [{ ...segment, words: [0, 100] }] }).success).toBe(true);
   });
 });

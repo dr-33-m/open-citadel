@@ -7,9 +7,10 @@
  * Here each speaker's turn is read as one run of words (a block cut at forty
  * seconds can end mid-sentence, and the sentence carries on into the next)
  * and cut into its sentences, a long sentence at a clause near its middle
- * and a stray "Right." joined to its neighbour. A line's time is placed by
- * how far into its block its first word is: speech keeps a steady enough
- * pace inside one block that this lands within a second or two of the word.
+ * and a stray "Right." joined to its neighbour. A line's time is its first
+ * word's, kept by the transcript (`words`); a transcript made before they
+ * were kept places it by how far into its block the word is, which lands
+ * within a second or two of it.
  */
 import type { TranscriptDoc } from 'samwell-shared';
 
@@ -105,6 +106,32 @@ export function splitLines(text: string): Piece[] {
   return joined.flatMap(shorten);
 }
 
+/** Which word of `text` the character at `at` is in, a word being what lies between spaces. */
+function wordAt(text: string, at: number): number {
+  let word = 0;
+  for (let i = 1; i <= Math.min(at, text.length - 1); i++) {
+    if (text[i] !== ' ' && text[i - 1] === ' ') word++;
+  }
+  return word;
+}
+
+/**
+ * When a line starting `at` characters into its block is spoken: its first
+ * word's own time where the block keeps them (`words`), exact; otherwise as
+ * far through the block's time as it is through its text, which a speaker
+ * slowing down or speeding up inside the block put a second or two either
+ * side of the words.
+ */
+function lineStart(segment: TranscriptDoc['segments'][number], text: string, at: number): number {
+  const { words } = segment;
+  if (words && words.length === text.split(' ').filter(Boolean).length) {
+    const offset = words[wordAt(text, at)];
+    if (offset !== undefined) return segment.start + offset / 100;
+  }
+  const into = at / Math.max(1, text.length);
+  return segment.start + Math.max(0, segment.end - segment.start) * Math.min(1, into);
+}
+
 export type TranscriptLine = {
   /** Its place in the list. */
   index: number;
@@ -146,8 +173,7 @@ export function followLines(doc: TranscriptDoc): TranscriptLine[] {
     splitLines(run).forEach((piece, n) => {
       while (block + 1 < starts.length && starts[block + 1] <= piece.from) block++;
       const segment = segments[first + block];
-      const into = (piece.from - starts[block]) / Math.max(1, texts[block].length);
-      const start = timed ? segment.start + Math.max(0, segment.end - segment.start) * Math.min(1, into) : 0;
+      const start = timed ? lineStart(segment, texts[block], piece.from - starts[block]) : 0;
       lines.push({
         index: lines.length,
         segment: first + block,

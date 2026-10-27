@@ -104,6 +104,33 @@ describe('followLines', () => {
     expect(lines[1].start).toBeCloseTo(40 + (20 * 16) / 48);
   });
 
+  it('times a line by its first word where the block keeps when its words start', () => {
+    // The speaker lingers on the first sentence: its second starts at 15s, not
+    // the 10s its place in the text would say.
+    const words = [0, 40, 80, 120, 160, 200, 1500, 1540, 1580, 1620, 1660, 1700];
+    const kept: TranscriptDoc = { ...doc, segments: [{ ...doc.segments[0], words }, doc.segments[1], doc.segments[2]] };
+    const lines = followLines(kept);
+    expect(lines[1].start).toBeCloseTo(15);
+    expect(lines[1].time).toBe('0:15');
+    expect(lines[2].start).toBe(20);
+  });
+
+  it('times a line in a carried-on sentence by the word it starts at in its own block', () => {
+    const cut: TranscriptDoc = {
+      ...doc,
+      segments: [
+        { start: 0, end: 40, speaker: 0, text: 'He absented himself from the sessions during the Cuban' },
+        { start: 40, end: 60, speaker: 0, text: 'Missile Crisis. Then he went home to his family.', words: [0, 50, 300, 350, 400, 450, 500, 550, 600] },
+      ],
+    };
+    expect(followLines(cut)[1].start).toBeCloseTo(43);
+  });
+
+  it('estimates the time when the word times do not match the words', () => {
+    const odd: TranscriptDoc = { ...doc, segments: [{ ...doc.segments[0], words: [0, 100] }, doc.segments[1], doc.segments[2]] };
+    expect(followLines(odd)[1].start).toBeCloseTo((20 * 28) / 56);
+  });
+
   it('names a speaker where their turn begins, the first line included', () => {
     expect(followLines(doc).map((l) => l.heading)).toEqual(['David Senra', null, null, 'Speaker 2']);
   });

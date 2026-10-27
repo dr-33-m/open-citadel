@@ -95,6 +95,13 @@ export const TranscriptSegmentSchema = z.object({
   /** An index into `speakers`, or null when the source names nobody. */
   speaker: z.number().int().min(0).nullable(),
   text: z.string(),
+  /**
+   * When each word of `text` starts, in hundredths of a second after `start`,
+   * a word being what lies between its spaces. What a line of a transcript
+   * is lit by, exactly; without them (a transcript made before they were
+   * kept) a line's time is estimated from how far into its block it is.
+   */
+  words: z.array(z.number().int().min(0)).optional(),
 });
 
 export const TranscriptDocSchema = z.object({
@@ -128,15 +135,54 @@ export const HARD_CUT_SECONDS = 40;
 const SENTENCE_END = /[.!?…]["'”’)\]]*$/;
 const NO_SPACE_BEFORE = /^[,.!?;:…%)\]}”’'-]/;
 
+/** A piece of text and when it is spoken: a word from Scribe, a phrase from a show's own transcript. */
+type TimedPiece = Pick<TranscriptSegment, 'text' | 'start' | 'end'>;
+
+/**
+ * Pieces to text, a space between them unless a piece brings its own or is
+ * punctuation, and when each word of the text starts: the start of the piece
+ * it begins in, or for a word inside a phrase, as far through the phrase's
+ * time as it is through the phrase's text.
+ */
+export function joinTimed(pieces: readonly TimedPiece[]): { text: string; starts: number[] } {
+  const chars: string[] = [];
+  const times: number[] = [];
+  for (const piece of pieces) {
+    const raw = piece.text;
+    if (!raw) continue;
+    const last = chars[chars.length - 1];
+    if (chars.length > 0 && !/^\s/.test(raw) && !NO_SPACE_BEFORE.test(raw) && !/\s/.test(last)) {
+      chars.push(' ');
+      times.push(piece.start);
+    }
+    const span = Math.max(0, piece.end - piece.start);
+    for (let i = 0; i < raw.length; i++) {
+      chars.push(raw[i]);
+      times.push(piece.start + (span * i) / raw.length);
+    }
+  }
+  // Runs of space as one, and none at either end.
+  let text = '';
+  const starts: number[] = [];
+  let spaced = true;
+  for (let i = 0; i < chars.length; i++) {
+    if (/\s/.test(chars[i])) {
+      spaced = true;
+      continue;
+    }
+    if (spaced) {
+      if (text) text += ' ';
+      starts.push(times[i]);
+      spaced = false;
+    }
+    text += chars[i];
+  }
+  return { text, starts };
+}
+
 /** Words to text: a space between them unless the word brings its own or is punctuation. */
 export function joinWords(words: readonly string[]): string {
-  let text = '';
-  for (const raw of words) {
-    if (!raw) continue;
-    if (text === '' || /^\s/.test(raw) || NO_SPACE_BEFORE.test(raw) || /\s$/.test(text)) text += raw;
-    else text += ` ${raw}`;
-  }
-  return text.replace(/\s+/g, ' ').trim();
+  return joinTimed(words.map((text) => ({ text, start: 0, end: 0 }))).text;
 }
 
 /**
@@ -144,15 +190,18 @@ export function joinWords(words: readonly string[]): string {
  * merged into utterances a phone reads: one block while the same person
  * keeps talking, cut at a sentence end once it has run half a minute, and
  * cut regardless at forty seconds so a monologue is still a list a finger
- * can move through. Pure; the server and the app both cut by it.
+ * can move through. Each block keeps when its words start (`words`), so a
+ * line cut from it is lit exactly. Pure; the server and the app both cut by it.
  */
 export function mergeTimedText(pieces: readonly TranscriptSegment[]): TranscriptSegment[] {
-  type Block = { start: number; end: number; speaker: number | null; words: string[] };
+  type Block = { start: number; end: number; speaker: number | null; pieces: TimedPiece[] };
   const segments: TranscriptSegment[] = [];
   const push = (block: Block | null) => {
     if (!block) return;
-    const text = joinWords(block.words);
-    if (text) segments.push({ start: block.start, end: block.end, speaker: block.speaker, text });
+    const { text, starts } = joinTimed(block.pieces);
+    if (!text) return;
+    const words = starts.map((at) => Math.max(0, Math.round((at - block.start) * 100)));
+    segments.push({ start: block.start, end: block.end, speaker: block.speaker, text, ...(block.end > 0 ? { words } : {}) });
   };
 
   let open: Block | null = null;
@@ -162,8 +211,8 @@ export function mergeTimedText(pieces: readonly TranscriptSegment[]): Transcript
       push(open);
       open = null;
     }
-    if (!open) open = { start: piece.start, end: piece.end, speaker: piece.speaker, words: [] };
-    open.words.push(piece.text);
+    if (!open) open = { start: piece.start, end: piece.end, speaker: piece.speaker, pieces: [] };
+    open.pieces.push(piece);
     open.end = Math.max(open.end, piece.end);
     if (open.end - open.start >= SOFT_CUT_SECONDS && SENTENCE_END.test(piece.text.trim())) {
       push(open);
