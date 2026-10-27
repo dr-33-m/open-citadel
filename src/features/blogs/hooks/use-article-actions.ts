@@ -12,6 +12,7 @@ import type { ArticleAction } from '@/features/blogs/utils/article-menu';
 import { useSettledFocusEffect } from '@/navigation/use-settled-focus-effect';
 import { createBlogArticlesQueryOptions, createBlogQueryOptions, invalidateBlogLibrary } from '@/query-manager/blogs';
 import { listenItem } from '@/services/audiobook';
+import { keepPostCover } from '@/services/blogs/post-cover';
 import {
   setArticleFavorite,
   setArticleFinished,
@@ -39,6 +40,8 @@ export function useArticleActions() {
   const listenTo = React.useCallback(
     async (article: ArticleItem) => {
       const bookId = await prepareArticle(article);
+      // The notification draws the cover from the phone, as a book's.
+      if (bookId) await keepPostCover(bookId);
       const item = bookId ? listenItem(bookId) : null;
       if (item) startListening(item);
     },
