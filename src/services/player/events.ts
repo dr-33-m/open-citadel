@@ -8,6 +8,8 @@
  * and leaves the rest. Listened to in the foreground once per runtime, and
  * on Android from the background task too.
  */
+import { Platform } from 'react-native';
+
 import TrackPlayer, { Event, PlaybackState, type BackgroundEvent } from '@rntp/player';
 
 import { ensureAudioPlayer, registerAudioBackgroundHandler } from '@/services/audio-session';
@@ -29,7 +31,7 @@ export function addPlayerHandler(kind: 'episode' | 'book', handler: PlayerEventH
   handlers.set(kind, handler);
 }
 
-async function handleEvent(event: BackgroundEvent): Promise<void> {
+async function deliver(event: BackgroundEvent): Promise<void> {
   switch (event.type) {
     case Event.IsPlayingChanged:
       store().patch({ isPlaying: event.playing });
@@ -51,6 +53,46 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
   for (const handler of handlers.values()) await handler(event).catch(() => {});
 }
 
+/**
+ * How long a pause nobody asked for is held back on iOS before it is taken as
+ * a pause.
+ *
+ * iOS has no gapless queue: at the end of an item the player loads the next
+ * one and plays it again. The vendored player is patched to hold its reported
+ * state at playing across that gap (`continuing` in `ios/player/AudioPlayer.swift`,
+ * see `patches/@rntp__player.patch`), which is what Android's Media3 queue
+ * does of its own accord, so this grace is the second line of defence: a
+ * build older than that patch, or a gap too long for it. A book is one item a
+ * sentence, and every boundary arriving as a pause blinked the play control,
+ * stepped the cover back and in again, stopped the clock, and read to the
+ * book's own handler as the listener pausing. Holding it costs nothing,
+ * because a pause the listener asks for is already drawn at the press
+ * (`toggleBook`, `toggleEpisode`) and does not wait on this event; if the
+ * player is sounding again before the grace is up, there was no pause to draw.
+ */
+const GAP_GRACE_MS = Platform.OS === 'ios' ? 500 : 0;
+let gapTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** The player ran out of items: that pause is the real thing and is answered at once. */
+function ranOut(): boolean {
+  return TrackPlayer.getPlaybackState() === PlaybackState.Ended;
+}
+
+async function handleEvent(event: BackgroundEvent): Promise<void> {
+  if (event.type === Event.IsPlayingChanged) {
+    if (gapTimer) clearTimeout(gapTimer);
+    gapTimer = null;
+    if (!event.playing && GAP_GRACE_MS > 0 && !ranOut()) {
+      gapTimer = setTimeout(() => {
+        gapTimer = null;
+        if (!TrackPlayer.isPlaying()) void deliver(event);
+      }, GAP_GRACE_MS);
+      return;
+    }
+  }
+  await deliver(event);
+}
+
 const FOREGROUND_EVENTS = [
   Event.PlaybackProgressUpdated,
   Event.IsPlayingChanged,
@@ -60,7 +102,10 @@ const FOREGROUND_EVENTS = [
   Event.RemoteSeek,
   Event.RemoteSkipForward,
   Event.RemoteSkipBackward,
-  Event.RemoteHighlight,
+  // The Highlight button is a button in Android's notification, and only
+  // Android's side of the player knows the event. iOS has no such control, and
+  // its native module refuses a listener for an event it does not list.
+  ...(Platform.OS === 'android' ? [Event.RemoteHighlight] : []),
 ] as const;
 
 /**

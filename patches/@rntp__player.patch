@@ -590,10 +590,166 @@ index ed09556eb961649a9304dc61b03107dc76e5f573..931f346ed8f8338d1a1b27f9e0f579d7
  RCT_EXTERN_METHOD(skipToNext);
  RCT_EXTERN_METHOD(skipToPrevious);
 diff --git a/ios/player/AudioPlayer.swift b/ios/player/AudioPlayer.swift
-index 61d685c1ea2d6f99c744db75389429bf3dbc7424..367f18bfe840c9f5b52e67fc030ea867f2f6f221 100644
+index 61d685c1ea2d6f99c744db75389429bf3dbc7424..6c31ae8395588a95a21c4af45b0a52b9b7f60920 100644
 --- a/ios/player/AudioPlayer.swift
 +++ b/ios/player/AudioPlayer.swift
-@@ -482,8 +482,19 @@ class AudioPlayer {
+@@ -44,6 +44,55 @@ class AudioPlayer {
+     }
+   }
+ 
++  // PATCHED (Open Citadel): one item following another is not a pause.
++  //
++  // There is no gapless queue here: when an item ends, or is skipped, with
++  // more of the queue to come, the next one is loaded and played, and the
++  // player drops through paused and loading on the way, so JS was told
++  // playing, not playing, playing at every boundary. Android's Media3 queue
++  // carries straight on and says nothing. A book read aloud is one item a
++  // sentence, so on iOS every sentence blinked the play control, stepped the
++  // artwork back and in again, stopped the clock, and read to the app as the
++  // listener pausing. While a continuation is in flight the reported state is
++  // held at .playing. Everything that is not a continuation still reports
++  // itself: a failure, the end of the queue, a pause asked for, and a
++  // continuation that never sounds, which the watchdog gives up on and
++  // replaces with whatever the engine last said.
++  private var continuing = false
++  private var continuingWatchdog: DispatchWorkItem?
++  private var lastEngineState: EnginePlaybackState = .paused
++
++  /// Longest a continuation may stay silent before the engine is believed again.
++  private static let continuingGrace: Double = 2.0
++  /// Long enough for the end of an item to arrive before a pause is believed, and too short to see.
++  private static let pausedSettle: Double = 0.05
++
++  private func beginContinuation() {
++    continuing = true
++    continuingWatchdog?.cancel()
++    let watchdog = DispatchWorkItem { [weak self] in
++      guard let self = self, self.continuing else { return }
++      self.endContinuation()
++      self.handlePlaybackStateChange(self.lastEngineState)
++    }
++    continuingWatchdog = watchdog
++    DispatchQueue.main.asyncAfter(deadline: .now() + AudioPlayer.continuingGrace, execute: watchdog)
++  }
++
++  private func endContinuation() {
++    continuing = false
++    continuingWatchdog?.cancel()
++    continuingWatchdog = nil
++  }
++
++  /// A pause while playing, believed only if the player is still silent a moment later.
++  private func settlePaused() {
++    DispatchQueue.main.asyncAfter(deadline: .now() + AudioPlayer.pausedSettle) { [weak self] in
++      guard let self = self, self.state == .playing, !self.continuing, !self.engine.isPlaying else { return }
++      self.state = self.engine.hasCurrentItem ? .paused : .idle
++    }
++  }
++
+   var repeatMode: RepeatMode = .off
+ 
+   var shuffleEnabled: Bool {
+@@ -119,6 +168,8 @@ class AudioPlayer {
+     }
+     engine.onItemFailed = { [weak self] code, message in
+       self?.onPlaybackError?(code, message)
++      // PATCHED (Open Citadel): whatever was continuing has failed instead.
++      self?.endContinuation()
+       self?.state = .failed
+     }
+     engine.onItemPlayedToEnd = { [weak self] in
+@@ -143,12 +194,20 @@ class AudioPlayer {
+   }
+ 
+   func pause() {
++    // PATCHED (Open Citadel): a pause asked for during a continuation raises
++    // no change in the engine, which is already paused between the two items,
++    // so nothing else would ever report it.
++    if continuing {
++      endContinuation()
++      state = .paused
++    }
+     engine.pause()
+   }
+ 
+   func stop() {
+     engine.pause()
+     engine.reset()
++    endContinuation()
+     state = .idle
+     clearNowPlayingInfo()
+     deactivateAudioSession()
+@@ -285,6 +344,7 @@ class AudioPlayer {
+     let hadCurrentItem = queue.current != nil
+     queue.clear()
+     engine.reset()
++    endContinuation()
+     state = .idle
+     clearNowPlayingInfo()
+     deactivateAudioSession()
+@@ -321,6 +381,7 @@ class AudioPlayer {
+   private func loadCurrentItem() {
+     guard let item = queue.current else {
+       engine.reset()
++      endContinuation()
+       state = .idle
+       clearNowPlayingInfo()
+       deactivateAudioSession()
+@@ -347,7 +408,15 @@ class AudioPlayer {
+       genre: nil
+     )
+     engine.load(url: itemUrl, headers: item.headers, isLive: item.isLive)
+-    state = .loading
++    // PATCHED (Open Citadel): an item loaded while the player is playing is
++    // the next one of a continuation, and every caller that loads one while
++    // playing plays it straight away, so the state is held rather than
++    // dropped to .loading and raised again a moment later.
++    if state == .playing || continuing {
++      beginContinuation()
++    } else {
++      state = .loading
++    }
+     updateNowPlayingMetadata(for: item)
+     onCurrentItemChanged?(item, queue.currentIndex)
+     triggerAutoPreloadIfNeeded()
+@@ -388,20 +457,35 @@ class AudioPlayer {
+   // MARK: - State Handling
+ 
+   private func handlePlaybackStateChange(_ status: EnginePlaybackState) {
++    // PATCHED (Open Citadel): kept so a continuation the watchdog gives up on
++    // is answered with what the engine last said, not with a guess.
++    lastEngineState = status
+     switch status {
+     case .paused:
+       if !engine.hasCurrentItem {
+         if state != .idle { state = .idle }
+       } else if state != .failed && state != .ended && state != .loading {
+-        state = .paused
++        // PATCHED (Open Citadel): the end of an item and the pause it raises
++        // arrive in either order, so a pause is believed a moment later, by
++        // which time a continuation has said it is one.
++        if state == .playing {
++          settlePaused()
++        } else {
++          state = .paused
++        }
+       }
+ 
+     case .waitingToPlay:
+       if engine.hasCurrentItem {
++        // PATCHED (Open Citadel): the gap between two items shows as waiting
++        // to play for a moment. A wait that outlasts the continuation is a
++        // real stall, and the watchdog reports it.
++        if continuing { return }
+         state = .buffering
+       }
+ 
+     case .playing:
++      endContinuation()
+       state = .playing
+     }
+   }
+@@ -482,8 +566,19 @@ class AudioPlayer {
    private func updateNowPlayingPlaybackInfo() {
      #if canImport(UIKit)
      guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
@@ -704,7 +860,7 @@ index 6cb3306b6dd69e98151b47de814804b163ea8295..f2f55279b1859fc0926808eb6d07119c
  /** Seek by a relative offset in seconds (negative = rewind). */
  export declare function seekBy(offset: number): void;
 diff --git a/lib/typescript/src/events/RemoteControl.d.ts b/lib/typescript/src/events/RemoteControl.d.ts
-index 1f399a7b1418fa56e9be95d46fd30dcb835a691b..8d5a321ef0c86c60d1bbf18382e2a5f95616d1b1 100644
+index 1f399a7b1418fa56e9be95d46fd30dcb835a691b..3b254e97a18f64906dd2c63412e1b03245c72794 100644
 --- a/lib/typescript/src/events/RemoteControl.d.ts
 +++ b/lib/typescript/src/events/RemoteControl.d.ts
 @@ -22,3 +22,5 @@ export interface RemoteSkipBackwardEvent {
@@ -713,7 +869,6 @@ index 1f399a7b1418fa56e9be95d46fd30dcb835a691b..8d5a321ef0c86c60d1bbf18382e2a5f9
  //# sourceMappingURL=RemoteControl.d.ts.map
 +/** PATCHED (Open Citadel): the notification's Highlight button was pressed. */
 +export interface RemoteHighlightEvent {}
-\ No newline at end of file
 diff --git a/lib/typescript/src/events/index.d.ts b/lib/typescript/src/events/index.d.ts
 index ee68a6d03738716de6f4b2648ebd74cf24ebe8df..a696236bd502040cc19d47f1bc201a1893df9ecc 100644
 --- a/lib/typescript/src/events/index.d.ts

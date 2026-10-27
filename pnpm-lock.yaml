@@ -15,7 +15,7 @@ patchedDependencies:
     hash: ee0dc6a69dc1a10e61d907405556462916ff91db1913c4eb2926c60b4927b98c
     path: patches/@openrouter__sdk@0.13.20.patch
   '@rntp/player':
-    hash: d55d52040a73398c11ba78bd06b16d71eb695cd4ecd2339a1225563724217dfd
+    hash: f36c41a564d083487f877e3a8a243a8be9b944b9ced50afc89b5a4b4e63ec6a7
     path: patches/@rntp__player.patch
   expo-modules-core:
     hash: b32d79f9b1d68488057c3989c27b97ace632772949387f92de61bf6a4bca5eda
@@ -84,7 +84,7 @@ importers:
         version: 7.3.18(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       '@rntp/player':
         specifier: ^5.6.0
-        version: 5.6.0(patch_hash=d55d52040a73398c11ba78bd06b16d71eb695cd4ecd2339a1225563724217dfd)(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)(shaka-player@5.2.6)
+        version: 5.6.0(patch_hash=f36c41a564d083487f877e3a8a243a8be9b944b9ced50afc89b5a4b4e63ec6a7)(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)(shaka-player@5.2.6)
       '@shopify/flash-list':
         specifier: ^2.0.2
         version: 2.0.2(@babel/runtime@7.29.2)(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -8518,7 +8518,7 @@ snapshots:
 
   '@revenuecat/purchases-typescript-internal@18.33.1': {}
 
-  '@rntp/player@5.6.0(patch_hash=d55d52040a73398c11ba78bd06b16d71eb695cd4ecd2339a1225563724217dfd)(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)(shaka-player@5.2.6)':
+  '@rntp/player@5.6.0(patch_hash=f36c41a564d083487f877e3a8a243a8be9b944b9ced50afc89b5a4b4e63ec6a7)(react-native@0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)(shaka-player@5.2.6)':
     dependencies:
       react: 19.2.3
       react-native: 0.86.3(@babel/core@7.29.0)(@react-native/metro-config@0.86.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
