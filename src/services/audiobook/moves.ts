@@ -34,6 +34,7 @@ export function jumpTo(s: BookSession, sentence: Sentence, offsetSec: number): v
   if (queued >= 0 && !s.pending) {
     s.waiting = false;
     skipWithinQueue(queued, offsetSec);
+    store().patch({ movedAt: Date.now() });
     if (s.wantsToPlay && !TrackPlayer.isPlaying()) TrackPlayer.play();
     return;
   }
@@ -44,6 +45,7 @@ export function jumpTo(s: BookSession, sentence: Sentence, offsetSec: number): v
   s.madeToEnd = false;
   s.waiting = false;
   s.pending = { sentence, offsetSec };
+  store().patch({ movedAt: Date.now() });
   // Going somewhere is asking for the voice again, whatever stopped it before.
   useAudiobook.getState().patch({ failure: null });
   TrackPlayer.pause();

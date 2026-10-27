@@ -28,10 +28,13 @@ export function useHeardRow(rows: readonly SentenceRow[], sentenceId: string | n
     const byId = sentenceStarts(section);
     const out = byId ? rows.map((row) => byId.get(row.sentence.id)) : [];
     return byId && out.every((at) => at !== undefined) ? (out as number[]) : null;
-    // Laid out again once the book is loaded, as sentences are measured, and
-    // as the speed changes.
+    // Laid out again once the book is loaded, as sentences are measured, as
+    // the speed changes, and as the voice moves on: a book whose sentences
+    // were all measured before never changes its layout, and laid out at a
+    // moment its session was not yet ready it would have stayed unlit by the
+    // clock until the sheet was opened again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, section, version, speed, loaded, visible]);
+  }, [rows, section, version, speed, loaded, visible, sentenceId]);
   const segment = useCurrentSegment(starts ?? NO_STARTS, starts !== null);
   const { place: placeRow } = segment;
 

@@ -31,7 +31,11 @@ import { selectBook } from '@/stores/player';
 async function sessionFor(mediaId: string | undefined): Promise<BookSession | null> {
   if (!isBookItem(mediaId)) return null;
   const s = current();
-  if (s && parseBookMediaId(mediaId)?.bookId === s.info.id) return s;
+  const bookId = parseBookMediaId(mediaId)?.bookId;
+  if (s && bookId === s.info.id) return s;
+  // Another book is shown: this one is being let go of, not taken up again.
+  const shown = selectBook(store());
+  if (shown && shown.bookId !== bookId) return null;
   return adopt(mediaId as string);
 }
 

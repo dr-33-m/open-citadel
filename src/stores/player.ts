@@ -79,6 +79,13 @@ type PlayerState = {
    * position polls, never rendered, so nothing subscribes to it.
    */
   seekHold: SeekHold;
+  /**
+   * When the place last moved other than by playing on: a skip, a scrub, a
+   * tap on a line. A reading taken before it is out of date, and what lights
+   * a transcript's line reads the clock again at once rather than when it
+   * next meant to.
+   */
+  movedAt: number;
   speed: number;
   sleep: SleepTimer;
   error: string | null;
@@ -93,6 +100,7 @@ export const usePlayer = create<PlayerState>((set) => ({
   starting: false,
   seeking: false,
   seekHold: null,
+  movedAt: 0,
   speed: 1,
   sleep: null,
   error: null,

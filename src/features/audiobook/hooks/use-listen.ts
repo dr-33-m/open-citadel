@@ -10,6 +10,8 @@ import { listenInfo, listenPlansLine } from '@/features/audiobook/utils/listen-i
 import { listenEstimate, listenStats } from '@/features/audiobook/utils/listen-estimate';
 import { landOnCloud } from '@/features/tts/hooks/use-voice-source';
 import { cloudVoiceLabel } from '@/features/tts/utils/cloud-voice-names';
+import { whenSheetsClosed } from '@/lib/sheets-closing';
+import { PLAYER_OPEN } from '@/navigation/transitions';
 import { createListenFiguresQueryOptions } from '@/query-manager/audiobook';
 import { createCloudVoicesQueryOptions } from '@/query-manager/cloud-voices';
 import { currentBookVoice, showBook, startBook, type StartResult } from '@/services/audiobook';
@@ -62,16 +64,29 @@ export function useListen() {
 
   const begin = React.useCallback(
     async (bookId: string, post: boolean) => {
-      // In one moment, the book in the player and the player opening on it: it
-      // rises with the book already drawn, its loader on, rather than the mini
-      // player arriving first and the player after it.
-      const shown = showBook(bookId);
-      if (shown) router.push('/podcasts/player');
-      const result = await startBook(bookId);
-      if (result === 'playing') {
-        if (!shown) router.push('/podcasts/player');
-      } else if (result === 'no-voice') setSelling(true);
-      else showToast({ key: TOAST, message: whyNot(result, post) });
+      const settle = (result: StartResult) => {
+        if (result === 'no-voice') setSelling(true);
+        else if (result !== 'playing') showToast({ key: TOAST, message: whyNot(result, post) });
+      };
+      // The book in the mini player at once, its loader on, whatever was
+      // playing silenced. Then one movement at a time: the sheet Listen was
+      // pressed in goes, the player grows out of the mini player, and only
+      // once it has landed is the book read and its first sentence asked
+      // for. Begun at the press, that work held the thread the sheet and the
+      // player move on, and the two stalled and raced each other.
+      if (!showBook(bookId)) {
+        const result = await startBook(bookId);
+        if (result === 'playing') whenSheetsClosed(() => router.push('/podcasts/player'));
+        settle(result);
+        return;
+      }
+      await new Promise<void>((landed) =>
+        whenSheetsClosed(() => {
+          router.push('/podcasts/player');
+          setTimeout(landed, PLAYER_OPEN.duration);
+        }),
+      );
+      settle(await startBook(bookId));
     },
     [router],
   );

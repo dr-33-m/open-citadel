@@ -68,9 +68,11 @@ export function readPlayback(): { position: number; duration: number } {
  * than `maxAgeMs`, and the player has to be asked after all.
  */
 export function estimatedPlayback(maxAgeMs = FRESH_MS): { position: number; duration: number } | null {
-  const { loaded, current } = usePlayer.getState();
+  const { loaded, current, movedAt } = usePlayer.getState();
   const now = Date.now();
   if (!loaded || !lastRead || lastRead.itemId !== itemIdOf(current) || now - lastRead.at > maxAgeMs) return null;
+  // Read before a skip or a scrub: from where the audio was, not where it is.
+  if (lastRead.at < movedAt) return null;
   return { position: positionSince(lastRead, now), duration: lastRead.duration };
 }
 
@@ -120,6 +122,8 @@ export function usePlaybackClock(storedPosition: number, storedDuration: number,
   const isPlaying = usePlayer((s) => s.isPlaying);
   const speed = usePlayer((s) => clockRate(s.current, s.speed));
   const book = usePlayer((s) => s.current?.kind === 'book');
+  // A skip or a scrub: read at once, with the lit line (`useCurrentSegment`).
+  const moved = usePlayer((s) => s.movedAt);
   // The length shown, kept across runs of the effect below (a pause, the
   // voice waiting for its next sentence) so a correction is never taken in at
   // once. Started afresh for another item, or another speed: a book's length
@@ -178,7 +182,7 @@ export function usePlaybackClock(storedPosition: number, storedDuration: number,
     // skip or a chapter jump made while paused has to move the bar as well.
     const id = setInterval(() => read(isPlaying), POLL_MS);
     return () => clearInterval(id);
-  }, [active, book, duration, fallbackDuration, fallbackPosition, isPlaying, loaded, position, shownOf, speed]);
+  }, [active, book, duration, fallbackDuration, fallbackPosition, isPlaying, loaded, moved, position, shownOf, speed]);
 
   return { position, duration };
 }

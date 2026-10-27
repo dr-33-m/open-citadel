@@ -84,12 +84,14 @@ export async function newSession(info: BookInfo, script: BookScript, voiceKey: s
 export async function letGoOfBook(): Promise<void> {
   const s = current();
   if (!s) return;
-  await saveBookPlace(s, true);
+  // Not the player's from here: what was being made for it is dropped, and
+  // nothing it hears while its place is saved draws it back.
+  book.session = null;
   s.generation += 1;
   s.making = false;
+  await saveBookPlace(s, true);
   s.lengths.flush();
   s.source.dispose();
-  book.session = null;
   unpinQueue();
   clearWavCopies();
 }

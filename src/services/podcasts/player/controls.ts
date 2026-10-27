@@ -76,7 +76,7 @@ export function seekEpisode(seconds: number): void {
   markSeeking(() => void settlePausedSeek());
   // Held until the native player has caught up, so nothing polling it in the
   // meantime draws the old position (see `seek-hold`).
-  store().patch({ seekHold: { target, at: Date.now() } });
+  store().patch({ seekHold: { target, at: Date.now() }, movedAt: Date.now() });
   TrackPlayer.seekTo(target);
   if (session.tracking) {
     session.tracking.lastPosition = seconds;

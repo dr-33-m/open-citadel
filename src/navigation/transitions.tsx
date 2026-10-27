@@ -331,7 +331,7 @@ export const NOW_PLAYING_ART = "now-playing-art";
  * (the drag down), it mounts nothing, and a bounce on the way back into the
  * mini player read as a blip.
  */
-const PLAYER_OPEN = { duration: 360, easing: SIDE_EASE } as const;
+export const PLAYER_OPEN = { duration: 360, easing: SIDE_EASE } as const;
 const PLAYER_CLOSE = { duration: 240, dampingRatio: 1 } as const;
 
 /**

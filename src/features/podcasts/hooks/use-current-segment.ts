@@ -45,6 +45,8 @@ export function useCurrentSegment(starts: readonly number[], active: boolean) {
   const isPlaying = usePlayer((s) => s.isPlaying);
   // How fast the clock runs: an episode's at its speed, a book's already at the listener's.
   const rate = usePlayer((s) => clockRate(s.current, s.speed));
+  // A skip or a scrub: read again at once, not when the next line was due.
+  const moved = usePlayer((s) => s.movedAt);
   // Without asking the player: this runs while rendering.
   const seed = () =>
     segmentIndexAt(starts, (estimatedPlayback()?.position ?? usePlayer.getState().current?.positionSec ?? 0) + LEAD_SEC);
@@ -78,9 +80,13 @@ export function useCurrentSegment(starts: readonly number[], active: boolean) {
           : Math.min(RESYNC_MS, Math.max(MIN_WAIT_MS, ((next - position) / Math.max(rate, 0.1)) * 1000));
       timer = setTimeout(read, wait);
     };
-    timer = setTimeout(read, 0);
+    // Read now, not on a timer: after a skip the thread is busy with what
+    // the skip set off (the next sentence asked for, the place saved), and a
+    // timer of nothing waited behind all of it, the line seconds late.
+    read();
     return () => clearTimeout(timer);
-  }, [active, isPlaying, rate, starts]);
+    // `moved` only starts it again, reading at once.
+  }, [active, isPlaying, rate, starts, moved]);
 
   /**
    * A line the audio has just been sent to, lit at once rather than when the

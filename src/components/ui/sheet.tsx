@@ -32,6 +32,7 @@ import { useCSSVariable } from "uniwind";
 import { Handover } from "@/components/navigation/handover";
 import { MaxContentWidth } from "@/constants/theme";
 import { useBackHandler } from "@/hooks/use-back-handler";
+import { holdForSheet } from "@/lib/sheets-closing";
 import { asColor } from "@/utils/colors";
 
 type SheetProps = {
@@ -357,6 +358,11 @@ export function Sheet({
   // an open still mounts the modal in the very frame of the tap.
   const [mounted, setMounted] = React.useState(visible);
   if (visible && !mounted) setMounted(true);
+
+  // LOCAL EDIT (Open Citadel): on screen, or closing, until the close has
+  // finished (`handleDismiss` unmounts it), for `whenSheetsClosed`: a row
+  // that opens a screen waits for the sheet to be gone rather than racing it.
+  React.useEffect(() => (mounted ? holdForSheet() : undefined), [mounted]);
 
   const insets = useSafeAreaInsets();
   const { height: screenHeight, width: screenWidth } = useWindowDimensions();
