@@ -20,6 +20,7 @@ import {
   updateHighlight as writeHighlight,
   updateHighlightNote,
 } from "@/services/highlights";
+import { repairSuggestedHighlights as moveSuggestedHighlights } from "@/services/book-text/repair-suggested-highlights";
 import { finishRead, saveReadingPosition } from "@/services/reading-position";
 import { useBooksStore } from "@/stores/books";
 import { fractionToSave, isReadThrough, learnPageStep, readFraction } from "@/utils/read-progress";
@@ -49,6 +50,8 @@ interface ReaderState {
   isLoading: boolean;
 
   openBook: (bookId: string) => Promise<void>;
+  /** Moves highlights Samwell suggested the old way to their passage. Run once the book is on screen. */
+  repairSuggestedHighlights: (bookId: string) => Promise<void>;
   updateProgress: (locator: Locator) => void;
   addBookmark: () => Promise<void>;
   removeBookmark: (id: string) => Promise<void>;
@@ -66,7 +69,8 @@ interface ReaderState {
     updates: { color?: string; tags?: string; chatSessionId?: string },
   ) => Promise<void>;
   deleteHighlight: (id: string) => Promise<void>;
-  addNote: (highlightId: string, text: string) => Promise<void>;
+  /** The new note's id, or null when the highlight no longer exists. */
+  addNote: (highlightId: string, text: string) => Promise<string | null>;
   updateNote: (
     noteId: string,
     highlightId: string,
@@ -183,6 +187,19 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       allTags: allTagsList,
       isLoading: false,
     });
+  },
+
+  repairSuggestedHighlights: async (bookId: string) => {
+    // Highlights Samwell suggested before suggestions found their passage
+    // were saved at the reader's position, and never drawn. Moved to their
+    // passage, and redrawn if this book is still open.
+    try {
+      if (!(await moveSuggestedHighlights(bookId)) || get().currentBook?.id !== bookId) return;
+      const repaired = await db.select().from(highlights).where(eq(highlights.bookId, bookId));
+      if (get().currentBook?.id === bookId) set({ highlights: repaired });
+    } catch {
+      // Best-effort: they stay where they were, as they always have.
+    }
   },
 
   updateProgress: (locator: Locator) => {
@@ -359,24 +376,38 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   addNote: async (highlightId: string, text: string) => {
-    const { currentBook } = get();
-    if (!currentBook) return;
-    const noteRow = await addHighlightNote(highlightId, currentBook.id, text);
-    const { highlightNotes } = get();
-    const existing = highlightNotes[highlightId] ?? [];
-    set({
-      highlightNotes: {
-        ...highlightNotes,
-        [highlightId]: [...existing, noteRow],
-      },
-    });
+    // The note belongs to the highlight's book, which is not necessarily the
+    // one open in the reader, or any book at all: Samwell writes notes from a
+    // chat. Taking the book from the reader dropped every note written while
+    // none was open, and said nothing.
+    const owner = db
+      .select({ bookId: highlights.bookId })
+      .from(highlights)
+      .where(eq(highlights.id, highlightId))
+      .get();
+    if (!owner) return null;
+
+    const noteRow = await addHighlightNote(highlightId, owner.bookId, text);
+
+    const { currentBook, highlightNotes } = get();
+    if (currentBook?.id === owner.bookId) {
+      const existing = highlightNotes[highlightId] ?? [];
+      set({
+        highlightNotes: {
+          ...highlightNotes,
+          [highlightId]: [...existing, noteRow],
+        },
+      });
+    }
+    return noteRow.id;
   },
 
   updateNote: async (noteId: string, highlightId: string, text: string) => {
     const now = await updateHighlightNote(noteId, text);
 
     const { highlightNotes } = get();
-    const existing = highlightNotes[highlightId] ?? [];
+    const existing = highlightNotes[highlightId];
+    if (!existing) return;
     set({
       highlightNotes: {
         ...highlightNotes,
@@ -391,7 +422,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     await deleteHighlightNote(noteId);
 
     const { highlightNotes } = get();
-    const existing = highlightNotes[highlightId] ?? [];
+    const existing = highlightNotes[highlightId];
+    if (!existing) return;
     set({
       highlightNotes: {
         ...highlightNotes,

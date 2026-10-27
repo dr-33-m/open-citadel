@@ -50,6 +50,11 @@ import {
   proposeAdjustmentsTool,
   proposeGoalTool,
   toggleFavoriteTool,
+  listMyPodcastsTool,
+  searchPodcastEpisodesTool,
+  getPodcastEpisodeTool,
+  listMyBlogsTool,
+  searchBlogPostsTool,
   TOOL_LOOP_CEILING,
 } from 'samwell-shared';
 
@@ -89,7 +94,15 @@ import {
   runProposeGoal,
 } from '@/services/compass-tools';
 import { TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
+import {
+  runGetPodcastEpisode,
+  runListMyBlogs,
+  runListMyPodcasts,
+  runSearchBlogPosts,
+  runSearchPodcastEpisodes,
+} from '@/services/listening-tools';
 import { formatLibrarySearch, type CollectionListing, type LibraryBook } from '@/services/library-format';
+import { earlierToolUseNote } from '@/utils/earlier-tool-use';
 import { NO_ACTIVITY, sameActivity, turnActivity, type TurnActivity } from '@/utils/turn-activity';
 import { useApprovalStore } from '@/stores/approval';
 import { useSettingsStore } from '@/stores/settings';
@@ -294,6 +307,8 @@ type StoredChatMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   createdAt: string;
+  /** What he did before this reply, said back to him by `earlierToolUseMessages`. */
+  activity?: TurnActivity | null;
 };
 
 type ApprovalRequest = {
@@ -473,6 +488,22 @@ function journeyMessages(mode: SamwellTurnMode): UIMessage[] {
       ],
     },
   ];
+}
+
+/**
+ * The lookups behind his earlier replies, which `toUIMessage` leaves out.
+ *
+ * A system message, as the journey is, so the server lifts it into the system
+ * prompts and it never sits in the conversation as words he said. Without it
+ * he read his own earlier replies as unchecked and apologised for them. See
+ * `earlier-tool-use.ts`. Not in onboarding, which is a fixed script whose
+ * prompt the house caches.
+ */
+function earlierToolUseMessages(mode: SamwellTurnMode, history: StoredChatMessage[]): UIMessage[] {
+  if (mode === 'onboarding') return [];
+  const note = earlierToolUseNote(history);
+  if (!note) return [];
+  return [{ id: 'samwell-earlier-tools', role: 'system', createdAt: new Date(), parts: [{ type: 'text', content: note }] }];
 }
 
 function toUIMessage(message: StoredChatMessage): UIMessage | null {
@@ -676,6 +707,20 @@ function libraryLookupTools(ctx: ToolCallContext) {
   ] as const;
 }
 
+/**
+ * The podcasts and blogs, defined once and handed to both factories like the
+ * library lookups: what "the shows they follow" means is decided in one place.
+ */
+function listeningTools() {
+  return [
+    listMyPodcastsTool.client(async (input) => runListMyPodcasts(input)),
+    searchPodcastEpisodesTool.client(async (input) => runSearchPodcastEpisodes(input)),
+    getPodcastEpisodeTool.client(async (input) => runGetPodcastEpisode(input)),
+    listMyBlogsTool.client(async (input) => runListMyBlogs(input)),
+    searchBlogPostsTool.client(async (input) => runSearchBlogPosts(input)),
+  ] as const;
+}
+
 function createCompassClientTools(ctx: ToolCallContext) {
   return clientTools(
     getCompassStatusTool.client(async () => ({ formatted: formatCompassStatus() })),
@@ -720,6 +765,7 @@ function createCompassClientTools(ctx: ToolCallContext) {
       };
     }),
     ...libraryLookupTools(ctx),
+    ...listeningTools(),
     journeyTool(ctx),
   );
 }
@@ -820,10 +866,11 @@ function createSamwellClientTools(ctx: ToolCallContext) {
     }),
     suggestHighlightTool.client(async (input) => {
       const { result } = await executeToolCall('suggest_highlight', input, ctx);
-      const suggestResult = result as { ok?: boolean; suggestionId?: string | null; error?: string };
+      const suggestResult = result as { ok?: boolean; suggestionId?: string | null; passage?: string; error?: string };
       return {
         ok: suggestResult.ok === true,
         suggestionId: suggestResult.suggestionId ?? null,
+        ...(suggestResult.passage ? { passage: suggestResult.passage } : {}),
         ...(suggestResult.error ? { error: suggestResult.error } : {}),
       };
     }),
@@ -942,6 +989,7 @@ function createSamwellClientTools(ctx: ToolCallContext) {
       const { result } = await executeToolCall('update_thought', input, ctx);
       return result as { ok: boolean; id?: string; type?: 'thought'; error?: string };
     }),
+    ...listeningTools(),
     journeyTool(ctx),
   );
 }
@@ -1049,6 +1097,13 @@ export async function sendCloudChatTurn({
    * of them.
    */
   let thinking = '';
+  /*
+   * Which reasoning message the trace is in. Each request after a tool thinks
+   * in a new one, and running them straight on joined a cut-off sentence to
+   * the next round's first ("gentle, insightfulFun request"); a new one starts
+   * a new paragraph.
+   */
+  let reasoningMessageId: string | null = null;
   /*
    * Thinking-time measurement. `thinkingStartedAt` is set on the first
    * reasoning delta; `reportThinkingDone` fires `onThinkingDone` once, at the
@@ -1196,6 +1251,7 @@ export async function sendCloudChatTurn({
   const approvals: ApprovalRequest[] = [];
   const initialMessages = [
     ...journeyMessages(mode),
+    ...earlierToolUseMessages(mode, history),
     ...history.map(toUIMessage).filter((message): message is UIMessage => message !== null),
   ];
 
@@ -1321,9 +1377,24 @@ export async function sendCloudChatTurn({
       if (chunk.type === 'REASONING_MESSAGE_CONTENT') {
         const delta = (chunk as { delta?: unknown }).delta;
         if (typeof delta === 'string' && delta) {
-          // The model is thinking again: the tool phase is over.
-          endToolPhase();
+          /*
+           * The model is thinking again. With nothing said yet the tool phase
+           * is over: the reasoning panel takes the footer and says so. With
+           * words already on screen it is not, because the footer then shows
+           * nothing unless a tool is running (`turnIndicator`): GLM said "let
+           * me dig through everything", looked six things up, and the row went
+           * blank for the seconds it thought before answering. It holds on
+           * "Working through that…" until new words arrive or the run ends.
+           */
+          if (!saidWhenToolCalled) endToolPhase();
           thinkingStartedAt ??= Date.now();
+          const messageId = (chunk as { messageId?: unknown }).messageId;
+          if (typeof messageId === 'string' && messageId !== reasoningMessageId) {
+            if (reasoningMessageId !== null && thinking && !thinking.endsWith('\n\n')) {
+              thinking = `${thinking.trimEnd()}\n\n`;
+            }
+            reasoningMessageId = messageId;
+          }
           thinking += delta;
           flushThinking(thinking);
         }
@@ -1463,7 +1534,10 @@ export async function sendCloudChatTurn({
       if (streamError && !aborted && isWorthResuming(streamError) && resume.canResume()) {
         // The connection dropped, not the server refusing: go again from
         // where that request started, once the phone is back online.
-        if (isCloudUnreachable(streamError)) reportCloudUnreached();
+        // Only a request that never got an answer: a stream cut after it
+        // started (a proxy closing long streams) is not the server unreached,
+        // and three of those used to put the whole app offline.
+        if (isCloudUnreachable(streamError) && !reachedThisRequest) reportCloudUnreached();
         const dropped = streamError;
         streamError = null;
         resuming = true;

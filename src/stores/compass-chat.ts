@@ -325,7 +325,8 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
         // Carrying on is the reader's next message, in the chat it paused in.
         onPaused: (reason) =>
           sayTurnPaused(reason, () => {
-            if (get().activeSessionId === sessionId) void get().send(KEEP_GOING_MESSAGE);
+            // Never over a turn already running. See the reading chat's.
+            if (get().activeSessionId === sessionId && !get().submitting) void get().send(KEEP_GOING_MESSAGE);
           }),
         onToolStatus: (status, name) =>
           set({

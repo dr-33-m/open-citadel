@@ -102,7 +102,9 @@ export async function streamPiece(options: {
   try {
     headers = await cloudJsonHeaders();
   } catch (error) {
-    throw new CloudVoiceError(noAnswer(), error instanceof Error ? error.message : 'Could not sign in.');
+    // Not `noAnswer`: signing in is not a request to Samwell Cloud, so it says
+    // nothing about reaching it, and must not count towards being offline.
+    throw new CloudVoiceError(isConnected() ? 'maker_failed' : 'offline', error instanceof Error ? error.message : 'Could not sign in.');
   }
   // Called off while signing in. The queue checks its own signal, not this.
   if (options.signal.aborted) throw new Error('Aborted before the request went out.');

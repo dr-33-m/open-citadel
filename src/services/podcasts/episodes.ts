@@ -7,13 +7,14 @@ import { and, asc, desc, eq, getTableColumns, isNotNull, ne, sql, type SQL } fro
 import { db } from "@/db/client";
 import { podcastChapters, podcastEpisodes, podcasts } from "@/db/schema";
 import { type Episode, type EpisodeItem, type Podcast } from "@/services/podcasts/records";
+import { SHOW_NAME_SQL } from "@/services/podcasts/show-name";
 
 const { description: _notes, ...listColumns } = getTableColumns(podcastEpisodes);
 
 /** What a list row selects: no show notes, plus the show's name and artwork. */
 const ITEM_COLUMNS = {
   ...listColumns,
-  showTitle: sql<string>`coalesce(nullif(trim(${podcasts.customTitle}), ''), ${podcasts.title})`,
+  showTitle: SHOW_NAME_SQL,
   showImageUrl: podcasts.imageUrl,
 };
 

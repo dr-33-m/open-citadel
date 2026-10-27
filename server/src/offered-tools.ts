@@ -1,3 +1,5 @@
+import { LISTENING_TOOL_NAMES } from 'samwell-shared';
+
 /**
  * Which of the device's tools a request may offer the model.
  *
@@ -18,7 +20,11 @@
  */
 
 /** Device tools added after the first builds that sent their tools list. */
-export const CLIENT_TOOLS_ADDED_LATER: ReadonlySet<string> = new Set(['search_library', 'get_book_details']);
+export const CLIENT_TOOLS_ADDED_LATER: ReadonlySet<string> = new Set([
+  'search_library',
+  'get_book_details',
+  ...LISTENING_TOOL_NAMES,
+]);
 
 function declaredNames(declared: unknown): Set<string> | null {
   if (!Array.isArray(declared)) return null;
@@ -36,4 +42,10 @@ export function offeredClientTools<T extends { name: string }>(
   const names = declaredNames(declared);
   if (names) return definitions.filter((tool) => names.has(tool.name));
   return definitions.filter((tool) => !addedLater.has(tool.name));
+}
+
+/** Whether a request may be offered these tools: what the persona may tell him he has. */
+export function offersAny(declared: unknown, names: ReadonlySet<string>): boolean {
+  const declaredSet = declaredNames(declared);
+  return declaredSet !== null && [...names].some((name) => declaredSet.has(name));
 }

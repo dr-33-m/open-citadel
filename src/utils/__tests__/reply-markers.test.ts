@@ -28,4 +28,16 @@ describe('replyMarkerPattern', () => {
     const match = replyMarkerPattern().exec('see [[ref:thought:th-1]]');
     expect(match?.slice(1)).toEqual(['ref', 'thought', undefined, 'th-1']);
   });
+
+  it('reads a show and an episode as cards', () => {
+    const matches = [...'a [[podcast:pod-1]] and [[episode:ep-2]]'.matchAll(replyMarkerPattern())];
+    expect(matches.map((m) => [m[3], m[4]])).toEqual([
+      ['podcast', 'pod-1'],
+      ['episode', 'ep-2'],
+    ]);
+  });
+
+  it('copies a reply without its show and episode cards', () => {
+    expect(plainReply('Try this one:\n\n[[episode:ep-2]]\n\nfrom [[podcast:pod-1]].')).toBe('Try this one:\n\nfrom .');
+  });
 });

@@ -256,15 +256,21 @@ function realMessageCount(messages: ChatMessage[]): number {
   return messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
 }
 
-// Base identity for sessions started without a book, stored as the session's
-// system message. Cloud sends it; on device it is left out, because Samwell's
-// own system prompt (`promptAndToolsFor`) already says all of it
-// (`deviceSessionContext`).
-const BASE_SYSTEM_PROMPT =
+// The identity line chats without a book used to store as their system
+// message, kept only to recognise it in those chats. It is never sent: the
+// server's persona says all of it and more, on device `promptAndToolsFor`
+// does, and on top of either it was a second, older Samwell calling himself
+// an AI. New chats without a book store no system message at all.
+const LEGACY_BASE_IDENTITY =
   'Your name is Samwell. You are a curious, widely-read AI reading companion. ' +
   'Help the user think through ideas, discuss books and concepts, and connect ' +
   'what they read to their goals. Be precise, direct, and concise. Match your ' +
   'response length to the question and never pad.';
+
+/** Whether a stored message is that old identity line, which no engine is sent. */
+function isLegacyIdentity(message: ChatMessage): boolean {
+  return message.role === 'system' && message.content === LEGACY_BASE_IDENTITY;
+}
 
 /*
  * No journey block here any more, and that is the point.
@@ -432,12 +438,11 @@ async function titleLeftChats(): Promise<void> {
 
 /**
  * What this session tells the on-device model before anything is said: the
- * book or passage it is about. Null for a chat without a book, whose base
- * persona line only repeats what Samwell's own system prompt already says.
+ * book or passage it is about. Null for a chat without a book.
  */
 function deviceSessionContext(): string | null {
-  const content = useChatStore.getState().messages.find((m) => m.role === 'system')?.content;
-  return content && content !== BASE_SYSTEM_PROMPT ? content : null;
+  const grounding = useChatStore.getState().messages.find((m) => m.role === 'system' && !isLegacyIdentity(m));
+  return grounding?.content || null;
 }
 
 /**
@@ -822,19 +827,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           })
           .run();
       }
-    } else {
-      // No book context: the assistant's identity, for the cloud. See
-      // BASE_SYSTEM_PROMPT.
-      db.insert(chatMessages)
-        .values({
-          id: uuid(),
-          sessionId: id,
-          role: 'system',
-          content: BASE_SYSTEM_PROMPT,
-          createdAt: ts,
-        })
-        .run();
     }
+    // No book context stores nothing: who Samwell is comes from his own
+    // prompt on either engine. See LEGACY_BASE_IDENTITY.
 
     await get().loadSessions();
     return id;
@@ -935,7 +930,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       let finalContent = '';
       cloudAbort = new AbortController();
       try {
-        const history = get().messages.filter((m) => m.id !== userMsg.id);
+        const history = get().messages.filter((m) => m.id !== userMsg.id && !isLegacyIdentity(m));
         finalContent = await sendCloudChatTurn({
           baseUrl: cloudBaseUrl,
           modelId: cloudModelId,
@@ -991,7 +986,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // Carrying on is the reader's next message, in the chat it paused in.
           onPaused: (reason) =>
             sayTurnPaused(reason, () => {
-              if (get().activeSession?.id === activeSession.id) void get().sendMessage(KEEP_GOING_MESSAGE);
+              // Never over a turn already running: the toast stays up while
+              // the reader writes something else, and a second turn would
+              // race the first and leave stop holding only one of them.
+              if (get().activeSession?.id === activeSession.id && !get().isGenerating) {
+                void get().sendMessage(KEEP_GOING_MESSAGE);
+              }
             }),
         });
       } catch (err) {

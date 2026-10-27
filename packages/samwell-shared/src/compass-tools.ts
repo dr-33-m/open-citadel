@@ -2,6 +2,7 @@ import { toolDefinition } from '@tanstack/ai/client';
 import { z } from 'zod';
 
 import { CompassCheckinDraftModelSchema, GoalProposalModelSchema } from './compass';
+import { LISTENING_TOOL_DEFINITIONS } from './listening-tools';
 import {
   getBookDetailsTool,
   searchLibraryTool,
@@ -248,6 +249,9 @@ export const COMPASS_TOOL_DEFINITIONS = [
    * tool.
    */
   searchJourneyTool,
+  // What they listen to and read online, the same tools reading chat has: a
+  // goal is as often fed by a podcast as by a book.
+  ...LISTENING_TOOL_DEFINITIONS,
 ] as const;
 
 export const COMPASS_CLIENT_TOOL_DEFINITIONS = COMPASS_TOOL_DEFINITIONS.map((tool) =>
