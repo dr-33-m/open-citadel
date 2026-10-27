@@ -2,11 +2,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ChevronLeft } from "@/components/icons";
 import { ListEmpty } from "@/components/list-empty";
+import { SearchHeader } from "@/components/search-header";
+import { SearchResultsHead } from "@/components/search-results-head";
 import { ThemedView } from "@/components/themed-view";
-import { ScreenHeader } from "@/components/ui/screen-header";
-import { iconSize, layout } from "@/constants/theme";
+import { layout } from "@/constants/theme";
 import { ArticleSheets } from "@/features/blogs/components/article-sheets";
 import { ArticleListSkeleton } from "@/features/blogs/components/article-list-skeleton";
 import { BlogArticleList } from "@/features/blogs/components/blog-article-list";
@@ -15,7 +15,6 @@ import { BlogPageSkeleton } from "@/features/blogs/components/blog-page-skeleton
 import { useArticleActions } from "@/features/blogs/hooks/use-article-actions";
 import { useArticleRowRenderer } from "@/features/blogs/hooks/use-article-row-renderer";
 import { useBlogScreen, type BlogParams } from "@/features/blogs/hooks/use-blog-screen";
-import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /**
@@ -29,7 +28,6 @@ export default function BlogScreen() {
   const params = useLocalSearchParams<BlogParams>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const tokens = useThemeTokens();
   const landed = useSettledOnce();
   const screen = useBlogScreen(params, landed);
   const actions = useArticleActions();
@@ -39,17 +37,18 @@ export default function BlogScreen() {
   // the hero is drawn once and never swapped. The posts wait for the slide
   // to land (their read is held until then), with their skeleton in place.
   const empty = screen.resolving ? <ArticleListSkeleton /> : <ListEmpty text={screen.emptyText} />;
-  const header = <BlogHero {...screen.hero} />;
+  // A search stands in for the hero: only the posts it found, under how many.
+  const header = screen.search.searching ? <SearchResultsHead count={screen.resultsCount} /> : <BlogHero {...screen.hero} />;
   // Nothing known yet (an address typed into Explore): its shape until the read lands.
   const known = screen.hero.title !== '';
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <ScreenHeader
-        title=""
-        leftIcon={<ChevronLeft size={iconSize.default} color={tokens["--color-foreground"]} />}
-        leftLabel="Back"
-        onLeftPress={() => router.back()}
+      <SearchHeader
+        {...screen.search}
+        placeholder="Search posts"
+        canSearch={screen.canSearch}
+        onBack={() => router.back()}
       />
       {known ? (
         <BlogArticleList

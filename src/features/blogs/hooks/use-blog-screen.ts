@@ -4,6 +4,7 @@ import React from 'react';
 
 import { RotateCcw } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
+import { usePageSearch, useSearchResults } from '@/hooks/use-page-search';
 import type { BlogHeroProps } from '@/features/blogs/components/blog-hero';
 import {
   createBlogArticlesQueryOptions,
@@ -16,6 +17,7 @@ import { followBlog, getBlog, unfollowBlog } from '@/services/blogs/blogs';
 import { htmlToText } from '@/services/blogs/feed/text';
 import type { ArticleItem } from '@/services/blogs/records';
 import { refreshBlog } from '@/services/blogs/refresh';
+import { countLabel } from '@/utils/format';
 import { haptics } from '@/utils/haptics';
 import { hostOf } from '@/utils/urls';
 
@@ -23,6 +25,8 @@ import { hostOf } from '@/utils/urls';
 export type BlogParams = { id: string; feedUrl?: string; title?: string };
 
 const NO_ARTICLES: ArticleItem[] = [];
+
+const articleFields = (a: ArticleItem) => [a.title, a.author, a.summary];
 
 /** Reads the blog afresh and refreshes it, for a follow undone or a pull. */
 async function refreshById(id: string): Promise<void> {
@@ -41,7 +45,15 @@ export function useBlogScreen(params: BlogParams, landed: boolean) {
   const blogId = found ? (discovered.data ?? null) : params.id;
   const { data: blog } = useQuery(createBlogQueryOptions(blogId ?? '', { enabled: blogId !== null }));
   const [filter, setFilter] = React.useState<BlogArticleFilter>('all');
-  const articles = useQuery(createBlogArticlesQueryOptions(blogId ?? '', filter, { enabled: blogId !== null && landed }));
+  const search = usePageSearch();
+  // A search looks through every post, read or not.
+  const articles = useQuery(
+    createBlogArticlesQueryOptions(blogId ?? '', search.searching ? 'all' : filter, {
+      enabled: blogId !== null && landed,
+      // Keep the list on screen while the other filter is read.
+      placeholderData: (previous) => previous,
+    }),
+  );
 
   const follow = useMutation({
     mutationFn: (id: string) => followBlog(id),
@@ -102,14 +114,25 @@ export function useBlogScreen(params: BlogParams, landed: boolean) {
   // at the tap (`useArticleActions`), and a cached answer would otherwise be
   // drawn into a page still moving.
   const shown = landed ? articles.data : undefined;
+  const results = useSearchResults(shown ?? NO_ARTICLES, search, articleFields);
+  const emptyText = search.query.trim()
+    ? 'No posts match.'
+    : filter === 'unread' && !search.searching
+      ? 'Nothing unread here.'
+      : 'No posts yet.';
 
   return {
     hero,
-    articles: shown ?? NO_ARTICLES,
+    articles: results,
+    search,
+    /** "12 POSTS" over a search's results, in the hero's place. */
+    resultsCount: countLabel(results.length, 'POST'),
     /** Still finding the blog, reading its posts or sliding in: the list shows its skeleton. */
     resolving: !failed && shown === undefined,
-    emptyText: filter === 'unread' ? 'Nothing unread here.' : 'No posts yet.',
-    canRefresh: blogId !== null,
+    emptyText,
+    /** Only a stored blog has posts to search, and only one not being searched is pulled for new ones. */
+    canSearch: blogId !== null,
+    canRefresh: blogId !== null && !search.searching,
     refreshing,
     refresh,
   };

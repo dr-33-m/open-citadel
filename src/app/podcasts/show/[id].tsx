@@ -2,11 +2,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ChevronLeft } from "@/components/icons";
 import { ListEmpty } from "@/components/list-empty";
+import { SearchHeader } from "@/components/search-header";
+import { SearchResultsHead } from "@/components/search-results-head";
 import { ThemedView } from "@/components/themed-view";
-import { ScreenHeader } from "@/components/ui/screen-header";
-import { iconSize, layout } from "@/constants/theme";
+import { layout } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
 import { EpisodeListSkeleton } from "@/features/podcasts/components/episode-list-skeleton";
 import { MiniPlayer } from "@/features/podcasts/components/mini-player";
@@ -20,7 +20,6 @@ import { useEpisodeRowRenderer } from "@/features/podcasts/hooks/use-episode-row
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
 import { useShowScreen, type ShowParams } from "@/features/podcasts/hooks/use-show-screen";
 import { useShowSheets } from "@/features/podcasts/hooks/use-show-sheets";
-import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 import type { EpisodeItem } from "@/services/podcasts/records";
 
@@ -37,7 +36,6 @@ export default function ShowScreen() {
   const params = useLocalSearchParams<ShowParams>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const tokens = useThemeTokens();
   const landed = useSettledOnce();
   const episodeActions = useEpisodeActions();
   const miniPlayer = useMiniPlayer(insets.bottom);
@@ -52,17 +50,22 @@ export default function ShowScreen() {
   // their skeleton in their place.
   const episodes = landed ? screen.episodes : NO_EPISODES;
   const empty = !landed || screen.resolving ? <EpisodeListSkeleton /> : <ListEmpty text={screen.emptyText} />;
-  const header = <ShowListHeader screen={screen} onUnfollow={sheets.openUnfollow} onSettings={sheets.openSettings} />;
+  // A search stands in for the hero: only the episodes it found, under how many.
+  const header = screen.search.searching ? (
+    <SearchResultsHead count={screen.resultsCount} />
+  ) : (
+    <ShowListHeader screen={screen} onUnfollow={sheets.openUnfollow} onSettings={sheets.openSettings} />
+  );
   // Nothing known yet (a show no cache holds, opened from the player): its shape until the read lands.
   const known = screen.title !== '';
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <ScreenHeader
-        title=""
-        leftIcon={<ChevronLeft size={iconSize.default} color={tokens["--color-foreground"]} />}
-        leftLabel="Back"
-        onLeftPress={() => router.back()}
+      <SearchHeader
+        {...screen.search}
+        placeholder="Search episodes"
+        canSearch={screen.canSearch}
+        onBack={() => router.back()}
       />
       {known ? (
         <ShowEpisodeList
@@ -71,7 +74,7 @@ export default function ShowScreen() {
           header={header}
           empty={empty}
           bottomPadding={layout.scrollBottom + insets.bottom + miniPlayer.clearance}
-          canRefresh={screen.showId !== null}
+          canRefresh={screen.canRefresh}
           refreshing={screen.refreshing}
           onRefresh={screen.refresh}
         />
