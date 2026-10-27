@@ -15,8 +15,17 @@ import { voiceDirectionFrom } from '@/services/audiobook';
  * (`onNavigatedByUser`); the reader's own jumps (a chapter, a bookmark, a
  * highlight) say so through `detach`.
  */
-export function useOffTheVoice({ readerRef, sentenceId }: { readerRef: React.RefObject<ReadiumViewRef | null>; sentenceId: string | null }) {
-  const [detached, setDetached] = React.useState(false);
+export function useOffTheVoice({
+  readerRef,
+  sentenceId,
+  startDetached = false,
+}: {
+  readerRef: React.RefObject<ReadiumViewRef | null>;
+  sentenceId: string | null;
+  /** Opened somewhere of its own: apart from the start, until the page is the voice's. */
+  startDetached?: boolean;
+}) {
+  const [detached, setDetached] = React.useState(startDetached);
   /** The page on screen, as the reader last reported it. */
   const [page, setPage] = React.useState<Locator | null>(null);
   const pageRef = React.useRef<Locator | null>(null);

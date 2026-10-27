@@ -30,19 +30,24 @@ import { selectBook, selectPlaying, usePlayer, usePlayerLoader } from '@/stores/
  * ones the app moved (`onNavigatedByUser`).
  *
  * `initialLocator` is the sentence being heard as the reader opens, for it to
- * open on that page rather than on the saved place and then move.
+ * open on that page rather than on the saved place and then move. Opened at a
+ * place of its own (`opensAway`: a highlight on the timeline, a passage in a
+ * chat) the pages start off the voice, and BACK TO NOW goes to it.
  */
 export function useReadAlong({
   bookId,
   readerRef,
   ready,
   tint,
+  opensAway = false,
 }: {
   bookId: string | undefined;
   readerRef: React.RefObject<ReadiumViewRef | null>;
   /** Readium has said where it is, so it can be moved: still under the reader's cover, so the move is not seen. */
   ready: boolean;
   tint: string;
+  /** The reader was opened at a place of its own, not the voice's. */
+  opensAway?: boolean;
 }) {
   const following = usePlayer((s) => !!bookId && selectBook(s)?.bookId === bookId);
   const loaded = usePlayer((s) => s.loaded);
@@ -58,7 +63,7 @@ export function useReadAlong({
     return chapter && sentence ? (sentenceLocator(chapter, chapter.paragraphs, sentence) as Locator) : null;
   }, [chapter, sentenceId]);
 
-  const { detached, page, voiceWay, onLocationChange, follow, followOnceAt, detach, onNavigatedByUser } = useOffTheVoice({ readerRef, sentenceId });
+  const { detached, page, voiceWay, onLocationChange, follow, followOnceAt, detach, onNavigatedByUser } = useOffTheVoice({ readerRef, sentenceId, startDetached: opensAway });
 
   React.useEffect(() => {
     if (!following || !ready || !locator || detached) return;

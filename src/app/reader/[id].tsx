@@ -218,9 +218,23 @@ export default function ReaderScreen() {
   // TTS
   const [ttsState, setTtsState] = useState<TTSState | null>(null);
   const isTTSActive = ttsState !== null;
+  // Where a link asked to open (a highlight on the timeline, a passage in a
+  // chat), when it asked for somewhere rather than the saved position. The
+  // router hands the param over decoded; decoding it again threw on any `%`
+  // in the passage's stored context ("15% a month"), and the reader quietly
+  // opened at the saved position instead.
+  const jumpLocator = useMemo(() => parseLocatorParam(locatorParam), [locatorParam]);
+
   // A book being heard in the player: the reader follows its voice, and its
-  // read-aloud controls are the player's.
-  const readAlong = useReadAlong({ bookId: id, readerRef, ready: readerLocated, tint: asColor(primary) ?? "#f2ca50" });
+  // read-aloud controls are the player's. Opened at a place of its own, it
+  // stays there, off the voice, as a highlight tapped inside the reader does.
+  const readAlong = useReadAlong({
+    bookId: id,
+    readerRef,
+    ready: readerLocated,
+    tint: asColor(primary) ?? "#f2ca50",
+    opensAway: jumpLocator !== null,
+  });
   const detachReadAlong = readAlong.detach;
   const followLocation = readAlong.onLocationChange;
   const speaking = readAlong.following ? readAlong.controls.active : isTTSActive;
@@ -312,13 +326,6 @@ export default function ReaderScreen() {
   useEffect(() => {
     if (readerPainted && id) void repairSuggestedHighlights(id);
   }, [readerPainted, id, repairSuggestedHighlights]);
-
-  // Where a link asked to open (a highlight on the timeline, a passage in a
-  // chat), when it asked for somewhere rather than the saved position. The
-  // router hands the param over decoded; decoding it again threw on any `%`
-  // in the passage's stored context ("15% a month"), and the reader quietly
-  // opened at the saved position instead.
-  const jumpLocator = useMemo(() => parseLocatorParam(locatorParam), [locatorParam]);
 
   // When opened at a jump, offer a way back to saved progress — but only if
   // the jump is on a different page.
