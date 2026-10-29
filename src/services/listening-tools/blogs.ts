@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { blogArticles, blogs } from '@/db/schema';
@@ -103,7 +103,12 @@ export function searchPosts(search: PostSearch): { posts: PostSummary[]; total: 
     .from(blogArticles)
     .innerJoin(blogs, eq(blogs.id, blogArticles.blogId))
     .where(where)
-    .orderBy(desc(sql`coalesce(${blogArticles.readAt}, '')`), desc(blogArticles.publishedAt))
+    // The queue in the reader's own order, as Up Next is; anything else by reading, then newest.
+    .orderBy(
+      ...(search.queued ? [asc(blogArticles.queuePosition)] : []),
+      desc(sql`coalesce(${blogArticles.readAt}, '')`),
+      desc(blogArticles.publishedAt),
+    )
     .limit(terms.length > 0 ? POST_POOL : POSTS_SHOWN)
     .all()
     .map(({ bookId, ...row }) => ({ ...row, openedInReader: bookId !== null }));

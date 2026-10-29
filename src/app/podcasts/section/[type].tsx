@@ -3,6 +3,7 @@ import React from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { DragList } from "@/components/drag-list";
 import { DrawerHeader } from "@/components/drawer-header";
 import { IconButton } from "@/components/icon-button";
 import { CheckCheck, Trash2 } from "@/components/icons";
@@ -29,7 +30,7 @@ import type { EpisodeItem } from "@/services/podcasts/records";
 
 const episodeKey = (item: EpisodeItem) => item.id;
 
-/** A podcast shelf's "View all": every episode (or show) on it, searchable. */
+/** A podcast shelf's "View all": every episode (or show) on it, searchable; Up Next in the order it is dragged into. */
 export default function PodcastSectionScreen() {
   const { type } = useLocalSearchParams<{ type: string }>();
   const insets = useSafeAreaInsets();
@@ -42,6 +43,34 @@ export default function PodcastSectionScreen() {
   const bottomPadding = layout.scrollBottom + insets.bottom + miniPlayer.clearance;
   const empty = <ListEmpty text={screen.emptyText} />;
   const skeleton = screen.isShows ? <TileGridSkeleton label="Loading shows" /> : <EpisodeListSkeleton />;
+  const listStyle = React.useMemo(() => ({ paddingBottom: bottomPadding }), [bottomPadding]);
+  const lists = {
+    shows: <ShowGrid tiles={screen.shows} empty={empty} bottomPadding={bottomPadding} onOpen={episodeActions.openShow} />,
+    queue: (
+      <DragList
+        {...screen.queue}
+        host="page"
+        keyExtractor={episodeKey}
+        renderItem={renderEpisode}
+        ItemSeparatorComponent={RowSeparator}
+        contentContainerStyle={listStyle}
+        ListEmptyComponent={empty}
+      />
+    ),
+    episodes: (
+      <TransitionFlashList
+        data={screen.episodes}
+        keyExtractor={episodeKey}
+        renderItem={renderEpisode}
+        ItemSeparatorComponent={RowSeparator}
+        drawDistance={LIST_DRAW_DISTANCE}
+        contentContainerStyle={listStyle}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        ListEmptyComponent={empty}
+      />
+    ),
+  };
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -66,23 +95,7 @@ export default function PodcastSectionScreen() {
       {/* The list mounts once the drawer has landed and the shelf has been
           read, behind a skeleton of its shape. */}
       <Handover ready={landed && screen.loaded} skeleton={skeleton}>
-        <PageFade>
-          {screen.isShows ? (
-            <ShowGrid tiles={screen.shows} empty={empty} bottomPadding={bottomPadding} onOpen={episodeActions.openShow} />
-          ) : (
-            <TransitionFlashList
-              data={screen.episodes}
-              keyExtractor={episodeKey}
-              renderItem={renderEpisode}
-              ItemSeparatorComponent={RowSeparator}
-              drawDistance={LIST_DRAW_DISTANCE}
-              contentContainerStyle={{ paddingBottom: bottomPadding }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={empty}
-            />
-          )}
-        </PageFade>
+        <PageFade>{lists[screen.view]}</PageFade>
       </Handover>
       {miniPlayer.props ? <MiniPlayer {...miniPlayer.props} /> : null}
       {landed ? (

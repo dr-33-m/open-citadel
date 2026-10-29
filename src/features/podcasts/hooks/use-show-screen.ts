@@ -2,11 +2,13 @@ import React from 'react';
 
 import { useShow, type ShowPreview } from '@/features/podcasts/hooks/use-show';
 import { useShowMutations } from '@/features/podcasts/hooks/use-show-mutations';
+import { usePageSearch, useSearchResults } from '@/hooks/use-page-search';
 import * as actions from '@/services/podcasts/actions';
 import type { ShowEpisodeFilter } from '@/services/podcasts/episodes';
 import { showName, type EpisodeItem } from '@/services/podcasts/records';
 import { playEpisode } from '@/services/podcasts/player';
 import { showNotesToText } from '@/services/podcasts/show-notes';
+import { countLabel } from '@/utils/format';
 
 /** A show page's route params: a stored id, or `discover` with what Explore knew. */
 export type ShowParams = {
@@ -18,6 +20,8 @@ export type ShowParams = {
   artworkUrl?: string;
 };
 
+const episodeFields = (e: EpisodeItem) => [e.title];
+
 /**
  * Everything a show's page decides: which show (stored, or previewed from
  * Explore), its derived facts (name, plain description, newest episode, how
@@ -25,6 +29,7 @@ export type ShowParams = {
  */
 export function useShowScreen(params: ShowParams, landed: boolean) {
   const [filter, setFilter] = React.useState<ShowEpisodeFilter>('all');
+  const search = usePageSearch();
 
   const isDiscover = params.id === 'discover';
   const { appleId, feedUrl, title: previewTitle, author, artworkUrl } = params;
@@ -41,8 +46,10 @@ export function useShowScreen(params: ShowParams, landed: boolean) {
         : null,
     [isDiscover, appleId, feedUrl, previewTitle, author, artworkUrl],
   );
-  const data = useShow(isDiscover ? null : params.id, preview, filter, landed);
+  // A search looks through every episode, whichever filter the list was on.
+  const data = useShow(isDiscover ? null : params.id, preview, search.searching ? 'all' : filter, landed);
   const { show, episodes, showId } = data;
+  const results = useSearchResults(episodes, search, episodeFields);
 
   const title = show ? showName(show) : (preview?.title ?? '');
   const description = React.useMemo(() => showNotesToText(show?.description), [show?.description]);
@@ -63,12 +70,21 @@ export function useShowScreen(params: ShowParams, landed: boolean) {
 
   const emptyText = !show
     ? null
-    : filter === 'all'
-      ? 'This show has not published any episodes yet.'
-      : 'No episodes match.';
+    : search.query.trim()
+      ? 'No episode titles match.'
+      : filter === 'all' || search.searching
+        ? 'This show has not published any episodes yet.'
+        : 'No episodes match.';
 
   return {
     ...data,
+    episodes: results,
+    search,
+    /** "12 EPISODES" over a search's results, in the hero's place. */
+    resultsCount: countLabel(results.length, 'EPISODE'),
+    /** Only a stored show has episodes to search, and only one not being searched is pulled for new ones. */
+    canSearch: showId !== null,
+    canRefresh: showId !== null && !search.searching,
     episodeCount: data.episodesLoaded ? episodes.length : null,
     filter,
     setFilter,

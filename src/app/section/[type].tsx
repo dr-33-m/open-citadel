@@ -11,6 +11,7 @@ import { CollectionGridSkeleton } from '@/components/skeletons/collection-grid-s
 import { ThemedView } from '@/components/themed-view';
 import { contentColumn } from '@/constants/theme';
 import { BookGrid } from '@/features/library/components/book-grid';
+import { BookQueueList } from '@/features/library/components/book-queue-list';
 import { BookSheets } from '@/features/library/components/book-sheets';
 import { CollectionList } from '@/features/library/components/collection-list';
 import { LibrarySearchField } from '@/features/library/components/library-search-field';
@@ -30,7 +31,7 @@ export default function SectionScreen() {
   return type === 'collections' ? <CollectionsSection /> : <BookSection type={type} />;
 }
 
-/** One shelf's books, searchable, with the shelf's own action in the header. */
+/** One shelf's books, searchable, with the shelf's own action in the header; the queue as rows in its own order. */
 function BookSection({ type }: { type: string | undefined }) {
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
@@ -62,14 +63,25 @@ function BookSection({ type }: { type: string | undefined }) {
         onChange={section.search.setQuery}
         placeholder="Search by title or author…"
       />
-      <BookGrid
-        books={section.search.results}
-        ready={landed}
-        emptyText={section.emptyText}
-        bottomInset={insets.bottom}
-        onOpen={section.openReader}
-        onMenu={sheets.openMenu}
-      />
+      {section.view === 'queue' ? (
+        <BookQueueList
+          queue={section.queue}
+          ready={landed}
+          emptyText={section.emptyText}
+          bottomInset={insets.bottom}
+          onOpen={section.openReader}
+          onMenu={sheets.openMenu}
+        />
+      ) : (
+        <BookGrid
+          books={section.search.results}
+          ready={landed}
+          emptyText={section.emptyText}
+          bottomInset={insets.bottom}
+          onOpen={section.openReader}
+          onMenu={sheets.openMenu}
+        />
+      )}
       {/* Sheets mount after the drawer has settled: four bottom sheets is more
           than the rise can absorb in its opening frames. */}
       {landed ? <BookSheets sheets={sheets} /> : null}

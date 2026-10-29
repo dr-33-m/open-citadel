@@ -1,13 +1,15 @@
 import React from 'react';
 import { View } from 'react-native';
 
-import { ChevronDown, ChevronUp, X } from '@/components/icons';
+import { DragList } from '@/components/drag-list';
+import { X } from '@/components/icons';
 import { PageFade } from '@/components/scroll-fades';
 import { ThemedText } from '@/components/themed-text';
 import { Sheet } from '@/components/ui/sheet';
 import { Touchable } from '@/components/ui/touchable';
 import { PodcastArtwork } from '@/features/podcasts/components/podcast-artwork';
 import { playLabel } from '@/features/podcasts/utils/format';
+import { useDragOrder, type DragMove } from '@/hooks/use-drag-order';
 import { episodeArtwork } from '@/services/podcasts/download-paths';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { EpisodeItem } from '@/services/podcasts/records';
@@ -24,21 +26,26 @@ type UpNextSheetProps = {
 };
 
 const keyExtractor = (item: EpisodeItem) => item.id;
+const LIST_STYLE = { paddingBottom: 16 };
 
 /**
- * What plays after this, in order. Pressing an episode plays it now; the
- * marks on its row move it up or down one place, or take it out. One place at
- * a time rather than a drag: a drag inside a sheet that is itself dragged
- * fights the sheet, and two presses reach any order a queue this short needs.
+ * What plays after this, in order. Pressing an episode plays it now; its grip
+ * drags it to a new place, and its ✕ takes it out.
+ *
+ * The sheet drags by its grabber only. Its content drag is an ancestor of the
+ * rows' and would take every vertical drag inside it, the grip's included, so
+ * it is given up: the list scrolls, the grip carries, the grabber moves the
+ * sheet.
  */
 export function UpNextSheet({ visible, episodes, onClose, onPlay, onMove, onRemove, onClear }: UpNextSheetProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
-  const last = episodes.length - 1;
+  const save = React.useCallback(({ id, to }: DragMove) => onMove(id, to), [onMove]);
+  const queue = useDragOrder(episodes, keyExtractor, save);
 
   const renderItem = React.useCallback(
-    ({ item, index }: { item: EpisodeItem; index: number }) => (
-      <View className="flex-row items-center gap-3 px-4 py-2.5">
+    ({ item }: { item: EpisodeItem }) => (
+      <View className="flex-row items-center gap-3 py-2.5 pl-4 pr-2">
         <Touchable className="flex-1 flex-row items-center gap-3" onPress={() => onPlay(item.id)} accessibilityRole="button" accessibilityLabel={`Play ${item.title}`}>
           <PodcastArtwork uri={episodeArtwork(item)} size={48} recyclingKey={item.id} placeholderColor={tokens['--color-surface-tertiary']} />
           <View className="flex-1 gap-0.5">
@@ -50,36 +57,16 @@ export function UpNextSheet({ visible, episodes, onClose, onPlay, onMove, onRemo
             </ThemedText>
           </View>
         </Touchable>
-        <Touchable
-          className="h-10 w-9 items-center justify-center"
-          disabled={index === 0}
-          onPress={() => onMove(item.id, index - 1)}
-          haptic="select"
-          accessibilityRole="button"
-          accessibilityLabel="Move up"
-        >
-          <ChevronUp size={18} color={index === 0 ? tokens['--color-surface-tertiary'] : muted} />
-        </Touchable>
-        <Touchable
-          className="h-10 w-9 items-center justify-center"
-          disabled={index === last}
-          onPress={() => onMove(item.id, index + 1)}
-          haptic="select"
-          accessibilityRole="button"
-          accessibilityLabel="Move down"
-        >
-          <ChevronDown size={18} color={index === last ? tokens['--color-surface-tertiary'] : muted} />
-        </Touchable>
         <Touchable className="h-10 w-10 items-center justify-center" hitSlop={4} onPress={() => onRemove(item.id)} accessibilityRole="button" accessibilityLabel="Remove from Up Next">
           <X size={18} color={muted} />
         </Touchable>
       </View>
     ),
-    [last, muted, onMove, onPlay, onRemove, tokens],
+    [muted, onPlay, onRemove, tokens],
   );
 
   return (
-    <Sheet visible={visible} onClose={onClose} scrollable snapRatios={[0.6, 0.92]}>
+    <Sheet visible={visible} onClose={onClose} scrollable contentPanning={false} snapRatios={[0.6, 0.92]}>
       <View className="flex-row items-baseline gap-3 px-4 pb-3">
         <ThemedText type="headlineSm" className="flex-1">
           Up Next
@@ -94,11 +81,19 @@ export function UpNextSheet({ visible, episodes, onClose, onPlay, onMove, onRemo
       </View>
       {episodes.length === 0 ? (
         <ThemedText type="bodySm" color={muted} className="px-4 pb-8">
-          {'Nothing is queued. Choose \u201cPlay next\u201d or \u201cAdd to Up Next\u201d on any episode.'}
+          {'Nothing is queued. Choose “Play next” or “Add to Up Next” on any episode.'}
         </ThemedText>
       ) : (
         <PageFade edges="both" surface="popover">
-          <Sheet.FlatList data={episodes} keyExtractor={keyExtractor} renderItem={renderItem} />
+          <DragList
+            data={queue.items}
+            onReorder={queue.onReorder}
+            dragEnabled
+            host="sheet"
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
+            contentContainerStyle={LIST_STYLE}
+          />
         </PageFade>
       )}
     </Sheet>

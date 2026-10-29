@@ -12,8 +12,8 @@ import { nowIso } from '@/services/rows';
 
 /**
  * `latest`: every followed blog's posts, newest first. `continue`: posts
- * opened and left part-read. `queue`: kept to read later, in the order they
- * were added. `favorites`: latest first. `finished`: most recently finished
+ * opened and left part-read. `queue`: kept to read later, in the reader's
+ * order (`services/blogs/queue`). `favorites`: latest first. `finished`: most recently finished
  * first.
  */
 export type ArticleShelf = 'latest' | 'continue' | 'queue' | 'favorites' | 'finished';
@@ -52,7 +52,7 @@ export async function listShelf(shelf: ArticleShelf, limit: number): Promise<Art
     case 'latest':
       return select(eq(blogs.state, 'subscribed'), [desc(blogArticles.publishedAt)], limit);
     case 'queue':
-      return select(isNotNull(blogArticles.savedAt), [asc(blogArticles.savedAt)], limit);
+      return select(isNotNull(blogArticles.savedAt), [asc(blogArticles.queuePosition), asc(blogArticles.savedAt)], limit);
     case 'favorites':
       return select(isNotNull(blogArticles.favoritedAt), [desc(blogArticles.favoritedAt)], limit);
     case 'finished':
@@ -104,14 +104,6 @@ export async function setArticleRead(id: string, read: boolean): Promise<void> {
     .where(eq(blogArticles.id, id));
 }
 
-/** Into the queue, at its end, or out of it. */
-export async function setArticleQueued(id: string, queued: boolean): Promise<void> {
-  await db
-    .update(blogArticles)
-    .set({ savedAt: queued ? nowIso() : null })
-    .where(eq(blogArticles.id, id));
-}
-
 export async function setArticleFavorite(id: string, favorite: boolean): Promise<void> {
   await db
     .update(blogArticles)
@@ -130,7 +122,7 @@ export async function setArticleFinished(id: string, finished: boolean): Promise
     .update(blogArticles)
     .set(
       finished
-        ? { finishedAt: at, savedAt: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` }
+        ? { finishedAt: at, savedAt: null, queuePosition: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` }
         : { finishedAt: null },
     )
     .where(eq(blogArticles.id, id));
@@ -155,7 +147,7 @@ export async function finishArticleOfBook(bookId: string): Promise<boolean> {
   const at = nowIso();
   const changed = await db
     .update(blogArticles)
-    .set({ finishedAt: at, savedAt: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` })
+    .set({ finishedAt: at, savedAt: null, queuePosition: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` })
     .where(and(eq(blogArticles.bookId, bookId), isNull(blogArticles.finishedAt)))
     .returning({ id: blogArticles.id });
   return changed.length > 0;

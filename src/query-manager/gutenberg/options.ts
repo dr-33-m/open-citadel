@@ -38,6 +38,23 @@ export function createShelfQueryOptions(
   } satisfies UseInfiniteQueryOptions<CatalogPage, Error, InfiniteData<CatalogPage>, readonly unknown[], number>;
 }
 
+/**
+ * A search inside one shelf, a page at a time like the shelf itself: words in
+ * a title or an author's name, among that shelf's books, in its order. Kept
+ * like a catalogue search, for half an hour.
+ */
+export function createShelfSearchQueryOptions(shelf: CatalogShelf, term: string) {
+  return {
+    staleTime: DAY,
+    gcTime: 30 * 60_000,
+    queryKey: gutenbergKeys.shelfSearch(shelf.id, term),
+    queryFn: ({ pageParam, signal }) =>
+      fetchCatalogPage({ topic: shelf.topic, sort: shelf.sort, search: term, page: pageParam }, signal),
+    initialPageParam: 1,
+    getNextPageParam: (last) => last.nextPage ?? undefined,
+  } satisfies UseInfiniteQueryOptions<CatalogPage, Error, InfiniteData<CatalogPage>, readonly unknown[], number>;
+}
+
 /** How many of a shelf's first page its row on Explore draws; "View all" has the rest. */
 const SHELF_PREVIEW_SIZE = 12;
 
