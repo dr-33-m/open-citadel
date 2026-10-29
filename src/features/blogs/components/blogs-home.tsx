@@ -35,10 +35,12 @@ const SHELF_BADGES: Partial<Record<BlogSection, TileBadgeIcon>> = { favorites: F
 
 /**
  * The shelves, in the order a reader reaches for them: what they are in the
- * middle of, what is new, what they kept, and what they have read, the last
- * three named and ordered as the books' are.
+ * middle of, what they chose to read next, what is new, what they kept, and
+ * what they have read. The queue leads the new posts as Up Next leads Just
+ * Arrived on the podcasts side; the rest are named and ordered as the books'
+ * are.
  */
-const ORDER: BlogSection[] = ['continue', 'latest', 'queue', 'favorites', 'blogs', 'finished'];
+const ORDER: BlogSection[] = ['continue', 'queue', 'latest', 'favorites', 'blogs', 'finished'];
 
 /**
  * The blogs side of the Library, laid out the way the podcasts side is:
