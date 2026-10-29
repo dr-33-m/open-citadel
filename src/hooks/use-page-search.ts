@@ -6,19 +6,26 @@ import { useBackHandler } from '@/hooks/use-back-handler';
 import { matchesQuery } from '@/utils/format';
 
 /**
- * A search over one page's list (a show's episodes, a blog's posts), opened
- * from the page's top bar and closed again with its ✕ or the back button.
- * Closing it empties the query, so the page comes back as it was.
+ * A search over one page's list (a show's episodes, a blog's posts, a free
+ * books shelf), opened from the page's top bar and closed again with its ✕ or
+ * the back button. Closing it empties the query, so the page comes back as it
+ * was.
+ *
+ * `query` is the field as typed, for a filter over a list in memory. `term` is
+ * the query once typing has paused, for a search that goes to a server; it is
+ * only kept when the header is given a `debounce`.
  */
 export function usePageSearch() {
   const navigation = useNavigation();
   const [searching, setSearching] = React.useState(false);
   const [query, setQuery] = React.useState('');
+  const [term, setTerm] = React.useState('');
 
   const open = React.useCallback(() => setSearching(true), []);
   const close = React.useCallback(() => {
     setSearching(false);
     setQuery('');
+    setTerm('');
   }, []);
   // Back ends the search before it leaves the page, but only while the page
   // is the one on screen: a page still searching under an episode opened
@@ -40,7 +47,7 @@ export function usePageSearch() {
     };
   }, [navigation, searching]);
 
-  return { searching, query, setQuery, open, close };
+  return { searching, query, setQuery, term, setTerm, open, close };
 }
 
 export type PageSearch = ReturnType<typeof usePageSearch>;

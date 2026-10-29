@@ -4,4 +4,5 @@ export {
   createCatalogSearchQueryOptions,
   createShelfPreviewQueryOptions,
   createShelfQueryOptions,
+  createShelfSearchQueryOptions,
 } from './options';
