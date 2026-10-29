@@ -13,12 +13,8 @@ import { useSettledFocusEffect } from '@/navigation/use-settled-focus-effect';
 import { createBlogArticlesQueryOptions, createBlogQueryOptions, invalidateBlogLibrary } from '@/query-manager/blogs';
 import { listenItem } from '@/services/audiobook';
 import { keepPostCover } from '@/services/blogs/post-cover';
-import {
-  setArticleFavorite,
-  setArticleFinished,
-  setArticleQueued,
-  setArticleRead,
-} from '@/services/blogs/articles';
+import { setArticleFavorite, setArticleFinished, setArticleRead } from '@/services/blogs/articles';
+import { setArticleQueued } from '@/services/blogs/queue';
 import type { ArticleItem } from '@/services/blogs/records';
 
 /**

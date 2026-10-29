@@ -89,6 +89,7 @@
     "react-native-pager-view": "8.0.2",
     "react-native-purchases": "^10.9.0",
     "react-native-reanimated": "4.6.0",
+    "react-native-reorderable-list": "0.18.2",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screen-transitions": "^4.0.0",
     "react-native-screens": "~4.26.2",
@@ -155,7 +156,8 @@
       "expo-modules-core": "patches/expo-modules-core.patch",
       "@rntp/player": "patches/@rntp__player.patch",
       "react-native-executorch": "patches/react-native-executorch.patch",
-      "uniwind": "patches/uniwind.patch"
+      "uniwind": "patches/uniwind.patch",
+      "react-native-reorderable-list@0.18.2": "patches/react-native-reorderable-list@0.18.2.patch"
     }
   },
   "expo": {

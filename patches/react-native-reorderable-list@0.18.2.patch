@@ -1,0 +1,52 @@
+diff --git a/src/components/ReorderableListCell.tsx b/src/components/ReorderableListCell.tsx
+index 8a1d8607fbf7920ee2068bf60942fb443241ebfc..e81d9df8df725524f84d210d72c5867e738573bc 100644
+--- a/src/components/ReorderableListCell.tsx
++++ b/src/components/ReorderableListCell.tsx
+@@ -1,4 +1,4 @@
+-import React, {memo, useCallback, useMemo, useState} from 'react';
++import React, {memo, useCallback, useLayoutEffect, useMemo, useRef, useState} from 'react';
+ import {CellRendererProps, LayoutChangeEvent} from 'react-native';
+ 
+ import Animated, {
+@@ -77,6 +77,20 @@ export const ReorderableListCell = memo(
+     // (even in other cells, e.g. released item and reordering cells)
+     const itemTranslateXY = useSharedValue(0);
+ 
++    // PATCH (Open Citadel): a reorder reaches this cell as a new index, in the
++    // commit that lays the rows out in their new order. The offset that
++    // carried it there is spent then, so it goes back to rest right after that
++    // commit, in place of the remount the list used to force.
++    const renderedIndex = useRef(index);
++    useLayoutEffect(() => {
++      if (renderedIndex.current === index) return;
++      renderedIndex.current = index;
++      runOnUI(() => {
++        'worklet';
++        itemTranslateXY.value = 0;
++      })();
++    }, [index, itemTranslateXY]);
++
+     const isActiveCell = useDerivedValue(() => {
+       const value = draggedIndex.value === index;
+ 
+diff --git a/src/components/ReorderableListCore.tsx b/src/components/ReorderableListCore.tsx
+index 7f1ca891f1823026054ffe167dbea79d27422284..bd0664ca417b883d06353db6692b31979932e1d8 100644
+--- a/src/components/ReorderableListCore.tsx
++++ b/src/components/ReorderableListCore.tsx
+@@ -222,10 +222,12 @@ const ReorderableListCore = <T,>(
+     });
+   }, [data]);
+ 
+-  const createCellKey = useCallback((cellKey: string) => {
+-    const mark = markedCellsRef.current?.get(cellKey) || 0;
+-    return `${cellKey}#${mark}`;
+-  }, []);
++  // PATCH (Open Citadel): rows keep their keys across a reorder. Remounting
++  // the moved rows rebuilt their native views, and an Android image view
++  // draws nothing until it has been laid out, so every drop blinked the moved
++  // rows' artwork. Each cell puts its own offset back to rest when its index
++  // changes instead (ReorderableListCell).
++  const createCellKey = useCallback((cellKey: string) => cellKey, []);
+ 
+   const listContextValue = useMemo(
+     () => ({

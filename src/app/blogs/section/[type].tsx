@@ -3,6 +3,7 @@ import React from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { DragList } from "@/components/drag-list";
 import { DrawerHeader } from "@/components/drawer-header";
 import { IconButton } from "@/components/icon-button";
 import { CheckCheck, Share } from "@/components/icons";
@@ -26,7 +27,7 @@ import type { ArticleItem } from "@/services/blogs/records";
 
 const articleKey = (item: ArticleItem) => item.id;
 
-/** A blogs shelf's "View all": every post (or blog) on it, searchable. */
+/** A blogs shelf's "View all": every post (or blog) on it, searchable; the queue in the order it is dragged into. */
 export default function BlogSectionScreen() {
   const { type } = useLocalSearchParams<{ type: string }>();
   const insets = useSafeAreaInsets();
@@ -37,6 +38,34 @@ export default function BlogSectionScreen() {
   const bottomPadding = layout.scrollBottom + insets.bottom;
   const empty = <ListEmpty text={screen.emptyText} />;
   const skeleton = screen.isBlogs ? <TileGridSkeleton label="Loading blogs" /> : <ArticleListSkeleton />;
+  const listStyle = React.useMemo(() => ({ paddingBottom: bottomPadding }), [bottomPadding]);
+  const lists = {
+    blogs: <BlogGrid blogs={screen.blogs} empty={empty} bottomPadding={bottomPadding} onOpen={screen.actions.openBlog} />,
+    queue: (
+      <DragList
+        {...screen.queue}
+        host="page"
+        keyExtractor={articleKey}
+        renderItem={renderArticle}
+        ItemSeparatorComponent={RowSeparator}
+        contentContainerStyle={listStyle}
+        ListEmptyComponent={empty}
+      />
+    ),
+    posts: (
+      <TransitionFlashList
+        data={screen.articles}
+        keyExtractor={articleKey}
+        renderItem={renderArticle}
+        ItemSeparatorComponent={RowSeparator}
+        drawDistance={LIST_DRAW_DISTANCE}
+        contentContainerStyle={listStyle}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        ListEmptyComponent={empty}
+      />
+    ),
+  };
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
@@ -58,23 +87,7 @@ export default function BlogSectionScreen() {
         </View>
       </View>
       <Handover ready={landed && screen.loaded} skeleton={skeleton}>
-        <PageFade>
-          {screen.isBlogs ? (
-            <BlogGrid blogs={screen.blogs} empty={empty} bottomPadding={bottomPadding} onOpen={screen.actions.openBlog} />
-          ) : (
-            <TransitionFlashList
-              data={screen.articles}
-              keyExtractor={articleKey}
-              renderItem={renderArticle}
-              ItemSeparatorComponent={RowSeparator}
-              drawDistance={LIST_DRAW_DISTANCE}
-              contentContainerStyle={{ paddingBottom: bottomPadding }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={empty}
-            />
-          )}
-        </PageFade>
+        <PageFade>{lists[screen.view]}</PageFade>
       </Handover>
       <ArticleSheets actions={screen.actions} />
     </ThemedView>

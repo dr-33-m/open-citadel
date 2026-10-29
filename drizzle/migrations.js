@@ -27,6 +27,7 @@ import m0023 from "./0023_blogs.js";
 import m0024 from "./0024_blog_article_marks.js";
 import m0025 from "./0025_podcast_download_cover.js";
 import m0026 from "./0026_episode_transcripts.js";
+import m0027 from "./0027_blog_queue_position.js";
 import journal from "./meta/_journal.json";
 
 export default {
@@ -59,5 +60,6 @@ export default {
     m0024,
     m0025,
     m0026,
+    m0027,
   },
 };

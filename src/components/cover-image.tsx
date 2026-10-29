@@ -20,6 +20,23 @@ type CoverImageProps = Omit<ImageProps, 'placeholder' | 'transition' | 'style' |
   style?: StyleProp<ViewStyle>;
 };
 
+/*
+ * Pictures already shown this session. A row that mounts again (a list
+ * reordered by a drag remounts the rows it moved, and a cell can be thrown
+ * away and rebuilt on a scroll back) asks for a picture expo-image already
+ * holds in memory and draws in the same frame, but `onLoad` only reaches JS a
+ * frame or more later. Until it did, every such picture blinked to its grey
+ * block and back. One seen before mounts without the block. Capped, oldest
+ * first, so a long session's worth of covers is not kept for good.
+ */
+const SHOWN_CAP = 600;
+const shown = new Set<string>();
+function remember(key: string) {
+  shown.delete(key);
+  shown.add(key);
+  if (shown.size > SHOWN_CAP) shown.delete(shown.values().next().value as string);
+}
+
 /** What identifies the picture asked for, so a recycled cell knows a new one is loading. */
 function sourceKey(source: ImageProps['source']): string {
   if (typeof source === 'string') return source;
@@ -57,10 +74,13 @@ function CoverImageBase({ style, ...image }: CoverImageProps) {
   // Keyed on the picture rather than a flag: a recycled list cell keeps its
   // state, and a flag would carry "loaded" over to the next row's picture.
   const [settledKey, setSettledKey] = React.useState<string | null>(null);
-  const settle = React.useCallback(() => setSettledKey(key), [key]);
+  const settle = React.useCallback(() => {
+    remember(key);
+    setSettledKey(key);
+  }, [key]);
   // No picture at all (a free book without a cover) never loads or fails, so
   // its skeleton would stay for good: the box's own ground is its cover.
-  const loading = image.source != null && settledKey !== key;
+  const loading = image.source != null && settledKey !== key && !shown.has(key);
   // Not reset when a recycled cell is handed a new picture that is also
   // loading: it is still a cover waiting, and the layer stays rather than
   // being dropped and mounted again.

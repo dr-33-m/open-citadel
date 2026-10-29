@@ -62,6 +62,7 @@ export { default as Feather } from 'lucide-react-native/icons/feather';
 export { default as FolderPlus } from 'lucide-react-native/icons/folder-plus';
 export { default as Globe } from 'lucide-react-native/icons/globe';
 export { default as Goal } from 'lucide-react-native/icons/goal';
+export { default as GripVertical } from 'lucide-react-native/icons/grip-vertical';
 export { default as Headphones } from 'lucide-react-native/icons/headphones';
 export { default as HeartHandshake } from 'lucide-react-native/icons/heart-handshake';
 export { default as Highlighter } from 'lucide-react-native/icons/highlighter';
