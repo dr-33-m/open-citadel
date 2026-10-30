@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Keyboard, View } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
 import PagerView, {
   type PageScrollStateChangedNativeEvent,
@@ -70,7 +70,10 @@ export function HubPager() {
     now: dragged || requested !== HUB.library,
   });
   const onScrollState = React.useCallback((event: PageScrollStateChangedNativeEvent) => {
-    if (event.nativeEvent.pageScrollState === 'dragging') setDragged(true);
+    if (event.nativeEvent.pageScrollState !== 'dragging') return;
+    setDragged(true);
+    // As the page starts to leave: asked once it has gone, the keyboard stayed.
+    Keyboard.dismiss();
   }, []);
 
   // A drag is direct manipulation and stays exactly as it is under Reduce
@@ -83,6 +86,8 @@ export function HubPager() {
   React.useEffect(() => {
     if (requested === shown.current) return;
     shown.current = requested;
+    // The keyboard belongs to the page it was opened on (Samwell's composer).
+    Keyboard.dismiss();
     const pager = pagerRef.current;
     if (!pager) return;
     if (reduceMotion) pager.setPageWithoutAnimation(requested);

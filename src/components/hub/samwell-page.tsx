@@ -13,7 +13,7 @@
  */
 import { useRouter } from "expo-router";
 import React from "react";
-import { Keyboard, View, type TextInput } from "react-native";
+import { View, type TextInput } from "react-native";
 import Animated, {
     useAnimatedKeyboard,
     useAnimatedStyle,
@@ -495,14 +495,9 @@ export function SamwellPage() {
     else await compass.send(trimmed);
   }
 
-  // A focused text input's keyboard dismissing at the same time a bottom
-  // sheet is trying to present is a common cause of the sheet silently
-  // failing to reach its snap point — settle the keyboard first.
-  //
   // `useCallback` because the toolbox's item list is memoised on it: a fresh
   // identity here every render would defeat that memo entirely.
   const openSheet = React.useCallback((open: (v: boolean) => void) => {
-    Keyboard.dismiss();
     open(true);
   }, []);
 

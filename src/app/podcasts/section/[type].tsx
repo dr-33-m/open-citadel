@@ -65,6 +65,7 @@ export default function PodcastSectionScreen() {
         contentContainerStyle={listStyle}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         ListEmptyComponent={empty}
       />
     ),

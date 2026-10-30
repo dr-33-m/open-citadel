@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
@@ -76,6 +76,16 @@ export function GoalAbandonDialog({
 
   if (title === null) return null;
 
+  // Before the field goes: Android leaves the keyboard up once it has gone.
+  const cancel = () => {
+    Keyboard.dismiss();
+    onCancel();
+  };
+  const confirm = () => {
+    Keyboard.dismiss();
+    onConfirm(reason.current.trim());
+  };
+
   const muted = asColor(mutedForeground);
 
   return (
@@ -87,7 +97,7 @@ export function GoalAbandonDialog({
       >
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: asColor(scrim) }]}
-          onPress={onCancel}
+          onPress={cancel}
           accessibilityRole="button"
           accessibilityLabel="Keep the goal"
         />
@@ -154,7 +164,7 @@ export function GoalAbandonDialog({
               <View className="gap-2">
                 <Touchable
                   className="items-center border border-primary py-3"
-                  onPress={onCancel}
+                  onPress={cancel}
                   haptic="select"
                   accessibilityRole="button"
                   accessibilityLabel="Keep the goal"
@@ -174,7 +184,7 @@ export function GoalAbandonDialog({
                     that. */}
                 <Touchable
                   disabled={!isValid}
-                  onPress={() => onConfirm(reason.current.trim())}
+                  onPress={confirm}
                   haptic="warn"
                   accessibilityRole="button"
                   accessibilityState={{ disabled: !isValid }}

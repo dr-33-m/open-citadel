@@ -49,6 +49,7 @@ import { runMigrations } from "@/db/migrations";
 import { useThemeMode } from "@/hooks/use-theme";
 import { queryClient } from "@/lib/query-client";
 import { startQueryPersist } from "@/lib/query-persist";
+import { RouteKeyboard } from "@/navigation/route-keyboard";
 import { TransitionStack } from "@/navigation/stack";
 import {
     drawerTransition,
@@ -321,6 +322,7 @@ function RootLayoutContent() {
                 moment they are ready. Its own node, so its poll re-renders
                 nothing else. */}
                 <TranscriptionWatch ready={dbReady} />
+                <RouteKeyboard />
                 {/* Hub and spokes. The hub is one route — Timeline, Library and
                 Samwell are pages of a pager inside it (`components/hub/hub-pager`),
                 because they are peers and a swipe between peers should track the

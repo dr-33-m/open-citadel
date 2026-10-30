@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import {
+  Keyboard,
   Alert,
   Animated,
   StyleSheet,
@@ -1262,6 +1263,15 @@ function BookmarkNotePrompt({
   onSkip: () => void;
   top: number;
 }) {
+  // Before the field goes: Android leaves the keyboard up once it has gone.
+  const save = () => {
+    Keyboard.dismiss();
+    onSave();
+  };
+  const skip = () => {
+    Keyboard.dismiss();
+    onSkip();
+  };
   const [primary, mutedForeground] = useCSSVariable([
     "--color-primary",
     "--color-muted-foreground",
@@ -1285,16 +1295,16 @@ function BookmarkNotePrompt({
           autoFocus
           returnKeyType="done"
           blurOnSubmit
-          onSubmitEditing={onSave}
+          onSubmitEditing={save}
         />
       </View>
       <View className="flex-row justify-end gap-4">
-        <Touchable onPress={onSkip} hitSlop={8}>
+        <Touchable onPress={skip} hitSlop={8}>
           <ThemedText type="labelSm" color={asColor(mutedForeground)}>
             SKIP
           </ThemedText>
         </Touchable>
-        <Touchable onPress={onSave} hitSlop={8}>
+        <Touchable onPress={save} hitSlop={8}>
           <ThemedText type="labelSm" color={asColor(primary)}>
             SAVE
           </ThemedText>

@@ -46,6 +46,7 @@ export function TileGrid<T>({ items, keyOf, renderTile, empty, bottomPadding }: 
       contentContainerStyle={{ paddingBottom: bottomPadding }}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       ListEmptyComponent={empty}
     />
   );

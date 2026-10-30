@@ -13,6 +13,7 @@ import {
 import { FlashList, type FlashListProps, type FlashListRef } from "@shopify/flash-list";
 import React from "react";
 import {
+    Keyboard,
     StyleSheet,
     useWindowDimensions,
     View,
@@ -441,6 +442,16 @@ export function Sheet({
     [landed],
   );
 
+  /*
+   * LOCAL EDIT (Open Citadel): the keyboard goes as a sheet starts to close,
+   * however it is closing (a drag, the backdrop, back, the parent). Left up, it
+   * stayed over whatever was under the sheet. Re-apply after any
+   * `panelui-cli update sheet`.
+   */
+  const handleAnimate = React.useCallback((_from: number, to: number) => {
+    if (to < 0) Keyboard.dismiss();
+  }, []);
+
   const handleDismiss = React.useCallback(() => {
     landed.set(false);
     setMoving(false);
@@ -456,6 +467,9 @@ export function Sheet({
   React.useLayoutEffect(() => {
     if (!visible) return;
     hasPresented.current = true;
+    // LOCAL EDIT (Open Citadel): nor does a sheet rise under a keyboard. One
+    // going down as a sheet comes up can leave the sheet short of its snap point.
+    Keyboard.dismiss();
     ref.current?.present();
   }, [visible]);
 
@@ -669,6 +683,7 @@ export function Sheet({
       handleIndicatorStyle={styles.handleIndicator}
       footerComponent={heldFooter ? renderFooter : undefined}
       onChange={handleChange}
+      onAnimate={handleAnimate}
       onDismiss={handleDismiss}
     >
       <SheetBottomInsetContext.Provider value={contentOwesBottomInset}>

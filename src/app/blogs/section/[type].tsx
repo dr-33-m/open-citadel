@@ -60,6 +60,7 @@ export default function BlogSectionScreen() {
         contentContainerStyle={listStyle}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         ListEmptyComponent={empty}
       />
     ),

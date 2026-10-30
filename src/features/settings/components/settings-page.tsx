@@ -64,6 +64,7 @@ export function SettingsPage({
           contentContainerStyle={padding}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           {children}
         </TransitionScrollView>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
@@ -87,6 +87,16 @@ export function LogNoteDialog({
 
   if (outcome === null) return null;
 
+  // Before the field goes: Android leaves the keyboard up once it has gone.
+  const save = () => {
+    Keyboard.dismiss();
+    onSave();
+  };
+  const skip = () => {
+    Keyboard.dismiss();
+    onSkip();
+  };
+
   const muted = asColor(mutedForeground);
   const prompt = outcome === 'missed' ? 'What got in the way?' : 'What did it take to do it?';
   const placeholder =
@@ -103,7 +113,7 @@ export function LogNoteDialog({
       >
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: asColor(scrim) }]}
-          onPress={onSkip}
+          onPress={skip}
           accessibilityRole="button"
           accessibilityLabel="Skip the note"
         />
@@ -166,12 +176,12 @@ export function LogNoteDialog({
                 <GoldButton
                   label="SAVE THE NOTE"
                   size="compact"
-                  onPress={onSave}
+                  onPress={save}
                   disabled={!isValid}
                 />
                 <Touchable
                   className="items-center py-3"
-                  onPress={onSkip}
+                  onPress={skip}
                   accessibilityRole="button"
                   accessibilityLabel="Skip the note"
                 >
