@@ -2,6 +2,7 @@ import { onlineManager } from '@tanstack/react-query';
 import { and, eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
+import { hasCloudIdentity } from '@/hooks/use-cloud-identity';
 import { showToast } from '@/components/toast/toast-provider';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
@@ -54,7 +55,6 @@ import { type KnownRef, refsInToolResults, repairRefMarkers } from '@/services/r
 import { splitThinking } from '@/utils/think-stream';
 import { settleActivity, withThought, type TurnActivity } from '@/utils/turn-activity';
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
-import { useAccountStore } from '@/stores/account';
 import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
 import { useSettingsStore } from '@/stores/settings';
@@ -649,9 +649,9 @@ function sendBlocked(): string | null {
   if (samwellMode === 'offline') return isEngineLoaded() ? null : 'Wake Samwell up to send it again.';
   if (!cloudBaseUrl) return 'Samwell Cloud is not set up in this build.';
   if (!onlineManager.isOnline()) return 'You are offline. Samwell Cloud needs a connection.';
-  // Grand Maester Samwell runs on accounts, so a turn with nobody behind it
-  // has nothing to bill and is not sent.
-  if (useAccountStore.getState().status !== 'signedIn') return 'Sign in to send it again.';
+  // A turn with nobody behind it has nothing to bill and is not sent. A guest
+  // who bought a plan is somebody: an account is not the way to the cloud.
+  if (!hasCloudIdentity()) return 'Choose a plan to send it again.';
   return null;
 }
 

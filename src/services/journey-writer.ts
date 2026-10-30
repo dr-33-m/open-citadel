@@ -3,10 +3,10 @@ import { JournalResponseSchema, type JournalNote, type JournalRequest } from 'sa
 
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions } from '@/db/schema';
+import { hasCloudIdentity } from '@/hooks/use-cloud-identity';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { cloudJsonHeaders } from '@/services/cloud-identity';
 import { recentJourneyNoteTexts, saveJourneyReflection } from '@/services/journey';
-import { useAccountStore } from '@/stores/account';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
 import { planJournalEntry, type JournalMessage } from '@/utils/journal-plan';
@@ -69,7 +69,8 @@ export function journalQuietChats(quietMs: number): Promise<void> {
 async function sweep(quietMs: number): Promise<void> {
   const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
   if (refused || samwellMode !== 'cloud' || !cloudBaseUrl) return;
-  if (useAccountStore.getState().status !== 'signedIn') return;
+  // An account or a guest who bought a plan: whoever paid is written up.
+  if (!hasCloudIdentity()) return;
   if (!useSubscriptionStore.getState().plan) return;
 
   const since = new Date(Date.now() - LOOKBACK_MS).toISOString();

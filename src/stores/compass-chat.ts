@@ -26,7 +26,7 @@ import {
 import { useApprovalStore } from '@/stores/approval';
 import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
-import { useAccountStore } from '@/stores/account';
+import { hasCloudIdentity } from '@/hooks/use-cloud-identity';
 import { useSettingsStore } from '@/stores/settings';
 import { settleActivity, withThought, type TurnActivity } from '@/utils/turn-activity';
 
@@ -143,7 +143,7 @@ const IDLE = {
 function sendBlocked(): string | null {
   if (!useSettingsStore.getState().cloudBaseUrl) return 'Samwell Cloud is not set up in this build.';
   if (!onlineManager.isOnline()) return 'You are offline. Compass needs a connection.';
-  if (useAccountStore.getState().status !== 'signedIn') return 'Sign in to talk to Grand Maester Samwell.';
+  if (!hasCloudIdentity()) return 'Choose a plan to talk to Grand Maester Samwell.';
   return null;
 }
 
