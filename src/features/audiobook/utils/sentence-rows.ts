@@ -28,3 +28,13 @@ export function rowOf(rows: readonly SentenceRow[], sentenceId: string | null): 
   if (!sentenceId) return -1;
   return rows.findIndex((row) => row.sentence.id === sentenceId);
 }
+
+/**
+ * The row to light: where the clock puts it, or, where the clock has no row
+ * (the chapter not laid out, a reading from before the session), the sentence
+ * the player last named. With neither, the list has no line to open on: it
+ * draws the chapter from its top, unlit, and a finger on that stops following.
+ */
+export function heardRow(clockRow: number, rows: readonly SentenceRow[], sentenceId: string | null): number {
+  return clockRow >= 0 ? clockRow : rowOf(rows, sentenceId);
+}

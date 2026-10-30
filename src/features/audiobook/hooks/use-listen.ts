@@ -51,7 +51,8 @@ export function useListen() {
   const rate = useSettingsStore((s) => s.ttsRate);
   const figures = useQuery(createCloudVoicesQueryOptions()).data;
   const voice = bookVoice(stored, figures, plan);
-  const left = useQuery(createListenFiguresQueryOptions(book?.id ?? '', { enabled: open && book !== null })).data;
+  const figuresQuery = useQuery(createListenFiguresQueryOptions(book?.id ?? '', { enabled: open && book !== null }));
+  const left = figuresQuery.data;
 
   const stats = React.useMemo(() => {
     if (!left || !voice) return null;
@@ -109,6 +110,10 @@ export function useListen() {
       onClose: () => setOpen(false),
       book: book ? { title: book.title, author: book.author, coverUrl: book.coverUrl, post: book.post ?? false } : null,
       stats,
+      // The figures come once the book is in the index: until then what it
+      // costs is not known, and pressing would only wait on the same work.
+      // Once they have answered, even with nothing, the press says why not.
+      ready: !figuresQuery.isPending,
       voiceName,
       onVoice: () => setChoosingVoice(true),
       onInfo: () => setInfoOpen(true),

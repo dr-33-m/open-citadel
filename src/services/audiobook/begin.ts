@@ -28,7 +28,10 @@ export type StartResult = 'playing' | 'no-voice' | 'unreadable' | 'unavailable';
  */
 function present(row: BookRow, voiceKey: string): void {
   const info = infoOf(row);
-  const shown = selectBook(store())?.bookId === info.id ? selectBook(store()) : rememberedClock(info.id, voiceKey);
+  const same = selectBook(store())?.bookId === info.id;
+  const shown = same ? selectBook(store()) : rememberedClock(info.id, voiceKey);
+  // Another book's sentence names a chapter of this one, which may not even be indexed yet.
+  if (!same) useAudiobook.getState().patch({ sentenceId: null });
   store().patch({
     current: {
       kind: 'book',
@@ -121,6 +124,8 @@ export async function startBook(bookId: string, options: StartFrom = {}): Promis
   writeCurrent({ bookId, sentenceId: first.id });
   applyCommands('book');
   publish(s);
+  // Readings taken while the book was being read say where it was shown, often zero: not to be carried forward.
+  store().patch({ movedAt: Date.now() });
   void produce(s);
   return 'playing';
 }
