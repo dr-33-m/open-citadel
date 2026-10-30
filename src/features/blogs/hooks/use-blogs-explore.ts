@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 
 import { looksLikeAddress, searchDirectory } from '@/features/blogs/utils/explore';
+import { usePageSearch } from '@/hooks/use-page-search';
 import { backTo } from '@/navigation/navigate';
 import { createFollowedFeedsQueryOptions } from '@/query-manager/blogs';
 import { prefetchDiscoveredBlog } from '@/services/blogs/actions';
@@ -20,10 +21,11 @@ const NO_FEEDS = new Set<string>();
  */
 export function useBlogsExplore() {
   const router = useRouter();
-  const [query, setQuery] = React.useState('');
+  const search = usePageSearch();
   const { data: followed = NO_FEEDS } = useQuery(createFollowedFeedsQueryOptions());
 
-  const term = query.trim();
+  // An emptied field is the sections again at once, not after the pause.
+  const term = search.query.trim() ? search.term.trim() : '';
   const results = React.useMemo(() => searchDirectory(DIRECTORY_BLOGS, term), [term]);
   const address = looksLikeAddress(term) ? term : null;
 
@@ -44,8 +46,7 @@ export function useBlogsExplore() {
 
   return {
     view,
-    setQuery,
-    clearQuery: () => setQuery(''),
+    search,
     sections: BLOG_DIRECTORY,
     followed,
     results,

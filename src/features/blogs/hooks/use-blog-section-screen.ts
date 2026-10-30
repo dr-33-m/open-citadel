@@ -6,12 +6,13 @@ import { showToast } from '@/components/toast/toast-provider';
 import { useArticleActions } from '@/features/blogs/hooks/use-article-actions';
 import { isBlogSection, SECTION_TITLES } from '@/features/blogs/utils/sections';
 import { useDragOrder, type DragMove } from '@/hooks/use-drag-order';
+import { usePageSearch, useSearchResults } from '@/hooks/use-page-search';
 import { createBlogSectionQueryOptions, invalidateBlogLibrary, type BlogSection } from '@/query-manager/blogs';
 import { markAllRead } from '@/services/blogs/articles';
 import { exportBlogOpml } from '@/services/blogs/opml';
 import { moveArticleInQueue } from '@/services/blogs/queue';
 import type { ArticleItem, BlogItem } from '@/services/blogs/records';
-import { countLabel, matchesQuery } from '@/utils/format';
+import { countLabel } from '@/utils/format';
 
 const NO_ARTICLES: ArticleItem[] = [];
 const NO_BLOGS: BlogItem[] = [];
@@ -21,6 +22,8 @@ export type BlogSectionView = 'blogs' | 'queue' | 'posts';
 
 const articleKey = (article: ArticleItem) => article.id;
 const saveMove = ({ id, to }: DragMove) => void moveArticleInQueue(id, to).then(invalidateBlogLibrary);
+const articleFields = (article: ArticleItem) => [article.title, article.blogTitle, article.summary];
+const blogFields = (blog: BlogItem) => [blog.title, blog.description];
 
 /**
  * A blogs shelf's "View all": every post (or blog) on it, searchable, with
@@ -33,18 +36,12 @@ export function useBlogSectionScreen(type: string | undefined) {
   const section: BlogSection = isBlogSection(type) ? type : 'latest';
   const { data } = useQuery(createBlogSectionQueryOptions(section));
   const articles = useArticleActions();
-  const [query, setQuery] = React.useState('');
+  const search = usePageSearch();
 
   const allArticles = data?.articles ?? NO_ARTICLES;
   const allBlogs = data?.blogs ?? NO_BLOGS;
-  const filteredArticles = React.useMemo(
-    () => allArticles.filter((a) => matchesQuery(query, a.title, a.blogTitle, a.summary)),
-    [allArticles, query],
-  );
-  const filteredBlogs = React.useMemo(
-    () => allBlogs.filter((b) => matchesQuery(query, b.title, b.description)),
-    [allBlogs, query],
-  );
+  const filteredArticles = useSearchResults(allArticles, search, articleFields);
+  const filteredBlogs = useSearchResults(allBlogs, search, blogFields);
 
   const queue = useDragOrder(filteredArticles, articleKey, saveMove);
 
@@ -64,11 +61,12 @@ export function useBlogSectionScreen(type: string | undefined) {
     loaded: data !== undefined,
     articles: filteredArticles,
     /** The queue as the drag list draws it. */
-    queue: { data: queue.items, onReorder: queue.onReorder, dragEnabled: !query.trim() },
+    queue: { data: queue.items, onReorder: queue.onReorder, dragEnabled: !search.query.trim() },
     blogs: filteredBlogs,
     actions: articles,
-    setQuery,
-    emptyText: query ? 'No results.' : 'Nothing here yet.',
+    search,
+    canSearch: (isBlogs ? allBlogs.length : allArticles.length) > 0,
+    emptyText: search.query ? 'No results.' : 'Nothing here yet.',
     close: () => router.back(),
     /** Only when there is something to act on. */
     markAllRead: hasUnread ? markRead : null,

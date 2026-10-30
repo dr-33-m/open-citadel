@@ -70,6 +70,7 @@ export function useCollectionScreen(id: string | undefined) {
     loaded: booksQuery.data !== undefined,
     subtitle: countLabel(books.length, 'BOOK'),
     search,
+    canSearch: books.length > 0,
     emptyText: search.emptyText ?? 'No books in this collection yet.',
     reload,
     openReader,

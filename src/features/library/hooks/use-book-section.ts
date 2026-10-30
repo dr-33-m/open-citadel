@@ -75,6 +75,7 @@ export function useBookSection(type: string | undefined) {
     title: TITLES[type as keyof typeof TITLES] ?? 'Books',
     subtitle: countLabel(books.length, 'BOOK'),
     search,
+    canSearch: books.length > 0,
     view: type === 'queue' ? ('queue' as const) : ('grid' as const),
     /** The queue as the drag list draws it. */
     queue: { data: queue.items, onReorder: queue.onReorder, dragEnabled: !search.query.trim() },

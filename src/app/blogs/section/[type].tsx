@@ -1,6 +1,5 @@
 import { useLocalSearchParams } from "expo-router";
 import React from "react";
-import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DragList } from "@/components/drag-list";
@@ -14,8 +13,7 @@ import { RowSeparator } from "@/components/row-separator";
 import { PageFade } from "@/components/scroll-fades";
 import { TileGridSkeleton } from "@/components/skeletons/tile-grid-skeleton";
 import { ThemedView } from "@/components/themed-view";
-import { SearchBar } from "@/components/ui/search-bar";
-import { LIST_DRAW_DISTANCE, contentColumn, layout } from "@/constants/theme";
+import { LIST_DRAW_DISTANCE, layout } from "@/constants/theme";
 import { ArticleSheets } from "@/features/blogs/components/article-sheets";
 import { ArticleListSkeleton } from "@/features/blogs/components/article-list-skeleton";
 import { BlogGrid } from "@/features/blogs/components/blog-grid";
@@ -69,7 +67,14 @@ export default function BlogSectionScreen() {
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <DrawerHeader title={screen.title} subtitle={screen.subtitle} onClose={screen.close}>
+      <DrawerHeader
+        title={screen.title}
+        subtitle={screen.subtitle}
+        onClose={screen.close}
+        search={screen.search}
+        searchLabel="Search by title or blog"
+        canSearch={screen.canSearch}
+      >
         {screen.markAllRead ? (
           <IconButton onPress={screen.markAllRead} label="Mark every post read">
             <CheckCheck size={16} color={tokens["--color-primary"]} strokeWidth={2} />
@@ -81,11 +86,6 @@ export default function BlogSectionScreen() {
           </IconButton>
         ) : null}
       </DrawerHeader>
-      <View style={contentColumn}>
-        <View className="mx-6 mb-4">
-          <SearchBar variant="filled" placeholder="Search by title or blog" onChangeText={screen.setQuery} returnKeyType="search" />
-        </View>
-      </View>
       <Handover ready={landed && screen.loaded} skeleton={skeleton}>
         <PageFade>{lists[screen.view]}</PageFade>
       </Handover>

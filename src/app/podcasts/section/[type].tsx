@@ -1,6 +1,5 @@
 import { useLocalSearchParams } from "expo-router";
 import React from "react";
-import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DragList } from "@/components/drag-list";
@@ -12,8 +11,7 @@ import { Handover } from "@/components/navigation/handover";
 import { TransitionFlashList } from "@/components/navigation/transition-scroll";
 import { PageFade } from "@/components/scroll-fades";
 import { ThemedView } from "@/components/themed-view";
-import { SearchBar } from "@/components/ui/search-bar";
-import { LIST_DRAW_DISTANCE, contentColumn, layout } from "@/constants/theme";
+import { LIST_DRAW_DISTANCE, layout } from "@/constants/theme";
 import { EpisodeActionSheet } from "@/features/podcasts/components/episode-action-sheet";
 import { EpisodeListSkeleton } from "@/features/podcasts/components/episode-list-skeleton";
 import { RowSeparator } from "@/components/row-separator";
@@ -74,7 +72,14 @@ export default function PodcastSectionScreen() {
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <DrawerHeader title={screen.title} subtitle={screen.subtitle} onClose={screen.close}>
+      <DrawerHeader
+        title={screen.title}
+        subtitle={screen.subtitle}
+        onClose={screen.close}
+        search={screen.search}
+        searchLabel="Search by title or show"
+        canSearch={screen.canSearch}
+      >
         {screen.markAllSeen ? (
           <IconButton onPress={screen.markAllSeen} label="Clear everything from Just Arrived">
             <CheckCheck size={16} color={tokens["--color-primary"]} strokeWidth={2} />
@@ -86,12 +91,6 @@ export default function PodcastSectionScreen() {
           </IconButton>
         ) : null}
       </DrawerHeader>
-      {/* The margin inside the capped column, not beside it. */}
-      <View style={contentColumn}>
-        <View className="mx-6 mb-4">
-          <SearchBar variant="filled" placeholder="Search by title or show" onChangeText={screen.setQuery} returnKeyType="search" />
-        </View>
-      </View>
       {/* The list mounts once the drawer has landed and the shelf has been
           read, behind a skeleton of its shape. */}
       <Handover ready={landed && screen.loaded} skeleton={skeleton}>

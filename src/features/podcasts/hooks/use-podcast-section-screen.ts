@@ -3,17 +3,20 @@ import React from 'react';
 
 import { usePodcastSection } from '@/features/podcasts/hooks/use-podcast-section';
 import { useDragOrder, type DragMove } from '@/hooks/use-drag-order';
+import { usePageSearch, useSearchResults } from '@/hooks/use-page-search';
 import { tileFromShow } from '@/features/podcasts/utils/show-tiles';
 import { isPodcastSection, SECTION_TITLES, type PodcastSection } from '@/features/podcasts/utils/sections';
 import * as actions from '@/services/podcasts/actions';
-import { showName, type EpisodeItem } from '@/services/podcasts/records';
-import { countLabel, formatBytes, matchesQuery } from '@/utils/format';
+import { showName, type EpisodeItem, type ShowItem } from '@/services/podcasts/records';
+import { countLabel, formatBytes } from '@/utils/format';
 
 /** What the page draws under its search. */
 export type PodcastSectionView = 'shows' | 'queue' | 'episodes';
 
 const episodeKey = (episode: EpisodeItem) => episode.id;
 const saveMove = ({ id, to }: DragMove) => void actions.moveInQueue(id, to);
+const episodeFields = (episode: EpisodeItem) => [episode.title, episode.showTitle];
+const showFields = (show: ShowItem) => [showName(show), show.author];
 
 /**
  * A podcast shelf's "View all": every episode (or show) on it, searchable,
@@ -25,16 +28,11 @@ export function usePodcastSectionScreen(type: string | undefined) {
   const router = useRouter();
   const section: PodcastSection = isPodcastSection(type) ? type : 'queue';
   const { episodes, shows, bytes, loaded } = usePodcastSection(section);
-  const [query, setQuery] = React.useState('');
+  const search = usePageSearch();
 
-  const filteredEpisodes = React.useMemo(
-    () => episodes.filter((e) => matchesQuery(query, e.title, e.showTitle)),
-    [episodes, query],
-  );
-  const filteredShows = React.useMemo(
-    () => shows.filter((s) => matchesQuery(query, showName(s), s.author)).map(tileFromShow),
-    [shows, query],
-  );
+  const filteredEpisodes = useSearchResults(episodes, search, episodeFields);
+  const foundShows = useSearchResults(shows, search, showFields);
+  const filteredShows = React.useMemo(() => foundShows.map(tileFromShow), [foundShows]);
 
   const queue = useDragOrder(filteredEpisodes, episodeKey, saveMove);
 
@@ -54,10 +52,11 @@ export function usePodcastSectionScreen(type: string | undefined) {
     loaded,
     episodes: filteredEpisodes,
     /** Up Next as the drag list draws it. */
-    queue: { data: queue.items, onReorder: queue.onReorder, dragEnabled: !query.trim() },
+    queue: { data: queue.items, onReorder: queue.onReorder, dragEnabled: !search.query.trim() },
     shows: filteredShows,
-    setQuery,
-    emptyText: query ? 'No results.' : 'Nothing here yet.',
+    search,
+    canSearch: (isShows ? shows.length : episodes.length) > 0,
+    emptyText: search.query ? 'No results.' : 'Nothing here yet.',
     close,
     /** Just Arrived can all be marked seen at once, Up Next cleared; only when there is something to act on. */
     markAllSeen: section === 'inbox' && episodes.length > 0 ? markAllSeen : null,

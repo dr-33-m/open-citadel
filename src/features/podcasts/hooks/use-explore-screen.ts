@@ -3,6 +3,7 @@ import React from 'react';
 
 import { useAntennaPodImport } from '@/features/podcasts/hooks/use-antennapod-import';
 import { useExploreCharts, useExploreSearch, useFollowedCheck } from '@/features/podcasts/hooks/use-explore';
+import { usePageSearch } from '@/hooks/use-page-search';
 import { looksLikeLink } from '@/features/podcasts/utils/links';
 import { discoveredKey } from '@/features/podcasts/utils/show-tiles';
 import { prefetchDiscoveredShow } from '@/services/podcasts/actions';
@@ -45,7 +46,9 @@ export function openDiscoveredShowPage(router: ImperativeRouter, show: OpenableS
  */
 export function useExploreScreen(settled: boolean) {
   const router = useRouter();
-  const [query, setQuery] = React.useState('');
+  const page = usePageSearch();
+  // An emptied field is the charts again at once, not after the pause.
+  const query = page.query.trim() ? page.term : '';
   const charts = useExploreCharts(settled);
   const search = useExploreSearch(query);
   const isFollowed = useFollowedCheck();
@@ -88,9 +91,10 @@ export function useExploreScreen(settled: boolean) {
   return {
     view,
     term,
-    setQuery,
-    clearQuery: () => setQuery(''),
-    searching: search.status === 'loading',
+    // An import has the page to itself: searching mid-import would only hide what it is doing.
+    search: { ...page, searching: page.searching && !importer.active },
+    canSearch: !importer.active,
+    finding: search.status === 'loading',
     charts,
     results,
     searchEmptyText,

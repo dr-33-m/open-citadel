@@ -2,12 +2,10 @@ import React from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ChevronDown } from "@/components/icons";
 import { Handover } from "@/components/navigation/handover";
+import { SearchHeader } from "@/components/search-header";
 import { ThemedView } from "@/components/themed-view";
-import { ScreenHeader } from "@/components/ui/screen-header";
-import { SearchBar } from "@/components/ui/search-bar";
-import { contentColumn, iconSize, layout } from "@/constants/theme";
+import { layout } from "@/constants/theme";
 import { DiscoverRow } from "@/features/podcasts/components/discover-row";
 import { ExploreCharts } from "@/features/podcasts/components/explore-charts";
 import { ExploreResults } from "@/features/podcasts/components/explore-results";
@@ -16,7 +14,6 @@ import { ImportGuideSheet } from "@/features/podcasts/components/onboarding/impo
 import { ImportView } from "@/features/podcasts/components/onboarding/import-view";
 import { useExploreScreen } from "@/features/podcasts/hooks/use-explore-screen";
 import { explorePreviewReady } from "@/features/podcasts/utils/explore-preview";
-import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /**
@@ -26,7 +23,6 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
  */
 export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
-  const tokens = useThemeTokens();
   const landed = useSettledOnce();
   const explore = useExploreScreen(landed);
   const { importer } = explore;
@@ -51,29 +47,17 @@ export default function ExploreScreen() {
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <ScreenHeader
+      <SearchHeader
+        {...explore.search}
+        drawer
         title="Explore"
-        leftIcon={<ChevronDown size={iconSize.default} color={tokens["--color-foreground"]} />}
-        leftLabel="Close"
-        onLeftPress={explore.close}
+        placeholder="Search shows, or paste a link"
+        canSearch={explore.canSearch}
+        debounce={350}
+        loading={explore.finding}
+        autoCapitalize="none"
+        onBack={explore.close}
       />
-      {/* An import has the page to itself: searching mid-import would only
-          hide what it is doing. */}
-      {importer.active ? null : (
-        <View className="px-6 pb-2" style={contentColumn}>
-          <SearchBar
-            variant="filled"
-            placeholder="Search shows, or paste a link"
-            debounce={350}
-            onDebouncedChange={explore.setQuery}
-            onClear={explore.clearQuery}
-            loading={explore.searching}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-        </View>
-      )}
       <View className="flex-1">
         {importer.active ? (
           <ImportView

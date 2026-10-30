@@ -4,6 +4,7 @@ import React from 'react';
 import { useCatalogSearch } from '@/features/free-books/hooks/use-catalog-search';
 import { useCatalogShelves } from '@/features/free-books/hooks/use-catalog-shelves';
 import { useOpenFromLists } from '@/features/free-books/hooks/use-open-catalog-book';
+import { usePageSearch } from '@/hooks/use-page-search';
 import { backTo } from '@/navigation/navigate';
 import type { CatalogBook } from '@/services/gutenberg/records';
 import type { CatalogShelf } from '@/services/gutenberg/shelves';
@@ -19,7 +20,9 @@ const NO_BOOKS: CatalogBook[] = [];
  */
 export function useFreeBooksExplore(landed: boolean) {
   const router = useRouter();
-  const [query, setQuery] = React.useState('');
+  const page = usePageSearch();
+  // An emptied field is the shelves again at once, not after the pause.
+  const query = page.query.trim() ? page.term : '';
   const { shelves, onDrawn } = useCatalogShelves(landed);
   const search = useCatalogSearch(query);
 
@@ -46,9 +49,8 @@ export function useFreeBooksExplore(landed: boolean) {
 
   return {
     view,
-    setQuery,
-    clearQuery: () => setQuery(''),
-    searching: search.status === 'loading',
+    search: page,
+    finding: search.status === 'loading',
     shelves,
     onDrawn,
     results,

@@ -9,7 +9,6 @@ import { ThemedView } from '@/components/themed-view';
 import { AddBooksSheet } from '@/features/library/components/add-books-sheet';
 import { BookGrid } from '@/features/library/components/book-grid';
 import { BookSheets } from '@/features/library/components/book-sheets';
-import { LibrarySearchField } from '@/features/library/components/library-search-field';
 import { useBookSheets } from '@/features/library/hooks/use-book-sheets';
 import { useCollectionScreen } from '@/features/library/hooks/use-collection-screen';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -28,7 +27,14 @@ export default function CollectionScreen() {
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <DrawerHeader title={screen.title} subtitle={screen.subtitle} onClose={screen.close}>
+      <DrawerHeader
+        title={screen.title}
+        subtitle={screen.subtitle}
+        onClose={screen.close}
+        search={screen.search}
+        searchLabel="Search by title or author"
+        canSearch={screen.canSearch}
+      >
         <IconButton onPress={screen.openAddBooks} label="Add books">
           <Plus size={18} color={tokens['--color-foreground']} strokeWidth={2} />
         </IconButton>
@@ -36,11 +42,6 @@ export default function CollectionScreen() {
           <Trash2 size={16} color={tokens['--color-muted-foreground']} strokeWidth={2} />
         </IconButton>
       </DrawerHeader>
-      <LibrarySearchField
-        value={screen.search.query}
-        onChange={screen.search.setQuery}
-        placeholder="Search by title or author…"
-      />
       <BookGrid
         books={screen.search.results}
         ready={landed && screen.loaded}

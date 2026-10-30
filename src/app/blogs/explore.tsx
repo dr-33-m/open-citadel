@@ -2,15 +2,12 @@ import React from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ChevronDown } from "@/components/icons";
+import { SearchHeader } from "@/components/search-header";
 import { ThemedView } from "@/components/themed-view";
-import { ScreenHeader } from "@/components/ui/screen-header";
-import { SearchBar } from "@/components/ui/search-bar";
-import { contentColumn, iconSize, layout } from "@/constants/theme";
+import { layout } from "@/constants/theme";
 import { ExploreResults } from "@/features/blogs/components/explore-results";
 import { ExploreSections } from "@/features/blogs/components/explore-sections";
 import { useBlogsExplore } from "@/features/blogs/hooks/use-blogs-explore";
-import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /**
@@ -19,31 +16,22 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
  */
 export default function BlogsExploreScreen() {
   const insets = useSafeAreaInsets();
-  const tokens = useThemeTokens();
   const landed = useSettledOnce();
   const explore = useBlogsExplore();
   const bottomPadding = layout.scrollBottom + insets.bottom;
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <ScreenHeader
+      <SearchHeader
+        {...explore.search}
+        drawer
         title="Blogs"
-        leftIcon={<ChevronDown size={iconSize.default} color={tokens["--color-foreground"]} />}
-        leftLabel="Close"
-        onLeftPress={explore.close}
+        placeholder="Search blogs, or paste an address"
+        canSearch
+        debounce={250}
+        autoCapitalize="none"
+        onBack={explore.close}
       />
-      <View className="px-6 pb-2" style={contentColumn}>
-        <SearchBar
-          variant="filled"
-          placeholder="Search blogs, or paste an address"
-          debounce={250}
-          onDebouncedChange={explore.setQuery}
-          onClear={explore.clearQuery}
-          returnKeyType="search"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </View>
       <View className="flex-1">
         {explore.view === "search" ? (
           <ExploreResults

@@ -14,7 +14,6 @@ import { BookGrid } from '@/features/library/components/book-grid';
 import { BookQueueList } from '@/features/library/components/book-queue-list';
 import { BookSheets } from '@/features/library/components/book-sheets';
 import { CollectionList } from '@/features/library/components/collection-list';
-import { LibrarySearchField } from '@/features/library/components/library-search-field';
 import { NewCollectionPrompt } from '@/features/library/components/new-collection-prompt';
 import { useBookSection } from '@/features/library/hooks/use-book-section';
 import { useBookSheets } from '@/features/library/hooks/use-book-sheets';
@@ -45,7 +44,14 @@ function BookSection({ type }: { type: string | undefined }) {
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <DrawerHeader title={section.title} subtitle={section.subtitle} onClose={section.close}>
+      <DrawerHeader
+        title={section.title}
+        subtitle={section.subtitle}
+        onClose={section.close}
+        search={section.search}
+        searchLabel="Search by title or author"
+        canSearch={section.canSearch}
+      >
         {section.rescan ? (
           <IconButton onPress={section.rescan.onPress} label="Rescan the library">
             {/* Gold only while it is actually running, which is a state and not decoration. */}
@@ -58,11 +64,6 @@ function BookSection({ type }: { type: string | undefined }) {
           </IconButton>
         ) : null}
       </DrawerHeader>
-      <LibrarySearchField
-        value={section.search.query}
-        onChange={section.search.setQuery}
-        placeholder="Search by title or author…"
-      />
       {section.view === 'queue' ? (
         <BookQueueList
           queue={section.queue}
@@ -105,12 +106,18 @@ function CollectionsSection() {
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <DrawerHeader title="Collections" subtitle={section.subtitle} onClose={section.close}>
+      <DrawerHeader
+        title="Collections"
+        subtitle={section.subtitle}
+        onClose={section.close}
+        search={section.search}
+        searchLabel="Search collections"
+        canSearch={section.canSearch}
+      >
         <IconButton onPress={newCollection.open} label="New collection">
           <Plus size={18} color={tokens['--color-foreground']} strokeWidth={2} />
         </IconButton>
       </DrawerHeader>
-      <LibrarySearchField value={section.query} onChange={section.setQuery} placeholder="Search collections…" />
       <Handover ready={landed} skeleton={skeleton}>
         <CollectionList
           collections={section.results}
