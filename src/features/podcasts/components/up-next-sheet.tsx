@@ -29,8 +29,9 @@ const keyExtractor = (item: EpisodeItem) => item.id;
 const LIST_STYLE = { paddingBottom: 16 };
 
 /**
- * What plays after this, in order. Pressing an episode plays it now; its grip
- * drags it to a new place, and its ✕ takes it out.
+ * The queue, in order: "Play next" goes first of all, the rest once Continue
+ * Listening is finished. Pressing an episode plays it now; its grip drags it to a new place, and its ✕ takes it
+ * out.
  *
  * The sheet drags by its grabber only. Its content drag is an ancestor of the
  * rows' and would take every vertical drag inside it, the grip's included, so

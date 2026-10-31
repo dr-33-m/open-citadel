@@ -2,14 +2,16 @@
 import type { MediaItem } from "@rntp/player";
 
 import { episodeArtwork, localFileUri } from "@/services/podcasts/download-paths";
-import { getEpisodeItem } from "@/services/podcasts/episodes";
-import { upNextIds } from "@/services/podcasts/queue";
+import { listShelf } from "@/services/podcasts/episodes";
+import { playOrder } from "@/services/podcasts/player/play-order";
+import { session } from "@/services/podcasts/player/session";
 import type { EpisodeItem } from "@/services/podcasts/records";
 import { getShow } from "@/services/podcasts/shows";
+import { phoneHasNetwork } from "@/lib/network";
 import { podcastPrefs } from "@/stores/podcast-prefs";
 import type { EpisodeNowPlaying } from "@/stores/player";
 
-/** How many Up Next episodes are handed to the native queue ahead of time. */
+/** How many of the episodes ahead are handed to the native queue ahead of time. */
 const NATIVE_LOOKAHEAD = 20;
 
 export function nowPlayingFrom(item: EpisodeItem): EpisodeNowPlaying {
@@ -50,11 +52,22 @@ export async function speedFor(podcastId: string): Promise<number> {
   return show?.playbackSpeed ?? podcastPrefs().playbackSpeed;
 }
 
-/** The first few of Up Next, as native queue items. */
+/**
+ * The episodes ahead of `excluding`, in the order they will play. With no
+ * network, only the downloaded ones: nothing else can play, so nothing else is
+ * next.
+ */
+export async function episodesAhead(excluding: string | null, downloadedOnly = !phoneHasNetwork()): Promise<EpisodeItem[]> {
+  const [inProgress, upNext] = await Promise.all([listShelf("continue"), listShelf("queue")]);
+  return playOrder(inProgress, upNext).filter(
+    (item) => item.id !== excluding && !session.passedOver.has(item.id) && (!downloadedOnly || localFileUri(item) !== null),
+  );
+}
+
+/** The first few episodes ahead, as native queue items. */
 export async function nativeUpNext(excluding: string): Promise<MediaItem[]> {
-  const ids = (await upNextIds()).filter((id) => id !== excluding).slice(0, NATIVE_LOOKAHEAD);
-  const items = await Promise.all(ids.map((id) => getEpisodeItem(id)));
-  return items.filter((i): i is EpisodeItem => i !== null).map(mediaItemFrom);
+  const items = await episodesAhead(excluding);
+  return items.slice(0, NATIVE_LOOKAHEAD).map((item) => mediaItemFrom(item));
 }
 
 /** Where to start: where it was left, unless that was the very end or it was played. */

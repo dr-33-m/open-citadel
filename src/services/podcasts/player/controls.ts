@@ -11,11 +11,18 @@ import { getShow, updateShowSettings } from "@/services/podcasts/shows";
 import { usePodcastPrefs } from "@/stores/podcast-prefs";
 
 /**
- * Plays an episode from where it was left (or from `startAt`), with Up Next
- * queued behind it.
+ * Plays the episode the listener chose, from where it was left (or from
+ * `startAt`), with the episodes ahead queued behind it.
  */
 export async function playEpisode(episodeId: string, startAt: number | null = null): Promise<void> {
+  session.chosen = episodeId;
+  session.passedOver.clear();
   await startEpisode(episodeId, startAt);
+}
+
+/** Episodes the listener has just asked for again are no longer passed over. */
+export function keepAhead(ids: string[]): void {
+  for (const id of ids) session.passedOver.delete(id);
 }
 
 /**

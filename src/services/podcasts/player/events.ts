@@ -7,7 +7,9 @@ import TrackPlayer, { Event, PlaybackState, type BackgroundEvent, type MediaItem
 
 import { isBookItem } from "@/services/audiobook/media-id";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
+import { watchNetwork } from "@/lib/network";
 import { advance, becomeCurrent, syncNativeQueue } from "@/services/podcasts/player/lifecycle";
+import { recoverFromFailedStream } from "@/services/podcasts/player/recover";
 import { nowPlayingFrom, speedFor } from "@/services/podcasts/player/media";
 import { applyCommands } from "@/services/player/commands";
 import { finishEpisode, persistProgress, ranToTheEnd, session, track } from "@/services/podcasts/player/session";
@@ -21,18 +23,25 @@ import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
 /** Past the artwork's step back on pause (`motion.slow`), with room to spare. */
 const PAUSE_SETTLE_MS = 450;
 
+/** The transition being taken up, which a failure of the same episode has to wait for. */
+let settling: Promise<void> = Promise.resolve();
+
 async function onTransition(item: MediaItem | null): Promise<void> {
   const previous = session.tracking;
   if (!item?.mediaId || item.mediaId === previous?.episodeId || isBookItem(item.mediaId)) return;
+  const finished = previous !== null && ranToTheEnd(previous);
   if (previous) {
-    if (ranToTheEnd(previous)) await finishEpisode(previous.episodeId);
+    session.letGo.add(previous.episodeId);
+    if (!finished) session.passedOver.add(previous.episodeId);
     session.tracking = null;
   }
+  // The new episode first: its audio is already running from 0:00, and until
+  // `becomeCurrent` seeks, every moment spent on the old one is heard.
   const next = await getEpisodeItem(item.mediaId);
-  if (!next) return;
-  await becomeCurrent(next, null);
-  // Keep the native queue topped up from Up Next as it is consumed.
-  await syncNativeQueue();
+  if (next) await becomeCurrent(next, null);
+  if (previous && finished) await finishEpisode(previous.episodeId);
+  // Keep the native queue topped up as it is consumed.
+  if (next) await syncNativeQueue();
 }
 
 /**
@@ -93,9 +102,12 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
       return;
     }
     case Event.MediaItemTransition:
-      await onTransition(event.item);
+      settling = onTransition(event.item).catch(() => {});
+      await settling;
       return;
     case Event.PlaybackError:
+      await settling;
+      if (await recoverFromFailedStream()) return;
       if (selectEpisode(store())) {
         store().patch({ error: "This episode could not be played. Check your connection, or download it first." });
       }
@@ -106,6 +118,10 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
 }
 
 addPlayerHandler('episode', handleEvent);
+
+// What can play next depends on the network, and the native queue was filled
+// before it changed.
+watchNetwork(() => void syncNativeQueue());
 
 /**
  * Puts the last episode back in the mini player after a restart, paused and
