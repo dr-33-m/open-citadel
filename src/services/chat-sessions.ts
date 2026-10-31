@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '@/db/client';
-import { books, chatMessages, chatSessions, chatSuggestions, highlights, thoughts, type BookKind } from '@/db/schema';
+import { books, chatMessages, chatSessions, chatSuggestions, highlights, journeyNotes, thoughts, type BookKind } from '@/db/schema';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { parseActivity, serializeActivity, type TurnActivity } from '@/utils/turn-activity';
 
@@ -201,6 +201,9 @@ export function removeSession(sessionId: string): void {
   db.delete(chatMessages).where(eq(chatMessages.sessionId, sessionId)).run();
   db.delete(chatSuggestions).where(eq(chatSuggestions.sessionId, sessionId)).run();
   db.delete(chatSessions).where(eq(chatSessions.id, sessionId)).run();
+  // What Samwell wrote down from it goes too: a deleted chat is one they did
+  // not want kept, and these would go on being read back and sent to the cloud.
+  db.delete(journeyNotes).where(eq(journeyNotes.sourceRef, `chat:${sessionId}`)).run();
   // A highlight or thought whose chat is gone offers a new one, not this.
   db.update(highlights).set({ chatSessionId: null }).where(eq(highlights.chatSessionId, sessionId)).run();
   db.update(thoughts).set({ chatSessionId: null }).where(eq(thoughts.chatSessionId, sessionId)).run();
