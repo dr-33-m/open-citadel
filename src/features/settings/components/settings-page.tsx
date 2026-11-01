@@ -19,6 +19,8 @@ type SettingsPageProps = {
   leaves: "back" | "down";
   onLeave: () => void;
   active: boolean;
+  /** False for a pane whose body is a list with its own scrolling. */
+  scrolls?: boolean;
   children: React.ReactNode;
 };
 
@@ -28,6 +30,7 @@ export function SettingsPage({
   leaves,
   onLeave,
   active,
+  scrolls = true,
   children,
 }: SettingsPageProps) {
   const insets = useSafeAreaInsets();
@@ -56,19 +59,23 @@ export function SettingsPage({
         onLeftPress={onLeave}
       />
       {/* Replaces the header's bottom rule: see library-page. */}
-      <PageFade>
-        <TransitionScrollView
-          ref={scrollRef}
-          className="flex-1 px-6"
-          style={contentColumn}
-          contentContainerStyle={padding}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
-          {children}
-        </TransitionScrollView>
-      </PageFade>
+      {scrolls ? (
+        <PageFade>
+          <TransitionScrollView
+            ref={scrollRef}
+            className="flex-1 px-6"
+            style={contentColumn}
+            contentContainerStyle={padding}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
+            {children}
+          </TransitionScrollView>
+        </PageFade>
+      ) : (
+        children
+      )}
     </ThemedView>
   );
 }

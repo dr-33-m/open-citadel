@@ -5,7 +5,7 @@
  */
 
 /** In the order they are built ahead: the likeliest to be opened first. */
-export const SETTINGS_PANES = ['samwell', 'voice', 'podcasts', 'profile'] as const;
+export const SETTINGS_PANES = ['samwell', 'voice', 'podcasts', 'profile', 'memory'] as const;
 
 export type SettingsPane = (typeof SETTINGS_PANES)[number];
 
@@ -14,6 +14,7 @@ export const PANE_TITLES: Record<SettingsPane, string> = {
   samwell: 'Samwell',
   voice: 'Reading voice',
   podcasts: 'Podcasts',
+  memory: 'What Samwell knows',
 };
 
 export function isSettingsPane(value: unknown): value is SettingsPane {

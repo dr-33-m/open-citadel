@@ -27,8 +27,8 @@ describe('stepBack', () => {
 describe('warmPanes', () => {
   it('builds none, then the first few, then all', () => {
     expect(Object.values(warmPanes(0)).some(Boolean)).toBe(false);
-    expect(warmPanes(1)).toEqual({ samwell: true, voice: false, podcasts: false, profile: false });
-    expect(Object.values(warmPanes(4)).every(Boolean)).toBe(true);
+    expect(warmPanes(1)).toEqual({ samwell: true, voice: false, podcasts: false, profile: false, memory: false });
+    expect(Object.values(warmPanes(5)).every(Boolean)).toBe(true);
   });
 });
 

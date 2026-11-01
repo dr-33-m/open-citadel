@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 
-import { AudioLines, BookOpen, MessageCircleHeart, MicSignal, Sun, User, ZodiacPisces } from '@/components/icons';
+import { AudioLines, BookOpen, Brain, MessageCircleHeart, MicSignal, Sun, User, ZodiacPisces } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Switch } from '@/components/ui/switch';
 import { SectionLabel } from '@/features/settings/components/section-label';
@@ -59,6 +59,12 @@ export const SettingsHome = React.memo(function SettingsHome({
           title="Samwell"
           detail={summaries.samwell}
           onPress={() => onOpen('samwell')}
+        />
+        <SettingsRow
+          icon={Brain}
+          title="What Samwell knows"
+          detail={summaries.memory}
+          onPress={() => onOpen('memory')}
         />
       </Group>
 

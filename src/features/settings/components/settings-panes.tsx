@@ -12,6 +12,7 @@ import {
     type SettingsHomeProps,
 } from "@/features/settings/components/settings-home";
 import { SettingsPage } from "@/features/settings/components/settings-page";
+import { SamwellMemoryPane } from "@/features/samwell-memory/components/samwell-memory-pane";
 import {
     PANE_TITLES,
     SETTINGS_PANES,
@@ -48,6 +49,7 @@ const PROFILE = (
 );
 const VOICE = <TtsSettingsPanel warm />;
 const PODCASTS = <PodcastSettings />;
+const MEMORY = <SamwellMemoryPane />;
 
 /**
  * The body of Settings: the list, and each pane under it, in one place and
@@ -71,6 +73,7 @@ export function SettingsPanes({
     samwell: settingsPaneOrder(1, pane === "samwell"),
     voice: settingsPaneOrder(2, pane === "voice"),
     podcasts: settingsPaneOrder(3, pane === "podcasts"),
+    memory: settingsPaneOrder(4, pane === "memory"),
   };
   const pages = {
     home: (
@@ -148,6 +151,23 @@ export function SettingsPanes({
           >
             <KeptAlive active={pane === "podcasts"} visible warm={warm.podcasts}>
               {PODCASTS}
+            </KeptAlive>
+          </SettingsPage>
+        </ThemeScope>
+      ) : null,
+    memory:
+      warm.memory || pane === "memory" ? (
+        <ThemeScope order={orders.memory}>
+          {/* Not scrolled by the page: it is a list, and scrolls itself. */}
+          <SettingsPage
+            title={PANE_TITLES.memory}
+            leaves="back"
+            onLeave={onLeave}
+            active={pane === "memory"}
+            scrolls={false}
+          >
+            <KeptAlive active={pane === "memory"} visible warm={warm.memory} className="flex-1">
+              {MEMORY}
             </KeptAlive>
           </SettingsPage>
         </ThemeScope>
