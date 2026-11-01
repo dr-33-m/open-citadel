@@ -1,25 +1,12 @@
 import React from 'react';
-import { View } from 'react-native';
 
-import { BookOpen, MessageSquarePlus, MicSignal, Newspaper, PencilSparkles, Trash2 } from '@/components/icons';
-import { ThemedText } from '@/components/themed-text';
+import { PencilSparkles, Trash2 } from '@/components/icons';
 import { Item } from '@/components/ui/item';
-import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Spinner } from '@/components/ui/spinner';
 import { Swipe, type SwipeHandle } from '@/components/ui/swipe';
+import { ChatHistoryRowBody } from '@/features/chat/components/chat-history-row-body';
 import { cn } from '@/lib/cn';
 import type { ChatSession } from '@/stores/chat';
-
-function timeAgo(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
 
 export interface ChatHistoryRowProps {
   item: ChatSession;
@@ -75,9 +62,6 @@ export const ChatHistoryRow = React.memo(function ChatHistoryRow({
     void onRename(item).finally(() => swipeRef.current?.close());
   }, [onRename, item]);
 
-  // What the chat is about: a podcast episode, a blog post, a book, or nothing in particular.
-  const kindIcon =
-    item.bookKind === 'episode' ? MicSignal : item.bookKind === 'article' ? Newspaper : item.bookTitle ? BookOpen : MessageSquarePlus;
   const renameIcon = renaming ? (
     // `size` set so the tile does not resize it as a glyph. The ring and its
     // arc are recoloured for the primary fill, where the default primary arc
@@ -128,31 +112,7 @@ export const ChatHistoryRow = React.memo(function ChatHistoryRow({
         className={cn('py-3', dimmed ? 'opacity-40' : 'opacity-100')}
         onPress={switching ? undefined : () => onSelect(item.id)}
       >
-        <Item.Media>
-          {switching === item.id ? (
-            <View className="h-10 w-10 items-center justify-center">
-              <Spinner size="sm" />
-            </View>
-          ) : (
-            <PrefixIcon icon={kindIcon} />
-          )}
-        </Item.Media>
-        <Item.Content>
-          <View className="flex-row items-start justify-between gap-2">
-            <Item.Title className="flex-1" numberOfLines={1}>
-              {item.title}
-            </Item.Title>
-            <ThemedText type="labelSm" color={muted}>
-              {timeAgo(item.updatedAt)}
-            </ThemedText>
-          </View>
-          {item.bookTitle && (
-            <ThemedText type="labelSm" color={primary}>
-              {item.bookTitle}
-            </ThemedText>
-          )}
-          {item.lastMessage && <Item.Description numberOfLines={1}>{item.lastMessage}</Item.Description>}
-        </Item.Content>
+        <ChatHistoryRowBody item={item} opening={switching === item.id} primary={primary} muted={muted} />
       </Item>
     </Swipe>
   );

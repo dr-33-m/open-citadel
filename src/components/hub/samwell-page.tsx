@@ -60,6 +60,7 @@ import { playEpisodeFrom } from "@/services/podcasts/player";
 import { ChatHeader } from "@/features/chat/components/chat-header";
 import { ChatHistorySheet } from "@/features/chat/components/chat-history-sheet";
 import { ChatTranscript } from "@/features/chat/components/chat-transcript";
+import { useChatSessionList } from "@/features/chat/hooks/use-chat-session-list";
 import { useChatSessions } from "@/features/chat/hooks/use-chat-sessions";
 import { useSamwellReadiness } from "@/features/chat/hooks/use-samwell-readiness";
 import { useSamwellStatus } from "@/features/chat/hooks/use-samwell-status";
@@ -104,6 +105,8 @@ export function SamwellPage() {
   const bottomInset = Math.max(insets.bottom, spacing[3]);
   /** Breathing room between the input card and the top of the keyboard. */
   const KEYBOARD_GAP = spacing[3];
+  /** Lifts a transcript exactly as far as the floating stack rises. */
+  const keyboardOffset = bottomInset - KEYBOARD_GAP;
 
   const openSettings = React.useCallback(
     () => router.push("/settings"),
@@ -157,7 +160,6 @@ export function SamwellPage() {
   // Field-by-field selectors rather than one whole-store subscription: this
   // screen is the app's largest render, and a single unrelated field change
   // (model download progress, a settings flip) used to re-run all of it.
-  const sessions = useChatStore((s) => s.sessions);
   const activeSession = useChatStore((s) => s.activeSession);
   const messages = useChatStore((s) => s.messages);
   const isGenerating = useChatStore((s) => s.isGenerating);
@@ -172,7 +174,6 @@ export function SamwellPage() {
   const titleRefreshing = useChatStore((s) => s.titleRefreshing);
   const queuedBehindTitle = useChatStore((s) => s.queuedBehindTitle);
   const lastStreamedMessageId = useChatStore((s) => s.lastStreamedMessageId);
-  const loadSessions = useChatStore((s) => s.loadSessions);
   const stopGeneration = useChatStore((s) => s.stopGeneration);
   const deleteSession = useChatStore((s) => s.deleteSession);
 
@@ -334,23 +335,22 @@ export function SamwellPage() {
   // Kept off the screen's first render so the push can start immediately;
   // see the hook. One frame, not the whole transition.
   const painted = useAfterFirstPaint();
+  const sessions = useChatSessionList("reading", painted);
 
   React.useEffect(() => {
     // Session + book loads are DB reads and stay off the transition path —
     // the transcript region they feed is deferred anyway.
     if (!painted) return;
-    loadSessions();
     // The books store is otherwise only filled by the Library tab, so a
     // session opened before visiting it could not resolve its book's cover.
     if (useBooksStore.getState().books.length === 0) {
       void useBooksStore.getState().loadBooks();
     }
-  }, [painted, loadSessions]);
+  }, [painted]);
 
   React.useEffect(() => {
     if (!painted || !cloudReady) return;
     void loadCompass();
-    void useCompassChatStore.getState().loadSessions();
   }, [painted, cloudReady, loadCompass]);
 
   const visibleChatMessages = React.useMemo(
@@ -823,6 +823,7 @@ export function SamwellPage() {
                       pendingUserMessage={chat.pendingUserMessage}
                       contentColumn={contentColumn}
                       floatingClearance={floatingClearance}
+                      keyboardOffset={keyboardOffset}
                       onNavigateToHighlight={handleNavigateToHighlight}
                       onNavigateToTimeline={handleNavigateToTimeline}
                       onNavigateToBook={handleNavigateToBook}
@@ -845,6 +846,7 @@ export function SamwellPage() {
                     trackableTitles={trackableTitles}
                     contentColumn={contentColumn}
                     floatingClearance={floatingClearance}
+                    keyboardOffset={keyboardOffset}
                   />
                 ) : null,
               }}

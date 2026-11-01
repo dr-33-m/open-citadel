@@ -6,15 +6,14 @@ import { chatSessions } from '@/db/schema';
 import {
   appendMessage,
   isEmptySession,
-  listSessions,
   readMessages,
   removeMessage,
   removeSession,
   renameSession,
   touchSession,
   type ChatMessage,
-  type ChatSession,
 } from '@/services/chat-sessions';
+import { cachedChatSessions, refreshChatSessions, updateCachedChatSessions } from '@/query-manager/chat-sessions';
 import { conversationForTitle, RetitleError, suggestChatTitle } from '@/services/chat-title';
 import {
   KEEP_GOING_MESSAGE,
@@ -78,7 +77,6 @@ function realMessageCount(messages: ChatMessage[]): number {
 }
 
 type CompassChatState = {
-  sessions: ChatSession[];
   activeSessionId: string | null;
   messages: ChatMessage[];
 
@@ -148,7 +146,6 @@ function sendBlocked(): string | null {
 }
 
 export const useCompassChatStore = create<CompassChatState>((set, get) => ({
-  sessions: [],
   activeSessionId: null,
   messages: [],
   switching: null,
@@ -162,7 +159,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
   toolName: null,
 
   loadSessions: async () => {
-    set({ sessions: listSessions('compass') });
+    refreshChatSessions('compass');
   },
 
   newSession: async () => {
@@ -230,7 +227,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
        * a conversation whose first title never landed (offline, a failed call)
        * can still pick one up on the way out.
        */
-      const named = get().sessions.find((s) => s.id === id)?.title;
+      const named = cachedChatSessions('compass').find((s) => s.id === id)?.title;
       titledMessageCounts.set(
         id,
         named && named !== PLACEHOLDER_TITLE ? realMessageCount(messages) : 0,
@@ -253,8 +250,8 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
     useApprovalStore.getState().clearSession(id);
     titledMessageCounts.delete(id);
     const wasActive = get().activeSessionId === id;
+    updateCachedChatSessions('compass', (sessions) => sessions.filter((session) => session.id !== id));
     set((state) => ({
-      sessions: state.sessions.filter((session) => session.id !== id),
       ...(wasActive
         ? { activeSessionId: null, messages: [], streamingThinking: '', streamingThinkingSeconds: null, ...IDLE }
         : {}),
@@ -458,7 +455,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
     }
     if (titlingInFlight.has(id)) throw new RetitleError('Samwell is already renaming this conversation.');
 
-    const session = get().sessions.find((s) => s.id === id);
+    const session = cachedChatSessions('compass').find((s) => s.id === id);
     if (!session) throw new RetitleError('That conversation is no longer there.');
     const messages = readMessages(id);
     const conversation = conversationForTitle(messages);
@@ -472,7 +469,7 @@ export const useCompassChatStore = create<CompassChatState>((set, get) => ({
       if (!title) throw new Error('No title came back.');
       if (title !== session.title) renameSession(id, title);
       titledMessageCounts.set(id, realMessageCount(messages));
-      set({ sessions: listSessions('compass') });
+      refreshChatSessions('compass');
       return title;
     } finally {
       titlingInFlight.delete(id);
@@ -499,11 +496,10 @@ async function titleFrom(
     if (!title) return;
     renameSession(sessionId, title);
     titledMessageCounts.set(sessionId, count);
-    set({ sessions: listSessions('compass') });
+    refreshChatSessions('compass');
   } catch (err) {
     console.warn('[Compass] Could not auto-title conversation:', err);
   }
 }
 
 export const useCompassChatMessages = () => useCompassChatStore((s) => s.messages);
-export const useCompassChatSessions = () => useCompassChatStore((s) => s.sessions);

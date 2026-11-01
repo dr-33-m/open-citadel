@@ -137,6 +137,7 @@ interface CompassBodyProps extends CompassEscapes {
   contentColumn: ViewStyle;
   /** Keeps content clear of the floating input card. */
   floatingClearance: ViewStyle;
+  keyboardOffset?: number;
 }
 
 export function CompassBody({
@@ -150,6 +151,7 @@ export function CompassBody({
   trackableTitles,
   contentColumn,
   floatingClearance,
+  keyboardOffset,
 }: CompassBodyProps) {
   const {
     kind,
@@ -311,6 +313,7 @@ export function CompassBody({
       lastStreamedMessageId={lastStreamedMessageId}
       contentColumn={contentColumn}
       floatingClearance={floatingClearance}
+      keyboardOffset={keyboardOffset}
       aside={aside}
       trailingReply={proposalReply}
       onResendMessage={resend}

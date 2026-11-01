@@ -6,11 +6,11 @@ import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { PageFade } from '@/components/scroll-fades';
+import { ChatHistoryPreview } from '@/features/chat/components/chat-history-preview';
 import { ChatHistoryRow } from '@/features/chat/components/chat-history-row';
 import { Item } from '@/components/ui/item';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Sheet } from '@/components/ui/sheet';
-import { ChatHistorySkeleton } from '@/components/skeletons/chat-history-skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Swipe, useSwipeGroup } from '@/components/ui/swipe';
 import { asColor } from '@/utils/colors';
@@ -126,7 +126,7 @@ export function ChatHistorySheet({
           apiece — so mounting the list is what the sheet's open used to wait
           on. The title and the New chat row above cost nothing and stay put. */}
       <Sheet.Deferred
-        skeleton={<ChatHistorySkeleton />}
+        skeleton={<ChatHistoryPreview sessions={sessions} primary={asColor(primary) ?? ''} muted={asColor(mutedForeground) ?? ''} />}
       >
       <Swipe.Group className="flex-1">
         <SessionList

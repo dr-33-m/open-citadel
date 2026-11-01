@@ -68,6 +68,8 @@ export interface TranscriptProps {
   lastStreamedMessageId: string | null;
   contentColumn: ViewStyle;
   floatingClearance: ViewStyle;
+  /** How far under the keyboard's top the floating card already sits: see `MessageScroller.Viewport`. */
+  keyboardOffset?: number;
   /** Drawn after the turns and before the reply: Compass's proposal card. */
   aside?: React.ReactNode;
   /** A reply held out of `turns` to be drawn under `aside`, as Compass draws the line introducing its card. */
@@ -92,6 +94,7 @@ export function Transcript({
   lastStreamedMessageId,
   contentColumn,
   floatingClearance,
+  keyboardOffset,
   aside,
   trailingReply,
   onNavigateToHighlight,
@@ -148,7 +151,7 @@ export function Transcript({
             floating input card, so both edges are boundaries content passes
             behind rather than stops at. */}
         <TranscriptFade edges="both">
-          <MessageScroller.Viewport>
+          <MessageScroller.Viewport keyboardOffset={keyboardOffset}>
             <MessageScroller.Content style={contentStyle}>
               {turns.map((m) =>
                 m.role === 'user' || m.role === 'assistant' ? (

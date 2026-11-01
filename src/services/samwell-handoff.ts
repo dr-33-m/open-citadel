@@ -10,6 +10,7 @@
  * - a chat about a passage (from the reader or the Timeline) is made where
  *   the passage is, with its context, and opened there.
  */
+import { cachedChatSessions } from '@/query-manager/chat-sessions';
 import type { BookKind } from '@/db/schema';
 import { scheduleBackgroundTitles, useChatStore } from '@/stores/chat';
 import { HUB, useHubStore } from '@/stores/hub';
@@ -65,7 +66,7 @@ export async function showChatOnSamwellPage(sessionId: string): Promise<void> {
   // `openSession` names its session from the list, and a chat made or linked
   // elsewhere may not be in it yet; opened without its entry, the page would
   // take it for a new chat and start another on the first message.
-  if (!chat.sessions.some((s) => s.id === sessionId)) await chat.loadSessions();
+  if (!cachedChatSessions('reading').some((s) => s.id === sessionId)) await chat.loadSessions();
   if (useChatStore.getState().activeSession?.id !== sessionId) await chat.openSession(sessionId);
   useSamwellSessionStore.getState().set({ pendingBook: null, mode: 'chat' });
   useHubStore.getState().goTo(HUB.samwell);

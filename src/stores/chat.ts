@@ -10,8 +10,7 @@ import { extractChapterTextToLocator } from '@/services/book-context';
 import { articleChatPrompt, articleText } from '@/services/blogs/article-chat';
 import { episodeChatGrounding } from '@/services/podcasts/transcript/episode-chat';
 import {
-    listSessions,
-    messageRow,
+      messageRow,
     removeMessage,
     readMessages,
     removeSession,
@@ -19,6 +18,7 @@ import {
     type ChatMessage,
     type ChatSession,
 } from '@/services/chat-sessions';
+import { cachedChatSessions, refreshChatSessions, updateCachedChatSessions } from '@/query-manager/chat-sessions';
 import { conversationForTitle, RetitleError, suggestChatTitle } from '@/services/chat-title';
 import {
     APPROVAL_REQUIRED_TOOLS,
@@ -68,7 +68,6 @@ import { useSubscriptionStore } from '@/stores/subscription';
 export type { ChatMessage, ChatSession };
 
 interface ChatStore {
-  sessions: ChatSession[];
   activeSession: ChatSession | null;
   messages: ChatMessage[];
   isGenerating: boolean;
@@ -412,8 +411,8 @@ async function titleLeftChats(): Promise<void> {
   if (errandRunning()) return;
   if (useSettingsStore.getState().samwellMode === 'cloud' || !isEngineLoaded()) return;
 
-  const { sessions, activeSession } = useChatStore.getState();
-  const waiting = sessions.filter(
+  const { activeSession } = useChatStore.getState();
+  const waiting = cachedChatSessions('reading').filter(
     (s) => s.title === NEW_CHAT_TITLE && !s.bookId && s.id !== activeSession?.id && !titleFailed.has(s.id),
   );
 
@@ -426,7 +425,7 @@ async function titleLeftChats(): Promise<void> {
     await runErrand('Naming your last chat first…', async () => {
       try {
         const title = await suggestChatTitle(conversation);
-        const stillThere = useChatStore.getState().sessions.some((s) => s.id === session.id);
+        const stillThere = cachedChatSessions('reading').some((s) => s.id === session.id);
         if (title && stillThere) await useChatStore.getState().updateSessionTitle(session.id, title);
       } catch (err) {
         titleFailed.add(session.id);
@@ -656,7 +655,6 @@ function sendBlocked(): string | null {
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
-  sessions: [],
   activeSession: null,
   messages: [],
   isGenerating: false,
@@ -676,7 +674,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Reading only. Compass conversations live in the same two tables and are
     // listed by their own surface; mixing them would put a goal check-in in
     // the reading history, where it answers nobody's question.
-    set({ sessions: listSessions('reading') });
+    refreshChatSessions('reading');
   },
 
   async createSession({ bookId, title, contextText, passageText, thoughtText, contextLocator }) {
@@ -820,7 +818,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             sessionId: id,
             role: 'system',
             content:
-              `You are a reading assistant for "${bookRow.title}" by ${bookRow.author}. Help the user understand, analyse, and discuss the book. Be concise and insightful.` +
+              `You are talking with them about "${bookRow.title}" by ${bookRow.author}. Help them understand it, question it, and apply it to what they are working on.` +
               readExcerpt +
               (boundaryLine ? `\n\n${boundaryLine}` : ''),
             createdAt: ts,
@@ -858,7 +856,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       get().stopGeneration();
     }
 
-    const session = get().sessions.find((s) => s.id === id) ?? null;
+    const session = cachedChatSessions('reading').find((s) => s.id === id) ?? null;
     // The one reader of a transcript, so a reply's trail and sources come back with it.
     const messages = readMessages(id);
 
@@ -1242,8 +1240,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Any approval still awaiting a response for this session would otherwise
     // leak an unresolved promise once the session it belongs to is gone.
     useApprovalStore.getState().clearSession(id);
+    updateCachedChatSessions('reading', (sessions) => sessions.filter((sess) => sess.id !== id));
     set((s) => ({
-      sessions: s.sessions.filter((sess) => sess.id !== id),
       activeSession: s.activeSession?.id === id ? null : s.activeSession,
       messages: s.activeSession?.id === id ? [] : s.messages,
     }));
@@ -1251,8 +1249,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   async updateSessionTitle(id, title) {
     renameSession(id, title);
+    updateCachedChatSessions('reading', (sessions) =>
+      sessions.map((sess) => (sess.id === id ? { ...sess, title } : sess)),
+    );
     set((s) => ({
-      sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, title } : sess)),
       activeSession:
         s.activeSession?.id === id ? { ...s.activeSession, title } : s.activeSession,
     }));
@@ -1286,7 +1286,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
      */
     if (titleRefineInFlight) throw new RetitleError('Samwell is already renaming a chat.');
 
-    const session = get().sessions.find((s) => s.id === id);
+    const session = cachedChatSessions('reading').find((s) => s.id === id);
     if (!session) throw new RetitleError('That chat is no longer there.');
     // Book chats are named after their book, which is how they are found.
     if (session.bookId) throw new RetitleError('Chats about a book keep its name.');

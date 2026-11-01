@@ -4,6 +4,7 @@ import type { TextInput } from 'react-native';
 import { useCompassStore } from '@/stores/compass';
 import { useCompassChatStore } from '@/stores/compass-chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
+import { useChatSessionList } from '@/features/chat/hooks/use-chat-session-list';
 
 export type CompassConversationKind = 'plan' | 'checkin';
 
@@ -33,7 +34,7 @@ export function useCompassConversation(inputRef?: React.RefObject<TextInput | nu
   const applyCheckinDraft = useCompassStore((s) => s.applyCheckinDraft);
 
   const messages = useCompassChatStore((s) => s.messages);
-  const sessions = useCompassChatStore((s) => s.sessions);
+  const sessions = useChatSessionList('compass');
   const activeSessionId = useCompassChatStore((s) => s.activeSessionId);
   const switching = useCompassChatStore((s) => s.switching);
   const submitting = useCompassChatStore((s) => s.submitting);

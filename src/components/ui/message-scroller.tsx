@@ -53,6 +53,8 @@ import {
   type ViewProps,
   type ViewToken,
 } from 'react-native';
+import type { ComponentType } from 'react';
+import { KeyboardChatScrollView } from 'react-native-keyboard-controller';
 import Animated, {
   runOnJS,
   useAnimatedRef,
@@ -350,15 +352,33 @@ export interface MessageScrollerViewportProps
   > {
   className?: string;
   children?: ReactNode;
+  /** LOCAL EDIT: how far the composer sits above the keyboard's bottom, less any gap. Undefined leaves the transcript where it is when a keyboard opens. */
+  keyboardOffset?: number;
 }
 
+/** Its own props, typed plainly; it passes the rest on to a Reanimated ScrollView. */
+const ChatScrollView = KeyboardChatScrollView as unknown as ComponentType<
+  Omit<AnimatedScrollViewProps, 'ref'> & {
+    ref?: unknown;
+    keyboardLiftBehavior: 'never' | 'whenAtEnd';
+    offset: number;
+  }
+>;
+
 /**
+ * LOCAL EDIT (Open Citadel), re-apply after `panelui-cli update`: the scrollable
+ * is the keyboard controller's chat scroll view, which gives the transcript room
+ * under the keyboard and slides the last message up with it, without a layout
+ * pass per frame. Only while the reader is at the end: someone reading further
+ * back stays where they are, and can still scroll down to the last line.
+ *
  * The scrollable itself. Owns the three behaviours, because all three are
  * reactions to scroll and content-size events and this is where they arrive.
  */
 function MessageScrollerViewport({
   className,
   children,
+  keyboardOffset,
   ...props
 }: MessageScrollerViewportProps) {
   const {
@@ -545,8 +565,10 @@ function MessageScrollerViewport({
   }, [autoScroll, following, atEnd]);
 
   return (
-    <Animated.ScrollView
+    <ChatScrollView
       ref={scrollRef}
+      keyboardLiftBehavior={keyboardOffset === undefined ? 'never' : 'whenAtEnd'}
+      offset={keyboardOffset ?? 0}
       accessibilityRole="list"
       accessibilityLabel="Messages"
       scrollEventThrottle={16}
@@ -562,7 +584,7 @@ function MessageScrollerViewport({
       onContentSizeChange={onContentSizeChange}
     >
       {textChildren(children)}
-    </Animated.ScrollView>
+    </ChatScrollView>
   );
 }
 MessageScrollerViewport.displayName = 'MessageScroller.Viewport';

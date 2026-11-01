@@ -41,6 +41,7 @@ interface ChatTranscriptProps {
   pendingUserMessage: { id: string; content: string } | null;
   contentColumn: ViewStyle;
   floatingClearance: ViewStyle;
+  keyboardOffset?: number;
   onNavigateToHighlight: (bookId: string, locator: string) => void;
   onNavigateToTimeline: () => void;
   onNavigateToBook: (bookId: string) => void;
@@ -61,6 +62,7 @@ export function ChatTranscript({
   pendingUserMessage,
   contentColumn,
   floatingClearance,
+  keyboardOffset,
   onNavigateToHighlight,
   onNavigateToTimeline,
   onNavigateToBook,
@@ -133,6 +135,7 @@ export function ChatTranscript({
         lastStreamedMessageId={lastStreamedMessageId}
         contentColumn={contentColumn}
         floatingClearance={floatingClearance}
+        keyboardOffset={keyboardOffset}
         onNavigateToHighlight={onNavigateToHighlight}
         onNavigateToTimeline={onNavigateToTimeline}
         onNavigateToBook={onNavigateToBook}
