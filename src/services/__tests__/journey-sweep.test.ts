@@ -14,7 +14,7 @@ const SAID: JournalMessage[] = [
 
 const session = (id: string, kind: SweepSession['kind'] = 'reading'): SweepSession => ({ id, kind, bookId: null, journaledAt: null });
 
-function deps(list: SweepSession[], request: SweepDeps['request'] = async () => [NOTE]) {
+function deps(list: SweepSession[], request: SweepDeps['request'] = async () => ({ notes: [NOTE] })) {
   return {
     sessions: () => list,
     fresh: () => SAID,
@@ -37,7 +37,7 @@ describe('sweepJournal', () => {
   it('saves the notes and moves the watermark together', async () => {
     const d = deps([session('a')]);
     await run(d);
-    expect(d.commit).toHaveBeenCalledWith('a', [NOTE], HOUR_AGO);
+    expect(d.commit).toHaveBeenCalledWith('a', { notes: [NOTE] }, HOUR_AGO);
   });
 
   it('asks for at most three in one sweep', async () => {
@@ -56,7 +56,7 @@ describe('sweepJournal', () => {
   it('goes on past a conversation the server rejected, leaving it for later', async () => {
     const d = deps([session('bad'), session('good')], async (s) => {
       if (s.id === 'bad') throw new JournalRejected('502');
-      return [NOTE];
+      return { notes: [NOTE] };
     });
     await run(d);
     expect(d.commit.mock.calls.map((call) => call[0])).toEqual(['good']);
@@ -100,6 +100,6 @@ describe('sweepJournal', () => {
     d.fresh = () => [{ role: 'user', content: 'thanks', createdAt: HOUR_AGO, via: 'cloud' }];
     await run(d);
     expect(d.request).not.toHaveBeenCalled();
-    expect(d.commit).toHaveBeenCalledWith('a', [], HOUR_AGO);
+    expect(d.commit).toHaveBeenCalledWith('a', { notes: [] }, HOUR_AGO);
   });
 });

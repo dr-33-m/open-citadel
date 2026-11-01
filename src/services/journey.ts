@@ -235,6 +235,7 @@ export function searchJourneyNotes(query: string, limit = JOURNEY_NOTE_RESULTS):
       text: journeyNotes.text,
       kind: journeyNotes.kind,
       tags: journeyNotes.tags,
+      resolvedAt: journeyNotes.resolvedAt,
       createdAt: journeyNotes.createdAt,
     })
     .from(journeyNotes)
@@ -290,7 +291,17 @@ export type JourneyNote = {
   text: string;
   kind: (typeof journeyNotes.$inferSelect)['kind'];
   tags: string | null;
+  resolvedAt?: string | null;
   createdAt: string;
+};
+
+/** What each kind is called when it is read back to him. */
+const JOURNAL_KIND_LABELS: Partial<Record<JourneyNote['kind'], string>> = {
+  win: 'win',
+  struggle: 'struggle',
+  commitment: 'commitment',
+  milestone: 'milestone',
+  recommended: 'you recommended',
 };
 
 /**
@@ -319,9 +330,10 @@ export function formatJourneyNotes(notes: JourneyNote[]): string {
   if (notes.length === 0) {
     return 'Nothing has been written down on their journey yet.';
   }
-  const lines = notes.map(
-    (note) => `${localDayString(new Date(note.createdAt))}: ${note.text}`,
-  );
+  const lines = notes.map((note) => {
+    const label = JOURNAL_KIND_LABELS[note.kind];
+    return `${localDayString(new Date(note.createdAt))}${label ? ` [${label}]` : ''}: ${note.text}${note.resolvedAt ? ' (closed)' : ''}`;
+  });
   return 'Reflections from their journey, newest first:\n' + fitLines(lines, MAX_NOTES_CHARS);
 }
 

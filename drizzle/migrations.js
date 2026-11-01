@@ -28,6 +28,7 @@ import m0024 from "./0024_blog_article_marks.js";
 import m0025 from "./0025_podcast_download_cover.js";
 import m0026 from "./0026_episode_transcripts.js";
 import m0027 from "./0027_blog_queue_position.js";
+import m0028 from "./0028_samwell_memory.js";
 import journal from "./meta/_journal.json";
 
 export default {
@@ -61,5 +62,6 @@ export default {
     m0025,
     m0026,
     m0027,
+    m0028,
   },
 };

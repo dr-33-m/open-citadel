@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
 import { serve } from '@hono/node-server';
-import { chat, toHttpResponse, type ModelMessage, type StreamChunk } from '@tanstack/ai';
+import { chat, maxIterations, toHttpResponse, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import { openRouterText } from '@tanstack/ai-openrouter';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
@@ -10,14 +10,18 @@ import { logger } from 'hono/logger';
 import {
   COMPASS_CLIENT_TOOL_DEFINITIONS,
   COMPASS_SYSTEM_PROMPT,
+  DISCOVERY_CLIENT_TOOL_DEFINITIONS,
+  DISCOVERY_TOOL_NAMES,
   LISTENING_TOOL_NAMES,
   onboardingClientToolDefinitions,
   onboardingSystemPrompt,
   readOnboardingFeeds,
   SAMWELL_APP_GUIDE_TOOL_PROMPT,
   SAMWELL_CLIENT_TOOL_DEFINITIONS,
+  SAMWELL_DISCOVERY_TOOL_PROMPT,
   SAMWELL_JOURNEY_TOOL_PROMPT,
   SAMWELL_LISTENING_TOOL_PROMPT,
+  SAMWELL_MOMENTS_PROMPT,
   SAMWELL_SYSTEM_PROMPT,
   SAMWELL_WEB_SEARCH_TOOL_PROMPT,
   PLAN_ORDER,
@@ -103,6 +107,8 @@ import {
 import { readIdentity } from './identity.js';
 import { asOneRun } from './one-run.js';
 import { offeredClientTools, offersAny } from './offered-tools.js';
+import { createReadWebPageTool } from './web-page.js';
+import { pageKey, readablePageUrl } from './web-page-text.js';
 import { WEB_SEARCH_FALLBACK_COST_USD, createWebSearchTool } from './web-search.js';
 import { ttsRoutes } from './tts-production.js';
 import { transcribeRoutes, transcribeWorker } from './transcribe-production.js';
@@ -183,7 +189,19 @@ function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean, declared
   // The podcasts and blogs paragraph only for an app that declared those
   // tools: an older build is never offered them, and must not be told of them.
   const listening = offersAny(declaredTools, LISTENING_TOOL_NAMES) ? [SAMWELL_LISTENING_TOOL_PROMPT] : [];
-  if (mode === 'compass') return [COMPASS_SYSTEM_PROMPT, SAMWELL_WEB_SEARCH_TOOL_PROMPT, ...listening];
+  // Likewise finding and vetting new sources, which only a build with the
+  // discovery tools can act on.
+  const discovery = offersAny(declaredTools, DISCOVERY_TOOL_NAMES) ? [SAMWELL_DISCOVERY_TOOL_PROMPT] : [];
+  if (mode === 'compass') {
+    return [
+      COMPASS_SYSTEM_PROMPT,
+      SAMWELL_JOURNEY_TOOL_PROMPT,
+      SAMWELL_WEB_SEARCH_TOOL_PROMPT,
+      ...listening,
+      ...discovery,
+      SAMWELL_MOMENTS_PROMPT,
+    ];
+  }
   if (mode === 'onboarding') return [onboardingSystemPrompt({ feeds: onboardingFeeds })];
   return [
     SAMWELL_SYSTEM_PROMPT,
@@ -191,6 +209,8 @@ function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean, declared
     SAMWELL_APP_GUIDE_TOOL_PROMPT,
     SAMWELL_WEB_SEARCH_TOOL_PROMPT,
     ...listening,
+    ...discovery,
+    SAMWELL_MOMENTS_PROMPT,
   ];
 }
 
@@ -1008,9 +1028,24 @@ app.post('/chat/http', async (c) => {
    */
   const searchesWeb = mode !== 'onboarding';
   let searchCostUsd = 0;
-  const webSearch = createWebSearchTool((usd) => {
-    searchCostUsd += usd;
-  });
+  // The pages those searches returned: the only ones `read_web_page` may read.
+  const searchedPages = new Set<string>();
+  const webSearch = createWebSearchTool(
+    (usd) => {
+      searchCostUsd += usd;
+    },
+    (urls) => {
+      for (const raw of urls) {
+        const url = readablePageUrl(raw);
+        if (url) searchedPages.add(pageKey(url));
+      }
+    },
+  );
+  // Reading a page is part of vetting a source, so it goes to the builds that
+  // were told how to vet one.
+  const webTools = offersAny(body.tools, DISCOVERY_TOOL_NAMES)
+    ? [webSearch, createReadWebPageTool(searchedPages)]
+    : [webSearch];
 
   let metered: MeteredBilling | null = null;
   if (!onTheHouse) {
@@ -1225,22 +1260,24 @@ app.post('/chat/http', async (c) => {
     // web search as a server tool TanStack runs here in its own agent loop.
     tools:
       mode === 'compass'
-        ? [...offeredClientTools(COMPASS_CLIENT_TOOL_DEFINITIONS, body.tools), webSearch]
+        ? [...offeredClientTools([...COMPASS_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS], body.tools), ...webTools]
         : mode === 'onboarding'
           ? onboardingClientToolDefinitions({ feeds: onboardingFeeds })
-          : [...offeredClientTools(SAMWELL_CLIENT_TOOL_DEFINITIONS, body.tools), webSearch],
+          : [...offeredClientTools([...SAMWELL_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS], body.tools), ...webTools],
     threadId: body.threadId,
     runId: body.runId ?? usageEventId,
     /*
-     * No `agentLoopStrategy` here on purpose.
-     *
-     * It bounds iterations INSIDE one server-side loop. Every tool but one runs
+     * This bounds iterations INSIDE one server-side loop. Every tool but one runs
      * on the device and ends the run at its call; the exception is
      * `web_search`, which TanStack runs here and then asks the model again.
      * `@tanstack/ai` defaults to `maxIterations(5)`: four searches and an
      * answer in one response, which is the day that bound was left for. What
      * bounds a turn across requests is still `tool-loop.ts`.
+     *
+     * Only a turn that may vet a source goes further, since searches and page
+     * reads share the count: running out mid-check leaves no answer at all.
      */
+    agentLoopStrategy: maxIterations(webTools.length > 1 ? 8 : 5),
     middleware: [
       withCompaction({
         // A share of the window rather than all of it: the system prompts,
@@ -1375,10 +1412,10 @@ const CompactionSummarySchema = z.object({
 const COMPACTION_SUMMARY_PROMPT = `You are compressing the earlier part of a conversation so it can be carried forward in a smaller context window.
 
 Write a factual summary in the third person. Preserve, in this order of priority:
-- what the reader is trying to understand or decide
-- any book, chapter or passage being discussed, by name
+- what they are trying to understand, decide or do
+- any goal, book, show, post, chapter or passage being discussed, by name
 - conclusions already reached, so they are not re-litigated
-- commitments or preferences the reader stated
+- wins, struggles, commitments and preferences they stated
 
 Leave out pleasantries, restated questions, and anything already obvious from the recent messages that follow. Do not invent detail that is not present. Aim for one short paragraph.`;
 

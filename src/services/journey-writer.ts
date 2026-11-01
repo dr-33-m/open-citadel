@@ -1,15 +1,17 @@
 import { and, asc, desc, eq, exists, gt, gte, inArray, isNull, lte, or } from 'drizzle-orm';
-import { JournalResponseSchema, type JournalNote, type JournalRequest } from 'samwell-shared';
+import { JournalResponseSchema, type JournalRequest, type JournalResponse } from 'samwell-shared';
 
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions } from '@/db/schema';
 import { hasCloudIdentity } from '@/hooks/use-cloud-identity';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { cloudJsonHeaders } from '@/services/cloud-identity';
-import { recentJourneyNoteTexts, saveJourneyReflection } from '@/services/journey';
+import { recentJourneyNoteTexts } from '@/services/journey';
 import { JournalRefused, JournalRejected, sweepJournal, type JournalStrikes, type SweepSession } from '@/services/journey-sweep';
+import { commitJournalWriteUp, readOpenCommitments, readProfile } from '@/services/samwell-memory';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
+import { localDayString } from '@/utils/day';
 import type { JournalMessage } from '@/utils/journal-plan';
 
 /**
@@ -91,7 +93,7 @@ async function sweep(quietMs: number): Promise<void> {
       fresh: (session) => readSpoken(session.id, { after: session.journaledAt }),
       before: (session) => (session.journaledAt ? readSpoken(session.id, { upTo: session.journaledAt }) : []),
       exists: sessionExists,
-      commit: commitWriteUp,
+      commit: commitJournalWriteUp,
       request: (session, plan) =>
         requestJournalNotes(cloudBaseUrl, {
           surface: session.kind,
@@ -100,6 +102,9 @@ async function sweep(quietMs: number): Promise<void> {
           conversation: plan.conversation ?? '',
           // Capped to what the route accepts; a note is rarely near it.
           existingNotes: recentJourneyNoteTexts(EXISTING_NOTES).map((t) => t.slice(0, 1000)),
+          profile: readProfile(),
+          openCommitments: readOpenCommitments().map(({ id, text }) => ({ id, text: text.slice(0, 1000) })),
+          today: localDayString(),
           modelId: cloudModelId ?? undefined,
         }),
     },
@@ -145,14 +150,6 @@ function readWaitingSessions(): SweepSession[] {
     .orderBy(desc(chatSessions.updatedAt))
     .limit(MAX_SESSIONS_CHECKED)
     .all();
-}
-
-/** Together: cut off between the two, the notes would be written again by the next sweep. */
-function commitWriteUp(sessionId: string, notes: JournalNote[], through: string): void {
-  db.transaction(() => {
-    for (const note of notes) saveJourneyReflection(note.text, `chat:${sessionId}`, note.tags);
-    db.update(chatSessions).set({ journaledAt: through }).where(eq(chatSessions.id, sessionId)).run();
-  });
 }
 
 /**
@@ -218,7 +215,7 @@ function sessionExists(sessionId: string): boolean {
     .get();
 }
 
-async function requestJournalNotes(cloudBaseUrl: string, payload: JournalRequest): Promise<JournalNote[]> {
+async function requestJournalNotes(cloudBaseUrl: string, payload: JournalRequest): Promise<JournalResponse> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Raced rather than only aborted: an abort reaches the fetch, not the token
@@ -236,7 +233,7 @@ async function requestJournalNotes(cloudBaseUrl: string, payload: JournalRequest
   }
 }
 
-async function postJournal(cloudBaseUrl: string, payload: JournalRequest, signal: AbortSignal): Promise<JournalNote[]> {
+async function postJournal(cloudBaseUrl: string, payload: JournalRequest, signal: AbortSignal): Promise<JournalResponse> {
   const res = await fetch(`${cloudBaseUrl}/journey/notes`, {
     method: 'POST',
     headers: await cloudJsonHeaders(),
@@ -258,5 +255,5 @@ async function postJournal(cloudBaseUrl: string, payload: JournalRequest, signal
   }
   const parsed = JournalResponseSchema.safeParse(await res.json());
   if (!parsed.success) throw new JournalRejected('Journal response did not match.');
-  return parsed.data.notes;
+  return parsed.data;
 }

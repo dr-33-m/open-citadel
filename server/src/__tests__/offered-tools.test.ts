@@ -1,3 +1,4 @@
+import { DISCOVERY_TOOL_NAMES } from 'samwell-shared';
 import { describe, expect, it } from 'vitest';
 
 import { CLIENT_TOOLS_ADDED_LATER, offeredClientTools, offersAny } from '../offered-tools.js';
@@ -37,5 +38,23 @@ describe('offersAny', () => {
   it('keeps the podcast and blog tools from builds that declare nothing', () => {
     expect(CLIENT_TOOLS_ADDED_LATER.has('list_my_podcasts')).toBe(true);
     expect(CLIENT_TOOLS_ADDED_LATER.has('search_blog_posts')).toBe(true);
+  });
+});
+
+describe('discovery tools', () => {
+  const finding = [{ name: 'find_podcasts' }, { name: 'search_highlights' }];
+
+  it('are never offered to a build that did not declare them', () => {
+    expect(offeredClientTools(finding, [{ name: 'search_highlights' }]).map((t) => t.name)).toEqual(['search_highlights']);
+  });
+
+  it('are never offered to a build that predates the list', () => {
+    expect(offeredClientTools(finding, undefined).map((t) => t.name)).toEqual(['search_highlights']);
+  });
+
+  it('are offered to a build that declared them, and so is how to use them', () => {
+    expect(offeredClientTools(finding, [{ name: 'find_podcasts' }]).map((t) => t.name)).toEqual(['find_podcasts']);
+    expect(offersAny([{ name: 'find_podcasts' }], DISCOVERY_TOOL_NAMES)).toBe(true);
+    expect(offersAny([{ name: 'search_highlights' }], DISCOVERY_TOOL_NAMES)).toBe(false);
   });
 });

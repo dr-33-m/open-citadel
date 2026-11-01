@@ -1,4 +1,4 @@
-import type { JournalNote } from 'samwell-shared';
+import type { JournalResponse } from 'samwell-shared';
 
 import { planJournalEntry, type JournalMessage, type JournalPlan } from '@/utils/journal-plan';
 
@@ -36,10 +36,10 @@ export type SweepDeps = {
   fresh: (session: SweepSession) => JournalMessage[];
   /** The few messages just ahead of the watermark. */
   before: (session: SweepSession) => JournalMessage[];
-  request: (session: SweepSession, plan: JournalPlan) => Promise<JournalNote[]>;
+  request: (session: SweepSession, plan: JournalPlan) => Promise<JournalResponse>;
   exists: (sessionId: string) => boolean;
   /** The notes and the watermark, together or not at all. */
-  commit: (sessionId: string, notes: JournalNote[], through: string) => void;
+  commit: (sessionId: string, writeUp: JournalResponse, through: string) => void;
 };
 
 /** Times each conversation was refused, for as long as this runtime lasts. */
@@ -60,11 +60,11 @@ export async function sweepJournal(
     const plan = planJournalEntry({ fresh, before: session.journaledAt ? deps.before(session) : [], now, quietMs });
     if (!plan) continue;
 
-    let notes: JournalNote[] = [];
+    let writeUp: JournalResponse = { notes: [] };
     if (plan.conversation) {
       writes += 1;
       try {
-        notes = await deps.request(session, plan);
+        writeUp = await deps.request(session, plan);
       } catch (error) {
         console.warn('[Journal] write-up failed', error);
         if (error instanceof JournalRefused) return { refused: true };
@@ -76,7 +76,7 @@ export async function sweepJournal(
       // Deleted while the request was out: they did not want it kept.
       if (!deps.exists(session.id)) continue;
     }
-    deps.commit(session.id, notes, plan.through);
+    deps.commit(session.id, writeUp, plan.through);
     strikes.delete(session.id);
   }
   return { refused: false };

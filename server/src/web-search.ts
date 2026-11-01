@@ -151,6 +151,10 @@ export async function searchWeb(
  * The tool for one request. Built per request so the cost it reports lands on
  * that request's bill and nobody else's.
  */
-export function createWebSearchTool(onCost: (usd: number) => void) {
-  return webSearchTool.server(async ({ query }, context) => searchWeb(query, { signal: context?.abortSignal, onCost }));
+export function createWebSearchTool(onCost: (usd: number) => void, onPages?: (urls: string[]) => void) {
+  return webSearchTool.server(async ({ query }, context) => {
+    const output = await searchWeb(query, { signal: context?.abortSignal, onCost });
+    onPages?.(output.sources.map((source) => source.url));
+    return output;
+  });
 }

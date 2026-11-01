@@ -697,6 +697,7 @@ export const TOOL_STATUS: Record<string, string> = {
   get_book_details: 'Looking that book up…',
   // Runs on the server, not here, but the status line is the same question.
   web_search: 'Searching the web…',
+  read_web_page: 'Reading that page…',
   start_reading: 'Opening that up…',
   clear_queue: 'Clearing your queue…',
   rename_book: 'Fixing that title…',

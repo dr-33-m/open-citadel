@@ -95,6 +95,20 @@ function titles(tool: string, args: Record<string, unknown>): [string, string] {
   switch (tool) {
     case 'web_search':
       return [`Searching the web for${q}`, `Searched the web for${q}`];
+    case 'read_web_page':
+      return ['Reading a page', 'Read a page'];
+    case 'find_podcasts':
+      return [`Looking for podcasts on${q}`, `Looked for podcasts on${q}`];
+    case 'follow_podcasts':
+      return ['Following those shows', 'Followed those shows'];
+    case 'list_blogs':
+      return ['Looking through the blogs', 'Looked through the blogs'];
+    case 'follow_blogs':
+      return ['Following those blogs', 'Followed those blogs'];
+    case 'find_free_books':
+      return ['Looking through free books', 'Looked through free books'];
+    case 'download_free_books':
+      return ['Downloading those books', 'Downloaded those books'];
     case 'search_library':
       return q ? [`Looking for${q} in your library`, `Looked for${q} in your library`] : ['Looking through your library', 'Looked through your library'];
     case 'get_book_details':

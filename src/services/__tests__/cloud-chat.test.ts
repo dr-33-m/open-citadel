@@ -12,6 +12,8 @@ let runs: unknown[][] = [];
 /** In a scripted run: the connection fails at this point, as XHR reports it. */
 const DROP = Symbol('drop');
 
+vi.mock('@/services/samwell-memory', () => ({ buildMemoryBlock: () => '' }));
+vi.mock('@/services/onboarding-tools', () => ({}));
 vi.mock('@tanstack/ai-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/ai-client')>();
   return {

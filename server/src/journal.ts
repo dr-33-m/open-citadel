@@ -6,7 +6,7 @@ import {
   JournalRequestSchema,
   JournalResponseSchema,
   modelsForPlan,
-  normalizeJournalNotes,
+  normalizeJournalWriteUp,
 } from 'samwell-shared';
 
 import { readEntitlement } from './billing.js';
@@ -71,5 +71,6 @@ journalRoutes.post('/notes', async (c) => {
     failureCode: 'journal_notes_failed',
   });
 
-  return c.json(JournalResponseSchema.parse({ notes: normalizeJournalNotes(result) }));
+  const openIds = (parsed.data.openCommitments ?? []).map((item) => item.id);
+  return c.json(JournalResponseSchema.parse(normalizeJournalWriteUp(result, openIds)));
 });

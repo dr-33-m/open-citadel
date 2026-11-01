@@ -4,7 +4,13 @@ import {
   COMPASS_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_FEEDS_PROP,
+  downloadFreeBooksTool,
   explainAppTool,
+  findFreeBooksTool,
+  findPodcastsTool,
+  followBlogsTool,
+  followPodcastsTool,
+  listBlogsTool,
   addNoteToHighlightTool,
   clearQueueTool,
   deleteBookTool,
@@ -77,9 +83,18 @@ import { createStreamTiming } from '@/services/stream-timing';
 import { createRequestResume } from '@/services/cloud-turn-resume';
 import { reportCloudReached, reportCloudUnreached } from '@/lib/network';
 import { createCircleWatch } from '@/utils/tool-circling';
+import {
+  runDownloadFreeBooks,
+  runFindFreeBooks,
+  runFindPodcasts,
+  runFollowBlogs,
+  runFollowPodcasts,
+  runListBlogs,
+} from '@/services/onboarding-tools';
 import { createOnboardingClientTools } from '@/services/onboarding-tools/client-tools';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { buildJourneySnapshot } from '@/services/journey';
+import { buildMemoryBlock } from '@/services/samwell-memory';
 import {
   formatCompassStatus,
   formatToday,
@@ -471,23 +486,19 @@ function journeyMessages(mode: SamwellTurnMode): UIMessage[] {
     // A journey that cannot be built is not a reason to lose the turn.
     return [];
   }
-  if (!snapshot) return [];
+  let memory = '';
+  try {
+    memory = buildMemoryBlock();
+  } catch {
+    // Nor is a memory that cannot be read.
+  }
+  const journey = snapshot
+    ? `Their journey so far (use it for continuity and to ground what you suggest; never assume beyond it):\n${snapshot}`
+    : '';
+  const content = [memory, journey].filter(Boolean).join('\n\n');
+  if (!content) return [];
 
-  return [
-    {
-      id: 'samwell-journey',
-      role: 'system',
-      createdAt: new Date(),
-      parts: [
-        {
-          type: 'text',
-          content:
-            'The user\'s journey so far (use it for continuity and to ground what you ' +
-            `suggest; never assume beyond it):\n${snapshot}`,
-        },
-      ],
-    },
-  ];
+  return [{ id: 'samwell-journey', role: 'system', createdAt: new Date(), parts: [{ type: 'text', content }] }];
 }
 
 /**
@@ -721,6 +732,21 @@ function listeningTools() {
   ] as const;
 }
 
+/**
+ * Finding and following what is out there: onboarding's own tools, so a show
+ * followed from a chat and one followed on the first day cannot differ.
+ */
+function discoveryTools() {
+  return [
+    findPodcastsTool.client(async (input) => runFindPodcasts(input)),
+    followPodcastsTool.client(async (input) => runFollowPodcasts(input)),
+    listBlogsTool.client(async () => runListBlogs()),
+    followBlogsTool.client(async (input) => runFollowBlogs(input)),
+    findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
+    downloadFreeBooksTool.client(async (input) => runDownloadFreeBooks(input)),
+  ] as const;
+}
+
 function createCompassClientTools(ctx: ToolCallContext) {
   return clientTools(
     getCompassStatusTool.client(async () => ({ formatted: formatCompassStatus() })),
@@ -766,6 +792,7 @@ function createCompassClientTools(ctx: ToolCallContext) {
     }),
     ...libraryLookupTools(ctx),
     ...listeningTools(),
+    ...discoveryTools(),
     journeyTool(ctx),
   );
 }
@@ -990,6 +1017,7 @@ function createSamwellClientTools(ctx: ToolCallContext) {
       return result as { ok: boolean; id?: string; type?: 'thought'; error?: string };
     }),
     ...listeningTools(),
+    ...discoveryTools(),
     journeyTool(ctx),
   );
 }

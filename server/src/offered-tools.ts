@@ -1,4 +1,4 @@
-import { LISTENING_TOOL_NAMES } from 'samwell-shared';
+import { DISCOVERY_TOOL_NAMES, LISTENING_TOOL_NAMES } from 'samwell-shared';
 
 /**
  * Which of the device's tools a request may offer the model.
@@ -24,6 +24,7 @@ export const CLIENT_TOOLS_ADDED_LATER: ReadonlySet<string> = new Set([
   'search_library',
   'get_book_details',
   ...LISTENING_TOOL_NAMES,
+  ...DISCOVERY_TOOL_NAMES,
 ]);
 
 function declaredNames(declared: unknown): Set<string> | null {
