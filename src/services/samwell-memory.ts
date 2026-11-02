@@ -8,8 +8,7 @@ import type { JournalNote, JournalResponse } from 'samwell-shared';
 
 import { db } from '@/db/client';
 import { chatSessions, journeyNotes, samwellProfile } from '@/db/schema';
-import { queryClient } from '@/lib/query-client';
-import { samwellMemoryKeys } from '@/query-manager/samwell-memory/keys';
+import { invalidateSamwellMemory } from '@/query-manager/samwell-memory/invalidate';
 import { listBlogs } from '@/services/listening-tools/blogs';
 import { listShows } from '@/services/listening-tools/podcasts';
 import { localDayString } from '@/utils/day';
@@ -130,7 +129,7 @@ export function commitJournalWriteUp(sessionId: string, writeUp: JournalResponse
     }
     db.update(chatSessions).set({ journaledAt: through }).where(eq(chatSessions.id, sessionId)).run();
   });
-  void queryClient.invalidateQueries({ queryKey: samwellMemoryKeys.all });
+  invalidateSamwellMemory();
 }
 
 export function readSamwellMemory(): SamwellMemory {

@@ -10,6 +10,7 @@ import {
   trackableLogs,
   trackables,
 } from '@/db/schema';
+import { invalidateSamwellMemory } from '@/query-manager/samwell-memory/invalidate';
 import { extractKeywords } from '@/services/compass-reading-rank';
 import { addDaysYmd, localDayString } from '@/utils/day';
 
@@ -381,6 +382,7 @@ function upsertEndingNote(
         createdAt: new Date().toISOString(),
       })
       .run();
+    invalidateSamwellMemory();
     return;
   }
 
@@ -395,6 +397,7 @@ function upsertEndingNote(
       .where(inArray(journeyNotes.id, extra.map((row) => row.id)))
       .run();
   }
+  invalidateSamwellMemory();
 }
 
 export function saveJourneyReflection(text: string, sourceRef: string, tags: string[] = []): void {
@@ -410,6 +413,7 @@ export function saveJourneyReflection(text: string, sourceRef: string, tags: str
       createdAt: new Date().toISOString(),
     })
     .run();
+  invalidateSamwellMemory();
 }
 
 /**
@@ -518,6 +522,7 @@ export function saveBookRemovedNote(removal: BookRemoval): void {
       .where(eq(journeyNotes.id, finishedNote.id))
       .run();
   }
+  invalidateSamwellMemory();
 }
 
 /** What a goal banked against its number: `12 of 20 sessions`. */
