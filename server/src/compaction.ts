@@ -22,8 +22,11 @@
  * summarize step possible. So the middleware is ~40 lines here, and the
  * project's own token estimator can be used instead of a generic one.
  *
- * If the pin ever reaches 0.52, this file can be deleted in favour of the
- * package; the option names were kept identical so that swap is mechanical.
+ * If the pin ever reaches 0.52, most of this file can be deleted in favour of
+ * the package; the option names were kept identical so that swap is
+ * mechanical. `summarizeOldest`'s checkpoints (a summary kept between
+ * requests and updated rather than rewritten) are this project's own, and
+ * would need to come across as a custom strategy.
  *
  * ## What is kept safe
  *
@@ -37,6 +40,8 @@
  * - **The transcript is not rewritten.** This only changes the messages handed
  *   to the provider for one call. The device keeps every message.
  */
+import { createHash } from 'node:crypto';
+
 import type { ChatMiddleware, ModelMessage } from '@tanstack/ai';
 
 /**
@@ -70,6 +75,17 @@ export interface CompactionInfo {
  * so all of it is counted.
  */
 function textOf(message: ModelMessage): string {
+  const parts = [contentText(message)];
+
+  // Arguments to a tool call are sent verbatim and are frequently the largest
+  // thing in an assistant message.
+  if (message.toolCalls?.length) parts.push(JSON.stringify(message.toolCalls));
+
+  return parts.join('\n');
+}
+
+/** The words of a message, without its tool calls. */
+export function contentText(message: ModelMessage): string {
   const parts: string[] = [];
   const { content } = message;
 
@@ -87,11 +103,36 @@ function textOf(message: ModelMessage): string {
     }
   }
 
-  // Arguments to a tool call are sent verbatim and are frequently the largest
-  // thing in an assistant message.
-  if (message.toolCalls?.length) parts.push(JSON.stringify(message.toolCalls));
-
   return parts.join('\n');
+}
+
+/**
+ * Stands for a run of messages exactly: the same messages, in the same order,
+ * give the same string. How a checkpoint knows the conversation it was written
+ * for is still the one in front of it.
+ *
+ * A chain, one link per message, so a fingerprint can be carried on from
+ * where another stopped: `extendFingerprint(fingerprintMessages(a), b)` is
+ * `fingerprintMessages([...a, ...b])`. A request that compacts twice no longer
+ * has the start of the conversation in front of it the second time, only its
+ * own summary of it, and still has to describe the whole of it.
+ */
+export function extendFingerprint(from: string, messages: ModelMessage[]): string {
+  let fingerprint = from;
+  for (const message of messages) {
+    fingerprint = createHash('sha256')
+      .update(fingerprint)
+      .update('\u0000')
+      .update(message.role)
+      .update('\u0000')
+      .update(textOf(message))
+      .digest('hex');
+  }
+  return fingerprint;
+}
+
+export function fingerprintMessages(messages: ModelMessage[]): string {
+  return extendFingerprint('', messages);
 }
 
 /**
@@ -174,6 +215,28 @@ function flatten(groups: MessageGroup[]): ModelMessage[] {
   return groups.flatMap((group) => group.messages);
 }
 
+/**
+ * The newest groups that fit in `keepRecentTokens`, always at least one, and
+ * the index of the first message they hold.
+ */
+function recentTail(
+  messages: ModelMessage[],
+  keepRecentTokens: number,
+  estimate: (m: ModelMessage) => number,
+): { kept: MessageGroup[]; cut: number } {
+  const groups = groupMessages(messages, estimate);
+  const kept: MessageGroup[] = [];
+  let spent = 0;
+  // Backwards, so the newest exchange is always the one that survives.
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const group = groups[i];
+    if (spent + group.tokens > keepRecentTokens && kept.length > 0) break;
+    spent += group.tokens;
+    kept.unshift(group);
+  }
+  return { kept, cut: messages.length - flatten(kept).length };
+}
+
 // ── Strategies ──────────────────────────────────────────────────────────────
 
 export interface EvictOldestOptions {
@@ -198,24 +261,11 @@ export function evictOldest(options: EvictOldestOptions = {}): CompactionStrateg
 
   return (messages, ctx) => {
     const keepRecentTokens = options.keepRecentTokens ?? Math.floor(ctx.maxTokens / 2);
-    const groups = groupMessages(messages, ctx.estimateTokens);
+    const { kept, cut } = recentTail(messages, keepRecentTokens, ctx.estimateTokens);
+    if (cut <= 0) return null;
 
-    const kept: MessageGroup[] = [];
-    let spent = 0;
-    // Backwards, so the newest exchange is always the one that survives.
-    for (let i = groups.length - 1; i >= 0; i--) {
-      const group = groups[i];
-      if (spent + group.tokens > keepRecentTokens && kept.length > 0) break;
-      spent += group.tokens;
-      kept.unshift(group);
-    }
-
-    const droppedGroups = groups.length - kept.length;
-    if (droppedGroups <= 0) return null;
-
-    const droppedMessages = messages.length - flatten(kept).length;
     return [
-      { role: 'user', content: marker(droppedMessages) },
+      { role: 'user', content: marker(cut) },
       ...flatten(kept),
     ];
   };
@@ -262,12 +312,74 @@ export function clearToolResults(options: ClearToolResultsOptions = {}): Compact
   };
 }
 
+/**
+ * A summary kept between requests: what it says, and which messages it stands
+ * for (the first `covered`, as `fingerprint` describes them).
+ */
+export interface Checkpoint {
+  covered: number;
+  fingerprint: string;
+  summary: string;
+}
+
+/** Where one conversation's checkpoint lives between its requests. */
+export interface CheckpointStore {
+  get(): Checkpoint | undefined;
+  set(checkpoint: Checkpoint): void;
+}
+
 export interface SummarizeOldestOptions {
-  /** Turns the dropped messages into prose. One model call. */
-  summarize: (messages: ModelMessage[]) => Promise<string>;
+  /**
+   * Turns messages into a summary. One model call. Given the summary already
+   * held for the messages before them, it folds the new ones into it.
+   */
+  summarize: (messages: ModelMessage[], previous: string | null) => Promise<string>;
   keepRecentTokens?: number;
   /** Which role carries the summary. `user` is the safest default here. */
   summaryRole?: 'user' | 'assistant';
+  /**
+   * Keeps the summary for the conversation's next request. The app sends the
+   * whole conversation every time, so without it every request past the
+   * budget, each tool round trip included, wrote the summary again from the
+   * start: a model call per request, and a summary that could say something
+   * different each time.
+   */
+  checkpoints?: CheckpointStore;
+}
+
+/** What leads the messages once a summary has taken the place of their start. */
+export function summaryContent(summary: string): string {
+  return `[Your own note on the earlier part of this conversation, which is no longer in front of you]\n${summary}`;
+}
+
+/**
+ * Where the messages in front of this request stand against the checkpoint:
+ * the checkpoint, and the index from which nothing it covers remains.
+ *
+ * Two ways it can apply. An earlier request left it, and the conversation
+ * still starts with the messages it covers (the app re-sends all of them). Or
+ * this request has compacted already, in an earlier step of the agent loop,
+ * and its summary is the first message: TanStack carries on from the
+ * compacted messages, not the ones the app sent.
+ */
+function checkpointFor(
+  store: CheckpointStore | undefined,
+  messages: ModelMessage[],
+  summaryRole: ModelMessage['role'],
+): { checkpoint: Checkpoint; start: number } | undefined {
+  const checkpoint = store?.get();
+  if (!checkpoint || checkpoint.covered <= 0) return undefined;
+
+  const head = messages[0];
+  if (head?.role === summaryRole && head.content === summaryContent(checkpoint.summary)) {
+    return { checkpoint, start: 1 };
+  }
+
+  if (checkpoint.covered >= messages.length) return undefined;
+  // A cut never lands on a tool result; one here means the messages moved.
+  if (messages[checkpoint.covered].role === 'tool') return undefined;
+  const same = fingerprintMessages(messages.slice(0, checkpoint.covered)) === checkpoint.fingerprint;
+  return same ? { checkpoint, start: checkpoint.covered } : undefined;
 }
 
 /**
@@ -278,6 +390,12 @@ export interface SummarizeOldestOptions {
  * this app that is the point: a reading companion whose value is continuity
  * should not forget the book you told it about two hundred messages ago.
  *
+ * With a checkpoint store it works the way pi and opencode do: the summary is
+ * a checkpoint that later requests reuse as long as it and the messages since
+ * it fit, and when they no longer do, only the messages since it are folded
+ * in. Cutting back to `keepRecentTokens` (half the budget) each time is what
+ * leaves room for the conversation to grow before the next model call.
+ *
  * If the summarize call fails, the messages are returned unchanged rather than
  * dropped. Compaction failing open means one over-long request, which the
  * provider reports; compaction failing *closed* by discarding history would
@@ -286,41 +404,41 @@ export interface SummarizeOldestOptions {
  */
 export function summarizeOldest(options: SummarizeOldestOptions): CompactionStrategy {
   const summaryRole = options.summaryRole ?? 'user';
+  const withSummary = (summary: string, rest: ModelMessage[]): ModelMessage[] => [
+    { role: summaryRole, content: summaryContent(summary) },
+    ...rest,
+  ];
 
   return async (messages, ctx) => {
     const keepRecentTokens = options.keepRecentTokens ?? Math.floor(ctx.maxTokens / 2);
-    const groups = groupMessages(messages, ctx.estimateTokens);
+    const held = checkpointFor(options.checkpoints, messages, summaryRole);
+    const previous = held?.checkpoint;
+    // Messages before `start` are what the held summary already stands for.
+    const start = held?.start ?? 0;
+    const reused = previous && withSummary(previous.summary, messages.slice(start));
+    if (reused && totalTokens(reused, ctx.estimateTokens) <= ctx.maxTokens) return reused;
 
-    const kept: MessageGroup[] = [];
-    let spent = 0;
-    for (let i = groups.length - 1; i >= 0; i--) {
-      const group = groups[i];
-      if (spent + group.tokens > keepRecentTokens && kept.length > 0) break;
-      spent += group.tokens;
-      kept.unshift(group);
-    }
+    const { cut } = recentTail(messages, keepRecentTokens, ctx.estimateTokens);
+    // Nothing new to fold in: the held summary is the best this can do.
+    if (cut <= start) return reused ?? null;
 
-    const droppedGroups = groups.slice(0, groups.length - kept.length);
-    if (droppedGroups.length === 0) return null;
-
-    const dropped = flatten(droppedGroups);
+    const folded = messages.slice(start, cut);
     let summary: string;
     try {
-      summary = await options.summarize(dropped);
+      summary = (await options.summarize(folded, previous?.summary ?? null)).trim();
     } catch (err) {
       console.warn('[Compaction] summarizeOldest failed, leaving history intact:', err);
-      return null;
+      return reused ?? null;
     }
+    if (!summary) return reused ?? null;
 
-    if (!summary.trim()) return null;
-
-    return [
-      {
-        role: summaryRole,
-        content: `[Summary of the earlier part of this conversation]\n${summary.trim()}`,
-      },
-      ...flatten(kept),
-    ];
+    // Counted against the conversation the app sent, whichever way in.
+    options.checkpoints?.set({
+      covered: (previous?.covered ?? 0) + folded.length,
+      fingerprint: extendFingerprint(previous?.fingerprint ?? '', folded),
+      summary,
+    });
+    return withSummary(summary, messages.slice(cut));
   };
 }
 

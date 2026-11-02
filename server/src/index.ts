@@ -61,7 +61,8 @@ import {
   summarizeOldest,
   withCompaction,
 } from './compaction.js';
-import { runStructuredAnalysis } from './structured-analysis.js';
+import { threadCheckpoints } from './compaction-checkpoints.js';
+import { summarizeForCompaction } from './compaction-summary.js';
 import { fetchOpenRouterModel, startModelContextRefresh } from './model-context.js';
 import { tagsRoutes } from './tags.js';
 import { takeawayRoutes } from './takeaway.js';
@@ -1293,8 +1294,11 @@ app.post('/chat/http', async (c) => {
           // companion whose whole value is continuity should not forget the
           // book you told it about two hundred messages ago.
           summarizeOldest({
-            summarize: (dropped) =>
-              summarizeForCompaction({ dropped, modelId, accountId }),
+            summarize: (dropped, previous) =>
+              summarizeForCompaction({ dropped, previous, modelId, accountId }),
+            // Reused by this conversation's next requests, and by the
+            // round trips of this turn's tool calls.
+            checkpoints: threadCheckpoints(accountId, body.threadId),
           }),
           // Last resort, if summarising failed or was not enough.
           evictOldest(),
@@ -1404,70 +1408,6 @@ const CONTEXT_BUDGET_RATIO = 0.66;
  * expensive one.
  */
 const ABSOLUTE_COMPACTION_CEILING = 60_000;
-
-const CompactionSummarySchema = z.object({
-  summary: z.string(),
-});
-
-const COMPACTION_SUMMARY_PROMPT = `You are compressing the earlier part of a conversation so it can be carried forward in a smaller context window.
-
-Write a factual summary in the third person. Preserve, in this order of priority:
-- what they are trying to understand, decide or do
-- any goal, book, show, post, chapter or passage being discussed, by name
-- conclusions already reached, so they are not re-litigated
-- wins, struggles, commitments and preferences they stated
-
-Leave out pleasantries, restated questions, and anything already obvious from the recent messages that follow. Do not invent detail that is not present. Aim for one short paragraph.`;
-
-/**
- * Summarise the turns compaction is about to drop.
- *
- * Metered but not counted against the reader's cap: this is machinery they did
- * not ask for, so it should not consume their quota, while still being
- * recorded because it costs real money. A failure here is not fatal —
- * `summarizeOldest` leaves the history intact and the composed strategy falls
- * through to `evictOldest`.
- */
-async function summarizeForCompaction({
-  dropped,
-  modelId,
-  accountId,
-}: {
-  dropped: { role: string; content: unknown }[];
-  modelId: string;
-  accountId: string;
-}): Promise<string> {
-  const transcript = dropped
-    .map((message) => {
-      const text =
-        typeof message.content === 'string'
-          ? message.content
-          : JSON.stringify(message.content);
-      return `${message.role}: ${text}`;
-    })
-    .join('\n\n');
-
-  const usageEventId = `compaction-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  await recordUsageEvent({
-    id: usageEventId,
-    accountId,
-    modelId,
-    countsTowardLimit: false,
-    kind: 'compaction_summary',
-  });
-
-  const result = await runStructuredAnalysis({
-    modelId,
-    systemPrompts: [COMPACTION_SUMMARY_PROMPT],
-    messages: [{ role: 'user', content: transcript }],
-    schema: CompactionSummarySchema,
-    usageEventId,
-    maxCompletionTokens: 600,
-    failureCode: 'compaction_summary_failed',
-  });
-
-  return result.summary;
-}
 
 app.onError((err, c) => {
   console.error('[Samwell Cloud] Request failed:', err);
