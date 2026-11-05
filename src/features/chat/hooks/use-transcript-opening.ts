@@ -44,18 +44,23 @@ export function useTranscriptOpening(turns: readonly ChatMessage[]) {
   const shown = useSharedValue(turns.length === 0 ? 1 : 0);
   // Once: the scroller's signal and the fallback can both arrive.
   const revealing = React.useRef(turns.length === 0);
+  const faded = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onOpened = React.useCallback(() => {
     if (revealing.current) return;
     revealing.current = true;
     shown.set(withTiming(1, { duration: REVEAL_MS }));
     // The skeleton underneath goes once it has faded, rather than pulsing on unseen.
-    setTimeout(() => setWaiting(false), REVEAL_MS);
+    faded.current = setTimeout(() => setWaiting(false), REVEAL_MS);
   }, [shown]);
 
   React.useEffect(() => {
     const fallback = setTimeout(onOpened, REVEAL_FALLBACK_MS);
-    return () => clearTimeout(fallback);
+    return () => {
+      clearTimeout(fallback);
+      // A chat left within the fade must not be written to after it has gone.
+      if (faded.current) clearTimeout(faded.current);
+    };
   }, [onOpened]);
 
   /** The page before the one drawn first, once the reader has scrolled up to it. */

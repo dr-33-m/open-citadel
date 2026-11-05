@@ -116,7 +116,7 @@ interface MessageScrollerContextValue {
   following: React.RefObject<boolean>;
   /** Set once the viewport has opened; rows laid out before that are history. */
   openedRef: React.RefObject<boolean>;
-  registerItem: (id: string, y: number, anchor: boolean) => void;
+  registerItem: (id: string, y: number, anchor: boolean, arrived?: boolean) => void;
   unregisterItem: (id: string) => void;
   scrollToEnd: (animated?: boolean) => void;
   scrollToStart: (animated?: boolean) => void;
@@ -249,7 +249,7 @@ function MessageScrollerRoot({
   );
 
   const registerItem = useCallback(
-    (id: string, y: number, anchor: boolean) => {
+    (id: string, y: number, anchor: boolean, arrived = true) => {
       const list = anchors.current;
       const isNewAnchor = anchor && !list.includes(id);
       /*
@@ -263,8 +263,13 @@ function MessageScrollerRoot({
        * Checked before this row joins `itemY`, so it is compared only with the
        * rows that were already there; a turn loaded above them is history and
        * moves nothing.
+       *
+       * LOCAL EDIT (2): `arrived` false for a turn that is history however it
+       * lands. A page of older turns drawn above a short first page put one of
+       * the reader's old questions below every row measured so far, which read
+       * as a send and threw them to the bottom as they scrolled up.
        */
-      if (isNewAnchor && autoScroll && openedRef.current && isBelowAll(y, itemY.current)) {
+      if (isNewAnchor && arrived && autoScroll && openedRef.current && isBelowAll(y, itemY.current)) {
         scrollToEnd(true);
       }
       itemY.current.set(id, y);
@@ -909,6 +914,11 @@ export interface MessageScrollerItemProps extends ViewProps {
   /** Stable id for this turn. `scrollToMessage` takes the same value. */
   messageId: string;
   /**
+   * LOCAL EDIT: false for a turn that was already in the conversation (history
+   * drawn as the reader scrolls up), so it is never mistaken for one just sent.
+   */
+  arrived?: boolean;
+  /**
    * Marks this row as the start of a turn. `defaultScrollPosition="last-anchor"`
    * opens on the last one, and it is what a saved thread should land on — the
    * question, not the tail of the answer to it.
@@ -926,13 +936,14 @@ function MessageScrollerItem({
   className,
   messageId,
   scrollAnchor = false,
+  arrived = true,
   children,
   ...props
 }: MessageScrollerItemProps) {
   const { registerItem, unregisterItem } = useScroller('MessageScroller.Item');
 
   const onLayout = (event: LayoutChangeEvent) => {
-    registerItem(messageId, event.nativeEvent.layout.y, scrollAnchor);
+    registerItem(messageId, event.nativeEvent.layout.y, scrollAnchor, arrived);
     props.onLayout?.(event);
   };
 

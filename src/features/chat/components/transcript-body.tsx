@@ -21,6 +21,11 @@ type TranscriptBodyProps = {
   keyboardOffset?: number;
 };
 
+/** Keep the first visible turn where it is when turns are added above it. */
+const KEEP_PLACE = { minIndexForVisible: 0 } as const;
+/** `MessageScroller.Content`'s own spacing, now on the scroll view's container. */
+const COLUMN: ViewStyle = { gap: 12, padding: 16, paddingBottom: 64 };
+
 /**
  * One conversation's scroller, mounted under a key per conversation by
  * `Transcript`, so each opens with its own state: at its end, out of sight
@@ -37,9 +42,21 @@ export function TranscriptBody({
 }: TranscriptBodyProps) {
   const { drawn, hasEarlier, loadEarlier, isHistory, onOpened, revealStyle, skeletonStyle, waiting } =
     useTranscriptOpening(turns);
+  const containerStyle = React.useMemo(() => [COLUMN, contentStyle], [contentStyle]);
 
   return (
-    <MessageScroller autoScroll onOpened={onOpened} className="flex-1" style={contentColumn}>
+    // `preserveScrollOnPrepend` off: older pages are held in place natively
+    // (`KEEP_PLACE`), in the frame they arrive, as Bluesky's chat holds them.
+    // The scroller's own correction ran from JavaScript after the new layout,
+    // and its measure could arrive before the rows had moved: the chat jumped
+    // under the reader's finger as they scrolled up.
+    <MessageScroller
+      autoScroll
+      preserveScrollOnPrepend={false}
+      onOpened={onOpened}
+      className="flex-1"
+      style={contentColumn}
+    >
       <EarlierTurns enabled={hasEarlier && !waiting} onReach={loadEarlier} />
       {/* Holds the place until the transcript is at its end, then fades as it arrives. */}
       {waiting ? (
@@ -52,23 +69,32 @@ export function TranscriptBody({
             floating input card, so both edges are boundaries content passes
             behind rather than stops at. */}
         <TranscriptFade edges="both">
-          <MessageScroller.Viewport keyboardOffset={keyboardOffset}>
-            <MessageScroller.Content style={contentStyle}>
-              {drawn.map((m) =>
-                m.role === 'user' || m.role === 'assistant' ? (
-                  <MessageScroller.Item
-                    key={m.id}
-                    messageId={m.id}
-                    // The reader's own turns are what a thread is navigated by:
-                    // the question, not the tail of the answer to it.
-                    scrollAnchor={m.role === 'user'}
-                  >
-                    {renderTurn(m, !isHistory(m.id))}
-                  </MessageScroller.Item>
-                ) : null,
-              )}
-              {tail}
-            </MessageScroller.Content>
+          {/* The turns are the scroll view's own children, not wrapped in
+              `MessageScroller.Content`: the native position keeping below
+              holds the first visible child still, and with one wrapper there
+              is only one child, which never moves. */}
+          <MessageScroller.Viewport
+            keyboardOffset={keyboardOffset}
+            contentContainerStyle={containerStyle}
+            maintainVisibleContentPosition={KEEP_PLACE}
+            accessibilityLiveRegion="polite"
+          >
+            {drawn.map((m) =>
+              m.role === 'user' || m.role === 'assistant' ? (
+                <MessageScroller.Item
+                  key={m.id}
+                  messageId={m.id}
+                  // The reader's own turns are what a thread is navigated by:
+                  // the question, not the tail of the answer to it.
+                  scrollAnchor={m.role === 'user'}
+                  // History, however low it lands, is never a message just sent.
+                  arrived={!isHistory(m.id)}
+                >
+                  {renderTurn(m, !isHistory(m.id))}
+                </MessageScroller.Item>
+              ) : null,
+            )}
+            {tail}
           </MessageScroller.Viewport>
         </TranscriptFade>
       </Animated.View>
