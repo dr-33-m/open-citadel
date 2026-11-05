@@ -3,8 +3,8 @@
  * his one picture of them, their wins and open commitments, and the means to
  * read and delete all of it. Everything here is on the device.
  */
-import { and, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
-import type { JournalNote, JournalResponse } from 'samwell-shared';
+import { and, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { cleanProfileText, type JournalNote, type JournalResponse } from 'samwell-shared';
 
 import { db } from '@/db/client';
 import { chatSessions, journeyNotes, samwellProfile } from '@/db/schema';
@@ -31,12 +31,41 @@ export type MemoryNote = {
   text: string;
   resolvedAt: string | null;
   createdAt: string;
+  /** The chat it was written from, while that chat still exists. */
+  sourceSessionId: string | null;
+  sourceTitle: string | null;
 };
 
-export type SamwellMemory = { profile: string | null; notes: MemoryNote[] };
+export type MemoryProfile = { text: string; updatedAt: string };
+
+export type SamwellMemory = { profile: MemoryProfile | null; notes: MemoryNote[] };
+
+export {
+  correctNote,
+  correctProfile,
+  forgetEverything,
+  forgetNote,
+  forgetProfile,
+  restoreNote,
+  restoreProfile,
+  type ForgottenNote,
+  type ForgottenProfile,
+} from '@/services/samwell-memory/edits';
+
+function readProfileRow(): MemoryProfile | null {
+  const row = db
+    .select({ text: samwellProfile.text, updatedAt: samwellProfile.updatedAt })
+    .from(samwellProfile)
+    .where(eq(samwellProfile.id, PROFILE_ROW))
+    .get();
+  // Cleaned on the way out too: one written before the journal cleaned it is
+  // still stored with its "profile:" label.
+  const text = row ? cleanProfileText(row.text) : '';
+  return row && text ? { text, updatedAt: row.updatedAt } : null;
+}
 
 export function readProfile(): string | null {
-  return db.select({ text: samwellProfile.text }).from(samwellProfile).where(eq(samwellProfile.id, PROFILE_ROW)).get()?.text ?? null;
+  return readProfileRow()?.text ?? null;
 }
 
 function since(windowMs: number): string {
@@ -120,8 +149,9 @@ export function commitJournalWriteUp(sessionId: string, writeUp: JournalResponse
     if (writeUp.resolved?.length) {
       db.update(journeyNotes).set({ resolvedAt: now }).where(inArray(journeyNotes.id, writeUp.resolved)).run();
     }
-    if (writeUp.profile?.trim()) {
-      const values = { text: writeUp.profile.trim(), updatedAt: now };
+    const profile = cleanProfileText(writeUp.profile ?? '');
+    if (profile) {
+      const values = { text: profile, updatedAt: now };
       db.insert(samwellProfile)
         .values({ id: PROFILE_ROW, ...values })
         .onConflictDoUpdate({ target: samwellProfile.id, set: values })
@@ -132,9 +162,12 @@ export function commitJournalWriteUp(sessionId: string, writeUp: JournalResponse
   invalidateSamwellMemory();
 }
 
+/** A note's `source_ref` is `chat:<session id>` when a conversation wrote it. */
+const sourceSession = sql<string | null>`case when ${journeyNotes.sourceRef} like 'chat:%' then substr(${journeyNotes.sourceRef}, 6) end`;
+
 export function readSamwellMemory(): SamwellMemory {
   return {
-    profile: readProfile(),
+    profile: readProfileRow(),
     notes: db
       .select({
         id: journeyNotes.id,
@@ -142,24 +175,12 @@ export function readSamwellMemory(): SamwellMemory {
         text: journeyNotes.text,
         resolvedAt: journeyNotes.resolvedAt,
         createdAt: journeyNotes.createdAt,
+        sourceSessionId: chatSessions.id,
+        sourceTitle: chatSessions.title,
       })
       .from(journeyNotes)
+      .leftJoin(chatSessions, eq(chatSessions.id, sourceSession))
       .orderBy(desc(journeyNotes.createdAt))
       .all(),
   };
-}
-
-export function forgetNote(id: string): void {
-  db.delete(journeyNotes).where(eq(journeyNotes.id, id)).run();
-}
-
-export function forgetProfile(): void {
-  db.delete(samwellProfile).run();
-}
-
-export function forgetEverything(): void {
-  db.transaction(() => {
-    db.delete(journeyNotes).run();
-    db.delete(samwellProfile).run();
-  });
 }

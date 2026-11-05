@@ -1,44 +1,85 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
-import { showToast } from '@/components/toast/toast-provider';
-import { memoryRows, memorySubtitle, type MemoryRow } from '@/features/samwell-memory/utils/memory-rows';
-import { queryClient } from '@/lib/query-client';
-import { createSamwellMemoryQueryOptions, samwellMemoryKeys } from '@/query-manager/samwell-memory';
-import { forgetEverything, forgetNote, forgetProfile } from '@/services/samwell-memory';
+import { useMemoryActions } from '@/features/samwell-memory/hooks/use-memory-actions';
+import {
+  memoryRows,
+  type MemoryAction,
+  type MemoryNoteView,
+  type MemoryRow,
+  type MemoryTarget,
+} from '@/features/samwell-memory/utils/memory-rows';
+import { NoteText } from '@/lib/text-fields';
+import { createSamwellMemoryQueryOptions } from '@/query-manager/samwell-memory';
 
-const TOAST = 'samwell-memory';
 const NO_ROWS: MemoryRow[] = [];
 
-/** Reading what Samwell has kept, and deleting any of it. */
+/**
+ * The screen of what Samwell has kept: the rows, and the three things that
+ * open over them (a note's sheet, the editor, and the confirm for forgetting
+ * everything), each handed over as the group its component spreads.
+ */
 export function useSamwellMemory() {
   const { data, isPending } = useQuery(createSamwellMemoryQueryOptions());
+  const actions = useMemoryActions();
+  const [menuOn, setMenuOn] = React.useState<MemoryTarget | null>(null);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [editing, setEditing] = React.useState<MemoryTarget | null>(null);
   const [confirming, setConfirming] = React.useState(false);
 
-  const { mutate } = useMutation({
-    mutationFn: async (work: () => void) => work(),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: samwellMemoryKeys.all }),
-    onError: () => showToast({ message: 'That could not be deleted. Try again.', key: TOAST }),
-  });
-
   const rows = React.useMemo(() => (data ? memoryRows(data.profile, data.notes) : NO_ROWS), [data]);
-  const onForgetNote = React.useCallback((id: string) => mutate(() => forgetNote(id)), [mutate]);
-  const onForgetProfile = React.useCallback(() => mutate(forgetProfile), [mutate]);
-  const onForgetAll = React.useCallback(() => setConfirming(true), []);
+  const portrait = rows[0]?.type === 'portrait' ? rows[0] : null;
+
+  const openNote = React.useCallback((note: MemoryNoteView) => {
+    setMenuOn({ kind: 'note', ...note });
+    setMenuOpen(true);
+  }, []);
+  const portraitText = portrait?.text;
+  const portraitMeta = portrait?.updated;
+  const openPortrait = React.useCallback(() => {
+    if (!portraitText || !portraitMeta) return;
+    setMenuOn({ kind: 'portrait', text: portraitText, meta: portraitMeta, sourceSessionId: null });
+    setMenuOpen(true);
+  }, [portraitText, portraitMeta]);
+  const closeMenu = React.useCallback(() => setMenuOpen(false), []);
+
+  const { forget, correct, openChat, forgetAll } = actions;
+  const onAction = React.useCallback(
+    (action: MemoryAction, target: MemoryTarget) => {
+      if (action === 'correct') setEditing(target);
+      else if (action === 'chat' && target.sourceSessionId) openChat(target.sourceSessionId);
+      else if (action === 'forget') forget(target);
+    },
+    [forget, openChat],
+  );
+
+  const closeEditor = React.useCallback(() => setEditing(null), []);
+  const saveEdit = React.useCallback((text: string) => {
+    if (editing) correct(editing, text);
+  }, [correct, editing]);
+
   const closeConfirm = React.useCallback(() => setConfirming(false), []);
+  const askForgetAll = React.useCallback(() => setConfirming(true), []);
   const confirmForgetAll = React.useCallback(() => {
     setConfirming(false);
-    mutate(forgetEverything);
-  }, [mutate]);
+    forgetAll();
+  }, [forgetAll]);
 
   return {
     loaded: !isPending,
-    list: {
-      rows,
-      subtitle: memorySubtitle(data?.profile ?? null, data?.notes.length ?? 0),
-      onForgetNote,
-      onForgetProfile,
-      onForgetAll,
+    list: { rows, onOpenNote: openNote, onOpenPortrait: openPortrait, onForgetAll: askForgetAll },
+    menu: { visible: menuOpen, target: menuOn, onClose: closeMenu, onAction },
+    editor: {
+      visible: editing !== null,
+      editKey: editing ? (editing.kind === 'note' ? editing.id : 'portrait') : null,
+      heading: editing?.kind === 'portrait' ? 'How he sees you' : 'Correct this note',
+      line: 'Say it the way it is. He will go by your words from now on.',
+      placeholder: 'What is true…',
+      initialText: editing?.text ?? '',
+      schema: NoteText,
+      multiline: true,
+      onClose: closeEditor,
+      onSave: saveEdit,
     },
     confirm: { visible: confirming, onClose: closeConfirm, onConfirm: confirmForgetAll },
   };

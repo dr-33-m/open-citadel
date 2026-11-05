@@ -2,33 +2,31 @@ import React from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ActionButton } from '@/components/action-button';
-import { IconButton } from '@/components/icon-button';
-import { Lock, Trash2 } from '@/components/icons';
+import { Lock } from '@/components/icons';
 import { ListEmpty } from '@/components/list-empty';
 import { TransitionFlatList } from '@/components/navigation/transition-scroll';
 import { PageFade } from '@/components/scroll-fades';
 import { ThemedText } from '@/components/themed-text';
-import { Card } from '@/components/ui/card';
+import { Touchable } from '@/components/ui/touchable';
 import { contentColumn, layout } from '@/constants/theme';
-import { MemoryNoteRow } from '@/features/samwell-memory/components/memory-note-row';
-import type { MemoryRow } from '@/features/samwell-memory/utils/memory-rows';
+import { MemoryPortrait } from '@/features/samwell-memory/components/memory-portrait';
+import { MemorySection } from '@/features/samwell-memory/components/memory-section';
+import type { MemoryNoteView, MemoryRow } from '@/features/samwell-memory/utils/memory-rows';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
-const EMPTY_TEXT = 'Nothing yet. After you talk with Samwell in the cloud, what he wants to remember shows up here.';
+const EMPTY_TEXT = 'Nothing yet. When you talk with Samwell in the cloud, what he wants to remember about you shows up here.';
 
 const keyOf = (row: MemoryRow) => row.key;
 
 type MemoryListProps = {
   rows: MemoryRow[];
-  subtitle: string;
-  onForgetNote: (id: string) => void;
-  onForgetProfile: () => void;
+  onOpenNote: (note: MemoryNoteView) => void;
+  onOpenPortrait: () => void;
   onForgetAll: () => void;
 };
 
-/** Everything Samwell has kept, grouped, each piece with its own way to delete it. */
-export function MemoryList({ rows, subtitle, onForgetNote, onForgetProfile, onForgetAll }: MemoryListProps) {
+/** His picture of them, then everything else he kept, a card for each kind. */
+export function MemoryList({ rows, onOpenNote, onOpenPortrait, onForgetAll }: MemoryListProps) {
   const tokens = useThemeTokens();
   const insets = useSafeAreaInsets();
   const muted = tokens['--color-muted-foreground'];
@@ -38,51 +36,30 @@ export function MemoryList({ rows, subtitle, onForgetNote, onForgetProfile, onFo
   );
 
   const renderItem = React.useCallback(
-    ({ item }: { item: MemoryRow }) => {
-      if (item.type === 'label') {
-        return (
-          <ThemedText type="labelSm" color={muted} className="pb-1 pt-8">
-            {item.title}
-          </ThemedText>
-        );
-      }
-      if (item.type === 'profile') {
-        return (
-          <Card className="mt-2 flex-row items-start gap-3 p-4">
-            <ThemedText type="bodyMd" className="flex-1">
-              {item.text}
-            </ThemedText>
-            <IconButton onPress={onForgetProfile} label="Delete how he sees you">
-              <Trash2 size={16} color={muted} strokeWidth={2} />
-            </IconButton>
-          </Card>
-        );
-      }
-      return (
-        <MemoryNoteRow id={item.id} text={item.text} createdAt={item.createdAt} closed={item.closed} onForget={onForgetNote} />
-      );
-    },
-    [muted, onForgetNote, onForgetProfile],
+    ({ item }: { item: MemoryRow }) =>
+      item.type === 'portrait' ? (
+        <MemoryPortrait text={item.text} updated={item.updated} onOpen={onOpenPortrait} />
+      ) : (
+        <MemorySection title={item.title} notes={item.notes} onOpen={onOpenNote} />
+      ),
+    [onOpenNote, onOpenPortrait],
   );
 
   const header = (
-    <View className="gap-3">
-      <ThemedText type="labelSm" color={muted}>
-        {subtitle}
+    <View className="flex-row items-center gap-2 pb-6">
+      <Lock size={14} color={muted} />
+      <ThemedText type="bodySm" color={muted} className="flex-1">
+        Kept on this phone. Sent only with your own messages.
       </ThemedText>
-      <View className="flex-row gap-3">
-        <Lock size={16} color={muted} />
-        <ThemedText type="bodySm" color={muted} className="flex-1">
-          Kept on this phone. He only sends this with your own messages to the cloud.
-        </ThemedText>
-      </View>
     </View>
   );
   const footer =
     rows.length > 0 ? (
-      <View className="items-start pt-8">
-        <ActionButton icon={Trash2} label="DELETE EVERYTHING" tint={muted} onPress={onForgetAll} />
-      </View>
+      <Touchable onPress={onForgetAll} accessibilityRole="button" className="mt-10 items-center border border-border py-3">
+        <ThemedText type="labelSm" color={muted}>
+          FORGET EVERYTHING
+        </ThemedText>
+      </Touchable>
     ) : null;
 
   return (
@@ -98,8 +75,8 @@ export function MemoryList({ rows, subtitle, onForgetNote, onForgetProfile, onFo
         ListHeaderComponent={header}
         ListFooterComponent={footer}
         ListEmptyComponent={<ListEmpty text={EMPTY_TEXT} />}
-        initialNumToRender={10}
-        maxToRenderPerBatch={8}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
         windowSize={9}
       />
     </PageFade>

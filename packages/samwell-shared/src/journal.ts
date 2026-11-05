@@ -154,12 +154,21 @@ export function normalizeJournalNotes(model: Pick<JournalModel, 'notes'>): Journ
 }
 
 /**
+ * The profile without the field name the model sometimes writes in front of
+ * it ("profile: They are building..."), which the reader then saw at the top
+ * of his picture of them. Shared so the app can clean one already stored.
+ */
+export function cleanProfileText(text: string): string {
+  return text.replace(/^\s*(?:\*\*)?profile(?:\*\*)?\s*:\s*/i, '').trim();
+}
+
+/**
  * The whole write-up, trimmed to the contract. Only ids it was given can be
  * resolved, and an empty or unchanged profile comes back null so the one he
  * has is kept.
  */
 export function normalizeJournalWriteUp(model: JournalModel, openIds: readonly string[]): JournalResponse {
-  const profile = clipAtSentence((model.profile ?? '').replace(/[ \t]+/g, ' ').trim(), MAX_JOURNAL_PROFILE);
+  const profile = clipAtSentence(cleanProfileText(model.profile ?? '').replace(/[ \t]+/g, ' '), MAX_JOURNAL_PROFILE);
   return {
     notes: normalizeJournalNotes(model),
     profile: profile || null,

@@ -2,18 +2,32 @@
  * What the screen of Samwell's notes draws, and in what order. Pure: the words
  * and the grouping are decided here, and the components render them.
  */
+import { formatPubDate } from '@/utils/pub-date';
+
 export type MemoryNoteInput = {
   id: string;
   kind: string;
   text: string;
   resolvedAt: string | null;
   createdAt: string;
+  sourceSessionId: string | null;
+  sourceTitle: string | null;
+};
+
+export type MemoryProfileInput = { text: string; updatedAt: string };
+
+/** One note as it is drawn and as its menu needs it. */
+export type MemoryNoteView = {
+  id: string;
+  text: string;
+  /** When, and the chat it came from: "Yesterday · TikTok pitch". */
+  meta: string;
+  sourceSessionId: string | null;
 };
 
 export type MemoryRow =
-  | { type: 'label'; key: string; title: string }
-  | { type: 'profile'; key: string; text: string }
-  | { type: 'note'; key: string; id: string; text: string; createdAt: string; closed: boolean };
+  | { type: 'portrait'; key: string; text: string; updated: string }
+  | { type: 'section'; key: string; title: string; notes: MemoryNoteView[] };
 
 const SECTIONS: { title: string; kinds: readonly string[] }[] = [
   { title: 'WINS AND MILESTONES', kinds: ['win', 'milestone', 'goal_finished'] },
@@ -24,33 +38,53 @@ const SECTIONS: { title: string; kinds: readonly string[] }[] = [
   { title: 'BOOKS', kinds: ['book_finished', 'book_removed'] },
 ];
 
-/** The rows, sections with nothing in them left out. */
-export function memoryRows(profile: string | null, notes: readonly MemoryNoteInput[]): MemoryRow[] {
+/** "Yesterday · Ideal user and TikTok pitch · Done", leaving out what is not known. */
+export function noteMeta(note: MemoryNoteInput, now: Date = new Date()): string {
+  return [formatPubDate(note.createdAt, now), note.sourceTitle?.trim() || null, note.resolvedAt ? 'Done' : null]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** The rows: his picture of them first, then a card per kind of note, empty kinds left out. */
+export function memoryRows(
+  profile: MemoryProfileInput | null,
+  notes: readonly MemoryNoteInput[],
+  now: Date = new Date(),
+): MemoryRow[] {
   const rows: MemoryRow[] = [];
   if (profile) {
-    rows.push({ type: 'label', key: 'label-profile', title: 'HOW HE SEES YOU' });
-    rows.push({ type: 'profile', key: 'profile', text: profile });
+    rows.push({ type: 'portrait', key: 'portrait', text: profile.text, updated: `Updated ${formatPubDate(profile.updatedAt, now)}` });
   }
   for (const section of SECTIONS) {
     const inSection = notes.filter((note) => section.kinds.includes(note.kind));
     if (inSection.length === 0) continue;
-    rows.push({ type: 'label', key: `label-${section.title}`, title: section.title });
-    for (const note of inSection) {
-      rows.push({
-        type: 'note',
-        key: note.id,
+    rows.push({
+      type: 'section',
+      key: section.title,
+      title: section.title,
+      notes: inSection.map((note) => ({
         id: note.id,
         text: note.text,
-        createdAt: note.createdAt,
-        closed: note.resolvedAt !== null,
-      });
-    }
+        meta: noteMeta(note, now),
+        sourceSessionId: note.sourceSessionId,
+      })),
+    });
   }
   return rows;
 }
 
-/** The line under the title: how much there is, or that there is nothing yet. */
-export function memorySubtitle(profile: string | null, noteCount: number): string {
-  if (noteCount === 0) return profile ? 'HOW HE SEES YOU' : 'NOTHING YET';
-  return `${noteCount} ${noteCount === 1 ? 'NOTE' : 'NOTES'}`;
+/** What a note's sheet offers. The chat only while it still exists. */
+export type MemoryAction = 'correct' | 'chat' | 'forget';
+
+export function memoryMenu(target: { sourceSessionId: string | null }): { key: MemoryAction; label: string; tone?: 'destructive' }[] {
+  return [
+    { key: 'correct', label: 'Correct this' },
+    ...(target.sourceSessionId ? [{ key: 'chat' as const, label: 'Open the chat it came from' }] : []),
+    { key: 'forget', label: 'Forget this', tone: 'destructive' as const },
+  ];
 }
+
+/** What a sheet or the editor is open on: one note, or his picture of them. */
+export type MemoryTarget =
+  | ({ kind: 'note' } & MemoryNoteView)
+  | { kind: 'portrait'; text: string; meta: string; sourceSessionId: null };
