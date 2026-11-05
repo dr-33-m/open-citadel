@@ -108,6 +108,10 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
+/** Each page of Settings is its own screen in the stack, keyed by which page it is. */
+const settingsPaneId = ({ params }: { params?: Record<string, unknown> }) =>
+  typeof params?.pane === "string" ? params.pane : undefined;
+
 function RootLayoutContent() {
   const [fontsLoaded] = useFonts({
     Newsreader_400Regular,
@@ -357,9 +361,18 @@ function RootLayoutContent() {
                     name="onboarding"
                     options={screenTransitions.fade}
                   />
+                  {/* Settings is a list that rises like a drawer, and a page
+                  per row that comes in from the side, each its own screen. */}
                   <TransitionStack.Screen
-                    name="settings"
+                    name="settings/index"
                     options={screenTransitions.drawer}
+                  />
+                  {/* One screen per page: without an id per pane, a link to a
+                  second page went back to the first one still open. */}
+                  <TransitionStack.Screen
+                    name="settings/[pane]"
+                    options={screenTransitions.side}
+                    getId={settingsPaneId}
                   />
                   {/* Edge-only: the reader turns pages with the same horizontal
                   swipe, so a screen-wide back gesture would eat every page turn. */}

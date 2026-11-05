@@ -120,7 +120,7 @@ export function SamwellPage() {
    * press event in as the pane.
    */
   const openSamwellSettings = React.useCallback(
-    () => router.push({ pathname: "/settings", params: { pane: "samwell" } }),
+    () => router.push("/settings/samwell"),
     [router],
   );
   /**
@@ -135,10 +135,7 @@ export function SamwellPage() {
       plans.current?.open();
       return;
     }
-    router.push({
-      pathname: "/settings",
-      params: { pane: "samwell", panel: "cloud" },
-    });
+    router.push({ pathname: "/settings/[pane]", params: { pane: "samwell", panel: "cloud" } });
   }, [router]);
   /** A plan bought from the wall is a plan to use: Samwell moves to the cloud. */
   const startInCloud = React.useCallback(() => {
@@ -153,7 +150,7 @@ export function SamwellPage() {
    * else.
    */
   const openAccountSettings = React.useCallback(
-    () => router.push({ pathname: "/settings", params: { pane: "profile" } }),
+    () => router.push("/settings/profile"),
     [router],
   );
 

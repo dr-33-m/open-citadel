@@ -6,7 +6,6 @@ import { Undo2 } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
 import type { MemoryTarget } from '@/features/samwell-memory/utils/memory-rows';
 import { queryClient } from '@/lib/query-client';
-import { backTo } from '@/navigation/navigate';
 import { SIDE_CLOSE } from '@/navigation/transitions';
 import { samwellMemoryKeys } from '@/query-manager/samwell-memory';
 import { showChatAfterLeaving } from '@/services/samwell-handoff';
@@ -75,7 +74,8 @@ export function useMemoryActions() {
 
   /** Out of Settings and onto the chat it came from, on the Samwell page. */
   const openChat = React.useCallback(
-    (sessionId: string) => showChatAfterLeaving(sessionId, () => backTo(router, '/'), SIDE_CLOSE.duration + LANDED_MARGIN_MS),
+    // Out of the page and the list under it, to the hub, in one move.
+    (sessionId: string) => showChatAfterLeaving(sessionId, () => router.dismissTo('/'), SIDE_CLOSE.duration + LANDED_MARGIN_MS),
     [router],
   );
 

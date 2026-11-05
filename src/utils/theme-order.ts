@@ -11,7 +11,8 @@
  *
  * So the rest is handed out in steps, each small enough to finish in the gaps
  * between presses, in the order someone could next see them: what is under
- * the screen in view first, the things hidden behind a tab or a row last.
+ * the screen in view first, the things hidden behind a tab last. (Settings'
+ * pages are screens of their own, built when opened, so none is waiting.)
  * `components/theme-scope` does the handing out; this says who is when.
  */
 export const THEME_ORDER = {
@@ -23,10 +24,8 @@ export const THEME_ORDER = {
   hubPages: 2,
   /** The Library's sides that are not showing, one step each, from here. */
   librarySides: 5,
-  /** The panes of Settings that are not open, one step each, from here. */
-  settingsPanes: 8,
   /** The last step there is. */
-  last: 11,
+  last: 7,
 } as const;
 
 /**
@@ -44,11 +43,6 @@ export function hubPageOrder(page: number, current: number): number {
 /** A side of the Library (0 to 2): with its page when showing, later when not. */
 export function librarySideOrder(side: number, showing: boolean, pageOrder: number): number {
   return showing ? pageOrder : THEME_ORDER.librarySides + side;
-}
-
-/** A pane of Settings (0 to 3): with the press when open, last when not. */
-export function settingsPaneOrder(pane: number, open: boolean): number {
-  return open ? THEME_ORDER.now : THEME_ORDER.settingsPanes + pane;
 }
 
 /** Where a change has been handed out to, and which theme that was. */

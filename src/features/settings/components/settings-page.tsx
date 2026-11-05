@@ -1,5 +1,4 @@
 import React from "react";
-import { ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChevronDown, ChevronLeft } from "@/components/icons";
@@ -18,27 +17,25 @@ type SettingsPageProps = {
    */
   leaves: "back" | "down";
   onLeave: () => void;
-  active: boolean;
   /** False for a pane whose body is a list with its own scrolling. */
   scrolls?: boolean;
   children: React.ReactNode;
 };
 
-/** A retained settings page with its own header and scroll position. */
+/**
+ * A page of Settings: its header, which never scrolls, and its body under it.
+ * The list and every page are screens of their own, so this is drawn once per
+ * screen and goes with it.
+ */
 export function SettingsPage({
   title,
   leaves,
   onLeave,
-  active,
   scrolls = true,
   children,
 }: SettingsPageProps) {
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
-  const scrollRef = React.useRef<ScrollView>(null);
-  React.useLayoutEffect(() => {
-    if (active) scrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, [active]);
   const Leave = leaves === "down" ? ChevronDown : ChevronLeft;
   const padding = React.useMemo(
     () => ({
@@ -62,7 +59,6 @@ export function SettingsPage({
       {scrolls ? (
         <PageFade>
           <TransitionScrollView
-            ref={scrollRef}
             className="flex-1 px-6"
             style={contentColumn}
             contentContainerStyle={padding}
