@@ -62,6 +62,14 @@ export async function askSamwellAbout(book: { id: string; title: string; kind: B
  * above the hub.
  */
 export async function showChatOnSamwellPage(sessionId: string): Promise<void> {
+  try {
+    await openOnSamwellPage(sessionId);
+  } finally {
+    useSamwellSessionStore.getState().set({ opening: false });
+  }
+}
+
+async function openOnSamwellPage(sessionId: string): Promise<void> {
   const chat = useChatStore.getState();
   // `openSession` names its session from the list, and a chat made or linked
   // elsewhere may not be in it yet; opened without its entry, the page would
@@ -70,4 +78,23 @@ export async function showChatOnSamwellPage(sessionId: string): Promise<void> {
   if (useChatStore.getState().activeSession?.id !== sessionId) await chat.openSession(sessionId);
   useSamwellSessionStore.getState().set({ pendingBook: null, mode: 'chat' });
   useHubStore.getState().goTo(HUB.samwell);
+}
+
+/**
+ * The same, from a screen over the hub that is closing on the way: the motion
+ * on the tap, the work once it has landed.
+ *
+ * Opening first and closing after (as a chat made a moment ago is opened)
+ * froze the screen for 1.7s on a Galaxy A33 with an older chat, since reading
+ * and drawing its transcript blocks the thread the close needs to start. So
+ * the hub turns to Samwell's page while still covered, showing the
+ * transcript's skeleton rather than whichever chat was there, the screen
+ * closes at once, and the chat is read once it has: no transcript mounts
+ * under a screen still moving.
+ */
+export function showChatAfterLeaving(sessionId: string, leave: () => void, closeMs: number): void {
+  useSamwellSessionStore.getState().set({ opening: true, mode: 'chat' });
+  useHubStore.getState().goTo(HUB.samwell);
+  leave();
+  setTimeout(() => void showChatOnSamwellPage(sessionId), closeMs);
 }

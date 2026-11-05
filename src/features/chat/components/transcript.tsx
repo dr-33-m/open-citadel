@@ -21,7 +21,7 @@
  * one strip of message actions, so each is wired once for every surface.
  */
 import React from 'react';
-import { View, type ViewStyle } from 'react-native';
+import type { ViewStyle } from 'react-native';
 
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { MessageActions } from '@/components/chat/message-actions';
@@ -29,9 +29,8 @@ import { PrivacySheet } from '@/components/chat/privacy-sheet';
 import { SourcesSheet } from '@/components/chat/sources-sheet';
 import { TasksSheet } from '@/components/chat/tasks-sheet';
 import { ThoughtSheet } from '@/components/chat/thought-sheet';
-import { TranscriptFade } from '@/components/scroll-fades';
-import { MessageScroller } from '@/components/ui/message-scroller';
 import { AgentStatus } from '@/features/chat/components/agent-status';
+import { TranscriptBody } from '@/features/chat/components/transcript-body';
 import { TurnStatus } from '@/features/chat/components/turn-status';
 import { useConversationKey } from '@/features/chat/hooks/use-conversation-key';
 import { PENDING_ACTIVITY, type TurnIndicator } from '@/features/chat/utils/agent-activity';
@@ -121,7 +120,7 @@ export function Transcript({
   );
   const messageActions = useMessageActions({ unanswered, onResend: onResendMessage });
 
-  const bubble = (m: ChatMessage) =>
+  const bubble = (m: ChatMessage, animate = true) =>
     m.role === 'user' || m.role === 'assistant' ? (
       <ChatBubble
         role={m.role}
@@ -129,7 +128,7 @@ export function Transcript({
         activity={m.activity}
         // The just-streamed reply is already on screen; animating its
         // "arrival" is the flick the reader sees when a turn finishes.
-        animateEntry={m.id !== lastStreamedMessageId}
+        animateEntry={animate && m.id !== lastStreamedMessageId}
         onNavigateToHighlight={onNavigateToHighlight}
         onNavigateToTimeline={onNavigateToTimeline}
         onNavigateToBook={onNavigateToBook}
@@ -144,66 +143,49 @@ export function Transcript({
       />
     ) : null;
 
+  // Drawn after the turns, in every conversation alike.
+  const tail = (
+    <>
+      {aside}
+
+      {/* No entrance on the reply in flight: it grows in token by
+          token, and matching the committed bubble (which also does not
+          animate) makes the hand-off pixel-identical. */}
+      {live ? (
+        <ChatBubble
+          role="assistant"
+          content={streamingContent}
+          activity={streamingActivity}
+          streaming
+          onNavigateToHighlight={onNavigateToHighlight}
+          onNavigateToTimeline={onNavigateToTimeline}
+          onNavigateToBook={onNavigateToBook}
+          onNavigateToPodcast={onNavigateToPodcast}
+        />
+      ) : trailingReply ? (
+        <React.Fragment key={trailingReply.id}>{bubble(trailingReply)}</React.Fragment>
+      ) : null}
+
+      {/* One row for the whole turn: a plain status line, or the
+          reasoning panel with tool work folded into its trigger. The
+          panel is never unmounted mid-turn, so a tool call does not
+          reset its "thought for how long" clock. */}
+      {pending ? <AgentStatus activity={PENDING_ACTIVITY} /> : <TurnStatus indicator={indicator} />}
+    </>
+  );
+
   return (
     <>
-      <MessageScroller key={conversationKey} autoScroll className="flex-1" style={contentColumn}>
-        {/* Top and bottom: the transcript runs under the header and under the
-            floating input card, so both edges are boundaries content passes
-            behind rather than stops at. */}
-        <TranscriptFade edges="both">
-          <MessageScroller.Viewport keyboardOffset={keyboardOffset}>
-            <MessageScroller.Content style={contentStyle}>
-              {turns.map((m) =>
-                m.role === 'user' || m.role === 'assistant' ? (
-                  <MessageScroller.Item
-                    key={m.id}
-                    messageId={m.id}
-                    // The reader's own turns are what a thread is navigated by:
-                    // the question, not the tail of the answer to it.
-                    scrollAnchor={m.role === 'user'}
-                  >
-                    {bubble(m)}
-                  </MessageScroller.Item>
-                ) : null,
-              )}
-
-              {aside}
-
-              {/* No entrance on the reply in flight: it grows in token by
-                  token, and matching the committed bubble (which also does not
-                  animate) makes the hand-off pixel-identical. */}
-              {live ? (
-                <ChatBubble
-                  role="assistant"
-                  content={streamingContent}
-                  activity={streamingActivity}
-                  streaming
-                  onNavigateToHighlight={onNavigateToHighlight}
-                  onNavigateToTimeline={onNavigateToTimeline}
-                  onNavigateToBook={onNavigateToBook}
-                  onNavigateToPodcast={onNavigateToPodcast}
-                />
-              ) : trailingReply ? (
-                <React.Fragment key={trailingReply.id}>{bubble(trailingReply)}</React.Fragment>
-              ) : null}
-
-              {/* One row for the whole turn: a plain status line, or the
-                  reasoning panel with tool work folded into its trigger. The
-                  panel is never unmounted mid-turn, so a tool call does not
-                  reset its "thought for how long" clock. */}
-              {pending ? <AgentStatus activity={PENDING_ACTIVITY} /> : <TurnStatus indicator={indicator} />}
-            </MessageScroller.Content>
-          </MessageScroller.Viewport>
-        </TranscriptFade>
-
-        {/* The button pins itself to the bottom of the scroller, which here is
-            behind the floating input card. This lifts it clear of it: a
-            `style` of its own would replace the animated one that fades it in,
-            so the offset has to come from a box around it. */}
-        <View pointerEvents="box-none" className="absolute inset-x-0 bottom-0 items-center" style={floatingClearance}>
-          <MessageScroller.Button className="relative bottom-0" />
-        </View>
-      </MessageScroller>
+      <TranscriptBody
+        key={conversationKey}
+        turns={turns}
+        renderTurn={bubble}
+        tail={tail}
+        contentColumn={contentColumn}
+        contentStyle={contentStyle}
+        floatingClearance={floatingClearance}
+        keyboardOffset={keyboardOffset}
+      />
 
       <SourcesSheet visible={sourcesSheet.visible} onClose={sourcesSheet.onClose} sources={sourcesSheet.value} />
       <PrivacySheet visible={privacyVisible} onClose={closePrivacy} />

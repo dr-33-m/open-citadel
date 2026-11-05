@@ -41,6 +41,13 @@ type SamwellSessionStore = {
    */
   skippedTrackableIds: string[];
 
+  /**
+   * A chat opened from another screen is on its way: the page shows the
+   * transcript's skeleton rather than the chat that was there before, until
+   * it has been read (`showChatAfterLeaving`).
+   */
+  opening: boolean;
+
   set: (patch: Partial<SamwellSessionStore>) => void;
 };
 
@@ -66,6 +73,7 @@ export const useSamwellSessionStore = create<SamwellSessionStore>((set) => ({
   compassDraft: null,
   refining: false,
   skippedTrackableIds: [],
+  opening: false,
 
   set: (patch) => set(patch),
 }));

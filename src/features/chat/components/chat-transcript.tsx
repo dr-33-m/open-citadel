@@ -12,6 +12,7 @@ import {
     SamwellStatusEmptyState,
 } from "@/features/chat/components/samwell-status";
 import { Transcript } from "@/features/chat/components/transcript";
+import { TranscriptSkeleton } from "@/features/chat/components/transcript-skeleton";
 import type { SamwellStatus } from "@/features/chat/hooks/use-samwell-status";
 import type { TurnIndicator } from "@/features/chat/utils/agent-activity";
 import type { ChatMessage } from "@/stores/chat";
@@ -19,6 +20,8 @@ import type { TurnActivity } from "@/utils/turn-activity";
 import type { PodcastCardKind } from '@/services/listening-tools/card';
 
 interface ChatTranscriptProps {
+  /** A chat opened from another screen is still being read: its skeleton, not the last chat. */
+  opening: boolean;
   /** Which conversation this is. The scroller is keyed on it, so opening
    *  another one opens it rather than inheriting where the last one was left. */
   sessionId: string | null;
@@ -51,6 +54,7 @@ interface ChatTranscriptProps {
 }
 
 export function ChatTranscript({
+  opening,
   sessionId,
   messages,
   streamingContent,
@@ -111,6 +115,7 @@ export function ChatTranscript({
   // The reply in flight is drawn once it has words or has started doing
   // something: a search runs before a word of the answer exists.
   const live = streamingContent.length > 0 || (streamingActivity?.steps.length ?? 0) > 0;
+  if (opening) return <TranscriptSkeleton contentColumn={contentColumn} floatingClearance={floatingClearance} />;
   if (isEmpty) {
     return (
       <SamwellStatusEmptyState status={status} style={floatingClearance} />

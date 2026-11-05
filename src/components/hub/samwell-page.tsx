@@ -162,6 +162,8 @@ export function SamwellPage() {
   // (model download progress, a settings flip) used to re-run all of it.
   const activeSession = useChatStore((s) => s.activeSession);
   const messages = useChatStore((s) => s.messages);
+  // A chat opened from another screen, still being read: see `showChatAfterLeaving`.
+  const openingChat = useSamwellSessionStore((s) => s.opening);
   const isGenerating = useChatStore((s) => s.isGenerating);
   const isThinking = useChatStore((s) => s.isThinking);
   const isToolCalling = useChatStore((s) => s.isToolCalling);
@@ -812,6 +814,7 @@ export function SamwellPage() {
                   // In an episode chat, the times Samwell cites play the episode.
                   <EpisodeTimesContext.Provider value={playEpisodeTime}>
                     <ChatTranscript
+                      opening={openingChat}
                       sessionId={activeSession?.id ?? null}
                       messages={visibleChatMessages}
                       streamingContent={streamingContent}

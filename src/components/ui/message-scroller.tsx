@@ -53,7 +53,7 @@ import {
   type ViewProps,
   type ViewToken,
 } from 'react-native';
-import type { ComponentType } from 'react';
+import type { ComponentType, MutableRefObject } from 'react';
 import { KeyboardChatScrollView } from 'react-native-keyboard-controller';
 import Animated, {
   runOnJS,
@@ -95,6 +95,8 @@ interface MessageScrollerDriver {
 }
 
 interface MessageScrollerContextValue {
+  /** LOCAL EDIT: see `onOpened` on `MessageScrollerProps`. */
+  onOpenedRef: MutableRefObject<(() => void) | undefined>;
   scrollRef: ReturnType<typeof useAnimatedRef<Animated.ScrollView>>;
   registerDriver: (driver: MessageScrollerDriver | null) => void;
   /** 1 while the reader is at the live edge, 0 otherwise. Drives follow state. */
@@ -192,6 +194,16 @@ export interface MessageScrollerProps extends ViewProps {
    * rather than at the very bottom of whatever the reply happened to be.
    */
   defaultScrollPosition?: MessageScrollerPosition;
+  /**
+   * LOCAL EDIT: re-apply after `panelui-cli update`.
+   *
+   * Called once the transcript has opened at `defaultScrollPosition`, a frame
+   * after the scroll is applied. A long transcript laid out where the reader
+   * can see it opens at the top and then jumps to the end; a caller that keeps
+   * it hidden until this fires can fade it in already in place, as Bluesky's
+   * chat does.
+   */
+  onOpened?: () => void;
   children?: ReactNode;
 }
 
@@ -200,9 +212,14 @@ function MessageScrollerRoot({
   autoScroll = false,
   preserveScrollOnPrepend = true,
   defaultScrollPosition = 'end',
+  onOpened,
   children,
   ...props
 }: MessageScrollerProps) {
+  const onOpenedRef = useRef(onOpened);
+  useEffect(() => {
+    onOpenedRef.current = onOpened;
+  }, [onOpened]);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const atEnd = useSharedValue(1);
   const awayFromEdge = MESSAGE_SCROLLER_EDGE_THRESHOLD + 1;
@@ -309,6 +326,7 @@ function MessageScrollerRoot({
       scrollToMessage,
       currentAnchorId,
       setCurrentAnchorId,
+      onOpenedRef,
     }),
     [
       scrollRef,
@@ -397,6 +415,7 @@ function MessageScrollerViewport({
     scrollToEnd,
     scrollToMessage,
     setCurrentAnchorId,
+    onOpenedRef,
   } = useScroller('MessageScroller.Viewport');
 
   const contentHeight = useRef(0);
@@ -509,6 +528,8 @@ function MessageScrollerViewport({
       openedRef.current = true;
       previousY.current = new Map(itemY.current);
       openAt(defaultScrollPosition);
+      // LOCAL EDIT: a frame later, so the unanimated scroll has been applied.
+      requestAnimationFrame(() => onOpenedRef.current?.());
       return;
     }
 
