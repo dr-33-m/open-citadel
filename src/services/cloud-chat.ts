@@ -71,6 +71,7 @@ import type { ChapterListing, ReadingSearchResult } from '@/services/reading-too
 import { ArrowRight } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
 import { cloudHeaders } from '@/services/cloud-identity';
+import { reportUpdateRequired } from '@/stores/app-gate';
 import { createSmoothReveal } from '@/services/smooth-reveal';
 import { createReplySequence, replySegments } from '@/services/reply-sequence';
 import { createStreamTiming } from '@/services/stream-timing';
@@ -265,6 +266,13 @@ export function asCloudRefusal(error: unknown): CloudRefused | null {
  * it, red text under onboarding's composer, and nothing at all in Compass.
  */
 export function sayCloudTurnFailed(error: unknown): void {
+  // A copy the server no longer serves says so on the update screen, which
+  // covers everything; a toast about this one turn would only sit under it.
+  if (readStatus(error) === 426) {
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    reportUpdateRequired(/"update"\s*:\s*"restart"/.test(message) ? 'restart' : 'store');
+    return;
+  }
   const refusal = asCloudRefusal(error);
   const unreachable = !refusal && isCloudUnreachable(error);
   // Being offline is a state the app is in, not a fault in it, so it is
