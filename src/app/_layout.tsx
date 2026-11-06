@@ -109,8 +109,8 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 }
 
 /** Each page of Settings is its own screen in the stack, keyed by which page it is. */
-const settingsPaneId = ({ params }: { params?: Record<string, unknown> }) =>
-  typeof params?.pane === "string" ? params.pane : undefined;
+const settingsPaneId = (_name: string, params: Record<string, unknown>) =>
+  typeof params.pane === "string" ? params.pane : undefined;
 
 function RootLayoutContent() {
   const [fontsLoaded] = useFonts({
@@ -372,7 +372,7 @@ function RootLayoutContent() {
                   <TransitionStack.Screen
                     name="settings/[pane]"
                     options={screenTransitions.side}
-                    getId={settingsPaneId}
+                    dangerouslySingular={settingsPaneId}
                   />
                   {/* Edge-only: the reader turns pages with the same horizontal
                   swipe, so a screen-wide back gesture would eat every page turn. */}
