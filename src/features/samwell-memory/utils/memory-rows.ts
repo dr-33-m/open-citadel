@@ -25,18 +25,48 @@ export type MemoryNoteView = {
   sourceSessionId: string | null;
 };
 
+/** How a kind of note is marked on the timeline: progress green, strain amber, a promise blue. */
+export type MemoryTone = 'default' | 'success' | 'warning' | 'info';
+
+/** One note on the timeline, with what is drawn beside it. */
+export type MemoryEvent = {
+  note: MemoryNoteView;
+  /** What kind of thing he noted: "WIN", "WORKING THROUGH". */
+  label: string;
+  tone: MemoryTone;
+  /**
+   * Where it sits, above the note: the day where it changes from the note
+   * above, and the chat it came from where that changes or a new day starts.
+   * Null when neither changes.
+   */
+  context: string | null;
+  /** The bottom of the timeline, where its rail stops. */
+  last: boolean;
+};
+
 export type MemoryRow =
   | { type: 'portrait'; key: string; text: string; updated: string }
-  | { type: 'section'; key: string; title: string; notes: MemoryNoteView[] };
+  | { type: 'heading'; key: string; title: string }
+  | ({ type: 'event'; key: string } & MemoryEvent);
 
-const SECTIONS: { title: string; kinds: readonly string[] }[] = [
-  { title: 'WINS AND MILESTONES', kinds: ['win', 'milestone', 'goal_finished'] },
-  { title: 'WHAT YOU SAID YOU WOULD DO', kinds: ['commitment'] },
-  { title: 'WHAT YOU ARE WORKING THROUGH', kinds: ['struggle'] },
-  { title: 'ABOUT YOU', kinds: ['about', 'reflection'] },
-  { title: 'WHAT HE POINTED YOU TO', kinds: ['recommended'] },
-  { title: 'BOOKS', kinds: ['book_finished', 'book_removed'] },
-];
+/** Each kind's label and tone. A kind not listed is about them. */
+const KINDS: Record<string, { label: string; tone: MemoryTone }> = {
+  win: { label: 'WIN', tone: 'success' },
+  milestone: { label: 'MILESTONE', tone: 'success' },
+  goal_finished: { label: 'GOAL REACHED', tone: 'success' },
+  struggle: { label: 'WORKING THROUGH', tone: 'warning' },
+  commitment: { label: 'SAID THEY WOULD', tone: 'info' },
+  recommended: { label: 'HE POINTED YOU TO', tone: 'default' },
+  book_finished: { label: 'FINISHED A BOOK', tone: 'success' },
+  book_removed: { label: 'PUT A BOOK DOWN', tone: 'default' },
+};
+const ABOUT = { label: 'ABOUT YOU', tone: 'default' } as const;
+
+/** A note's label and tone. A promise kept reads as kept, in green. */
+export function noteKind(note: Pick<MemoryNoteInput, 'kind' | 'resolvedAt'>): { label: string; tone: MemoryTone } {
+  if (note.kind === 'commitment' && note.resolvedAt) return { label: 'DID WHAT THEY SAID', tone: 'success' };
+  return KINDS[note.kind] ?? ABOUT;
+}
 
 /** "Yesterday · Ideal user and TikTok pitch · Done", leaving out what is not known. */
 export function noteMeta(note: MemoryNoteInput, now: Date = new Date()): string {
@@ -45,7 +75,12 @@ export function noteMeta(note: MemoryNoteInput, now: Date = new Date()): string 
     .join(' · ');
 }
 
-/** The rows: his picture of them first, then a card per kind of note, empty kinds left out. */
+/**
+ * The rows: his picture of them first, then everything he noted as one
+ * timeline, newest first. The day is written where it changes and the chat
+ * where it changes, so five notes from one conversation read as one stretch
+ * rather than five copies of where they came from.
+ */
 export function memoryRows(
   profile: MemoryProfileInput | null,
   notes: readonly MemoryNoteInput[],
@@ -55,22 +90,34 @@ export function memoryRows(
   if (profile) {
     rows.push({ type: 'portrait', key: 'portrait', text: profile.text, updated: `Updated ${formatPubDate(profile.updatedAt, now)}` });
   }
-  for (const section of SECTIONS) {
-    const inSection = notes.filter((note) => section.kinds.includes(note.kind));
-    if (inSection.length === 0) continue;
+  if (notes.length === 0) return rows;
+
+  rows.push({ type: 'heading', key: 'heading', title: notesHeading(notes.length) });
+  let lastDay: string | null = null;
+  let lastSource: string | null = null;
+  notes.forEach((note, index) => {
+    const day = formatPubDate(note.createdAt, now);
+    const source = note.sourceTitle?.trim() || null;
+    const newDay = day !== lastDay;
     rows.push({
-      type: 'section',
-      key: section.title,
-      title: section.title,
-      notes: inSection.map((note) => ({
-        id: note.id,
-        text: note.text,
-        meta: noteMeta(note, now),
-        sourceSessionId: note.sourceSessionId,
-      })),
+      type: 'event',
+      key: note.id,
+      note: { id: note.id, text: note.text, meta: noteMeta(note, now), sourceSessionId: note.sourceSessionId },
+      ...noteKind(note),
+      context: [newDay ? day : null, source && (newDay || source !== lastSource) ? source : null]
+        .filter(Boolean)
+        .join(' · ') || null,
+      last: index === notes.length - 1,
     });
-  }
+    lastDay = day;
+    lastSource = source;
+  });
   return rows;
+}
+
+/** "12 THINGS HE HAS NOTED". */
+export function notesHeading(count: number): string {
+  return `${count} ${count === 1 ? 'THING' : 'THINGS'} HE HAS NOTED`;
 }
 
 /** What a note's sheet offers. The chat only while it still exists. */

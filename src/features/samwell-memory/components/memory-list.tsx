@@ -10,7 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { contentColumn, layout } from '@/constants/theme';
 import { MemoryPortrait } from '@/features/samwell-memory/components/memory-portrait';
-import { MemorySection } from '@/features/samwell-memory/components/memory-section';
+import { MemoryEvent } from '@/features/samwell-memory/components/memory-event';
 import type { MemoryNoteView, MemoryRow } from '@/features/samwell-memory/utils/memory-rows';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
@@ -25,7 +25,7 @@ type MemoryListProps = {
   onForgetAll: () => void;
 };
 
-/** His picture of them, then everything else he kept, a card for each kind. */
+/** His picture of them, then everything else he kept, as one timeline. */
 export function MemoryList({ rows, onOpenNote, onOpenPortrait, onForgetAll }: MemoryListProps) {
   const tokens = useThemeTokens();
   const insets = useSafeAreaInsets();
@@ -36,13 +36,21 @@ export function MemoryList({ rows, onOpenNote, onOpenPortrait, onForgetAll }: Me
   );
 
   const renderItem = React.useCallback(
-    ({ item }: { item: MemoryRow }) =>
-      item.type === 'portrait' ? (
-        <MemoryPortrait text={item.text} updated={item.updated} onOpen={onOpenPortrait} />
-      ) : (
-        <MemorySection title={item.title} notes={item.notes} onOpen={onOpenNote} />
-      ),
-    [onOpenNote, onOpenPortrait],
+    ({ item }: { item: MemoryRow }) => {
+      if (item.type === 'portrait') {
+        return <MemoryPortrait text={item.text} updated={item.updated} onOpen={onOpenPortrait} />;
+      }
+      if (item.type === 'heading') {
+        return (
+          <ThemedText type="labelSm" color={muted} className="pb-4 pt-10">
+            {item.title}
+          </ThemedText>
+        );
+      }
+      const { type: _type, key: _key, ...event } = item;
+      return <MemoryEvent {...event} onOpen={onOpenNote} />;
+    },
+    [muted, onOpenNote, onOpenPortrait],
   );
 
   const header = (
