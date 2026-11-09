@@ -6,6 +6,11 @@
  * tool. Before the first message any of them can be picked, in place of
  * whatever was; once a session exists, what it holds is fixed context, so
  * only the tool for that is shown, lit and inert.
+ *
+ * A chat that started holding nothing keeps all three, and picking one starts
+ * a new chat about it (`startsNew`). Otherwise the drawer's Reading tab would
+ * be empty for most conversations, and the way to talk about a book would be
+ * hidden behind New chat.
  */
 import type { BookKind } from '@/db/schema';
 
@@ -20,14 +25,16 @@ export type AttachmentState = {
   busy: boolean;
 };
 
-export type AttachmentTool = { shown: boolean; attached: boolean; pickable: boolean; droppable: boolean };
+export type AttachmentTool = { shown: boolean; attached: boolean; pickable: boolean; droppable: boolean; startsNew: boolean };
 
 export function attachmentTool(kind: BookKind, state: AttachmentState): AttachmentTool {
   const open = !state.hasSession && !state.busy;
+  const startsNew = state.hasSession && state.attachedKind == null;
   return {
-    shown: !state.hasSession || state.attachedKind === kind,
+    shown: !state.hasSession || startsNew || state.attachedKind === kind,
     attached: state.attachedKind === kind,
-    pickable: open,
+    pickable: (open || startsNew) && !state.busy,
     droppable: open && state.pendingKind === kind,
+    startsNew,
   };
 }

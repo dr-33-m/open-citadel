@@ -12,7 +12,7 @@
  */
 import { cachedChatSessions } from '@/query-manager/chat-sessions';
 import type { BookKind } from '@/db/schema';
-import { scheduleBackgroundTitles, useChatStore } from '@/stores/chat';
+import { dropProposal, scheduleBackgroundTitles, useChatStore } from '@/stores/chat';
 import { HUB, useHubStore } from '@/stores/hub';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 
@@ -41,6 +41,7 @@ export async function leaveForNewChat(): Promise<void> {
     deviceLimit: null,
     queuedBehindTitle: false,
   });
+  dropProposal();
   // The chat just left may still be called "New chat" on device.
   scheduleBackgroundTitles();
 }
@@ -52,7 +53,7 @@ export async function leaveForNewChat(): Promise<void> {
  */
 export async function askSamwellAbout(book: { id: string; title: string; kind: BookKind }): Promise<void> {
   await leaveForNewChat();
-  useSamwellSessionStore.getState().set({ pendingBook: book, mode: 'chat' });
+  useSamwellSessionStore.getState().set({ pendingBook: book });
   useHubStore.getState().goTo(HUB.samwell);
 }
 
@@ -76,7 +77,7 @@ async function openOnSamwellPage(sessionId: string): Promise<void> {
   // take it for a new chat and start another on the first message.
   if (!cachedChatSessions('reading').some((s) => s.id === sessionId)) await chat.loadSessions();
   if (useChatStore.getState().activeSession?.id !== sessionId) await chat.openSession(sessionId);
-  useSamwellSessionStore.getState().set({ pendingBook: null, mode: 'chat' });
+  useSamwellSessionStore.getState().set({ pendingBook: null });
   useHubStore.getState().goTo(HUB.samwell);
 }
 
@@ -93,7 +94,7 @@ async function openOnSamwellPage(sessionId: string): Promise<void> {
  * under a screen still moving.
  */
 export function showChatAfterLeaving(sessionId: string, leave: () => void, closeMs: number): void {
-  useSamwellSessionStore.getState().set({ opening: true, mode: 'chat' });
+  useSamwellSessionStore.getState().set({ opening: true });
   useHubStore.getState().goTo(HUB.samwell);
   leave();
   setTimeout(() => void showChatOnSamwellPage(sessionId), closeMs);

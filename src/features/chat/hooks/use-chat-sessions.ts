@@ -1,108 +1,89 @@
 /**
  * Starting, switching and sending — the three things that touch the engine.
  *
- * All three are guarded by one `switching` flag, and that guard is the reason
- * this is a hook rather than three handlers on a screen. Changing session
- * stops the reply in flight and loads a transcript, and nothing stopped a
- * second tap — another row, "New chat", the book picker — from firing an
- * overlapping switch into the one still running.
+ * All three are guarded by one `chatSwitching` flag, and that guard is the
+ * reason these are not three handlers on a screen. Changing session stops the
+ * reply in flight and loads a transcript, and nothing stopped a second tap —
+ * another row, "New chat", the book picker — from firing an overlapping
+ * switch into the one still running.
  *
- * `switching` doubles as what the history sheet shows a spinner against, so
- * the wait reads as something happening rather than as a stuck sheet.
+ * Actions only, with no subscriptions: each reads the stores when it runs, so
+ * any part of the Samwell page can hold them without redrawing when a turn or
+ * a switch moves on. The flag and the reader's message waiting for the store
+ * live in `useSamwellUiStore`, where the parts that draw them subscribe.
  */
 import React from 'react';
 
 import { leaveForNewChat } from '@/services/samwell-handoff';
 import { NEW_CHAT_TITLE, useChatStore, uuid } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
+import { useSamwellUiStore, type SwitchingTarget } from '@/stores/samwell-ui';
 
-/** `'new'` for a fresh chat, otherwise the id of the session being opened. */
-export type SwitchingTarget = 'new' | string | null;
+export type { SwitchingTarget };
 
-export function useChatSessions() {
-  const isGenerating = useChatStore((s) => s.isGenerating);
-  const createSession = useChatStore((s) => s.createSession);
-  const openSession = useChatStore((s) => s.openSession);
-  const sendMessage = useChatStore((s) => s.sendMessage);
-  const resendMessage = useChatStore((s) => s.resendMessage);
-  const stopGeneration = useChatStore((s) => s.stopGeneration);
-  const activeSession = useChatStore((s) => s.activeSession);
+const ui = () => useSamwellUiStore.getState();
 
-  const pendingBook = useSamwellSessionStore((s) => s.pendingBook);
-  const setSession = useSamwellSessionStore((s) => s.set);
+async function selectSession(id: string): Promise<void> {
+  if (ui().chatSwitching) return;
+  ui().set({ chatSwitching: id });
+  try {
+    const chat = useChatStore.getState();
+    if (chat.isGenerating) chat.stopGeneration();
+    await chat.openSession(id);
+    useSamwellSessionStore.getState().set({ pendingBook: null });
+  } finally {
+    ui().set({ chatSwitching: null });
+  }
+}
 
-  const [switching, setSwitching] = React.useState<SwitchingTarget>(null);
-  /**
-   * The reader's message, shown before the store has it.
+async function newChat(): Promise<void> {
+  if (ui().chatSwitching) return;
+  ui().set({ chatSwitching: 'new' });
+  try {
+    // A new chat makes its own conversation on its first turn.
+    await leaveForNewChat();
+    useSamwellSessionStore.getState().set({ pendingBook: null });
+  } finally {
+    ui().set({ chatSwitching: null });
+  }
+}
+
+async function send(text: string): Promise<void> {
+  /*
+   * Minted here, spent below.
    *
-   * Carries the id it WILL be committed under, not just its text. That is what
-   * lets the transcript render it as the same keyed element the committed one
-   * arrives as, so the two reconcile in place instead of one unmounting and
-   * another mounting somewhere else.
+   * The first on-device turn of a session rebuilds its history into the
+   * model, which is a real wait with the reader's own words not yet anywhere,
+   * which is why this optimistic message exists at all. Giving it the id
+   * `sendMessage` will commit it under means the transcript can draw one
+   * element the whole way through rather than swapping one for another when
+   * the store catches up.
    */
-  const [pendingUserMessage, setPendingUserMessage] = React.useState<{
-    id: string;
-    content: string;
-  } | null>(null);
-
-  const selectSession = React.useCallback(
-    async (id: string) => {
-      if (switching) return;
-      setSwitching(id);
-      try {
-        if (isGenerating) stopGeneration();
-        await openSession(id);
-        setSession({ pendingBook: null, mode: 'chat' });
-      } finally {
-        setSwitching(null);
-      }
-    },
-    [switching, isGenerating, stopGeneration, openSession, setSession],
-  );
-
-  const newChat = React.useCallback(async () => {
-    if (switching) return;
-    setSwitching('new');
-    try {
-      // A new chat makes its own conversation on its first turn.
-      await leaveForNewChat();
-      setSession({ pendingBook: null, mode: 'chat' });
-    } finally {
-      setSwitching(null);
+  const id = uuid();
+  ui().set({ pendingUserMessage: { id, content: text } });
+  try {
+    const chat = useChatStore.getState();
+    if (!chat.activeSession) {
+      const { pendingBook } = useSamwellSessionStore.getState();
+      const sessionId = await chat.createSession({
+        bookId: pendingBook?.id,
+        title: pendingBook?.title ?? NEW_CHAT_TITLE,
+      });
+      await useChatStore.getState().openSession(sessionId);
     }
-  }, [switching, setSession]);
+    await useChatStore.getState().sendMessage(text, id);
+  } finally {
+    ui().set({ pendingUserMessage: null });
+  }
+}
 
-  const send = React.useCallback(
-    async (text: string) => {
-      /*
-       * Minted here, spent below.
-       *
-       * The first on-device turn of a session rebuilds its history into the
-       * model, which is a real wait with the reader's own words not yet
-       * anywhere — which is why this optimistic message exists at all. Giving it the id
-       * `sendMessage` will commit it under means the transcript can draw one
-       * element the whole way through rather than swapping one for another
-       * when the store catches up.
-       */
-      const id = uuid();
-      setPendingUserMessage({ id, content: text });
-      try {
-        if (!activeSession) {
-          const sessionId = await createSession({
-            bookId: pendingBook?.id,
-            title: pendingBook?.title ?? NEW_CHAT_TITLE,
-          });
-          await openSession(sessionId);
-        }
-        await sendMessage(text, id);
-      } finally {
-        setPendingUserMessage(null);
-      }
-    },
-    [activeSession, createSession, openSession, sendMessage, pendingBook],
-  );
+function resend(id: string): void {
+  void useChatStore.getState().resendMessage(id);
+}
 
-  const resend = React.useCallback((id: string) => void resendMessage(id), [resendMessage]);
+const ACTIONS = { selectSession, newChat, send, resend };
 
-  return { switching, pendingUserMessage, selectSession, newChat, send, resend };
+/** The chat's three engine actions, stable for the life of the app. */
+export function useChatSessions(): typeof ACTIONS {
+  return React.useMemo(() => ACTIONS, []);
 }

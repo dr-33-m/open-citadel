@@ -11,21 +11,20 @@ import type { TranscriptWindow } from '@/services/podcasts/transcript/windows';
 type PickedEpisode = { id: string; title: string; kind: 'episode' };
 
 /**
- * Samwell's episode picker: whether it is open, which window it shows (This
+ * Samwell's episode picker (opened and closed by the caller): which window it shows (This
  * week to begin with), the episodes with a transcript in it, and picking one.
  * An episode whose show publishes a transcript is fetched on the pick, as a
  * post's reader copy is made on its pick, since that is what the chat is
  * grounded in.
  */
-export function useEpisodePicker(onPicked: (episode: PickedEpisode) => void) {
-  const [visible, setVisible] = React.useState(false);
+export function useEpisodePicker(visible: boolean, onClose: () => void, onPicked: (episode: PickedEpisode) => void) {
   const [window, setWindow] = React.useState<TranscriptWindow>('week');
   const { data } = useQuery({ ...createTranscribedEpisodesQueryOptions(window), enabled: visible });
 
-  const close = React.useCallback(() => setVisible(false), []);
+  const close = onClose;
   const select = React.useCallback(
     async (episode: TranscribedEpisode) => {
-      setVisible(false);
+      onClose();
       try {
         if (!episode.ready) await fetchFeedTranscript(episode.id);
         const bookId = await ensureEpisodeBook(episode.id);
@@ -34,8 +33,8 @@ export function useEpisodePicker(onPicked: (episode: PickedEpisode) => void) {
         showToast({ message: "The show's transcript couldn't be read.", key: 'transcribe' });
       }
     },
-    [onPicked],
+    [onClose, onPicked],
   );
 
-  return { setVisible, sheet: { visible, episodes: data, window, onWindow: setWindow, onSelect: select, onClose: close } };
+  return { visible, episodes: data, window, onWindow: setWindow, onSelect: select, onClose: close };
 }

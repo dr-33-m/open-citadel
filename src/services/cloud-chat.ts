@@ -309,7 +309,7 @@ export function sayCloudTurnBlocked(message: string): void {
   showToast({ key: TURN_FAILED_TOAST, message });
 }
 
-export type SamwellTurnMode = 'reading' | 'compass' | 'onboarding';
+export type SamwellTurnMode = 'samwell' | 'reading' | 'compass' | 'onboarding';
 
 /**
  * Where the turn is posted.
@@ -755,16 +755,21 @@ function discoveryTools() {
   ] as const;
 }
 
-function createCompassClientTools(ctx: ToolCallContext) {
-  return clientTools(
+/**
+ * The goal tools, which only Compass and the one Samwell have: the device's
+ * own record of goals, read and written by the same engines the Compass
+ * sheets use.
+ */
+function compassOnlyTools() {
+  return [
     getCompassStatusTool.client(async () => ({ formatted: formatCompassStatus() })),
     getTodayTool.client(async () => ({ formatted: formatToday() })),
     getTrackableHistoryTool.client(async (input) => ({
       formatted: formatTrackableHistory(input.trackable_id, input.days),
     })),
     logTrackableTool.client(async (input) => runLogTrackable(input)),
-    // The goal's life. Bound here and only here: this factory builds the
-    // Compass tool set, so reading chat never sees them.
+    // The goal's life. Never in the reading set, so a build that still sends
+    // `reading` never sees them.
     finishGoalTool.client(async (input) => runFinishGoal(input)),
     stopGoalTool.client(async (input) => runStopGoal(input)),
     setPrimaryGoalTool.client(async (input) => runSetPrimaryGoal(input)),
@@ -772,6 +777,12 @@ function createCompassClientTools(ctx: ToolCallContext) {
     resumeTrackableTool.client(async (input) => runResumeTrackable(input)),
     proposeGoalTool.client(async (input) => runProposeGoal(input)),
     proposeAdjustmentsTool.client(async (input) => runProposeAdjustments(input)),
+  ] as const;
+}
+
+function createCompassClientTools(ctx: ToolCallContext) {
+  return clientTools(
+    ...compassOnlyTools(),
     // The same three executors reading chat uses. Two copies of "what does
     // searching the library mean" is exactly the drift CLAUDE.md warns about.
     searchHighlightsTool.client(async (input) => {
@@ -1028,6 +1039,15 @@ function createSamwellClientTools(ctx: ToolCallContext) {
     ...discoveryTools(),
     journeyTool(ctx),
   );
+}
+
+/**
+ * The one Samwell: the reading set and the goal tools together. The reading
+ * set already carries every tool the two share (search, library, listening,
+ * discovery, journey), so the goal tools are added once each.
+ */
+function createUnifiedClientTools(ctx: ToolCallContext) {
+  return clientTools(...createSamwellClientTools(ctx), ...compassOnlyTools());
 }
 
 type BookBatchResult = { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
@@ -1376,9 +1396,11 @@ export async function sendCloudChatTurn({
             // In order with what he said, not ahead of the line before it.
             onAction: (note) => sequence.then(() => onOnboardingAction?.(note)),
           })
-        : mode === 'compass'
-          ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
-          : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
+        : mode === 'samwell'
+          ? createUnifiedClientTools({ sessionId, bookId, runtime: 'cloud' })
+          : mode === 'compass'
+            ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
+            : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
     // Each request, as it goes out: the first, and every continuation.
     onResponse: () => {
       reachedThisRequest = false;

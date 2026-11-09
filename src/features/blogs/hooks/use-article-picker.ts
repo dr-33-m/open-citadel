@@ -8,24 +8,25 @@ import type { ArticleItem } from '@/services/blogs/records';
 type PickedArticle = { id: string; title: string; kind: 'article' };
 
 /**
- * Samwell's post picker: whether it is open, the posts it lists (read only
- * once it has been opened), and picking one, which makes the post's reader
- * copy first, since that copy is what the chat is grounded in.
+ * Samwell's post picker: the posts it lists (read only once it has been
+ * opened), and picking one, which makes the post's reader copy first, since
+ * that copy is what the chat is grounded in. Whether it is open is the
+ * caller's (the Samwell page's sheet store), so the button that opens it and
+ * the sheet itself need not be drawn by the same component.
  */
-export function useArticlePicker(onPicked: (post: PickedArticle) => void) {
-  const [visible, setVisible] = React.useState(false);
+export function useArticlePicker(visible: boolean, onClose: () => void, onPicked: (post: PickedArticle) => void) {
   const { data } = useQuery({ ...createAskableArticlesQueryOptions(), enabled: visible });
   const { prepareArticle } = useOpenArticle();
 
-  const close = React.useCallback(() => setVisible(false), []);
+  const close = onClose;
   const select = React.useCallback(
     async (article: ArticleItem) => {
-      setVisible(false);
+      onClose();
       const bookId = await prepareArticle(article);
       if (bookId) onPicked({ id: bookId, title: article.title, kind: 'article' });
     },
-    [onPicked, prepareArticle],
+    [onClose, onPicked, prepareArticle],
   );
 
-  return { setVisible, sheet: { visible, articles: data, onSelect: select, onClose: close } };
+  return { visible, articles: data, onSelect: select, onClose: close };
 }

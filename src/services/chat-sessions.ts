@@ -61,14 +61,21 @@ export type ChatMessage = {
 };
 
 /**
- * Every session of one kind, newest first, each with the last thing said in
- * it.
+ * Which stored kinds each list shows.
  *
- * Filtered by kind rather than listing everything, which is what keeps a
- * Compass conversation out of the reading history sheet and the other way
- * round. The two histories answer different questions and mixing them would
- * make both worse.
+ * Reading and Compass were two surfaces with two histories. They are one
+ * Samwell now, so the reading list is his whole history, Compass
+ * conversations from before the merge included: each opens in the one
+ * transcript and carries on there. Onboarding stays apart; it is his
+ * introduction, not a chat anyone goes back to.
  */
+const LISTED_KINDS: Record<SessionKind, SessionKind[]> = {
+  reading: ['reading', 'compass'],
+  compass: ['compass'],
+  onboarding: ['onboarding'],
+};
+
+/** Every session a list shows, newest first, each with the last thing said in it. */
 export function listSessions(kind: SessionKind): ChatSession[] {
   const rows = db
     .select({
@@ -84,7 +91,7 @@ export function listSessions(kind: SessionKind): ChatSession[] {
     })
     .from(chatSessions)
     .leftJoin(books, eq(chatSessions.bookId, books.id))
-    .where(eq(chatSessions.kind, kind))
+    .where(inArray(chatSessions.kind, LISTED_KINDS[kind]))
     .orderBy(desc(chatSessions.updatedAt))
     .all();
 

@@ -7,13 +7,6 @@ import { useSubscriptionStore } from '@/stores/subscription';
 
 export type BrainSheetHandle = { open: () => void };
 
-/** The host's ref, and a stable way to raise it. */
-export function useBrainSheet() {
-  const ref = React.useRef<BrainSheetHandle>(null);
-  const open = React.useCallback(() => ref.current?.open(), []);
-  return { ref, open };
-}
-
 /**
  * Everything `BrainSheetHost` draws from: its own open state, raised through
  * the ref, and the brains and the choice from the stores, so a choice made

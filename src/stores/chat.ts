@@ -57,6 +57,7 @@ import { settleActivity, withThought, type TurnActivity } from '@/utils/turn-act
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
 import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
+import { useSamwellSessionStore } from '@/stores/samwell-session';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
 
@@ -152,6 +153,24 @@ interface ChatStore {
  * one has been named yet mean the same string.
  */
 export const NEW_CHAT_TITLE = 'New chat';
+
+/**
+ * Titles that are not a name yet: a new chat's, and the one Compass
+ * conversations started with before the merge. One whose first title never
+ * landed (offline, a failed call) is still named in the background, whichever
+ * surface it began on.
+ */
+const PLACEHOLDER_TITLES: ReadonlySet<string> = new Set([NEW_CHAT_TITLE, 'New conversation']);
+
+/**
+ * A goal or check-in card belongs to the conversation that proposed it, so it
+ * goes when that conversation does: another one opened, a new one started,
+ * this one deleted. Sending clears it too: something new has been said, so
+ * the card on screen is now the previous version.
+ */
+export function dropProposal(): void {
+  useSamwellSessionStore.getState().set({ compassDraft: null, refining: false });
+}
 
 /**
  * The rename currently running. One at a time: on device it is a generation on
@@ -413,7 +432,7 @@ async function titleLeftChats(): Promise<void> {
 
   const { activeSession } = useChatStore.getState();
   const waiting = cachedChatSessions('reading').filter(
-    (s) => s.title === NEW_CHAT_TITLE && !s.bookId && s.id !== activeSession?.id && !titleFailed.has(s.id),
+    (s) => PLACEHOLDER_TITLES.has(s.title) && !s.bookId && s.id !== activeSession?.id && !titleFailed.has(s.id),
   );
 
   for (const session of waiting) {
@@ -717,6 +736,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         updatedAt: ts,
       })
       .run();
+    dropProposal();
 
     // Persist the system message so history is always complete when reloading
     if (thoughtText) {
@@ -855,6 +875,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (get().isGenerating) {
       get().stopGeneration();
     }
+    dropProposal();
 
     const session = cachedChatSessions('reading').find((s) => s.id === id) ?? null;
     // The one reader of a transcript, so a reply's trail and sources come back with it.
@@ -897,6 +918,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
     if (sendBlocked()) return;
+    dropProposal();
 
     const userMsg: ChatMessage = {
       id: id ?? uuid(),
@@ -934,6 +956,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           modelId: cloudModelId,
           sessionId: activeSession.id,
           bookId: activeSession.bookId,
+          // Reading and goals in one conversation. A server from before the
+          // merge reads this as reading chat, which is what this was.
+          mode: 'samwell',
           history,
           content,
           signal: cloudAbort.signal,
@@ -1241,6 +1266,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // leak an unresolved promise once the session it belongs to is gone.
     useApprovalStore.getState().clearSession(id);
     updateCachedChatSessions('reading', (sessions) => sessions.filter((sess) => sess.id !== id));
+    if (get().activeSession?.id === id) dropProposal();
     set((s) => ({
       activeSession: s.activeSession?.id === id ? null : s.activeSession,
       messages: s.activeSession?.id === id ? [] : s.messages,

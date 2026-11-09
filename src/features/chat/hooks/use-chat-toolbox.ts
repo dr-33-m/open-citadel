@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { BookOpen, History, MicSignal, Newspaper, type LucideIcon } from '@/components/icons';
+import { BookOpen, MicSignal, Newspaper, type LucideIcon } from '@/components/icons';
 import type { ToolboxItem } from '@/components/samwell/samwell-toolbox';
 import type { BookKind } from '@/db/schema';
 import { attachmentTool } from '@/features/chat/utils/attachment-tools';
@@ -30,18 +30,15 @@ export type ChatToolboxArgs = {
   pickers: Record<BookKind, () => void>;
   /** Drops the waiting pick. */
   onDrop: () => void;
-  brainTool: ToolboxItem[];
-  sessionCount: number;
-  onHistory: () => void;
 };
 
 /**
- * The chat drawer's tools: Book, Blog post and Podcast from one table, then
- * the brain and History. Memoised, because the Samwell page re-renders on
- * every streamed token and this drawer is shut most of that time.
+ * The drawer's Reading tools: Book, Blog post and Podcast from one table.
+ * Memoised, because the Samwell page re-renders on every streamed token and
+ * this drawer is shut most of that time.
  */
 export function useChatToolbox(args: ChatToolboxArgs): ToolboxItem[] {
-  const { hasSession, attachedKind, pendingKind, attachedTitle, attachedCover, busy, pickers, onDrop, brainTool, sessionCount, onHistory } = args;
+  const { hasSession, attachedKind, pendingKind, attachedTitle, attachedCover, busy, pickers, onDrop } = args;
 
   return React.useMemo(() => {
     const state = { hasSession, attachedKind, pendingKind, busy };
@@ -51,7 +48,8 @@ export function useChatToolbox(args: ChatToolboxArgs): ToolboxItem[] {
       return [
         {
           ...row,
-          detail: tool.attached ? attachedTitle : 'None yet',
+          // In a chat that holds nothing, a pick starts a new chat about it.
+          detail: tool.attached ? attachedTitle : tool.startsNew ? 'New chat' : 'None yet',
           // The cover stands in for the icon once one is picked: the whole
           // answer to "what is Samwell reading with me", without a line of text.
           image: tool.attached ? attachedCover : null,
@@ -62,17 +60,6 @@ export function useChatToolbox(args: ChatToolboxArgs): ToolboxItem[] {
         },
       ];
     });
-    return [
-      ...attachments,
-      ...brainTool,
-      {
-        id: 'history',
-        icon: History,
-        label: 'History',
-        detail: sessionCount > 0 ? `${sessionCount} saved` : 'Nothing yet',
-        // Picking a conversation mid-turn is what used to race the engine.
-        onPress: busy ? undefined : onHistory,
-      },
-    ];
-  }, [attachedCover, attachedKind, attachedTitle, brainTool, busy, hasSession, onDrop, onHistory, pendingKind, pickers, sessionCount]);
+    return attachments;
+  }, [attachedCover, attachedKind, attachedTitle, busy, hasSession, onDrop, pendingKind, pickers]);
 }

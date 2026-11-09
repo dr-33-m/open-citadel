@@ -6,6 +6,7 @@ import { useCSSVariable } from 'uniwind';
 
 import { ChevronRight, type LucideIcon } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
+import { TextSwitch, type TextSwitchOption } from '@/components/text-switch';
 import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
 import { iconSize, motion } from '@/constants/theme';
@@ -107,6 +108,7 @@ export type ToolboxItem = {
    */
   lead?: boolean;
 };
+
 
 /**
  * One tool: an icon, its name, the state it is in, and a chevron.
@@ -220,15 +222,41 @@ const Tool = React.memo(function Tool({
 });
 
 /**
- * The mode's own tools, on a card the control unit lies on top of.
+ * A run of rows: its lead first, then the rest in the order the caller gave
+ * them. A lead belongs to its run, so Reading's book and Compass's log today
+ * each sit on top of their own tab.
+ */
+function ToolList({
+  items,
+  muted,
+  gold,
+  foreground,
+}: {
+  items: ToolboxItem[];
+  muted?: string;
+  gold?: string;
+  foreground?: string;
+}) {
+  const lead = items.find((item) => item.lead) ?? null;
+  const ordered = lead ? [lead, ...items.filter((item) => item !== lead)] : items;
+  return ordered.map((item) => (
+    <Tool key={item.id} item={item} lead={item === lead} muted={muted} gold={gold} foreground={foreground} />
+  ));
+}
+
+/**
+ * Samwell's tools, on a card the control unit lies on top of.
  *
  * ## What is in here
  *
- * The control unit above keeps what is true of every session: what you are
- * writing, and which mode you are in. Everything a mode brings with it lives
- * down here — Compass's deck, planner, insights and archive, chat's book and
- * history — which is what stops that row growing a button every time a mode
- * gains a surface. It had reached seven.
+ * The control unit above keeps what is true of every conversation: what you
+ * are writing, and a fresh start. Every tool lives down here, under a switch
+ * between Reading (the book, post or episode the chat is about) and Compass
+ * (the deck, planner, insights and archive), with the brain and the history
+ * under both. Tabs rather than headed sections, so the drawer stays the
+ * height of one kind of tool instead of stacking both. That is
+ * what stops that row growing a button every time Samwell gains a surface.
+ * It had reached seven.
  *
  * ## Why it is a list and not a grid
  *
@@ -272,12 +300,23 @@ const Tool = React.memo(function Tool({
  * it reads as slow because it keeps moving after it has arrived. The house
  * tokens say it in a line: slow and elegant, no spring physics, ease-out.
  */
-export const SamwellToolbox = React.memo(function SamwellToolbox({
+function ToolboxCard<T extends string>({
   open,
+  tabs,
+  tab,
+  onTabChange,
   items,
+  shared,
 }: {
   open: boolean;
+  /** The kinds of tool, as a switch along the top: Reading, Compass. */
+  tabs: readonly TextSwitchOption<T>[];
+  tab: T;
+  onTabChange: (tab: T) => void;
+  /** The showing tab's tools. */
   items: ToolboxItem[];
+  /** Under every tab: what belongs to the whole conversation (the brain, the history). */
+  shared: ToolboxItem[];
 }) {
   const [primary, mutedForeground, foreground] = useCSSVariable([
     '--color-primary',
@@ -301,11 +340,15 @@ export const SamwellToolbox = React.memo(function SamwellToolbox({
    * through to the page instead of lighting up a control that ignores it.
    */
   const [armed, setArmed] = React.useState(false);
+  // Disarmed on the edge where the drawer shuts, during render rather than in
+  // the effect, so a shut drawer is never armed for a frame.
+  const [wasOpen, setWasOpen] = React.useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (!open) setArmed(false);
+  }
   React.useEffect(() => {
-    if (!open) {
-      setArmed(false);
-      return;
-    }
+    if (!open) return;
     const timer = setTimeout(() => setArmed(true), TOOLBOX_SETTLE);
     return () => clearTimeout(timer);
   }, [open]);
@@ -314,10 +357,6 @@ export const SamwellToolbox = React.memo(function SamwellToolbox({
     height: progress.value * height.value,
     marginTop: progress.value * -OVERLAP,
   }));
-
-  // The lead first, then the rest in the order the caller gave them.
-  const lead = items.find((item) => item.lead) ?? null;
-  const ordered = lead ? [lead, ...items.filter((item) => item !== lead)] : items;
 
   return (
     <Animated.View
@@ -364,18 +403,16 @@ export const SamwellToolbox = React.memo(function SamwellToolbox({
         <View style={OVERLAP_SPACER} />
 
         <Card.Content className="p-1 pt-0">
-          {ordered.map((item) => (
-            <Tool
-              key={item.id}
-              item={item}
-              lead={item === lead}
-              muted={muted}
-              gold={gold}
-              foreground={ink}
-            />
-          ))}
+          <View className="p-1">
+            <TextSwitch options={tabs} value={tab} onChange={onTabChange} />
+          </View>
+          <ToolList items={items} muted={muted} gold={gold} foreground={ink} />
+          <ToolList items={shared} muted={muted} gold={gold} foreground={ink} />
         </Card.Content>
       </Card>
     </Animated.View>
   );
-});
+}
+
+// Memoised with its generic kept: `React.memo` alone would widen the tab type to string.
+export const SamwellToolbox = React.memo(ToolboxCard) as typeof ToolboxCard;

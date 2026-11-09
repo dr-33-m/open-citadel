@@ -1,8 +1,8 @@
 /**
- * Reading chat's transcript: the shared `Transcript`, plus what only chat has.
- * A status banner over it (the model is asleep, the plan ran out), the empty
- * state in its place, and the reader's message drawn before the store has it
- * (on-device priming is a real wait).
+ * Samwell's transcript: the shared `Transcript`, plus a status banner over it
+ * (the model is asleep, the plan ran out), the empty state in its place, the
+ * reader's message drawn before the store has it (on-device priming is a real
+ * wait), and the goal or check-in card a turn proposed.
  */
 import React from "react";
 import type { ViewStyle } from "react-native";
@@ -13,6 +13,7 @@ import {
 } from "@/features/chat/components/samwell-status";
 import { Transcript } from "@/features/chat/components/transcript";
 import { TranscriptSkeleton } from "@/features/chat/components/transcript-skeleton";
+import { holdCardReply } from "@/features/chat/utils/card-reply";
 import type { SamwellStatus } from "@/features/chat/hooks/use-samwell-status";
 import type { TurnIndicator } from "@/features/chat/utils/agent-activity";
 import type { ChatMessage } from "@/stores/chat";
@@ -51,6 +52,8 @@ interface ChatTranscriptProps {
   onNavigateToPodcast: (kind: PodcastCardKind, id: string) => void;
   /** Sends again a message of the reader's that never got a reply. */
   onResendMessage: (id: string) => void;
+  /** The card the conversation has reached (a goal, a check-in), drawn at its foot. */
+  card?: React.ReactNode;
 }
 
 export function ChatTranscript({
@@ -72,6 +75,7 @@ export function ChatTranscript({
   onNavigateToBook,
   onNavigateToPodcast,
   onResendMessage,
+  card,
 }: ChatTranscriptProps) {
   /*
    * The turns to draw: what the store has, plus the one it does not have yet.
@@ -111,6 +115,9 @@ export function ChatTranscript({
     ];
   }, [messages, pendingUserMessage, awaitingStore, sessionId]);
 
+  // The line introducing a card is drawn under it; see `holdCardReply`.
+  const held = React.useMemo(() => holdCardReply(turns, card != null), [turns, card]);
+
   const isEmpty = turns.length === 0 && !streamingContent;
   // The reply in flight is drawn once it has words or has started doing
   // something: a search runs before a word of the answer exists.
@@ -130,7 +137,9 @@ export function ChatTranscript({
 
       <Transcript
         sessionId={sessionId}
-        turns={turns}
+        turns={held.turns}
+        aside={card}
+        trailingReply={held.trailingReply}
         live={live}
         streamingContent={streamingContent}
         streamingActivity={streamingActivity}
