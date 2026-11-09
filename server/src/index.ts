@@ -37,6 +37,7 @@ import {
 import { z } from 'zod';
 
 import { accountRoutes } from './account-routes.js';
+import { APP_HEADERS, appGate, appGateRoutes, gateConfigFromEnv } from './app-gate.js';
 import { guestRoutes } from './guest-routes.js';
 import { managementConfigured } from './logto-management.js';
 import { PROVIDER_PREFERENCES } from './openrouter.js';
@@ -568,10 +569,21 @@ app.use(
     // `Authorization` carries the Logto access token every metered route now
     // requires. The device header it replaced is gone: Grand Maester Samwell
     // runs on accounts, so there is nothing anonymous left to allow.
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', ...Object.values(APP_HEADERS)],
     allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   }),
 );
+
+/*
+ * A copy of the app the server no longer serves is answered 426 before any
+ * route sees it (see `app-gate`). Left out: the health check, the gate's own
+ * question, which must always be answerable, and the admin routes, which are
+ * called with curl rather than by the app.
+ */
+const UNGATED = ['/health', '/app/gate', '/admin'];
+const gate = appGate();
+app.use('*', (c, next) => (UNGATED.some((path) => c.req.path.startsWith(path)) ? next() : gate(c, next)));
+app.route('/app', appGateRoutes());
 
 app.get('/health', async (c) => {
   const models = await listCloudModels();
@@ -607,6 +619,9 @@ app.get('/health', async (c) => {
      * which is the one failure App Review is looking for here.
      */
     deletionReady: managementConfigured(),
+    // The oldest copies of the app still served (see `app-gate`), so one curl
+    // says what a phone below them is being told.
+    appGate: gateConfigFromEnv(),
     models: models.map((model) => model.id),
     // Which model the house is paying for on the onboarding route.
     //
