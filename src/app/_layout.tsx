@@ -44,6 +44,7 @@ import { ThemeRelease } from "@/components/theme-scope";
 import { RootThemeTokens } from "@/hooks/use-theme-tokens";
 import { ThemeStatusBar } from "@/components/theme-status-bar";
 import { AppUpdates } from "@/features/updates/components/app-updates";
+import { UpdateGate } from "@/features/updates/components/update-gate";
 import { PanelUIProvider } from "@/components/ui/panel-ui-provider";
 import { runMigrations } from "@/db/migrations";
 import { useThemeMode } from "@/hooks/use-theme";
@@ -57,6 +58,7 @@ import {
     hubTransition,
     sideTransition,
 } from "@/navigation/transitions";
+import { installAppGate } from "@/services/app-gate";
 import { importIncomingFile } from "@/services/book-import";
 import {
     startModelLifecycle,
@@ -93,6 +95,9 @@ registerPlayerBackgroundHandler();
 // Explore's kept catalogues start reading back now, while fonts and the
 // database are still loading, and are saved when the app leaves the front.
 startQueryPersist(queryClient);
+// Before the first request: every one to Samwell Cloud says which copy of the
+// app sent it, and a 426 from any of them raises the update screen.
+installAppGate();
 
 // Catches throws from route module evaluation / rendering that would otherwise
 // crash the app with an unhandled JS exception on startup.
@@ -437,6 +442,9 @@ function RootLayoutContent() {
                 {/* Over-the-air updates: checked on return as well as launch,
                 and asked for in a dialog once one is downloaded. */}
                 <AppUpdates />
+                {/* A copy the server no longer serves: the store, or a
+                restart onto a newer update, before anything else. */}
+                <UpdateGate />
               </ThemeProvider>
             </BottomSheetModalProvider>
           </ToastProvider>

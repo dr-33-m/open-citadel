@@ -1,4 +1,5 @@
 import { getAccountToken } from '@/services/account';
+import { APP_IDENTITY_HEADERS } from '@/services/app-identity';
 import { guestToken } from '@/services/guest-identity';
 
 /**
@@ -51,7 +52,9 @@ export async function cloudHeaders(
   extra?: Record<string, string>,
 ): Promise<Record<string, string>> {
   const token = await getAccountToken();
-  if (token) return { Authorization: `Bearer ${token}`, ...extra };
+  // Which copy of the app is asking rides along too, for the transports that
+  // do not go through `fetch` (the chat's stream, the cloud voices).
+  if (token) return { ...APP_IDENTITY_HEADERS, Authorization: `Bearer ${token}`, ...extra };
 
   /*
    * No account, but possibly a device that bought a plan on its own.
@@ -63,7 +66,7 @@ export async function cloudHeaders(
    * "who is this" means is five places for it to drift.
    */
   const guest = await guestToken();
-  if (guest) return { Authorization: `Bearer ${guest}`, ...extra };
+  if (guest) return { ...APP_IDENTITY_HEADERS, Authorization: `Bearer ${guest}`, ...extra };
 
   throw new NotSignedIn();
 }

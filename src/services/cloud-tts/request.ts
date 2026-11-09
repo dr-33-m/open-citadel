@@ -14,7 +14,9 @@
 import { fetch as streamingFetch } from 'expo/fetch';
 
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
+import { readVerdict } from '@/features/updates/utils/update-gate';
 import { isConnected, reportCloudReached, reportCloudUnreached } from '@/lib/network';
+import { reportUpdateRequired } from '@/stores/app-gate';
 import { cloudJsonHeaders } from '@/services/cloud-identity';
 
 export type CloudVoiceFailure =
@@ -145,6 +147,8 @@ export async function streamPiece(options: {
 
     if (!response.ok) {
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      // A copy the server no longer serves: the update screen says so.
+      if (response.status === 426) reportUpdateRequired(readVerdict(body));
       throw new CloudVoiceError(classify(response.status, body?.error), `Answered ${response.status}.`);
     }
     // PCM is always playable; MP3 only when it was asked for, which is only
