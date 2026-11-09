@@ -18,6 +18,7 @@ export * from './onboarding';
 export * from './onboarding-follow-tools';
 export * from './onboarding-tools';
 export * from './persona';
+export * from './samwell-prompt';
 export * from './tags';
 export * from './takeaway';
 export * from './tools';

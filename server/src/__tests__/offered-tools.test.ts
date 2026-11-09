@@ -1,7 +1,7 @@
 import { DISCOVERY_TOOL_NAMES } from 'samwell-shared';
 import { describe, expect, it } from 'vitest';
 
-import { CLIENT_TOOLS_ADDED_LATER, offeredClientTools, offersAny } from '../offered-tools.js';
+import { CLIENT_TOOLS_ADDED_LATER, offeredClientTools, offersAny, uniqueByName } from '../offered-tools.js';
 
 const defs = [{ name: 'search_highlights' }, { name: 'search_library' }, { name: 'add_to_queue' }];
 
@@ -56,5 +56,21 @@ describe('discovery tools', () => {
     expect(offeredClientTools(finding, [{ name: 'find_podcasts' }]).map((t) => t.name)).toEqual(['find_podcasts']);
     expect(offersAny([{ name: 'find_podcasts' }], DISCOVERY_TOOL_NAMES)).toBe(true);
     expect(offersAny([{ name: 'search_highlights' }], DISCOVERY_TOOL_NAMES)).toBe(false);
+  });
+});
+
+describe('uniqueByName', () => {
+  it('keeps the first definition of each name, in order', () => {
+    const tools = [
+      { name: 'explain_app', from: 'reading' },
+      { name: 'search_highlights', from: 'reading' },
+      { name: 'get_today', from: 'compass' },
+      { name: 'search_highlights', from: 'compass' },
+    ];
+    expect(uniqueByName(tools)).toEqual([
+      { name: 'explain_app', from: 'reading' },
+      { name: 'search_highlights', from: 'reading' },
+      { name: 'get_today', from: 'compass' },
+    ]);
   });
 });

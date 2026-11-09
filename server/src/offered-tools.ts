@@ -50,3 +50,13 @@ export function offersAny(declared: unknown, names: ReadonlySet<string>): boolea
   const declaredSet = declaredNames(declared);
   return declaredSet !== null && [...names].some((name) => declaredSet.has(name));
 }
+
+/** The first of each name, in order. */
+export function uniqueByName<T extends { name: string }>(tools: readonly T[]): T[] {
+  const seen = new Set<string>();
+  return tools.filter((tool) => {
+    if (seen.has(tool.name)) return false;
+    seen.add(tool.name);
+    return true;
+  });
+}

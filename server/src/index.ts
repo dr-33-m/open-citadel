@@ -23,6 +23,7 @@ import {
   SAMWELL_LISTENING_TOOL_PROMPT,
   SAMWELL_MOMENTS_PROMPT,
   SAMWELL_SYSTEM_PROMPT,
+  SAMWELL_UNIFIED_SYSTEM_PROMPT,
   SAMWELL_WEB_SEARCH_TOOL_PROMPT,
   PLAN_ORDER,
   CREDIT_PLANS,
@@ -108,7 +109,7 @@ import {
 } from './billing.js';
 import { readIdentity } from './identity.js';
 import { asOneRun } from './one-run.js';
-import { offeredClientTools, offersAny } from './offered-tools.js';
+import { offeredClientTools, offersAny, uniqueByName } from './offered-tools.js';
 import { createReadWebPageTool } from './web-page.js';
 import { pageKey, readablePageUrl } from './web-page-text.js';
 import { WEB_SEARCH_FALLBACK_COST_USD, createWebSearchTool } from './web-search.js';
@@ -149,8 +150,8 @@ function readModelId(
 }
 
 /**
- * Which Samwell is answering: the reading companion, Compass, or the
- * introduction.
+ * Which Samwell is answering: the one Samwell, or, for builds from before
+ * the merge, the reading companion or Compass; or the introduction.
  *
  * Sent as a forwarded prop rather than inferred from the messages, because
  * the surfaces can carry identical text and only the caller knows which one it
@@ -161,11 +162,18 @@ function readModelId(
  * asked `/onboarding/status`, was told no, and sent the same conversation down
  * the metered path instead. Same Samwell, same tools, same script; the reader
  * is paying for it now. See `onboarding.ts`.
+ *
+ * `samwell` is reading and goals in one conversation, sent by builds that
+ * dropped the Chat / Compass switch. `reading` and `compass` stay for the
+ * builds that still have it: an install keeps its JavaScript until it
+ * restarts onto an update, and a store build older than the update gate
+ * cannot be asked to.
  */
-type SamwellMode = 'reading' | 'compass' | 'onboarding';
+type SamwellMode = 'samwell' | 'reading' | 'compass' | 'onboarding';
 
 function readMode(body: RunAgentInput): SamwellMode {
   const raw = body.forwardedProps?.mode ?? body.data?.mode;
+  if (raw === 'samwell') return 'samwell';
   if (raw === 'compass') return 'compass';
   if (raw === 'onboarding') return 'onboarding';
   return 'reading';
@@ -194,6 +202,17 @@ function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean, declared
   // Likewise finding and vetting new sources, which only a build with the
   // discovery tools can act on.
   const discovery = offersAny(declaredTools, DISCOVERY_TOOL_NAMES) ? [SAMWELL_DISCOVERY_TOOL_PROMPT] : [];
+  if (mode === 'samwell') {
+    return [
+      SAMWELL_UNIFIED_SYSTEM_PROMPT,
+      SAMWELL_JOURNEY_TOOL_PROMPT,
+      SAMWELL_APP_GUIDE_TOOL_PROMPT,
+      SAMWELL_WEB_SEARCH_TOOL_PROMPT,
+      ...listening,
+      ...discovery,
+      SAMWELL_MOMENTS_PROMPT,
+    ];
+  }
   if (mode === 'compass') {
     return [
       COMPASS_SYSTEM_PROMPT,
@@ -214,6 +233,24 @@ function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean, declared
     ...discovery,
     SAMWELL_MOMENTS_PROMPT,
   ];
+}
+
+/**
+ * The device tools a mode may be offered, before `offeredClientTools` limits
+ * them to what the app declared.
+ *
+ * The one Samwell has both sets. They share their library tools, so the
+ * union keeps the first definition of each name: the same tool offered twice
+ * is a request the provider refuses.
+ */
+function clientToolDefinitionsFor(mode: Exclude<SamwellMode, 'onboarding'>) {
+  if (mode === 'compass') return [...COMPASS_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS];
+  if (mode === 'reading') return [...SAMWELL_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS];
+  return uniqueByName([
+    ...SAMWELL_CLIENT_TOOL_DEFINITIONS,
+    ...COMPASS_CLIENT_TOOL_DEFINITIONS,
+    ...DISCOVERY_CLIENT_TOOL_DEFINITIONS,
+  ]);
 }
 
 /*
@@ -1275,11 +1312,9 @@ app.post('/chat/http', async (c) => {
     // The device's tools as definitions only (the app runs them), and the
     // web search as a server tool TanStack runs here in its own agent loop.
     tools:
-      mode === 'compass'
-        ? [...offeredClientTools([...COMPASS_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS], body.tools), ...webTools]
-        : mode === 'onboarding'
-          ? onboardingClientToolDefinitions({ feeds: onboardingFeeds })
-          : [...offeredClientTools([...SAMWELL_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS], body.tools), ...webTools],
+      mode === 'onboarding'
+        ? onboardingClientToolDefinitions({ feeds: onboardingFeeds })
+        : [...offeredClientTools(clientToolDefinitionsFor(mode), body.tools), ...webTools],
     threadId: body.threadId,
     runId: body.runId ?? usageEventId,
     /*
