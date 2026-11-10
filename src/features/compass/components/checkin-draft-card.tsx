@@ -14,6 +14,8 @@ type CheckinDraftCardProps = {
   onApprove: () => void;
   onRefine: () => void;
   disabled?: boolean;
+  /** Set once the changes are saved; it takes the buttons' place. */
+  done?: string | null;
 };
 
 const ACTION_LABEL: Record<string, string> = {
@@ -37,6 +39,7 @@ export function CheckinDraftCard({
   onApprove,
   onRefine,
   disabled,
+  done = null,
 }: CheckinDraftCardProps) {
   const mutedForeground = useCSSVariable('--color-muted-foreground');
   const muted = asColor(mutedForeground);
@@ -50,6 +53,7 @@ export function CheckinDraftCard({
       onApprove={onApprove}
       onRefine={onRefine}
       disabled={disabled}
+      done={done}
     >
       {draft.adjustments.map((adjustment, i) => (
         // Index keys: a draft is a value, replaced wholesale on every revision.

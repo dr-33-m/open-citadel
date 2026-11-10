@@ -1,17 +1,24 @@
 import React from 'react';
 import type { TextInput } from 'react-native';
 
+import { showToast } from '@/components/toast/toast-provider';
+import { DRAFT_FAILED_MESSAGE, draftDoneLabel, draftLandedMessage } from '@/features/compass/utils/draft-landed';
 import { useCompassStore } from '@/stores/compass';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
+import { haptics } from '@/utils/haptics';
+
+/** One key for both outcomes, so a retry's toast writes over the failure's. */
+const DRAFT_TOAST = 'compass-draft';
 
 /**
  * The goal or check-in card the conversation has reached, if any, and what
  * its two buttons do.
  *
  * Samwell puts one on screen with `propose_goal` or `propose_adjustments`;
- * the card writes nothing until it is approved. It belongs to the
- * conversation that made it, and the chat store drops it when that
- * conversation changes or something new is said.
+ * the card writes nothing until it is approved. Approved, it stays where it
+ * was with a status line in place of its buttons, since Samwell's line under
+ * it still refers to it. It belongs to the conversation that made it, and the
+ * chat store drops it when that conversation changes or something new is said.
  */
 export function useCompassDraft(inputRef?: React.RefObject<TextInput | null>) {
   const draft = useSamwellSessionStore((s) => s.compassDraft);
@@ -27,15 +34,29 @@ export function useCompassDraft(inputRef?: React.RefObject<TextInput | null>) {
     [checkin, trackables],
   );
 
+  /*
+   * Writes the card, then says so: the card used to vanish, and that was the
+   * only sign it had worked. A goal the store refused (the cap) is already
+   * said by the store's own toast; a write that threw is said here, and the
+   * card keeps its buttons to retry.
+   */
   const approve = React.useCallback(async () => {
-    if (!draft) return;
-    if (draft.kind === 'plan') {
-      const goalId = await commitProposal(draft.proposal);
-      if (goalId) setSession({ compassDraft: null, refining: false });
-      return;
+    if (!draft || draft.applied) return;
+    try {
+      if (draft.kind === 'plan') {
+        const goalId = await commitProposal(draft.proposal);
+        if (!goalId) return;
+      } else {
+        await applyCheckinDraft(draft.draft);
+      }
+      setSession({ compassDraft: { ...draft, applied: true }, refining: false });
+      haptics.commit();
+      showToast({ key: DRAFT_TOAST, message: draftLandedMessage(draft) });
+    } catch (err) {
+      console.warn('[Compass] Could not apply the card:', err);
+      haptics.warn();
+      showToast({ key: DRAFT_TOAST, message: DRAFT_FAILED_MESSAGE });
     }
-    await applyCheckinDraft(draft.draft);
-    setSession({ compassDraft: null });
   }, [draft, commitProposal, applyCheckinDraft, setSession]);
 
   /**
@@ -50,7 +71,9 @@ export function useCompassDraft(inputRef?: React.RefObject<TextInput | null>) {
     inputRef?.current?.focus();
   }, [setSession, inputRef]);
 
-  return { draft, titles, approve, refine, committing };
+  const done = draftDoneLabel(draft);
+
+  return { draft, titles, approve, refine, committing, done };
 }
 
 const EMPTY_TITLES: Record<string, string> = {};

@@ -10,15 +10,15 @@ import type { CompassDraftProps } from '@/features/compass/hooks/use-compass-dra
  * and Samwell's line introducing it: a new goal, or changes to the ones
  * running. Approving or refining it is Compass's own.
  */
-export function CompassDraftCard({ draft, titles, approve, refine, committing }: CompassDraftProps) {
+export function CompassDraftCard({ draft, titles, approve, refine, committing, done }: CompassDraftProps) {
   const onApprove = React.useCallback(() => void approve(), [approve]);
   if (!draft) return null;
   return (
     <View className="px-1 py-2">
       {draft.kind === 'plan' ? (
-        <GoalProposalCard proposal={draft.proposal} onApprove={onApprove} onRefine={refine} disabled={committing} />
+        <GoalProposalCard proposal={draft.proposal} onApprove={onApprove} onRefine={refine} disabled={committing} done={done} />
       ) : (
-        <CheckinDraftCard draft={draft.draft} titles={titles} onApprove={onApprove} onRefine={refine} disabled={committing} />
+        <CheckinDraftCard draft={draft.draft} titles={titles} onApprove={onApprove} onRefine={refine} disabled={committing} done={done} />
       )}
     </View>
   );

@@ -148,7 +148,7 @@ function titles(tool: string, args: Record<string, unknown>): [string, string] {
     case 'explain_app':
       return ['Checking how the app works', 'Checked how the app works'];
     default:
-      return [ACTION_TITLES[tool]?.[0] ?? 'Working on it', ACTION_TITLES[tool]?.[1] ?? 'Done'];
+      return ACTION_TITLES[tool] ?? GOAL_TITLES[tool] ?? ['Working on it', 'Done'];
   }
 }
 
@@ -179,6 +179,30 @@ const ACTION_TITLES: Record<string, [string, string]> = {
   suggest_highlight: ['Suggesting a highlight', 'Suggested a highlight'],
   suggest_thought: ['Suggesting a thought', 'Suggested a thought'],
 };
+
+/**
+ * The goal tools, as [while running, once done]. Without these a goal turn's
+ * steps all read "Working on it" under a library icon, as though he were
+ * shelving books while he logged a run.
+ */
+const GOAL_TITLES: Record<string, [string, string]> = {
+  get_compass_status: ['Looking over your goals', 'Looked over your goals'],
+  get_today: ['Checking what is due today', 'Checked what is due today'],
+  get_trackable_history: ['Looking back over your logs', 'Looked back over your logs'],
+  log_trackable: ['Writing that down', 'Wrote that down'],
+  propose_goal: ['Putting a goal together', 'Put a goal together'],
+  propose_adjustments: ['Drafting some changes', 'Drafted some changes'],
+  finish_goal: ['Finishing the goal', 'Finished the goal'],
+  stop_goal: ['Stopping the goal', 'Stopped the goal'],
+  set_primary_goal: ['Making it your main goal', 'Made it your main goal'],
+  pause_trackable: ['Pausing it', 'Paused it'],
+  resume_trackable: ['Picking it back up', 'Picked it back up'],
+};
+
+/** Whether a step is goal work, so the trail can draw it as such. */
+export function isGoalTool(tool: string): boolean {
+  return tool in GOAL_TITLES;
+}
 
 /** Whether an output says the tool did not do its job. */
 function failed(output: unknown): boolean {

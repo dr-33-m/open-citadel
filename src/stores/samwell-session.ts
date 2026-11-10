@@ -3,10 +3,16 @@ import type { CompassCheckinDraft, GoalProposal } from 'samwell-shared';
 
 import type { BookKind } from '@/db/schema';
 
-/** What the current Compass conversation has proposed, if anything. */
+/**
+ * What the current Compass conversation has proposed, if anything.
+ *
+ * `applied` marks a card already approved. It stays in the transcript, done,
+ * rather than vanishing: Samwell's line under it ("it's on screen for you to
+ * approve") would otherwise point at nothing.
+ */
 export type CompassDraft =
-  | { kind: 'plan'; proposal: GoalProposal }
-  | { kind: 'checkin'; draft: CompassCheckinDraft }
+  | { kind: 'plan'; proposal: GoalProposal; applied?: boolean }
+  | { kind: 'checkin'; draft: CompassCheckinDraft; applied?: boolean }
   | null;
 
 type SamwellSessionStore = {
