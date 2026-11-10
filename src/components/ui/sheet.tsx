@@ -141,6 +141,28 @@ type SheetProps = {
 const SheetBottomInsetContext = React.createContext(0);
 
 /**
+ * LOCAL EDIT (Open Citadel): how much of the sheet's box is below the screen,
+ * in dp, while it rests at a lower detent.
+ *
+ * The library lays a detented sheet's content out at its HIGHEST detent and
+ * slides the box down for the lower ones, so at a lower detent the bottom of a
+ * scroll region is off the screen. Dragging the content was meant to raise the
+ * sheet first, but on this app's Android build a drag that starts on a
+ * scrollable never reaches the sheet's pan (the History list cannot be dragged
+ * shut either), so whatever sat in that hidden strip could not be reached at
+ * all: the side goals under Insights. `Sheet.ScrollView` and `Sheet.FlatList`
+ * end their content with a spacer this tall, so scrolling brings the last row
+ * up to the visible edge. Zero at the highest detent, where nothing is hidden.
+ */
+const SheetHiddenBelowContext = React.createContext(0);
+
+/** The spacer a scroll region ends with while part of its box is off screen. */
+function HiddenBelowSpacer() {
+  const hidden = React.useContext(SheetHiddenBelowContext);
+  return hidden > 0 ? <View style={{ height: hidden }} /> : null;
+}
+
+/**
  * Whether the sheet has reached a snap point. `Sheet.Deferred` reads it to hold
  * its body back until the rise is over — see the note on `settled` in `Sheet`.
  */
@@ -432,9 +454,13 @@ export function Sheet({
     },
   );
 
+  // LOCAL EDIT (Open Citadel): the detent at rest, for `SheetHiddenBelowContext`.
+  const [detentIndex, setDetentIndex] = React.useState(-1);
+
   const handleChange = React.useCallback(
     (index: number) => {
       landed.set(index >= 0);
+      if (index >= 0) setDetentIndex(index);
       setSettled(index >= 0);
       // Arriving at a snap point is being at rest, whatever was last reported.
       if (index >= 0) setMoving(false);
@@ -536,6 +562,13 @@ export function Sheet({
 
   /** True when the sheet's height comes from detents rather than its content. */
   const hasDetents = snapPoints != null;
+
+  // See `SheetHiddenBelowContext`. Only several detents can leave a strip
+  // hidden; one fixed height shows the whole box.
+  const hiddenBelow =
+    snapRatios && snapRatios.length > 1 && detentIndex >= 0 && detentIndex < snapRatios.length
+      ? Math.round((Math.max(...snapRatios) - snapRatios[detentIndex]) * screenHeight)
+      : 0;
 
   /** Rule 3 of the spacing contract. */
   const bottomInset = bare ? 0 : Math.max(insets.bottom, 16);
@@ -687,11 +720,13 @@ export function Sheet({
       onDismiss={handleDismiss}
     >
       <SheetBottomInsetContext.Provider value={contentOwesBottomInset}>
-        <SheetSettledContext.Provider value={settled}>
-          <SheetRestingContext.Provider value={settled && !moving}>
-            {body}
-          </SheetRestingContext.Provider>
-        </SheetSettledContext.Provider>
+        <SheetHiddenBelowContext.Provider value={hiddenBelow}>
+          <SheetSettledContext.Provider value={settled}>
+            <SheetRestingContext.Provider value={settled && !moving}>
+              {body}
+            </SheetRestingContext.Provider>
+          </SheetSettledContext.Provider>
+        </SheetHiddenBelowContext.Provider>
       </SheetBottomInsetContext.Provider>
     </BottomSheetModal>
   );
@@ -770,6 +805,7 @@ function SheetDeferredRegion({
  */
 function SheetScrollView({
   contentContainerStyle,
+  children,
   ...props
 }: SheetScrollViewProps) {
   const bottomInset = React.useContext(SheetBottomInsetContext);
@@ -784,7 +820,11 @@ function SheetScrollView({
             ] as StyleProp<ViewStyle>)
           : contentContainerStyle
       }
-    />
+    >
+      {children}
+      {/* LOCAL EDIT (Open Citadel): see `SheetHiddenBelowContext`. */}
+      <HiddenBelowSpacer />
+    </BottomSheetScrollView>
   );
 }
 
@@ -839,11 +879,25 @@ function SheetFlatList<ItemT>({
   ref?: React.Ref<FlashListRef<ItemT>>;
 }) {
   const bottomInset = React.useContext(SheetBottomInsetContext);
+  const hiddenBelow = React.useContext(SheetHiddenBelowContext);
   const renderScrollComponent = useBottomSheetScrollableCreator();
+  // LOCAL EDIT (Open Citadel): see `SheetHiddenBelowContext`. The caller's
+  // own footer, if any, stays first.
+  const CallerFooter = props.ListFooterComponent;
+  const footer =
+    hiddenBelow > 0 ? (
+      <>
+        {React.isValidElement(CallerFooter) ? CallerFooter : CallerFooter ? <CallerFooter /> : null}
+        <HiddenBelowSpacer />
+      </>
+    ) : (
+      CallerFooter
+    );
   return (
     <FlashList<ItemT>
       drawDistance={SHEET_DRAW_DISTANCE}
       {...props}
+      ListFooterComponent={footer}
       renderScrollComponent={renderScrollComponent}
       scrollEventThrottle={16}
       contentContainerStyle={
