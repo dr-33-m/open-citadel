@@ -1,4 +1,10 @@
-import { DISCOVERY_TOOL_NAMES, LISTENING_TOOL_NAMES } from 'samwell-shared';
+import {
+  COMPASS_CLIENT_TOOL_DEFINITIONS,
+  DISCOVERY_CLIENT_TOOL_DEFINITIONS,
+  DISCOVERY_TOOL_NAMES,
+  LISTENING_TOOL_NAMES,
+  SAMWELL_CLIENT_TOOL_DEFINITIONS,
+} from 'samwell-shared';
 
 /**
  * Which of the device's tools a request may offer the model.
@@ -59,4 +65,28 @@ export function uniqueByName<T extends { name: string }>(tools: readonly T[]): T
     seen.add(tool.name);
     return true;
   });
+}
+
+/** The modes that run the device's tools: the one Samwell, and the two he was before the merge. */
+export type ChatToolMode = 'samwell' | 'reading' | 'compass';
+
+/**
+ * The device tools a mode may be offered, before `offeredClientTools` limits
+ * them to what the app declared.
+ *
+ * `reading` and `compass` are what builds from before the merge send, and
+ * stay exactly as they were. The one Samwell has both sets. They share their
+ * library tools, so the union keeps the first definition of each name: the
+ * same tool offered twice is a request the provider refuses. Keeping the
+ * first loses nothing because a shared tool has one definition in both sets,
+ * which the tests hold to.
+ */
+export function clientToolDefinitionsFor(mode: ChatToolMode) {
+  if (mode === 'compass') return [...COMPASS_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS];
+  if (mode === 'reading') return [...SAMWELL_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS];
+  return uniqueByName([
+    ...SAMWELL_CLIENT_TOOL_DEFINITIONS,
+    ...COMPASS_CLIENT_TOOL_DEFINITIONS,
+    ...DISCOVERY_CLIENT_TOOL_DEFINITIONS,
+  ]);
 }

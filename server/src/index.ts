@@ -8,16 +8,13 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import {
-  COMPASS_CLIENT_TOOL_DEFINITIONS,
   COMPASS_SYSTEM_PROMPT,
-  DISCOVERY_CLIENT_TOOL_DEFINITIONS,
   DISCOVERY_TOOL_NAMES,
   LISTENING_TOOL_NAMES,
   onboardingClientToolDefinitions,
   onboardingSystemPrompt,
   readOnboardingFeeds,
   SAMWELL_APP_GUIDE_TOOL_PROMPT,
-  SAMWELL_CLIENT_TOOL_DEFINITIONS,
   SAMWELL_DISCOVERY_TOOL_PROMPT,
   SAMWELL_JOURNEY_TOOL_PROMPT,
   SAMWELL_LISTENING_TOOL_PROMPT,
@@ -109,7 +106,7 @@ import {
 } from './billing.js';
 import { readIdentity } from './identity.js';
 import { asOneRun } from './one-run.js';
-import { offeredClientTools, offersAny, uniqueByName } from './offered-tools.js';
+import { clientToolDefinitionsFor, offeredClientTools, offersAny } from './offered-tools.js';
 import { createReadWebPageTool } from './web-page.js';
 import { pageKey, readablePageUrl } from './web-page-text.js';
 import { WEB_SEARCH_FALLBACK_COST_USD, createWebSearchTool } from './web-search.js';
@@ -233,24 +230,6 @@ function personaPromptsFor(mode: SamwellMode, onboardingFeeds: boolean, declared
     ...discovery,
     SAMWELL_MOMENTS_PROMPT,
   ];
-}
-
-/**
- * The device tools a mode may be offered, before `offeredClientTools` limits
- * them to what the app declared.
- *
- * The one Samwell has both sets. They share their library tools, so the
- * union keeps the first definition of each name: the same tool offered twice
- * is a request the provider refuses.
- */
-function clientToolDefinitionsFor(mode: Exclude<SamwellMode, 'onboarding'>) {
-  if (mode === 'compass') return [...COMPASS_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS];
-  if (mode === 'reading') return [...SAMWELL_CLIENT_TOOL_DEFINITIONS, ...DISCOVERY_CLIENT_TOOL_DEFINITIONS];
-  return uniqueByName([
-    ...SAMWELL_CLIENT_TOOL_DEFINITIONS,
-    ...COMPASS_CLIENT_TOOL_DEFINITIONS,
-    ...DISCOVERY_CLIENT_TOOL_DEFINITIONS,
-  ]);
 }
 
 /*

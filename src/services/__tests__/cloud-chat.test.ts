@@ -1,3 +1,8 @@
+import {
+  COMPASS_CLIENT_TOOL_DEFINITIONS,
+  DISCOVERY_CLIENT_TOOL_DEFINITIONS,
+  SAMWELL_CLIENT_TOOL_DEFINITIONS,
+} from 'samwell-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /*
@@ -9,6 +14,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const at = Date.now();
 let runs: unknown[][] = [];
+/** The tool names each request declared to the server, one list per request. */
+let declared: string[][] = [];
 /** In a scripted run: the connection fails at this point, as XHR reports it. */
 const DROP = Symbol('drop');
 
@@ -18,14 +25,17 @@ vi.mock('@tanstack/ai-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/ai-client')>();
   return {
     ...actual,
-    // The real client, fed a scripted stream instead of the network.
-    xhrHttpStream: () =>
-      actual.stream(async function* () {
+    // The real client, fed a scripted stream instead of the network, with a
+    // note of which tools it told the server it can run.
+    xhrHttpStream: () => ({
+      async *connect(_messages: unknown, _data: unknown, _signal: unknown, run?: { clientTools?: { name: string }[] }) {
+        declared.push((run?.clientTools ?? []).map((tool) => tool.name));
         for (const chunk of runs.shift() ?? []) {
           if (chunk === DROP) throw new Error('XHR request failed');
           yield chunk as never;
         }
-      }),
+      },
+    }),
   };
 });
 vi.mock('@/components/toast/toast-provider', () => ({ showToast: vi.fn() }));
@@ -58,13 +68,13 @@ const said = (text: string) => [
   { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm1', delta: text, timestamp: at },
 ];
 
-function turn() {
+function turn(mode: 'samwell' | 'onboarding' = 'onboarding') {
   return sendCloudChatTurn({
     baseUrl: 'https://cloud.test',
     modelId: 'test-model',
     sessionId: 's1',
     bookId: null,
-    mode: 'onboarding',
+    mode,
     history: [],
     content: 'Hello',
     onStreamingContent: () => {},
@@ -74,6 +84,7 @@ function turn() {
 }
 
 beforeEach(() => {
+  declared = [];
   vi.mocked(showToast).mockClear();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -273,5 +284,43 @@ describe('the status row after a tool, while he thinks again', () => {
       onToolStatus: () => {},
     });
     expect(trace).toBe('My persona is gentle, insightful\n\nWeighing what came back.');
+  });
+});
+
+describe('the tools a turn declares to the server', () => {
+  const finishedRun = [
+    started,
+    ...said('Hi.'),
+    { type: 'TEXT_MESSAGE_END', messageId: 'm1', timestamp: at },
+    { type: 'RUN_FINISHED', runId: 'r1', threadId: 't', finishReason: 'stop', timestamp: at },
+  ];
+
+  async function declaredBy(mode: 'samwell' | 'onboarding') {
+    runs = [finishedRun];
+    await turn(mode);
+    return new Set(declared[0] ?? []);
+  }
+
+  /*
+   * The server only offers a tool the app declared (`offered-tools.ts`), so a
+   * tool it can offer but the app never bound is not an error anywhere: he
+   * just never gets it. That is how the Compass tools could have gone missing
+   * in the merge without a single test failing.
+   */
+  it('declares every tool the server can offer the one Samwell', async () => {
+    const names = await declaredBy('samwell');
+    const offerable = [
+      ...SAMWELL_CLIENT_TOOL_DEFINITIONS,
+      ...COMPASS_CLIENT_TOOL_DEFINITIONS,
+      ...DISCOVERY_CLIENT_TOOL_DEFINITIONS,
+    ].map((tool) => tool.name);
+    expect(offerable.filter((name) => !names.has(name))).toEqual([]);
+  });
+
+  it('gives him his goals as well as his library', async () => {
+    const names = await declaredBy('samwell');
+    for (const name of ['search_highlights', 'add_to_queue', 'explain_app', 'get_compass_status', 'log_trackable', 'propose_goal', 'propose_adjustments']) {
+      expect(names).toContain(name);
+    }
   });
 });
