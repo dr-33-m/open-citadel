@@ -22,6 +22,7 @@ import {
   useEpisodeTranscriptSheet,
 } from '@/features/samwell/hooks/use-chat-sheets';
 import { useCompassGoalSheets, usePlannerSheet } from '@/features/samwell/hooks/use-compass-sheets';
+import { useCompassWarm } from '@/features/samwell/hooks/use-compass-warm';
 import { useBrainSheetCloud, useStartInCloud } from '@/features/samwell/hooks/use-samwell-brains';
 import { useSamwellSheet, useSheetAsked, type SamwellSheet } from '@/stores/samwell-ui';
 
@@ -32,11 +33,21 @@ import { useSamwellSheet, useSheetAsked, type SamwellSheet } from '@/stores/samw
  * not: the history lists, the goal stores and the pickers' queries were all
  * subscribed from the page's first frame, for sheets most visits never open.
  * This holds only the one flag, so nothing under it runs until then.
+ * `warm` mounts it early, ahead of a tap that is probably coming (see
+ * `useCompassWarm`); the sheet itself still only appears when asked for.
  */
-function WhenOpened({ sheets, children }: { sheets: readonly SamwellSheet[]; children: React.ReactNode }) {
+function WhenOpened({
+  sheets,
+  warm = false,
+  children,
+}: {
+  sheets: readonly SamwellSheet[];
+  warm?: boolean;
+  children: React.ReactNode;
+}) {
   const asked = useSheetAsked(sheets);
   const [opened, setOpened] = React.useState(asked);
-  if (asked && !opened) setOpened(true);
+  if ((asked || warm) && !opened) setOpened(true);
   return opened ? children : null;
 }
 
@@ -76,10 +87,12 @@ const GOAL_SHEETS = ['insights', 'overview', 'past-goals'] as const;
 /**
  * Every sheet the Samwell page raises, each subscribed to its own flag.
  *
- * Takes no props and reads nothing itself, so the page drawing again never
- * reaches it, and one sheet opening draws that sheet alone.
+ * Takes no props, so the page drawing again never reaches it, and one sheet
+ * opening draws that sheet alone. The one thing it reads is whether the
+ * Compass sheets should be wired up early, which flips once a visit.
  */
 export const SamwellSheets = React.memo(function SamwellSheets() {
+  const compassWarm = useCompassWarm();
   return (
     <>
       <WhenOpened sheets={['book']}><BookPicker /></WhenOpened>
@@ -87,9 +100,9 @@ export const SamwellSheets = React.memo(function SamwellSheets() {
       <WhenOpened sheets={['episode']}><EpisodePicker /></WhenOpened>
       <WhenOpened sheets={['history']}><ChatHistory /></WhenOpened>
       <WhenOpened sheets={['episode-transcript']}><EpisodeTranscript /></WhenOpened>
-      <WhenOpened sheets={['deck']}><LogDeck /></WhenOpened>
-      <WhenOpened sheets={['planner']}><Planner /></WhenOpened>
-      <WhenOpened sheets={GOAL_SHEETS}><GoalSheets /></WhenOpened>
+      <WhenOpened sheets={['deck']} warm={compassWarm}><LogDeck /></WhenOpened>
+      <WhenOpened sheets={['planner']} warm={compassWarm}><Planner /></WhenOpened>
+      <WhenOpened sheets={GOAL_SHEETS} warm={compassWarm}><GoalSheets /></WhenOpened>
       <WhenOpened sheets={['about-compass']}><AboutCompass /></WhenOpened>
       {/* Raised through handles, from the plan wall and the toolbox. */}
       <Hosts />
