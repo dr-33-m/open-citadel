@@ -1,19 +1,20 @@
 import React from 'react';
 
-import { BookOpen, MicSignal, Newspaper, type LucideIcon } from '@/components/icons';
 import type { ToolboxItem } from '@/components/samwell/samwell-toolbox';
 import type { BookKind } from '@/db/schema';
+import { ATTACHMENT_KINDS } from '@/features/chat/components/attachment-kinds';
 import { attachmentTool } from '@/features/chat/utils/attachment-tools';
 
 /**
  * The kinds of thing a chat can hold, in the order the drawer shows them. A
- * new kind is a row here and a picker, never another copy of the rules.
+ * new kind is a row here, a picker and an entry in `ATTACHMENT_KINDS`, never
+ * another copy of the rules.
  */
-const ATTACHMENT_KINDS: { kind: BookKind; id: string; icon: LucideIcon; label: string; lead?: boolean }[] = [
+const ATTACHMENT_TOOLS: { kind: BookKind; id: string; lead?: boolean }[] = [
   // The book leads: it is what the chat page is mostly for.
-  { kind: 'book', id: 'book', icon: BookOpen, label: 'Book', lead: true },
-  { kind: 'article', id: 'post', icon: Newspaper, label: 'Blog post' },
-  { kind: 'episode', id: 'episode', icon: MicSignal, label: 'Podcast' },
+  { kind: 'book', id: 'book', lead: true },
+  { kind: 'article', id: 'post' },
+  { kind: 'episode', id: 'episode' },
 ];
 
 export type ChatToolboxArgs = {
@@ -42,12 +43,13 @@ export function useChatToolbox(args: ChatToolboxArgs): ToolboxItem[] {
 
   return React.useMemo(() => {
     const state = { hasSession, attachedKind, pendingKind, busy };
-    const attachments = ATTACHMENT_KINDS.flatMap(({ kind, ...row }): ToolboxItem[] => {
+    const attachments = ATTACHMENT_TOOLS.flatMap(({ kind, ...row }): ToolboxItem[] => {
       const tool = attachmentTool(kind, state);
       if (!tool.shown) return [];
       return [
         {
           ...row,
+          ...ATTACHMENT_KINDS[kind],
           // In a chat that holds nothing, a pick starts a new chat about it.
           detail: tool.attached ? attachedTitle : tool.startsNew ? 'New chat' : 'None yet',
           // The cover stands in for the icon once one is picked: the whole

@@ -9,6 +9,7 @@ import { useChatToolbox } from '@/features/chat/hooks/use-chat-toolbox';
 import type { SamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
 import { brainSheet } from '@/features/samwell/handles';
 import { useCompassToolbox } from '@/features/samwell/hooks/use-compass-toolbox';
+import { toolboxRows } from '@/features/samwell/utils/toolbox-rows';
 import { useSamwellAttachment } from '@/features/samwell/hooks/use-samwell-attachment';
 import { useBrainSheetCloud } from '@/features/samwell/hooks/use-samwell-brains';
 import { useChatStore } from '@/stores/chat';
@@ -23,7 +24,7 @@ const TABS: readonly TextSwitchOption<ToolboxTab>[] = [
 /**
  * What the toolbox under the composer holds: a tab each for Reading and
  * Compass, then the brain and the history, which belong to the whole
- * conversation and sit under both.
+ * conversation and sit under both, laid out in rows (`toolboxRows`).
  *
  * Drawn only by the composer, and it reads counts and flags rather than the
  * conversation itself, so a token streaming in redraws none of it. Each tool
@@ -83,5 +84,10 @@ export function useSamwellToolbox(readiness: SamwellReadiness) {
     [brainOnOffer, brainDetail, busy, sessionCount, openSheet],
   );
 
-  return { tabs: TABS, tab, onTabChange, items: tab === 'reading' ? reading : compass, shared };
+  const own = tab === 'reading' ? reading : compass;
+  // Memoised on its parts, so the drawer's rows keep their identity while a
+  // reply streams in and the memo on each tile holds.
+  const rows = React.useMemo(() => toolboxRows(own, shared), [own, shared]);
+
+  return { tabs: TABS, tab, onTabChange, rows };
 }

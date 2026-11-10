@@ -1,8 +1,9 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 
-import { MicSignal } from '@/components/icons';
 import { useSamwellReadiness } from '@/features/chat/hooks/use-samwell-readiness';
+import { ATTACHMENT_OPEN_LABEL, attachmentOpenTarget } from '@/features/chat/utils/attachment-open';
+import { useOpenReader } from '@/features/library/hooks/use-open-reader';
 import { useSamwellAttachment } from '@/features/samwell/hooks/use-samwell-attachment';
 import { useSamwellRoutes } from '@/features/samwell/hooks/use-samwell-routes';
 import { useChatStore } from '@/stores/chat';
@@ -26,22 +27,38 @@ export function useSamwellHeader() {
   const locator = useChatStore((s) => s.activeSession?.contextLocator ?? null);
   const attachment = useSamwellAttachment();
 
-  const onOpenBook = React.useMemo(() => {
-    // An episode chat's badge opens its transcript; a passage chat's, the passage.
-    if (attachment.episode) return () => openSheet('episode-transcript');
-    if (bookId && locator) return () => router.push({ pathname: '/reader/[id]', params: { id: bookId, locator } });
+  const openReader = useOpenReader();
+
+  const target = attachment.kind
+    ? attachmentOpenTarget({ kind: attachment.kind, episode: attachment.episode !== null, passage: locator !== null })
+    : null;
+
+  const onOpenAttachment = React.useMemo(() => {
+    if (target === 'transcript') return () => openSheet('episode-transcript');
+    if (!bookId) return undefined;
+    if (target === 'passage' && locator) {
+      return () => router.push({ pathname: '/reader/[id]', params: { id: bookId, locator } });
+    }
+    if (target === 'book') return () => openReader(bookId);
     return undefined;
-  }, [attachment.episode, bookId, locator, openSheet, router]);
+  }, [target, bookId, locator, openSheet, openReader, router]);
 
   const shared = { onBack: routes.library, backLabel: 'Library', onWakeSamwell, onOpenSettings: routes.settings };
 
+  const held = React.useMemo(
+    () =>
+      attachment.kind && attachment.title
+        ? {
+            kind: attachment.kind,
+            title: attachment.title,
+            cover: attachment.cover,
+            openLabel: target ? ATTACHMENT_OPEN_LABEL[target] : null,
+          }
+        : null,
+    [attachment.kind, attachment.title, attachment.cover, target],
+  );
+
   // Null until the conversation has a name of its own: a picked book is not
-  // yet a chat, so the bar still centres and the book rides beneath.
-  return {
-    ...shared,
-    title,
-    bookTitle: attachment.title,
-    bookIcon: attachment.episode ? MicSignal : undefined,
-    onOpenBook,
-  };
+  // yet a chat, so the bar still centres and the book waits in the toolbox.
+  return { ...shared, title, attachment: held, onOpenAttachment };
 }

@@ -4,12 +4,12 @@ import { View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useCSSVariable } from 'uniwind';
 
-import { ChevronRight, type LucideIcon } from '@/components/icons';
+import type { LucideIcon } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { TextSwitch, type TextSwitchOption } from '@/components/text-switch';
 import { Card } from '@/components/ui/card';
 import { Touchable } from '@/components/ui/touchable';
-import { iconSize, motion } from '@/constants/theme';
+import { motion } from '@/constants/theme';
 import { useCollapseHeight } from '@/hooks/use-collapse-height';
 import { cn } from '@/lib/cn';
 import { asColor } from '@/utils/colors';
@@ -44,8 +44,8 @@ const INSET = 8;
  *
  * Opening MOVES THE BUTTON YOU JUST PRESSED. The stack is anchored to the
  * bottom of the screen and the drawer opens beneath the control unit, so the
- * card lifts by the drawer's whole height — 112dp in chat, 263dp in Compass —
- * and a tool row lands on the exact pixels the handle occupied a moment ago.
+ * card lifts by the drawer's whole height (two rows of tiles, about 150dp)
+ * and a tile lands on the exact pixels the handle occupied a moment ago.
  *
  * That turned an impatient second tap into a trap. On device: tap the handle,
  * the drawer opens, tap again where the handle was, and the row now sitting
@@ -75,9 +75,15 @@ export const TOOLBOX_SETTLE = motion.base + 500;
  */
 const CARD_POSITION = { position: 'absolute', left: INSET, right: INSET, bottom: 0 } as const;
 const OVERLAP_SPACER = { height: OVERLAP } as const;
-/** The icon box, at the two sizes a row comes in. */
-const LEAD_GLYPH = { width: iconSize.default, height: iconSize.default } as const;
-const ROW_GLYPH = { width: 18, height: 18 } as const;
+/** The glyph: an icon at this size, or the cover of what the chat holds. */
+const GLYPH = 14;
+const COVER = { width: GLYPH, height: GLYPH } as const;
+/**
+ * The state line, a step under `bodySm`. At `bodySm` it was larger than the
+ * name above it, so "3 activities" outweighed PLANNER and the tile read as a
+ * figure with a caption: the dashboard this drawer keeps having to avoid.
+ */
+const DETAIL_TEXT = { fontSize: 12, lineHeight: 16 } as const;
 
 export type ToolboxItem = {
   id: string;
@@ -99,148 +105,108 @@ export type ToolboxItem = {
   /** Lit in gold: this tool is holding something, or is already the mode. */
   active?: boolean;
   /**
-   * The one thing this mode is for, given the full width and the top of the
-   * card: logging today in Compass, the book in a chat.
+   * The one thing this mode is for, given the first tile of the first row:
+   * logging today in Compass, the book in a chat (`toolboxRows`).
    *
-   * Exactly one item per mode should carry it. Without a lead, every control
-   * is drawn at the same size and the thing you press every morning competes
-   * with the one you press twice a month.
+   * Exactly one item per mode should carry it, so the thing you press every
+   * morning is where the thumb lands first rather than wherever it was listed.
    */
   lead?: boolean;
 };
 
 
 /**
- * One tool: an icon, its name, the state it is in, and a chevron.
+ * One tool, as a tile: its name, then its icon and the state it is in.
  *
- * A ROW, and every one of them, which is the difference between this drawer
- * reading as controls and reading as a readout. The version before this laid
- * the secondary tools out as a two-column grid with the state stacked under
- * the label — which is exactly this app's `StatCard`, the thing it uses for
- * numbers you look at. They were the right information in the wrong clothes:
- * four little dashboards where four buttons should be.
+ * A third of a row wide and two lines tall: the name, then the icon with one
+ * muted line of state beside it. It still says "press me" rather than
+ * "read me", which is what sank the grid before it (a stack of icon, name and
+ * figure is `StatCard`, and five of them read as a dashboard): it is a raised
+ * `tile` with a border and a lift like every other button in the app, it ticks
+ * under the finger, and its state is a short muted line, never a serif figure.
  *
- * So they borrow the shape the app already uses for "this opens something":
- * the overview's side-goal card and the archive's rows. Icon on the left,
- * name, state on the trailing edge, chevron. Nothing stacks, so nothing reads
- * as a figure, and a fifth or an eighth tool just makes the list longer.
- *
- * Memoised. The screen above this one re-renders on every streamed token, and
- * these rows sit inside a drawer that is usually shut — so without a memo they
- * re-rendered, invisibly, a few dozen times a second during a reply. The
- * caller memoises the item list to match; both halves are needed, since a memo
- * is worth nothing against a prop rebuilt every render.
+ * Memoised. The screen above re-renders on every streamed token, and these
+ * tiles sit inside a drawer that is usually shut, so without a memo they
+ * re-rendered invisibly a few dozen times a second during a reply. The rows
+ * are memoised by the caller to match.
  */
 const Tool = React.memo(function Tool({
   item,
-  lead,
   muted,
   gold,
   foreground,
 }: {
   item: ToolboxItem;
-  /** The one thing this mode is for: heavier label, and it sits on top. */
-  lead: boolean;
   muted?: string;
   gold?: string;
   foreground?: string;
 }) {
   const Icon = item.icon;
   const tint = item.active ? gold : foreground;
-  const glyph = lead ? iconSize.default : 18;
 
   return (
-    <View className="p-1">
-      <Touchable
-        // `tile` is the ground a book cover sits on, and these are the same
-        // kind of object: something resting ON a panel rather than part of it.
-        // With a lift under them they read as pressable; flat and borderless
-        // they read as rows of text.
-        //
-        // `shadow-sm`, PanelUI's own card weight, not the app's
-        // `elevation.soft` — that token is for book covers and timeline cards,
-        // and at button scale it lands as a hard drop instead of a lift.
-        className={cn(
-          'flex-row items-center gap-3 border border-border bg-tile px-3 shadow-sm',
-          lead ? 'py-3' : 'py-2.5',
-          !item.onPress && 'opacity-35',
-        )}
-        onPress={item.onPress}
-        onLongPress={item.onLongPress}
-        // A tool with nothing to open is dimmed AND inert. Without the
-        // `disabled`, leaving `onPress` off only removed the action: the row
-        // still dimmed under the finger and still ticked, so it answered a
-        // press with the full vocabulary of a working button and then did
-        // nothing — which is the exact shape of "it reacts, it just doesn't
-        // do anything".
-        disabled={!item.onPress}
-        haptic="select"
-        accessibilityRole="button"
-        accessibilityState={{ selected: item.active, disabled: !item.onPress }}
-        accessibilityLabel={item.detail ? `${item.label}, ${item.detail}` : item.label}
-      >
+    <Touchable
+      // `tile` is the ground a book cover sits on, and these are the same kind
+      // of object: something resting ON a panel rather than part of it.
+      // `shadow-sm` is PanelUI's own card weight; the app's `elevation.soft` is
+      // for covers and lands as a hard drop at button scale.
+      className={cn(
+        'flex-1 gap-1 border border-border bg-tile px-2.5 py-2 shadow-sm',
+        !item.onPress && 'opacity-35',
+      )}
+      onPress={item.onPress}
+      onLongPress={item.onLongPress}
+      // A tool with nothing to open is dimmed AND inert. Leaving `onPress` off
+      // alone still dimmed and ticked under the finger, a working button's
+      // whole vocabulary for a press that then did nothing.
+      disabled={!item.onPress}
+      haptic="select"
+      accessibilityRole="button"
+      accessibilityState={{ selected: item.active, disabled: !item.onPress }}
+      accessibilityLabel={item.detail ? `${item.label}, ${item.detail}` : item.label}
+    >
+      <ThemedText type="labelSm" color={tint} numberOfLines={1}>
+        {item.label.toUpperCase()}
+      </ThemedText>
+      {/* The icon rides on the state line rather than taking a line of its
+          own above the name: beside the name it would cut LOG TODAY and BLOG
+          POST short in a third of a row, while the state is short or is the
+          thing that truncates anyway (a book's title). */}
+      <View className="flex-row items-center gap-1.5">
         {item.image ? (
-          <Image
-            source={{ uri: item.image }}
-            style={lead ? LEAD_GLYPH : ROW_GLYPH}
-            contentFit="cover"
-          />
+          // The cover stands in for the icon once something is picked.
+          <Image source={{ uri: item.image }} style={COVER} contentFit="cover" />
         ) : (
-          <Icon size={glyph} color={tint} strokeWidth={2} />
+          <Icon size={GLYPH} color={tint} strokeWidth={2} />
         )}
-
-        {/*
-          The name never shrinks; the state takes what is left and truncates.
-
-          This was the other way round — the name on `flex-1` and the state
-          unconstrained — and a long `detail` then ate the whole row. A book
-          title is the worst case and the one that showed it: "How it Works /
-          Dealing in simple language…" squeezed the word BOOK to nothing and
-          pushed the chevron off the card. Labels here are one or two short
-          words and always fit; a title is arbitrary, so it is the thing that
-          gives way.
-        */}
-        <ThemedText type={lead ? 'labelMd' : 'labelSm'} color={tint} numberOfLines={1}>
-          {item.label.toUpperCase()}
+        {/* Always drawn, empty when there is nothing to say, so every tile
+            in a row is the same height. */}
+        <ThemedText type="bodySm" color={muted} numberOfLines={1} style={DETAIL_TEXT} className="shrink">
+          {item.detail ?? ' '}
         </ThemedText>
-
-        <ThemedText
-          type="bodySm"
-          color={muted}
-          numberOfLines={1}
-          className="flex-1 text-right"
-        >
-          {item.detail ?? ''}
-        </ThemedText>
-
-        {/* The mark that says this is a control and not a reading. Every row
-            in the app that opens something carries it. */}
-        <ChevronRight size={15} color={muted} strokeWidth={2} />
-      </Touchable>
-    </View>
+      </View>
+    </Touchable>
   );
 });
 
-/**
- * A run of rows: its lead first, then the rest in the order the caller gave
- * them. A lead belongs to its run, so Reading's book and Compass's log today
- * each sit on top of their own tab.
- */
-function ToolList({
-  items,
+/** The tools in rows of up to three, each row shared out evenly by its tiles. */
+function ToolRows({
+  rows,
   muted,
   gold,
   foreground,
 }: {
-  items: ToolboxItem[];
+  rows: ToolboxItem[][];
   muted?: string;
   gold?: string;
   foreground?: string;
 }) {
-  const lead = items.find((item) => item.lead) ?? null;
-  const ordered = lead ? [lead, ...items.filter((item) => item !== lead)] : items;
-  return ordered.map((item) => (
-    <Tool key={item.id} item={item} lead={item === lead} muted={muted} gold={gold} foreground={foreground} />
+  return rows.map((row) => (
+    <View key={row.map((item) => item.id).join('|')} className="flex-row gap-2">
+      {row.map((item) => (
+        <Tool key={item.id} item={item} muted={muted} gold={gold} foreground={foreground} />
+      ))}
+    </View>
   ));
 }
 
@@ -258,26 +224,19 @@ function ToolList({
  * what stops that row growing a button every time Samwell gains a surface.
  * It had reached seven.
  *
- * ## Why it is a list and not a grid
+ * ## Why rows of tiles
  *
- * It was a grid twice, and a grid is what a drawer looks like when nobody
- * decided anything: five controls at one size, differing by an icon and a
- * word, saying nothing about themselves, with a hole where the sixth would be.
- * It does not scale either — a seventh control makes the hole worse, and there
- * is nowhere to put a control that needs more than one word.
- *
- * Then it was a grid with the state stacked under each label, and that was the
- * same mistake wearing better clothes: an icon over a name over a figure is
- * this app's `StatCard`, so five buttons came out looking like a dashboard.
- *
- * A list of rows fixes both. Every row is the shape the app already uses for
- * "this opens something" — the overview's side goals, the archive's rows —
- * with the state on the trailing edge instead of stacked, and a chevron saying
- * it is a control. The lead sits on top with a heavier label because it is
- * what the mode is FOR; an eighth tool just makes the list longer.
+ * It has been a grid twice and a list of full-width rows once. The list read
+ * well, a row per tool with its state on the trailing edge, but at five or six
+ * rows under a tab switch the drawer climbed most of the way up the screen and
+ * pushed the conversation out of view (owner's call, 2026-11-10). So the tools
+ * are tiles again, three to a row: the tab's own tools first, the brain and
+ * the history under them (`toolboxRows`), every row shared out evenly so
+ * there is never a hole. What kept the earlier grids from reading as controls
+ * is answered in the tile itself; see `Tool`.
  *
  * The `detail` is what separates this from a drawer of labels: `PLANNER` is a
- * noun, `PLANNER … 5 activities` answers whether it is worth opening.
+ * noun, `PLANNER / 5 activities` answers whether it is worth opening.
  *
  * ## The motion
  *
@@ -289,7 +248,7 @@ function ToolList({
  * Pinned to the top the same animation reveals top-down, like a blind coming
  * down, which is the opposite reading.
  *
- * Memoised, with `items` memoised by the caller to match. The screen above
+ * Memoised, with `rows` memoised by the caller to match. The screen above
  * re-renders on every streamed token; without both halves this whole drawer
  * re-rendered a few dozen times a second while shut.
  *
@@ -305,18 +264,15 @@ function ToolboxCard<T extends string>({
   tabs,
   tab,
   onTabChange,
-  items,
-  shared,
+  rows,
 }: {
   open: boolean;
   /** The kinds of tool, as a switch along the top: Reading, Compass. */
   tabs: readonly TextSwitchOption<T>[];
   tab: T;
   onTabChange: (tab: T) => void;
-  /** The showing tab's tools. */
-  items: ToolboxItem[];
-  /** Under every tab: what belongs to the whole conversation (the brain, the history). */
-  shared: ToolboxItem[];
+  /** The showing tab's tools, then the conversation's own, in rows (`toolboxRows`). */
+  rows: ToolboxItem[][];
 }) {
   const [primary, mutedForeground, foreground] = useCSSVariable([
     '--color-primary',
@@ -402,12 +358,9 @@ function ToolboxCard<T extends string>({
             never drift apart. */}
         <View style={OVERLAP_SPACER} />
 
-        <Card.Content className="p-1 pt-0">
-          <View className="p-1">
-            <TextSwitch options={tabs} value={tab} onChange={onTabChange} />
-          </View>
-          <ToolList items={items} muted={muted} gold={gold} foreground={ink} />
-          <ToolList items={shared} muted={muted} gold={gold} foreground={ink} />
+        <Card.Content className="gap-2 p-2 pt-0">
+          <TextSwitch options={tabs} value={tab} onChange={onTabChange} />
+          <ToolRows rows={rows} muted={muted} gold={gold} foreground={ink} />
         </Card.Content>
       </Card>
     </Animated.View>

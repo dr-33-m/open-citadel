@@ -21,16 +21,16 @@
  * outside it on a fixed "Compass" bar, from back when a Compass conversation
  * was not something you could name or return to.
  */
-import { ChevronLeft, Settings, type LucideIcon } from '@/components/icons';
+import { ChevronLeft, Settings } from '@/components/icons';
 import React from 'react';
 import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ModelStatusBar } from '@/components/chat/model-status-bar';
-import { ThemedText } from '@/components/themed-text';
 import { ScreenHeader } from '@/components/ui/screen-header';
-import { Touchable } from '@/components/ui/touchable';
 import { iconSize } from '@/constants/theme';
+import type { BookKind } from '@/db/schema';
+import { AttachmentPopover } from '@/features/chat/components/attachment-popover';
 import { asColor } from '@/utils/colors';
 
 export interface ChatHeaderProps {
@@ -38,16 +38,20 @@ export interface ChatHeaderProps {
   title: string | null;
   /** What the bar says before the conversation has a name of its own. */
   fallbackTitle?: string;
-  /** The book this chat is grounded in, if any. */
-  bookTitle?: string | null;
-  /** Drawn before the book's title: the podcast mark for an episode. */
-  bookIcon?: LucideIcon;
+  /** The book, post or episode this chat is about, if any. */
+  attachment?: {
+    kind: BookKind;
+    title: string;
+    cover: string | null;
+    /** What its action says (`ATTACHMENT_OPEN_LABEL`), or null for none. */
+    openLabel: string | null;
+  } | null;
+  /** Opens it: the passage, the transcript or the book. Omit and its
+   *  popover only says what it is. */
+  onOpenAttachment?: () => void;
   /** Where back goes, named for the screen reader. */
   onBack: () => void;
   backLabel: string;
-  /** Opens the book at the passage the chat is anchored to. Omit to render it
-   *  as a plain label rather than a target. */
-  onOpenBook?: () => void;
   /** Tapping the status dot wakes the local model. */
   onWakeSamwell: () => void;
   onOpenSettings: () => void;
@@ -56,15 +60,14 @@ export interface ChatHeaderProps {
 export function ChatHeader({
   title,
   fallbackTitle = 'Chat',
-  bookTitle,
-  bookIcon,
+  attachment,
   onBack,
   backLabel,
-  onOpenBook,
+  onOpenAttachment,
   onWakeSamwell,
   onOpenSettings,
 }: ChatHeaderProps) {
-  const [foreground, primary] = useCSSVariable(['--color-foreground', '--color-primary']);
+  const [foreground] = useCSSVariable(['--color-foreground']);
 
   const named = title != null && title.length > 0;
 
@@ -81,60 +84,32 @@ export function ChatHeader({
     >
       {/* Only once there is a conversation. Before that the bar is just
           Samwell's name, and a status line under it described a session that
-          did not exist yet — his readiness is worth saying about a chat you
-          are in, not as a greeting. The book you have picked is already shown
-          on the input card below, so nothing is lost by holding this back.
+          did not exist yet. The book you have picked is already shown in the
+          toolbox below, so nothing is lost by holding this back.
 
-          "wrap" so a long book name drops to its own line instead of shoving
-          Samwell's status off the edge — his name is "Grand Maester Samwell"
-          in cloud mode, which is most of the row on its own. */}
+          One line, always: Samwell's status, then the mark of what the chat
+          is about. The title of the book or episode used to sit here in full
+          and wrapped the bar onto a third line; it now opens from the mark
+          (`AttachmentPopover`). */}
       {named ? (
-        <View className="w-full flex-row flex-wrap items-center justify-start gap-2">
+        <View className="w-full flex-row items-center gap-2.5">
           <ModelStatusBar onPress={onWakeSamwell} />
-          {bookTitle ? (
-            <BookBadge title={bookTitle} icon={bookIcon} onPress={onOpenBook} color={asColor(primary)} />
+          {attachment ? (
+            <>
+              {/* A hairline between what Samwell is and what the chat is
+                  about: two facts on one line, not one run-on label. */}
+              <View className="h-2.5 w-px bg-border" />
+              <AttachmentPopover
+                kind={attachment.kind}
+                title={attachment.title}
+                cover={attachment.cover}
+                openLabel={attachment.openLabel}
+                onOpen={onOpenAttachment}
+              />
+            </>
           ) : null}
         </View>
       ) : null}
     </ScreenHeader>
-  );
-}
-
-/** The book a chat is anchored to. A target when there is a passage to return
- *  to, plain text when there is not — a pressable that goes nowhere is worse
- *  than a label. */
-function BookBadge({
-  title,
-  icon: Icon,
-  onPress,
-  color,
-}: {
-  title: string;
-  icon?: LucideIcon;
-  onPress?: () => void;
-  color: string | undefined;
-}) {
-  const label = (
-    <View className="flex-row items-center gap-1.5">
-      {Icon ? <Icon size={12} color={color} /> : null}
-      <ThemedText type="labelSm" color={color} numberOfLines={1} className="shrink">
-        {title}
-      </ThemedText>
-    </View>
-  );
-
-  if (!onPress) {
-    return <View className="max-w-[55%] px-2 py-[2px]">{label}</View>;
-  }
-
-  return (
-    <Touchable
-      className="max-w-[55%] bg-muted px-2 py-[2px]"
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${title}`}
-    >
-      {label}
-    </Touchable>
   );
 }

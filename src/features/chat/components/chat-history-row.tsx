@@ -10,6 +10,11 @@ import type { ChatSession } from '@/stores/chat';
 
 export interface ChatHistoryRowProps {
   item: ChatSession;
+  /**
+   * Whether the row can be swiped yet. Before that it is the same row with
+   * nothing to drag: see `ChatHistorySheet` for why the swipe waits.
+   */
+  armed: boolean;
   switching: 'new' | string | null;
   /** This row's rename is running: the tile shows a spinner and the row holds open. */
   renaming: boolean;
@@ -36,6 +41,7 @@ export interface ChatHistoryRowProps {
  */
 export const ChatHistoryRow = React.memo(function ChatHistoryRow({
   item,
+  armed,
   switching,
   renaming,
   onSelect,
@@ -71,6 +77,20 @@ export const ChatHistoryRow = React.memo(function ChatHistoryRow({
     <PencilSparkles color={onPrimary} />
   );
 
+  const row = (
+    <Item
+      // Set on every branch, never conditionally omitted: a recycled
+      // cell keeps the style of whatever row it held before, so a
+      // dropped `opacity` leaves an unrelated row dimmed.
+      className={cn('py-3', dimmed ? 'opacity-40' : 'opacity-100')}
+      onPress={switching ? undefined : () => onSelect(item.id)}
+    >
+      <ChatHistoryRowBody item={item} opening={switching === item.id} primary={primary} muted={muted} />
+    </Item>
+  );
+
+  if (!armed) return row;
+
   return (
     // Held still while renaming: a second drag would close the row the
     // spinner is being shown on, with the rename still running.
@@ -105,15 +125,7 @@ export const ChatHistoryRow = React.memo(function ChatHistoryRow({
           onPress={() => onDelete(item)}
         />
       </Swipe.End>
-      <Item
-        // Set on every branch, never conditionally omitted: a recycled
-        // cell keeps the style of whatever row it held before, so a
-        // dropped `opacity` leaves an unrelated row dimmed.
-        className={cn('py-3', dimmed ? 'opacity-40' : 'opacity-100')}
-        onPress={switching ? undefined : () => onSelect(item.id)}
-      >
-        <ChatHistoryRowBody item={item} opening={switching === item.id} primary={primary} muted={muted} />
-      </Item>
+      {row}
     </Swipe>
   );
 });

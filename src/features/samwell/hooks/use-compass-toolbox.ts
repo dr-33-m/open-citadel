@@ -53,8 +53,9 @@ export function useCompassToolbox(blocker: CloudBlocker | null): ToolboxItem[] {
         : NONE;
     if (activeGoalCount === 0) {
       return [
-        { id: 'set-goal', icon: Goal, label: 'Set a goal', lead: true, detail: 'With Samwell', onPress: startGoal },
-        { id: 'about-compass', icon: Info, label: 'About Compass', onPress: opener('about-compass') },
+        // Short enough for a third of a row: the drawer is tiles (`toolboxRows`).
+        { id: 'set-goal', icon: Goal, label: 'Set a goal', lead: true, detail: 'In chat', onPress: startGoal },
+        { id: 'about-compass', icon: Info, label: 'About', detail: 'Compass', onPress: opener('about-compass') },
         ...pastGoals,
       ];
     }
@@ -74,7 +75,7 @@ export function useCompassToolbox(blocker: CloudBlocker | null): ToolboxItem[] {
         id: 'planner',
         icon: CalendarDays,
         label: 'Planner',
-        detail: `${trackableCount} ${trackableCount === 1 ? 'activity' : 'activities'}`,
+        detail: `${trackableCount} tracked`,
         onPress: opener('planner'),
       },
       {
