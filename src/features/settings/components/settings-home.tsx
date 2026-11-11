@@ -112,8 +112,8 @@ export const SettingsHome = React.memo(function SettingsHome({
         />
         <SettingsRow
           icon={MessageCircleHeart}
-          title="A note from the author"
-          detail="Thamsanqa Dreem"
+          title="Community"
+          detail="A note from Thamsanqa"
           opens="sheet"
           onPress={onOpenNote}
         />
