@@ -73,6 +73,7 @@ import {
   type SearchResult,
   type ToolCallContext,
 } from '@/services/chat-tools';
+import { reportHandled } from '@/lib/observe';
 import type { ChapterListing, ReadingSearchResult } from '@/services/reading-tools';
 import { ArrowRight } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
@@ -297,6 +298,8 @@ export function sayCloudTurnFailed(error: unknown): void {
     if (__DEV__) console.log('[Samwell Cloud] Unreachable:', error instanceof Error ? error.message : error);
   } else if (!refusal) {
     console.error('[Samwell Cloud] Turn failed:', error);
+    // Offline and a refusal are states, not faults; this is a fault.
+    reportHandled('samwell.cloud_turn', error);
   }
   showToast({
     key: TURN_FAILED_TOAST,

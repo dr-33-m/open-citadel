@@ -22,6 +22,13 @@ export interface FitSheetProps {
   contentStyle?: StyleProp<ViewStyle>;
   /** The tallest it grows, as a fraction of the window. */
   heightRatio?: number;
+  /**
+   * Under the content, pinned: the sheet's actions stay where the thumb is
+   * while what is above them scrolls (an "i" sheet that asks for a choice).
+   */
+  footer?: React.ReactNode;
+  /** Opened from inside another sheet: `push` rises over it instead of replacing it. */
+  stackBehavior?: React.ComponentProps<typeof Sheet>['stackBehavior'];
 }
 
 /**
@@ -37,9 +44,19 @@ export interface FitSheetProps {
  * shape it needs: sized to fit, or fixed at the cap with the content
  * scrolling under the pinned header.
  *
- * The sources, the steps and the thought behind a reply all open in one.
+ * The sources, the steps and the thought behind a reply all open in one,
+ * and so does every "i" (`InfoSheet`).
  */
-export function FitSheet({ visible, onClose, header, children, contentStyle, heightRatio = 0.78 }: FitSheetProps) {
+export function FitSheet({
+  visible,
+  onClose,
+  header,
+  children,
+  contentStyle,
+  heightRatio = 0.78,
+  footer,
+  stackBehavior,
+}: FitSheetProps) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [measured, setMeasured] = React.useState<number | null>(null);
@@ -67,6 +84,7 @@ export function FitSheet({ visible, onClose, header, children, contentStyle, hei
         >
           {header}
           <View style={contentStyle}>{children}</View>
+          {footer}
         </View>
       ) : null}
       <Sheet
@@ -75,6 +93,7 @@ export function FitSheet({ visible, onClose, header, children, contentStyle, hei
         fixedHeightRatio={long ? heightRatio : undefined}
         maxHeightRatio={long ? undefined : heightRatio}
         scrollable={long}
+        stackBehavior={stackBehavior}
       >
         {header}
         {long ? (
@@ -86,6 +105,7 @@ export function FitSheet({ visible, onClose, header, children, contentStyle, hei
         ) : (
           <View style={contentStyle}>{children}</View>
         )}
+        {footer}
       </Sheet>
     </>
   );

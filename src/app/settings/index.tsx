@@ -1,8 +1,10 @@
 import { CreatorNoteSheet } from "@/components/settings/creator-note-sheet";
 import { ThemeScope } from "@/components/theme-scope";
+import { PerformanceSheet } from "@/features/settings/components/performance-sheet";
 import { SettingsHome } from "@/features/settings/components/settings-home";
 import { SettingsPage } from "@/features/settings/components/settings-page";
 import { useSettingsHome } from "@/features/settings/hooks/use-settings-home";
+import { useInteractiveWhen } from "@/hooks/use-screen-interactive";
 import { THEME_ORDER } from "@/utils/theme-order";
 
 /**
@@ -19,6 +21,7 @@ import { THEME_ORDER } from "@/utils/theme-order";
  */
 export default function SettingsScreen() {
   const screen = useSettingsHome();
+  useInteractiveWhen(true);
 
   return (
     <>
@@ -29,6 +32,7 @@ export default function SettingsScreen() {
         </SettingsPage>
       </ThemeScope>
       <CreatorNoteSheet {...screen.note} />
+      <PerformanceSheet {...screen.performance} />
     </>
   );
 }

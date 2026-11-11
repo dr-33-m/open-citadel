@@ -33,6 +33,8 @@ import { ReadiumView } from "@dr33m/react-native-readium";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCSSVariable } from "uniwind";
 
+import { ScreenInteractive } from "@/components/navigation/screen-interactive";
+import { useReaderOpenMetric } from "@/features/reader/hooks/use-reader-open-metric";
 import { useCloudVoiceFailure } from "@/features/reader/hooks/use-cloud-voice-failure";
 import { useReadAloudBridge } from "@/features/reader/hooks/use-read-aloud-bridge";
 import { readerVoiceId } from "@/services/device-tts/catalogue";
@@ -201,6 +203,7 @@ export default function ReaderScreen() {
    * changes.
    */
   const [readerPainted, setReaderPainted] = useState(false);
+  useReaderOpenMetric(readerPainted, currentBook?.kind ?? null);
 
   // Reset lives with `setPublicationReady(false)` on book change rather than in
   // here, so this effect only ever schedules — an effect that also writes state
@@ -929,6 +932,7 @@ export default function ReaderScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      <ScreenInteractive when={readerPainted} />
       {/* Holds the reading area's top edge. */}
       <View pointerEvents="none" style={{ height: readerTop }} />
 

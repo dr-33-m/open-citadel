@@ -56,6 +56,7 @@ export function Handover({
   surface = 'background',
   ready = true,
   fill = true,
+  onShown,
   children,
 }: {
   skeleton: React.ReactNode;
@@ -65,6 +66,12 @@ export function Handover({
   ready?: boolean;
   /** Fill the space it is given (a screen's body), or take the body's own height (a region of a page). */
   fill?: boolean;
+  /**
+   * Once the body has painted and the placeholder starts to go: the moment
+   * the region is really there to use. A screen passes its time-to-interactive
+   * marker (`useScreenInteractive`).
+   */
+  onShown?: () => void;
   children: React.ReactNode;
 }) {
   const painted = useAfterFirstPaint();
@@ -73,6 +80,11 @@ export function Handover({
   // In a page's flow the placeholder is clipped to the body until it has
   // faded, so the clip outlasts `covered` by the length of the fade.
   const [clipped, setClipped] = React.useState(!fill);
+  // Read through a ref so a caller's new function each render never re-runs the reveal.
+  const shown = React.useRef(onShown);
+  React.useEffect(() => {
+    shown.current = onShown;
+  }, [onShown]);
 
   React.useEffect(() => {
     if (covered || !clipped) return undefined;
@@ -87,7 +99,10 @@ export function Handover({
     // so uncovering from inside it would uncover onto nothing.
     let inner = 0;
     const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => setCovered(false));
+      inner = requestAnimationFrame(() => {
+        setCovered(false);
+        shown.current?.();
+      });
     });
     return () => {
       cancelAnimationFrame(outer);

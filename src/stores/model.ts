@@ -9,6 +9,7 @@ import {
 import type { RnExecuTorchError } from "react-native-executorch";
 import { create } from "zustand";
 
+import { reportHandled, startTimer, track } from '@/lib/observe';
 import { showToast } from "@/components/toast/toast-provider";
 import { db } from "@/db/client";
 import { appSettings, deviceModels } from "@/db/schema";
@@ -530,6 +531,7 @@ async function wake(): Promise<void> {
     });
   }, SLOW_WAKE_NOTICE_MS);
 
+  const elapsed = startTimer();
   try {
     const files = await localModelFiles(entry);
     if (!files) {
@@ -571,8 +573,11 @@ async function wake(): Promise<void> {
     // in) is paid for by the first real message anyway, and at least that
     // one is a message the reader asked for.
     set({ isLoaded: true, isLoading: false });
+    track({ name: 'samwell.model_load', attributes: { model: entry.id, ms: elapsed(), outcome: 'done' } });
   } catch (err: unknown) {
     clearTimeout(slowWakeNotice);
+    track({ name: 'samwell.model_load', attributes: { model: entry.id, ms: elapsed(), outcome: 'failed' } });
+    reportHandled('samwell.model_load', err);
     set({
       isLoading: false,
       isLoaded: false,

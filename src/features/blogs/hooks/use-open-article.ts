@@ -5,7 +5,8 @@ import React from 'react';
 import { ExternalLink } from '@/components/icons';
 import { dismissToast, showToast } from '@/components/toast/toast-provider';
 import { invalidateBlogLibrary } from '@/query-manager/blogs';
-import { openArticle as routeArticle, type ArticleOpen, type WholePostsAsk } from '@/services/blogs/article-book';
+import { reportHandled, startTimer, track } from '@/lib/observe';
+import { ArticleOpenError, openArticle as routeArticle, type ArticleOpen, type WholePostsAsk } from '@/services/blogs/article-book';
 import type { ArticleItem } from '@/services/blogs/records';
 import { askSamwellAbout } from '@/services/samwell-handoff';
 import { hostOf } from '@/utils/urls';
@@ -40,6 +41,9 @@ async function withPost<T>(post: OpenablePost, work: () => Promise<T>): Promise<
     // (`useArticleActions`), not on the frame the reader starts to slide in.
     return result;
   } catch (err) {
+    // The app's own refusals ("no longer in your library", "cancelled") are
+    // said and expected; anything else is a fault worth knowing about.
+    if (!(err instanceof ArticleOpenError)) reportHandled('post.open', err);
     // A failure after the post's copy was made still changed it.
     invalidateBlogLibrary();
     showToast({
@@ -77,6 +81,14 @@ function cannotListen({ link, reason }: ToSite): void {
   });
 }
 
+/** Where a post went and how long it took to get there (`post.open`). */
+async function timedOpen(post: OpenablePost, purpose: 'read' | 'listen' | 'chat'): Promise<ArticleOpen | null> {
+  const elapsed = startTimer();
+  const opened = await withPost(post, () => routeArticle(post.id, purpose));
+  if (opened) track({ name: 'post.open', attributes: { to: opened.to, purpose, ms: elapsed() } });
+  return opened;
+}
+
 /**
  * Opening a post, listening to one and starting a chat with Samwell about
  * one. Where a post opens is `openArticle`'s to say (`article-route.ts`): in
@@ -89,7 +101,7 @@ export function useOpenArticle(onAsk?: AskWholePosts) {
   /** The post's reader copy for reading or listening; null when it opened elsewhere, needs asking, or failed. */
   const toBook = React.useCallback(
     async (post: OpenablePost, intent: ArticleIntent): Promise<string | null> => {
-      const opened = await withPost(post, () => routeArticle(post.id, intent === 'listen' ? 'listen' : 'read'));
+      const opened = await timedOpen(post, intent === 'listen' ? 'listen' : 'read');
       if (!opened) return null;
       if (opened.to === 'reader') return opened.bookId;
       if (opened.to === 'ask') onAsk?.({ blog: opened.blog, post, intent });
@@ -112,7 +124,7 @@ export function useOpenArticle(onAsk?: AskWholePosts) {
 
   /** The copy a chat is grounded in: the whole post, or the opening the feed carries. */
   const prepareForChat = React.useCallback(async (post: OpenablePost) => {
-    const opened = await withPost(post, () => routeArticle(post.id, 'chat'));
+    const opened = await timedOpen(post, 'chat');
     return opened?.to === 'reader' ? opened.bookId : null;
   }, []);
 

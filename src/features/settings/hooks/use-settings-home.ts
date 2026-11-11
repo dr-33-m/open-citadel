@@ -4,6 +4,7 @@ import React from 'react';
 import { useWarmPlanOffer } from '@/features/billing/hooks/use-plan-offer';
 import type { SettingsHomeProps } from '@/features/settings/components/settings-home';
 import { useLightMode } from '@/features/settings/hooks/use-light-mode';
+import { usePerformanceSharing } from '@/features/settings/hooks/use-performance-sharing';
 import { useSettingsSummaries } from '@/features/settings/hooks/use-settings-summaries';
 import type { SettingsPane } from '@/features/settings/utils/panes';
 import { useCloudIdentity } from '@/hooks/use-cloud-identity';
@@ -45,6 +46,7 @@ export function useSettingsHome() {
   const username = useSettingsStore((s) => s.username);
   const summaries = useSettingsSummaries();
   const theme = useLightMode();
+  const performance = usePerformanceSharing();
   const [noteOpen, setNoteOpen] = React.useState(false);
   const openNote = React.useCallback(() => setNoteOpen(true), []);
   const closeNote = React.useCallback(() => setNoteOpen(false), []);
@@ -61,9 +63,10 @@ export function useSettingsHome() {
     name: username || 'Add your name',
     summaries,
     ...theme,
+    ...performance.row,
     onOpen: open,
     onOpenNote: openNote,
   };
 
-  return { close, home, note: { visible: noteOpen, onClose: closeNote } };
+  return { close, home, note: { visible: noteOpen, onClose: closeNote }, performance: performance.sheet };
 }

@@ -23,6 +23,7 @@ import { useEpisodeRowRenderer } from "@/features/podcasts/hooks/use-episode-row
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
 import { usePodcastSectionScreen } from "@/features/podcasts/hooks/use-podcast-section-screen";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import { useScreenInteractive } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 import type { EpisodeItem } from "@/services/podcasts/records";
 
@@ -34,6 +35,7 @@ export default function PodcastSectionScreen() {
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
   const landed = useSettledOnce();
+  const interactive = useScreenInteractive();
   const screen = usePodcastSectionScreen(type);
   const episodeActions = useEpisodeActions();
   const renderEpisode = useEpisodeRowRenderer(episodeActions, { withShow: true });
@@ -94,7 +96,7 @@ export default function PodcastSectionScreen() {
       </DrawerHeader>
       {/* The list mounts once the drawer has landed and the shelf has been
           read, behind a skeleton of its shape. */}
-      <Handover ready={landed && screen.loaded} skeleton={skeleton}>
+      <Handover onShown={interactive} ready={landed && screen.loaded} skeleton={skeleton}>
         <PageFade>{lists[screen.view]}</PageFade>
       </Handover>
       {miniPlayer.props ? <MiniPlayer {...miniPlayer.props} /> : null}

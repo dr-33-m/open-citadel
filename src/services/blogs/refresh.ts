@@ -9,6 +9,7 @@
  */
 import { eq } from 'drizzle-orm';
 
+import { startTimer, track } from '@/lib/observe';
 import { db } from '@/db/client';
 import { blogs } from '@/db/schema';
 import { parseBlogFeed } from '@/services/blogs/feed-parser';
@@ -68,6 +69,7 @@ export async function refreshBlog(blog: Blog, force = false): Promise<{ fresh: n
 async function run(force: boolean): Promise<BlogRefreshSummary> {
   const due = (await db.select().from(blogs).where(eq(blogs.state, 'subscribed'))).filter((b) => force || isRefreshDue(b));
   const summary: BlogRefreshSummary = { refreshed: 0, fresh: 0, failed: 0 };
+  const elapsed = startTimer();
   const pending = [...due];
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, pending.length) }, async () => {
@@ -79,6 +81,9 @@ async function run(force: boolean): Promise<BlogRefreshSummary> {
       }
     }),
   );
+  if (summary.refreshed > 0) {
+    track({ name: 'feeds.refresh', attributes: { kind: 'blogs', feeds: summary.refreshed, failed: summary.failed, ms: elapsed() } });
+  }
   await pruneStalePreviews();
   // What publishers ask first, since the sweep keeps to it.
   await refreshPublisherRules();

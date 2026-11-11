@@ -11,6 +11,7 @@ import { CatalogShelves } from "@/features/free-books/components/catalog-shelves
 import { CatalogShelvesSkeleton } from "@/features/free-books/components/catalog-shelves-skeleton";
 import { catalogPreviewReady } from "@/features/free-books/utils/catalog-preview";
 import { useFreeBooksExplore } from "@/features/free-books/hooks/use-free-books-explore";
+import { useScreenInteractive } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /**
@@ -20,6 +21,7 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
 export default function FreeBooksExploreScreen() {
   const insets = useSafeAreaInsets();
   const landed = useSettledOnce();
+  const interactive = useScreenInteractive();
   const explore = useFreeBooksExplore(landed);
   const bottomPadding = layout.scrollBottom + insets.bottom;
   // Seen before (the shelves are cached): the page opens on its shelves, in
@@ -65,7 +67,7 @@ export default function FreeBooksExploreScreen() {
           // Not seen before: a skeleton holds the page while the shelves are
           // fetched, and they mount under it once the drawer has finished
           // rising (a list landing mid-rise makes a drawer stagger).
-          <Handover ready={landed} skeleton={<CatalogShelvesSkeleton />}>
+          <Handover onShown={interactive} ready={landed} skeleton={<CatalogShelvesSkeleton />}>
             {shelves}
           </Handover>
         )}

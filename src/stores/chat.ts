@@ -6,6 +6,8 @@ import { hasCloudIdentity } from '@/hooks/use-cloud-identity';
 import { showToast } from '@/components/toast/toast-provider';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
+import { reportHandled } from '@/lib/observe';
+import { replyOutcome } from '@/lib/observe/events';
 import { extractChapterTextToLocator } from '@/services/book-context';
 import { articleChatPrompt, articleText } from '@/services/blogs/article-chat';
 import { isCloudBarred } from '@/services/blogs/cloud-permission';
@@ -35,6 +37,7 @@ import {
 } from '@/services/chat-tools';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
 import { KEEP_GOING_MESSAGE, sayCloudTurnFailed, sayTurnPaused, sendCloudChatTurn } from '@/services/cloud-chat';
+import { startReplyMetric } from '@/services/samwell-reply-metric';
 import {
     estimateTokens,
     planReplay,
@@ -951,6 +954,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     if (samwellMode === 'cloud') {
       let finalContent = '';
+      const metric = startReplyMetric('cloud', cloudModelId);
       cloudAbort = new AbortController();
       try {
         const history = get().messages.filter((m) => m.id !== userMsg.id && !isLegacyIdentity(m));
@@ -966,6 +970,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           content,
           signal: cloudAbort.signal,
           onStreamingContent: (streamed) => {
+            metric.text();
             set({
               isThinking: false,
               isToolCalling: false,
@@ -982,6 +987,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // through rather than a guess.
           onThinkingDone: (seconds) => set({ thinkingSeconds: seconds }),
           onToolStatus: (status, name) => {
+            if (status !== null) metric.tool();
             set(() => ({
               isToolCalling: status !== null,
               toolCallStatus: status,
@@ -1027,6 +1033,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sayCloudTurnFailed(err);
       } finally {
         cloudAbort = null;
+        metric.end(replyOutcome(stopRequested, finalContent.length), finalContent.length);
       }
 
       if (finalContent.length > 0) {
@@ -1073,6 +1080,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
 
+    // From the press, so a wait behind a background title counts: it is a
+    // wait the reader sat through.
+    const metric = startReplyMetric('device', getEngine()?.entry.id);
     // A chat being named in the background finishes first, and nothing else
     // starts after it: the reader's message goes next.
     await finishBackgroundTitle();
@@ -1117,6 +1127,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         // would otherwise re-split the text and write the store unchanged.
         if (!shown || (shown === lastShown.text && step === lastShown.step)) return;
         lastShown = { text: shown, step };
+        metric.text();
         stream.push(shown);
       },
     };
@@ -1136,6 +1147,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const brain = getEngine()?.entry.id;
       if (brain) markRunStarted(brain);
       const turn = await sendDeviceTurn(conversation, content, hooks, userMsg.id);
+      metric.tools(turn.messages.filter((m) => m.role === 'tool').length);
 
       // A reply that ran out while still reasoning never crossed back, so the
       // clock is closed here rather than left running into the next turn.
@@ -1161,6 +1173,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         limitReached = 'context';
       } else {
         console.error('[Samwell] Generation error:', err);
+        reportHandled('samwell.device_turn', err);
       }
       // The model went away under the turn (a reload that failed): the store
       // is told, so the wake banner says so instead of sends doing nothing.
@@ -1172,6 +1185,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } finally {
       deviceTurn = null;
       markRunFinished();
+      metric.end(replyOutcome(stopRequested, finalContent.length, limitReached !== null), finalContent.length);
     }
 
     if (limitReached) {

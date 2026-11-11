@@ -11,6 +11,7 @@ import { BookGrid } from '@/features/library/components/book-grid';
 import { BookSheets } from '@/features/library/components/book-sheets';
 import { useBookSheets } from '@/features/library/hooks/use-book-sheets';
 import { useCollectionScreen } from '@/features/library/hooks/use-collection-screen';
+import { useInteractiveWhen } from '@/hooks/use-screen-interactive';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { useSettledOnce } from '@/navigation/use-settled-once';
 
@@ -22,6 +23,7 @@ export default function CollectionScreen() {
   // The grid mounts when the slide has actually finished, and stays mounted.
   const landed = useSettledOnce();
   const screen = useCollectionScreen(id);
+  useInteractiveWhen(landed && screen.loaded);
   // A collection manages its own membership, so its menu has no "Add to collection".
   const sheets = useBookSheets({ collections: false, onDeleted: screen.reload });
 

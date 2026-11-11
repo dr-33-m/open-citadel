@@ -20,6 +20,7 @@ import { useBookSheets } from '@/features/library/hooks/use-book-sheets';
 import { useCollectionsSection } from '@/features/library/hooks/use-collections-section';
 import { useNewCollection } from '@/features/library/hooks/use-new-collection';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { useInteractiveWhen, useScreenInteractive } from '@/hooks/use-screen-interactive';
 import { useSettledOnce } from '@/navigation/use-settled-once';
 
 const COLUMNS = 2;
@@ -37,6 +38,9 @@ function BookSection({ type }: { type: string | undefined }) {
   // Heavy work (the grid, the sheets) waits for the drawer to land.
   // Content mounts when the slide has actually finished, and stays mounted.
   const landed = useSettledOnce();
+  // The grid and the queue draw their own skeleton handover; the screen is
+  // usable once it has landed and they mount.
+  useInteractiveWhen(landed);
   const section = useBookSection(type);
   const sheets = useBookSheets();
   const muted = tokens['--color-muted-foreground'];
@@ -96,6 +100,7 @@ function CollectionsSection() {
   const tokens = useThemeTokens();
   // Content mounts when the slide has actually finished, and stays mounted.
   const landed = useSettledOnce();
+  const interactive = useScreenInteractive();
   const section = useCollectionsSection();
   const newCollection = useNewCollection();
   const skeleton = (
@@ -118,7 +123,7 @@ function CollectionsSection() {
           <Plus size={18} color={tokens['--color-foreground']} strokeWidth={2} />
         </IconButton>
       </DrawerHeader>
-      <Handover ready={landed} skeleton={skeleton}>
+      <Handover onShown={interactive} ready={landed} skeleton={skeleton}>
         <CollectionList
           collections={section.results}
           columns={COLUMNS}

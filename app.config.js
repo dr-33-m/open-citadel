@@ -98,6 +98,9 @@ module.exports = () => {
       revenueCatAndroidKey,
       revenueCatTestKey,
       releaseNotes: readReleaseNotes(),
+      // Which build this is, so EAS Observe can keep a development phone's
+      // numbers apart from the store's (`lib/observe`).
+      appVariant: process.env.APP_VARIANT || "production",
     },
     ios: {
       ...baseConfig.ios,

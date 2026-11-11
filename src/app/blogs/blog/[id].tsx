@@ -15,6 +15,7 @@ import { BlogPageSkeleton } from "@/features/blogs/components/blog-page-skeleton
 import { useArticleActions } from "@/features/blogs/hooks/use-article-actions";
 import { useArticleRowRenderer } from "@/features/blogs/hooks/use-article-row-renderer";
 import { useBlogScreen, type BlogParams } from "@/features/blogs/hooks/use-blog-screen";
+import { useInteractiveWhen } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /**
@@ -31,6 +32,7 @@ export default function BlogScreen() {
   const landed = useSettledOnce();
   const actions = useArticleActions();
   const screen = useBlogScreen(params, landed, actions.changeWholePosts);
+  useInteractiveWhen(!screen.resolving);
   const renderItem = useArticleRowRenderer(actions, { withBlog: false });
 
   // The list is mounted from the first frame with the hero as its header, so

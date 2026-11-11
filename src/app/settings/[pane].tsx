@@ -7,6 +7,7 @@ import { SettingsPaneBody } from "@/features/settings/components/settings-pane-b
 import { SettingsPaneSkeleton } from "@/features/settings/components/settings-pane-skeleton";
 import { useSettingsPane } from "@/features/settings/hooks/use-settings-pane";
 import { PANE_TITLES, paneScrolls } from "@/features/settings/utils/panes";
+import { useScreenInteractive } from "@/hooks/use-screen-interactive";
 
 /**
  * One page of Settings, pushed from the list (or straight from elsewhere).
@@ -19,6 +20,7 @@ import { PANE_TITLES, paneScrolls } from "@/features/settings/utils/panes";
  */
 export default function SettingsPaneScreen() {
   const { pane, landed, onLeave, onRequestAccount, initialMode } = useSettingsPane();
+  const interactive = useScreenInteractive();
   if (!pane) return <Redirect href="/settings" />;
 
   const scrolls = paneScrolls(pane);
@@ -26,7 +28,7 @@ export default function SettingsPaneScreen() {
 
   return (
     <SettingsPage title={PANE_TITLES[pane]} leaves="back" onLeave={onLeave} scrolls={scrolls}>
-      <Handover skeleton={skeleton} ready={landed} fill={!scrolls}>
+      <Handover onShown={interactive} skeleton={skeleton} ready={landed} fill={!scrolls}>
         <SettingsPaneBody pane={pane} onRequestAccount={onRequestAccount} initialMode={initialMode} />
       </Handover>
     </SettingsPage>

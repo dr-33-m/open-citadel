@@ -12,6 +12,7 @@
 
 
 export type { LucideIcon } from 'lucide-react-native';
+export { default as Activity } from 'lucide-react-native/icons/activity';
 export { default as Archive } from 'lucide-react-native/icons/archive';
 export { default as ArrowBigDownDash } from 'lucide-react-native/icons/arrow-big-down-dash';
 export { default as ArrowBigUpDash } from 'lucide-react-native/icons/arrow-big-up-dash';

@@ -8,6 +8,7 @@ import { layout } from "@/constants/theme";
 import { ExploreResults } from "@/features/blogs/components/explore-results";
 import { ExploreSections } from "@/features/blogs/components/explore-sections";
 import { useBlogsExplore } from "@/features/blogs/hooks/use-blogs-explore";
+import { useInteractiveWhen } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /**
@@ -17,6 +18,7 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
 export default function BlogsExploreScreen() {
   const insets = useSafeAreaInsets();
   const landed = useSettledOnce();
+  useInteractiveWhen(landed);
   const explore = useBlogsExplore();
   const bottomPadding = layout.scrollBottom + insets.bottom;
 

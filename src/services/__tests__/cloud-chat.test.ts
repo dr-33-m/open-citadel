@@ -39,6 +39,7 @@ vi.mock('@tanstack/ai-client', async (importOriginal) => {
   };
 });
 vi.mock('@/components/toast/toast-provider', () => ({ showToast: vi.fn() }));
+vi.mock('@/lib/observe', () => ({ reportHandled: vi.fn(), track: vi.fn(), startTimer: () => () => 0 }));
 vi.mock('@/components/icons', () => ({ ArrowRight: () => null }));
 vi.mock('@/lib/network', () => ({
   reportCloudReached: () => {},

@@ -14,6 +14,7 @@ import { ImportGuideSheet } from "@/features/podcasts/components/onboarding/impo
 import { ImportView } from "@/features/podcasts/components/onboarding/import-view";
 import { useExploreScreen } from "@/features/podcasts/hooks/use-explore-screen";
 import { explorePreviewReady } from "@/features/podcasts/utils/explore-preview";
+import { useScreenInteractive } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /**
@@ -24,6 +25,7 @@ import { useSettledOnce } from "@/navigation/use-settled-once";
 export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const landed = useSettledOnce();
+  const interactive = useScreenInteractive();
   const explore = useExploreScreen(landed);
   const { importer } = explore;
   const bottomPadding = layout.scrollBottom + insets.bottom;
@@ -83,7 +85,7 @@ export default function ExploreScreen() {
           // Not seen before: a skeleton holds the page while the charts are
           // fetched, and the shelves mount under it once the drawer has
           // finished rising (a list landing mid-rise makes a drawer stagger).
-          <Handover ready={landed} skeleton={<ExploreSkeleton />}>
+          <Handover onShown={interactive} ready={landed} skeleton={<ExploreSkeleton />}>
             {charts}
           </Handover>
         )}

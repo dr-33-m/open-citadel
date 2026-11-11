@@ -20,6 +20,7 @@ import { BlogGrid } from "@/features/blogs/components/blog-grid";
 import { useArticleRowRenderer } from "@/features/blogs/hooks/use-article-row-renderer";
 import { useBlogSectionScreen } from "@/features/blogs/hooks/use-blog-section-screen";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import { useScreenInteractive } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 import type { ArticleItem } from "@/services/blogs/records";
 
@@ -31,6 +32,7 @@ export default function BlogSectionScreen() {
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
   const landed = useSettledOnce();
+  const interactive = useScreenInteractive();
   const screen = useBlogSectionScreen(type);
   const renderArticle = useArticleRowRenderer(screen.actions, { withBlog: true });
   const bottomPadding = layout.scrollBottom + insets.bottom;
@@ -87,7 +89,7 @@ export default function BlogSectionScreen() {
           </IconButton>
         ) : null}
       </DrawerHeader>
-      <Handover ready={landed && screen.loaded} skeleton={skeleton}>
+      <Handover onShown={interactive} ready={landed && screen.loaded} skeleton={skeleton}>
         <PageFade>{lists[screen.view]}</PageFade>
       </Handover>
       <ArticleSheets actions={screen.actions} />

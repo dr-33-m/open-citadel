@@ -6,6 +6,7 @@ import { SearchHeader } from "@/components/search-header";
 import { ThemedView } from "@/components/themed-view";
 import { CatalogGrid } from "@/features/free-books/components/catalog-grid";
 import { SHELF_SEARCH_DEBOUNCE, useCatalogShelfScreen } from "@/features/free-books/hooks/use-catalog-shelf-screen";
+import { useInteractiveWhen } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /** A whole Project Gutenberg shelf, two books to a row, from its VIEW ALL, with a search inside it. */
@@ -14,6 +15,7 @@ export default function CatalogShelfScreen() {
   const insets = useSafeAreaInsets();
   const landed = useSettledOnce();
   const screen = useCatalogShelfScreen(id);
+  useInteractiveWhen(landed);
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>

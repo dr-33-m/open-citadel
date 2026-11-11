@@ -3,6 +3,7 @@ import React from 'react';
 import type { WholePosts } from '@/db/schema';
 import type { AskWholePosts, ArticleIntent, OpenablePost } from '@/features/blogs/hooks/use-open-article';
 import { wholePostsAsk, type WholePostsAskCopy } from '@/features/blogs/utils/whole-posts';
+import { track } from '@/lib/observe';
 import { invalidateBlogLibrary } from '@/query-manager/blogs';
 import type { WholePostsAsk } from '@/services/blogs/article-book';
 import { setBlogWholePosts } from '@/services/blogs/blogs';
@@ -36,6 +37,7 @@ export function useWholePosts() {
       setVisible(false);
       if (!asking) return null;
       await setBlogWholePosts(asking.blog.blogId, mode);
+      track({ name: 'post.whole_posts', attributes: { mode } });
       invalidateBlogLibrary();
       return asking.post && asking.intent ? { post: asking.post, intent: asking.intent } : null;
     },
