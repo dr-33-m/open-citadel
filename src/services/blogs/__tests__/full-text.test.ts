@@ -1,19 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractArticle, isTeaser } from '@/services/blogs/full-text';
+import { extractArticle, pageReservesRights } from '@/services/blogs/full-text';
 
 const LONG = Array.from({ length: 12 }, (_, i) => `<p>Paragraph ${i} ${'of careful, considered prose '.repeat(8)}</p>`).join('');
 
-describe('isTeaser', () => {
-  it('treats a short or cut-off copy as a teaser', () => {
-    expect(isTeaser(null)).toBe(true);
-    expect(isTeaser('<p>Just the first paragraph.</p>')).toBe(true);
-    expect(isTeaser(`${LONG}<p>Continue reading →</p>`)).toBe(true);
-    expect(isTeaser(`${LONG}<p>and so it goes [&#8230;]</p>`)).toBe(true);
+describe('pageReservesRights', () => {
+  it('hears noarchive and noai in the robots tag or header, and a TDM reservation', () => {
+    expect(pageReservesRights('<head><meta name="robots" content="index, noarchive"></head>', null)).toBe(true);
+    expect(pageReservesRights("<head><meta content='noai' name='ROBOTS'></head>", null)).toBe(true);
+    expect(pageReservesRights('<head><meta name="tdm-reservation" content="1"></head>', null)).toBe(true);
+    expect(pageReservesRights('<html></html>', 'noai, noimageai')).toBe(true);
+    expect(pageReservesRights('<html></html>', null, true)).toBe(true);
   });
 
-  it('treats a long copy as the post', () => {
-    expect(isTeaser(LONG)).toBe(false);
+  it('lets a page with no such ask be read, and ignores the body', () => {
+    expect(pageReservesRights('<head><meta name="robots" content="index, follow"></head>', null)).toBe(false);
+    expect(pageReservesRights('<head><meta name="tdm-reservation" content="0"></head>', 'noindex')).toBe(false);
+    expect(pageReservesRights('<head></head><body><meta name="robots" content="noarchive"></body>', null)).toBe(false);
+    expect(pageReservesRights('<head><meta data-name="robots" content="noarchive"></head>', null)).toBe(false);
   });
 });
 

@@ -6,12 +6,14 @@ import { RotateCcw } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
 import { usePageSearch, useSearchResults } from '@/hooks/use-page-search';
 import type { BlogHeroProps } from '@/features/blogs/components/blog-hero';
+import { useWholePostsLine } from '@/features/blogs/hooks/use-whole-posts-line';
 import {
   createBlogArticlesQueryOptions,
   createBlogQueryOptions,
   createDiscoveredBlogQueryOptions,
   invalidateBlogLibrary,
 } from '@/query-manager/blogs';
+import type { WholePostsAsk } from '@/services/blogs/article-book';
 import type { BlogArticleFilter } from '@/services/blogs/articles';
 import { followBlog, getBlog, unfollowBlog } from '@/services/blogs/blogs';
 import { htmlToText } from '@/services/blogs/feed/text';
@@ -38,8 +40,10 @@ async function refreshById(id: string): Promise<void> {
  * A blog's page: the blog, its posts (all, or only the unread), and what its
  * buttons do. Opened from Explore, the blog is fetched and kept as a preview
  * once the slide has landed, so its posts can be read before following.
+ * `changeWholePosts` puts up the question of how a summary-only blog is read
+ * (`useArticleActions`).
  */
-export function useBlogScreen(params: BlogParams, landed: boolean) {
+export function useBlogScreen(params: BlogParams, landed: boolean, changeWholePosts: (blog: WholePostsAsk) => void) {
   const found = params.id === 'found' ? (params.feedUrl ?? null) : null;
   const discovered = useQuery(createDiscoveredBlogQueryOptions(found ?? '', { enabled: found !== null && landed }));
   const blogId = found ? (discovered.data ?? null) : params.id;
@@ -92,10 +96,14 @@ export function useBlogScreen(params: BlogParams, landed: boolean) {
   const rawDescription = blog?.description ?? null;
   const description = React.useMemo(() => (rawDescription ? htmlToText(rawDescription) : null), [rawDescription]);
 
+  const shownArticles = landed ? articles.data : undefined;
+  const host = siteUrl ? hostOf(siteUrl) : null;
+  const wholePosts = useWholePostsLine({ blog, siteUrl, host, articles: shownArticles, change: changeWholePosts });
+
   const failed = found !== null && discovered.isError;
   const hero: BlogHeroProps = {
     title,
-    host: siteUrl ? hostOf(siteUrl) : null,
+    host,
     imageUrl: blog?.imageUrl ?? null,
     description,
     following: blog?.state === 'subscribed',
@@ -107,13 +115,14 @@ export function useBlogScreen(params: BlogParams, landed: boolean) {
     onFollow,
     onUnfollow: unfollow,
     onOpenSite: openSite,
+    wholePosts,
   };
 
   // The posts are drawn once the slide has landed, never during it. Their read
   // is held until then too, but opening the blog from a list reads them ahead
   // at the tap (`useArticleActions`), and a cached answer would otherwise be
   // drawn into a page still moving.
-  const shown = landed ? articles.data : undefined;
+  const shown = shownArticles;
   const results = useSearchResults(shown ?? NO_ARTICLES, search, articleFields);
   const emptyText = search.query.trim()
     ? 'No posts match.'

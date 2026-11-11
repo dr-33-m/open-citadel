@@ -14,8 +14,10 @@ import { blogs } from '@/db/schema';
 import { parseBlogFeed } from '@/services/blogs/feed-parser';
 import type { Blog } from '@/services/blogs/records';
 import { storeArticles } from '@/services/blogs/store-articles';
+import { pruneArticleCopies } from '@/services/blogs/article-copies';
 import { pruneStalePreviews } from '@/services/blogs/blogs';
 import { fetchFeed } from '@/services/feeds/fetch';
+import { refreshPublisherRules } from '@/services/publishers';
 import { nowIso } from '@/services/rows';
 
 const CONCURRENCY = 4;
@@ -49,6 +51,7 @@ export async function refreshBlog(blog: Blog, force = false): Promise<{ fresh: n
         // Kept once set: it may be the directory's icon or the site's, which a feed image should not replace.
         imageUrl: blog.imageUrl ?? parsed.imageUrl,
         language: parsed.language ?? blog.language,
+        rights: parsed.rights ?? blog.rights,
         httpValidator: result.validator,
         lastRefreshAt: nowIso(),
         lastRefreshError: null,
@@ -77,6 +80,9 @@ async function run(force: boolean): Promise<BlogRefreshSummary> {
     }),
   );
   await pruneStalePreviews();
+  // What publishers ask first, since the sweep keeps to it.
+  await refreshPublisherRules();
+  await pruneArticleCopies();
   return summary;
 }
 

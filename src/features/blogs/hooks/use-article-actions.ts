@@ -7,7 +7,10 @@ import { Share } from 'react-native';
 import { showToast } from '@/components/toast/toast-provider';
 import { useListen } from '@/features/audiobook/hooks/use-listen';
 import { useListenState } from '@/features/audiobook/hooks/use-listen-state';
-import { useOpenArticle } from '@/features/blogs/hooks/use-open-article';
+import { useOpenArticle, type OpenablePost } from '@/features/blogs/hooks/use-open-article';
+import { useRemoveCopy } from '@/features/blogs/hooks/use-remove-copy';
+import { useWholePosts } from '@/features/blogs/hooks/use-whole-posts';
+import type { WholePosts } from '@/db/schema';
 import type { ArticleAction } from '@/features/blogs/utils/article-menu';
 import { useSettledFocusEffect } from '@/navigation/use-settled-focus-effect';
 import { createBlogArticlesQueryOptions, createBlogQueryOptions, invalidateBlogLibrary } from '@/query-manager/blogs';
@@ -15,6 +18,7 @@ import { listenItem } from '@/services/audiobook';
 import { keepPostCover } from '@/services/blogs/post-cover';
 import { setArticleFavorite, setArticleFinished, setArticleRead } from '@/services/blogs/articles';
 import { setArticleQueued } from '@/services/blogs/queue';
+import { permissionsFor } from '@/services/publishers';
 import type { ArticleItem } from '@/services/blogs/records';
 
 /**
@@ -26,7 +30,9 @@ import type { ArticleItem } from '@/services/blogs/records';
 export function useArticleActions() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { prepareArticle, openArticle, chatAboutArticle } = useOpenArticle();
+  const wholePosts = useWholePosts();
+  const { removeCopy, sheet: removal } = useRemoveCopy();
+  const { prepareToListen, openArticle, chatAboutArticle } = useOpenArticle(wholePosts.ask);
   const listen = useListen();
   const { listen: startListening } = listen;
   const listenState = useListenState();
@@ -34,14 +40,25 @@ export function useArticleActions() {
 
   // Heard as a book is: from its reader copy, made first as Read makes it.
   const listenTo = React.useCallback(
-    async (article: ArticleItem) => {
-      const bookId = await prepareArticle(article);
+    async (article: OpenablePost) => {
+      const bookId = await prepareToListen(article);
       // The notification draws the cover from the phone, as a book's.
       if (bookId) await keepPostCover(bookId);
       const item = bookId ? listenItem(bookId) : null;
       if (item) startListening(item);
     },
-    [prepareArticle, startListening],
+    [prepareToListen, startListening],
+  );
+
+  // Answered, the question gives way to what the reader was doing.
+  const { choose } = wholePosts;
+  const chooseWholePosts = React.useCallback(
+    (mode: WholePosts) =>
+      void choose(mode).then((resume) => {
+        if (resume?.intent === 'open') void openArticle(resume.post);
+        else if (resume?.intent === 'listen') void listenTo(resume.post);
+      }),
+    [choose, openArticle, listenTo],
   );
 
   const openBlog = React.useCallback(
@@ -59,6 +76,8 @@ export function useArticleActions() {
   // never during it. Every screen that lists posts opens them through here.
   useSettledFocusEffect(invalidateBlogLibrary, { skipFirst: true });
 
+  const menuLink = menuArticle?.link ?? null;
+  const cloudAllowed = React.useMemo(() => permissionsFor(menuLink).cloud, [menuLink]);
   const openMenu = React.useCallback((article: ArticleItem) => setMenuArticle(article), []);
   const closeMenu = React.useCallback(() => setMenuArticle(null), []);
 
@@ -96,6 +115,9 @@ export function useArticleActions() {
         case 'original':
           void WebBrowser.openBrowserAsync(article.link).catch(() => {});
           return;
+        case 'remove-copy':
+          removeCopy(article);
+          return;
         case 'share':
           void Share.share({ message: `${article.title}\n${article.link}`, url: article.link }).catch(() => {});
           return;
@@ -103,15 +125,25 @@ export function useArticleActions() {
           openBlog(article.blogId);
       }
     },
-    [chatAboutArticle, listenTo, openArticle, openBlog],
+    [chatAboutArticle, listenTo, openArticle, openBlog, removeCopy],
   );
 
   return {
     openArticle,
     openBlog,
     openMenu,
-    sheet: { visible: menuArticle !== null, article: menuArticle, listen: listenState, onClose: closeMenu, onAction },
+    // Listen is a cloud voice, which a publisher can ask its posts be kept from.
+    sheet: { visible: menuArticle !== null, article: menuArticle, listen: cloudAllowed ? listenState : undefined, onClose: closeMenu, onAction },
     listen,
+    removal,
+    wholePosts: {
+      visible: wholePosts.visible,
+      copy: wholePosts.copy,
+      onChoose: chooseWholePosts,
+      onClose: wholePosts.close,
+    },
+    /** The blog page's way to change how a summary-only blog is read. */
+    changeWholePosts: wholePosts.change,
   };
 }
 

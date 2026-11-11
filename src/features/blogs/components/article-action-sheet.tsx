@@ -11,13 +11,14 @@ import {
   ExternalLink,
   Headphones,
   Lock,
+  type LucideIcon,
   Newspaper,
   RotateCcw,
   Share,
   Star,
   StarOff,
+  Trash2,
   ZodiacPisces,
-  type LucideIcon,
 } from '@/components/icons';
 import { MenuList } from '@/components/menu-list';
 import { ThemedText } from '@/components/themed-text';
@@ -45,6 +46,8 @@ const ICONS: Record<ArticleAction, LucideIcon> = {
   unread: CircleDot,
   original: ExternalLink,
   share: Share,
+  // The book menu's mark for deleting.
+  'remove-copy': Trash2,
   blog: Newspaper,
 };
 

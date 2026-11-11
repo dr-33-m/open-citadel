@@ -783,6 +783,12 @@ export const podcastListeningDays = sqliteTable(
 
 /** `preview`: opened from Explore and not followed, kept so its posts can be read. */
 export type BlogState = "subscribed" | "preview";
+/**
+ * How the reader chose to read a blog whose feed carries only the opening of
+ * each post: on the blog's own site, or fetched whole into the reader. Null
+ * until asked, which happens the first time such a post is opened.
+ */
+export type WholePosts = "site" | "app";
 
 export const blogs = sqliteTable(
   "blogs",
@@ -803,6 +809,10 @@ export const blogs = sqliteTable(
     lastRefreshError: text("last_refresh_error"),
     /** `ETag` or `Last-Modified` from the last fetch, for a conditional GET. */
     httpValidator: text("http_validator"),
+    /** See `WholePosts`. */
+    wholePosts: text("whole_posts").$type<WholePosts>(),
+    /** The feed's own copyright line (`<copyright>`, Atom `<rights>`), carried into every saved copy. */
+    rights: text("rights"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [uniqueIndex("blogs_feed_url_idx").on(table.feedUrl), index("blogs_state_idx").on(table.state)],
@@ -837,8 +847,19 @@ export const blogArticles = sqliteTable(
     favoritedAt: text("favorited_at"),
     /** Null until marked finished. A finished post leaves Continue Reading and the queue. */
     finishedAt: text("finished_at"),
-    /** The reader's copy (`books.kind = 'article'`), once opened. Never tidied away either. */
+    /**
+     * Whether the feed carries only the opening of the post (`feedExcerpt`,
+     * decided when the feed is read). Null on posts stored before it was
+     * asked, until the next refresh: `isTeaser` guesses for those.
+     */
+    feedExcerpt: integer("feed_excerpt", { mode: "boolean" }),
+    /**
+     * The reader's copy (`books.kind = 'article'`), once opened. Kept while
+     * it is kept on purpose or read lately (`article-copies.ts`).
+     */
     bookId: text("book_id"),
+    /** Whether that copy is the whole post (false: only the feed's opening). Null on copies made before it was asked, all whole. */
+    copyWhole: integer("copy_whole", { mode: "boolean" }),
   },
   (table) => [
     uniqueIndex("blog_articles_blog_link_idx").on(table.blogId, table.link),

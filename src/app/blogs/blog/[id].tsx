@@ -29,8 +29,8 @@ export default function BlogScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const landed = useSettledOnce();
-  const screen = useBlogScreen(params, landed);
   const actions = useArticleActions();
+  const screen = useBlogScreen(params, landed, actions.changeWholePosts);
   const renderItem = useArticleRowRenderer(actions, { withBlog: false });
 
   // The list is mounted from the first frame with the hero as its header, so

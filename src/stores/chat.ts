@@ -8,6 +8,7 @@ import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
 import { extractChapterTextToLocator } from '@/services/book-context';
 import { articleChatPrompt, articleText } from '@/services/blogs/article-chat';
+import { isCloudBarred } from '@/services/blogs/cloud-permission';
 import { episodeChatGrounding } from '@/services/podcasts/transcript/episode-chat';
 import {
       messageRow,
@@ -802,8 +803,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           .values({ id: uuid(), sessionId: id, role: 'system', content: episodePrompt, createdAt: ts })
           .run();
       } else if (bookRow && isArticle) {
-        // A post is grounded in the whole post, from the top.
-        const text = bookRow.filePath ? await articleText(bookRow.filePath) : null;
+        // A post is grounded in the whole post, from the top. Not one its
+        // publisher keeps from cloud AI: the chat may go to the cloud later,
+        // and on the phone his reading tools can still open it.
+        const text = bookRow.filePath && !isCloudBarred(bookId) ? await articleText(bookRow.filePath) : null;
         db.insert(chatMessages)
           .values({
             id: uuid(),

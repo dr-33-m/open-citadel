@@ -1,28 +1,18 @@
 /**
- * The whole post, for feeds that carry only a summary.
+ * The whole post, from its page, for a reader who asked for it.
  *
- * Many blogs publish the first paragraph and a "Continue reading" link, so a
- * reader who opened the post would get the teaser. When the feed's copy looks
- * like that, the post's own page is read and the article pulled out of it with
- * Mozilla's Readability (Firefox's Reader View), the same idea as Read You's
- * full-content option. Read You asks the reader to turn it on per blog; here
- * it happens when the feed's copy is too thin to read, and never otherwise.
+ * Many blogs publish the first paragraph and a "Continue reading" link. When
+ * the reader has chosen to read such a blog in the app (`WholePosts`), the
+ * post's own page is read and the article pulled out of it with Mozilla's
+ * Readability (Firefox's Reader View), as Read You's per-blog full-content
+ * option does. Never on the app's own initiative: a publisher that syndicates
+ * summaries has chosen to be read on its site (`article-route.ts`).
  *
  * Readability and its DOM (linkedom) are large, so they load on first use,
  * not with the app.
  */
+import { TEASER_CHARS } from '@/services/blogs/feed/excerpt';
 import { htmlToText } from '@/services/blogs/feed/text';
-
-/** Under this much text, a feed's copy is a teaser rather than a post. */
-const TEASER_CHARS = 1200;
-const TEASER_ENDINGS = /(…|\.\.\.|\[…\]|continue reading|read more|read the rest)[\s\S]{0,40}$/i;
-
-/** Whether the feed's copy is too short, or too obviously cut off, to be the post. Pure. */
-export function isTeaser(contentHtml: string | null): boolean {
-  if (!contentHtml) return true;
-  const text = htmlToText(contentHtml);
-  return text.length < TEASER_CHARS || TEASER_ENDINGS.test(text);
-}
 
 /**
  * The article inside a web page, as HTML, or null when Readability finds
@@ -35,4 +25,34 @@ export async function extractArticle(pageHtml: string): Promise<string | null> {
   const article = new Readability(document as unknown as Document, { charThreshold: 400 }).parse();
   const content = article?.content?.trim();
   return content && htmlToText(content).length >= TEASER_CHARS / 2 ? content : null;
+}
+
+const KEEP_RESERVED = /\b(noarchive|noai)\b/i;
+const META = /<meta\b[^>]*>/gi;
+
+function attribute(tag: string, name: string): string | null {
+  // After a space, so `data-name=` is not taken for `name=`.
+  const match = tag.match(new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i'));
+  return match ? (match[2] ?? match[3] ?? match[4] ?? '') : null;
+}
+
+/**
+ * Whether a page asks not to be kept or mined: `noarchive` or `noai` in its
+ * robots meta tag or its `X-Robots-Tag` header, or a TDM reservation (the
+ * W3C TDM Reservation Protocol, the EU's machine-readable opt-out) in its
+ * meta tag or its header. Such a post is not copied into the reader; it is
+ * read on its site. Pure.
+ */
+export function pageReservesRights(pageHtml: string, robotsHeader: string | null, tdmReserved = false): boolean {
+  if (tdmReserved) return true;
+  if (robotsHeader && KEEP_RESERVED.test(robotsHeader)) return true;
+  const end = pageHtml.search(/<\/head>/i);
+  const head = end === -1 ? pageHtml : pageHtml.slice(0, end);
+  for (const tag of head.match(META) ?? []) {
+    const name = attribute(tag, 'name')?.toLowerCase();
+    const content = attribute(tag, 'content') ?? '';
+    if (name === 'robots' && KEEP_RESERVED.test(content)) return true;
+    if (name === 'tdm-reservation' && content.trim() === '1') return true;
+  }
+  return false;
 }

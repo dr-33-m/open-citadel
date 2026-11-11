@@ -27,9 +27,10 @@ const STARTED = 0.02;
 const FINISHED = 0.95;
 
 /**
- * A post kept on purpose: queued, a favorite, finished, or opened (a
- * highlight lives on the opened copy). Tidying a blog's old posts away, and
- * letting go of a preview nobody followed, both leave these alone.
+ * A post kept on purpose: queued, a favorite, finished, or with its reader
+ * copy still on the phone (how long that stays is `article-copies.ts`'s to
+ * say). Tidying a blog's old posts away, and letting go of a preview nobody
+ * followed, both leave these alone.
  */
 export const keptOnPurpose: SQL = sql`(${blogArticles.savedAt} is not null
   or ${blogArticles.favoritedAt} is not null

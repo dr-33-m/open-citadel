@@ -7,9 +7,10 @@
  * the reader's own settings (theme, font, size) set the type, as they do for
  * every book.
  *
- * The post opens with where it is from and closes with a link to the
- * original, so a highlight read later, or a chat started from it, always
- * leads back to the writer.
+ * The post opens with where it is from and closes with the publisher's
+ * copyright line and a link to the original, so a highlight read later, or a
+ * chat started from it, always leads back to the writer. A copy of only the
+ * opening says so, and that the rest is on the publisher's site.
  */
 import { EPUB_CONTAINER, epubModified, escapeAttribute, languageTag } from '@/services/epub/parts';
 
@@ -24,6 +25,10 @@ export type ArticleEpubInput = {
   link: string;
   /** Strict XHTML, from `toXhtmlBody`. */
   bodyXhtml: string;
+  /** The feed's copyright line, set under the post as the publisher wrote it. */
+  rights?: string | null;
+  /** Only the opening the feed carries, not the whole post: the close says so, and where the rest is. */
+  opening?: boolean;
 };
 
 const DAY_MONTH_YEAR = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
@@ -54,7 +59,7 @@ export function articleEpubFiles(input: ArticleEpubInput): Record<string, string
     <dc:publisher>${esc(input.blogTitle)}</dc:publisher>
     <dc:language>${lang}</dc:language>
     <dc:source>${esc(input.link)}</dc:source>
-    <meta property="dcterms:modified">${modified}</meta>
+${input.rights ? `    <dc:rights>${esc(input.rights)}</dc:rights>\n` : ''}    <meta property="dcterms:modified">${modified}</meta>
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
@@ -83,7 +88,7 @@ export function articleEpubFiles(input: ArticleEpubInput): Record<string, string
 <h1>${esc(input.title)}</h1>
 ${credit ? `<p><em>${esc(credit)}</em></p>\n` : ''}${input.bodyXhtml}
 <hr/>
-<p><small>Read the original on <a href="${esc(input.link)}">${esc(hostName(input.link))}</a></small></p>
+${input.rights ? `<p><small>${esc(input.rights)}</small></p>\n` : ''}<p><small>${input.opening ? `${esc(input.blogTitle)} shares the opening of each post. Read the rest on` : 'Read the original on'} <a href="${esc(input.link)}">${esc(hostName(input.link))}</a></small></p>
 </body>
 </html>`;
 

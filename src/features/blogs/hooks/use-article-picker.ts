@@ -16,16 +16,16 @@ type PickedArticle = { id: string; title: string; kind: 'article' };
  */
 export function useArticlePicker(visible: boolean, onClose: () => void, onPicked: (post: PickedArticle) => void) {
   const { data } = useQuery({ ...createAskableArticlesQueryOptions(), enabled: visible });
-  const { prepareArticle } = useOpenArticle();
+  const { prepareForChat } = useOpenArticle();
 
   const close = onClose;
   const select = React.useCallback(
     async (article: ArticleItem) => {
       onClose();
-      const bookId = await prepareArticle(article);
+      const bookId = await prepareForChat(article);
       if (bookId) onPicked({ id: bookId, title: article.title, kind: 'article' });
     },
-    [onClose, onPicked, prepareArticle],
+    [onClose, onPicked, prepareForChat],
   );
 
   return { visible, articles: data, onSelect: select, onClose: close };

@@ -10,6 +10,7 @@ import { loadScript } from '@/services/audiobook/script';
 import { book } from '@/services/audiobook/session';
 import { writeCurrent, writeHeardVoice } from '@/services/audiobook/settings';
 import { rememberedClock, startSentence, type StartFrom } from '@/services/audiobook/start';
+import { isCloudBarred } from '@/services/blogs/cloud-permission';
 import { applyCommands } from '@/services/player/commands';
 import { readyPlayer } from '@/services/player/events';
 import { markStarting, store, takePlayerFor } from '@/services/player/session';
@@ -18,7 +19,8 @@ import { selectBook } from '@/stores/player';
 import { useSettingsStore } from '@/stores/settings';
 
 /** The ways starting can end without sound. */
-export type StartResult = 'playing' | 'no-voice' | 'unreadable' | 'unavailable';
+/** `barred`: a post whose publisher keeps it from cloud voices (`isCloudBarred`). */
+export type StartResult = 'playing' | 'no-voice' | 'unreadable' | 'unavailable' | 'barred';
 
 /**
  * The book in the player, with its loader, before anything is read or made.
@@ -76,7 +78,8 @@ function stepAside(): Promise<void> {
 export function showBook(bookId: string): boolean {
   const row = bookRow(bookId);
   const voice = currentBookVoice();
-  if (!row || !voice || !readyPlayer()) return false;
+  // Not shown: `startBook` answers `barred` before anything moves.
+  if (!row || !voice || !readyPlayer() || isCloudBarred(bookId)) return false;
   const inPlayer = store().current;
   if (inPlayer && !(inPlayer.kind === 'book' && inPlayer.bookId === bookId)) steppingAside = stepAside();
   markStarting();
@@ -92,6 +95,7 @@ export function showBook(bookId: string): boolean {
 export async function startBook(bookId: string, options: StartFrom = {}): Promise<StartResult> {
   const row = bookRow(bookId);
   if (!row) return 'unreadable';
+  if (isCloudBarred(bookId)) return 'barred';
   const voice = currentBookVoice();
   if (!voice) return 'no-voice';
   if (!readyPlayer()) return 'unavailable';

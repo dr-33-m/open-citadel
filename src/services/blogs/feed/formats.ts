@@ -1,12 +1,19 @@
 /** RSS 2.0, RSS 1.0 (RDF) and Atom, read into one shape. Pure. */
 import { attr, firstLink, isNode, text, type Node } from '@/services/feeds/xml';
 import { buildArticle, mediaImage, personName } from '@/services/blogs/feed/article';
+import { htmlToText } from '@/services/blogs/feed/text';
 import type { ParsedArticle, ParsedBlog } from '@/services/blogs/feed/types';
 import { decodeEntities } from '@/utils/html-entities';
 import { resolveUrl } from '@/utils/urls';
 
 function nodes(value: unknown): Node[] {
   return (Array.isArray(value) ? value : value ? [value] : []).filter(isNode);
+}
+
+/** A copyright line as one short line of plain text, or null. Long ones are licences pasted whole, not a notice. */
+function plainRights(value: string | null): string | null {
+  const line = value ? htmlToText(value).replace(/\s+/g, ' ').trim() : '';
+  return line && line.length <= 200 ? line : null;
 }
 
 function imageEnclosure(item: Node): string | null {
@@ -38,6 +45,7 @@ export function parseRssLike(channel: Node, items: Node[], type: 'rss' | 'rdf', 
     description: text(channel.description),
     imageUrl: image ? resolveUrl(image, base) : null,
     language: text(channel.language) ?? text(channel['dc:language']),
+    rights: plainRights(text(channel.copyright) ?? text(channel['dc:rights'])),
     articles: collect(items, (item) =>
       buildArticle(
         {
@@ -89,6 +97,7 @@ export function parseAtom(feed: Node, feedUrl: string | null, now: Date): Parsed
     description: text(feed.subtitle),
     imageUrl: logo ? resolveUrl(logo, siteUrl ?? feedUrl) : null,
     language: attr(feed, 'xml:lang'),
+    rights: plainRights(atomText(feed.rights)),
     articles: collect(nodes(feed.entry), (entry) => {
       const link = atomLink(entry.link, 'alternate');
       const enclosure = nodes(entry.link).find(

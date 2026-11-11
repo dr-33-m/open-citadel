@@ -16,6 +16,7 @@ const TRANSCRIBE_INFO: InfoContent = {
   line: 'ElevenLabs Scribe writes down every word, and Samwell works out who is speaking.',
   points: [
     'Every line is marked with its speaker and its time.',
+    "ElevenLabs is given the episode's address and fetches the audio from the show itself.",
     'The transcript stays on this phone. The server keeps no copy once it arrives.',
     'You are charged the real cost, and only when the transcript arrives.',
     'If it fails or you stop it, nothing is charged.',

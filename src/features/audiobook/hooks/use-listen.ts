@@ -27,7 +27,11 @@ const TOAST = 'audiobook-listen';
 export type ListenTarget = Pick<BookInfo, 'id' | 'title' | 'author' | 'coverUrl'> & { post?: boolean };
 
 const whyNot = (result: StartResult, post: boolean) =>
-  result === 'unavailable' ? 'Audio is not available on this phone.' : `This ${post ? 'post' : 'book'} can't be read aloud yet.`;
+  result === 'unavailable'
+    ? 'Audio is not available on this phone.'
+    : result === 'barred'
+      ? 'Its publisher asks that its posts are not read in a cloud voice.'
+      : `This ${post ? 'post' : 'book'} can't be read aloud yet.`;
 
 /**
  * Listen, from a book's menu or a blog post's.

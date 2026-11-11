@@ -1,6 +1,7 @@
 /** One post, from whatever each feed format called its parts. Pure. */
 import { parseFeedDate } from '@/services/feeds/dates';
 import { attr, isNode, text } from '@/services/feeds/xml';
+import { feedExcerpt } from '@/services/blogs/feed/excerpt';
 import type { ParsedArticle } from '@/services/blogs/feed/types';
 import { firstImage, htmlToText, summarize } from '@/services/blogs/feed/text';
 import { decodeEntities } from '@/utils/html-entities';
@@ -56,6 +57,7 @@ export function buildArticle(raw: RawArticle, base: string | null, now: Date): P
     title: raw.title ? htmlToText(raw.title) || 'Untitled post' : 'Untitled post',
     author: raw.author ? decodeEntities(raw.author).trim() || null : null,
     contentHtml: body,
+    excerpt: feedExcerpt(raw),
     summary: summarySource ? summarize(htmlToText(summarySource)) : null,
     imageUrl: imageUrl && /^https?:/i.test(imageUrl) ? imageUrl : null,
     publishedAt: published && published <= nowIso ? published : nowIso,

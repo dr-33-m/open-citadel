@@ -63,6 +63,7 @@ import {
 import { threadCheckpoints } from './compaction-checkpoints.js';
 import { summarizeForCompaction } from './compaction-summary.js';
 import { fetchOpenRouterModel, startModelContextRefresh } from './model-context.js';
+import { publisherRoutes } from './publisher-routes.js';
 import { tagsRoutes } from './tags.js';
 import { takeawayRoutes } from './takeaway.js';
 import {
@@ -880,6 +881,9 @@ app.route('/library', gutenbergRoutes);
 // The free books catalogue the app browses. Open, read-only and capped per
 // caller: the books are free to everyone, so browsing them needs no sign-in.
 app.route('/library', gutenbergCatalogRoutes);
+// What publishers have asked of the app (no whole posts, no cloud AI, not in
+// Explore), for every phone to apply. See `samwell-shared/publishers.ts`.
+app.route('/publishers', publisherRoutes);
 // What a reader holds, what they spent it on, and insider codes. The store's
 // own word about subscriptions arrives on the second of these, from
 // RevenueCat, keyed to a secret only it and the deployment know.

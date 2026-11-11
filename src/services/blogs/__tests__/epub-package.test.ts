@@ -45,6 +45,17 @@ describe('articleEpubFiles', () => {
     expect(files['OEBPS/content.opf']).toContain('<dc:source>https://www.fs.blog/map/?a=1&amp;b=2</dc:source>');
   });
 
+  it("carries the publisher's copyright line, and says when it holds only the opening", () => {
+    const ruled = articleEpubFiles({ ...INPUT, rights: '© 2026 Farnam Street & Co', opening: true });
+    expect(XMLValidator.validate(ruled['OEBPS/content.opf'])).toBe(true);
+    expect(XMLValidator.validate(ruled['OEBPS/article.xhtml'])).toBe(true);
+    expect(ruled['OEBPS/content.opf']).toContain('<dc:rights>© 2026 Farnam Street &amp; Co</dc:rights>');
+    expect(ruled['OEBPS/article.xhtml']).toContain('© 2026 Farnam Street &amp; Co');
+    expect(ruled['OEBPS/article.xhtml']).toContain('Farnam Street shares the opening of each post. Read the rest on');
+    expect(files['OEBPS/content.opf']).not.toContain('dc:rights');
+    expect(files['OEBPS/article.xhtml']).toContain('Read the original on');
+  });
+
   it('cleans the language tag, and falls back to English', () => {
     expect(files['OEBPS/content.opf']).toContain('<dc:language>en-US</dc:language>');
     expect(articleEpubFiles({ ...INPUT, language: 'not a tag' })['OEBPS/content.opf']).toContain(
