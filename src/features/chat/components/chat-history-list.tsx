@@ -7,10 +7,18 @@ import { Item } from '@/components/ui/item';
 import { Sheet } from '@/components/ui/sheet';
 import { useSwipeGroup } from '@/components/ui/swipe';
 import { ChatHistoryRow } from '@/features/chat/components/chat-history-row';
-import { useArmedOnSettle } from '@/features/chat/hooks/use-armed-on-settle';
+import { useArmedRows } from '@/features/chat/hooks/use-armed-rows';
 import type { ChatSession } from '@/stores/chat';
 
 const FILL: { flex: 1 } = { flex: 1 };
+
+/**
+ * How far past the viewport rows stay mounted, in px. `Sheet.FlatList`'s 1000
+ * is sized for ~150px rows; these are about 70, so it mounted some twenty
+ * rows before the list could be used. 400 still keeps three or four rows
+ * ahead of a scroll.
+ */
+const DRAW_DISTANCE = 400;
 
 /**
  * The rows below a deleted chat moving up into its place.
@@ -35,8 +43,8 @@ function RowSeparator() {
 /**
  * The past chats in the History sheet. Its own component so `useSwipeGroup`
  * can read the `Swipe.Group` above it: the hook has to be called from below
- * the group. Rows come up plain and gain their swipe once the sheet has
- * landed (`useArmedOnSettle`).
+ * the group. Rows come up plain and gain their swipe, a few a frame, once the
+ * sheet has landed (`useArmedRows`).
  */
 export function ChatHistoryList({
   sessions,
@@ -62,7 +70,7 @@ export function ChatHistoryList({
   onPrimary: string;
 }) {
   const { closeAll } = useSwipeGroup();
-  const armed = useArmedOnSettle();
+  const armedBelow = useArmedRows(sessions.length);
   const listRef = React.useRef<FlashListRef<ChatSession>>(null);
 
   // Runs once the row has slid out. The layout animation has to be armed
@@ -80,10 +88,11 @@ export function ChatHistoryList({
   // reconciles only the rows whose props actually changed, not every
   // mounted cell.
   const renderItem = React.useCallback(
-    ({ item }: { item: ChatSession }) => (
+    ({ item, index }: { item: ChatSession; index: number }) => (
       <ChatHistoryRow
         item={item}
-        armed={armed}
+        // A boolean per row: each step of the count redraws only the rows it arms.
+        armed={index < armedBelow}
         switching={switching}
         // A boolean, not the id: a rename starting or ending re-renders the
         // one row it concerns, not every mounted row.
@@ -97,13 +106,13 @@ export function ChatHistoryList({
         onPrimary={onPrimary}
       />
     ),
-    [armed, switching, renamingId, onSelect, deleteWithReflow, onRename, primary, muted, ink, onPrimary],
+    [armedBelow, switching, renamingId, onSelect, deleteWithReflow, onRename, primary, muted, ink, onPrimary],
   );
   // Both are read inside renderItem but live outside the data, so rows would
   // keep a stale dimming or spinner without this.
   const extraData = React.useMemo(
-    () => ({ armed, switching, renamingId }),
-    [armed, switching, renamingId],
+    () => ({ armedBelow, switching, renamingId }),
+    [armedBelow, switching, renamingId],
   );
 
   return (
@@ -113,6 +122,7 @@ export function ChatHistoryList({
       <Sheet.FlatList
         ref={listRef}
         style={FILL}
+        drawDistance={DRAW_DISTANCE}
         data={sessions}
         keyExtractor={(item) => item.id}
         extraData={extraData}

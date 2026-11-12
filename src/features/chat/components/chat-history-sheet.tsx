@@ -5,6 +5,7 @@ import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
 import { ChatHistoryList } from '@/features/chat/components/chat-history-list';
+import { ChatHistorySkeleton } from '@/features/chat/components/chat-history-skeleton';
 import { Item } from '@/components/ui/item';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Sheet } from '@/components/ui/sheet';
@@ -92,26 +93,36 @@ export function ChatHistorySheet({
         </Item.Content>
       </Item>
 
-      {/* `flex-1` on the group, not just the list: the group renders a plain
+      {/* The list mounts once the sheet has landed, behind rows of skeleton.
+          Mounted with the sheet, its measuring passes held the rise back
+          250-400ms after the tap. Mounted as the rise began, it cost the rise
+          no JS time, but iOS creates the rows' views on the main thread, the
+          one the spring runs on: a dropped frame just as the sheet slowed to
+          arrive, so it seemed to stop short (4 opens in 6, iOS dev build;
+          none once the list waited).
+
+          `flex-1` on the group, not just the list: the group renders a plain
           auto-height View, and a `flex:1` list inside an auto-height parent
           has nothing to grow into — the list measures 0 and the sheet renders
-          its title and the New chat row over empty space. The group is the
-          sheet body's fill child, so flexing it hands the remaining height
-          down to the list. */}
-      <Swipe.Group className="flex-1">
-        <ChatHistoryList
-          sessions={sessions}
-          switching={switching}
-          renamingId={renamingId}
-          onSelect={onSelect}
-          onDelete={onDelete}
-          onRename={onRename}
-          primary={asColor(primary) ?? ''}
-          muted={asColor(mutedForeground) ?? ''}
-          ink={asColor(foreground) ?? ''}
-          onPrimary={asColor(primaryForeground) ?? ''}
-        />
-      </Swipe.Group>
+          its title and the New chat row over empty space. `Sheet.Deferred`
+          fills what the sheet body leaves, so flexing the group inside it
+          hands that height down to the list. */}
+      <Sheet.Deferred skeleton={<ChatHistorySkeleton count={sessions.length} />}>
+        <Swipe.Group className="flex-1">
+          <ChatHistoryList
+            sessions={sessions}
+            switching={switching}
+            renamingId={renamingId}
+            onSelect={onSelect}
+            onDelete={onDelete}
+            onRename={onRename}
+            primary={asColor(primary) ?? ''}
+            muted={asColor(mutedForeground) ?? ''}
+            ink={asColor(foreground) ?? ''}
+            onPrimary={asColor(primaryForeground) ?? ''}
+          />
+        </Swipe.Group>
+      </Sheet.Deferred>
     </Sheet>
   );
 }

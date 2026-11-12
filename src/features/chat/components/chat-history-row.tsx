@@ -12,7 +12,7 @@ export interface ChatHistoryRowProps {
   item: ChatSession;
   /**
    * Whether the row can be swiped yet. Before that it is the same row with
-   * nothing to drag: see `ChatHistorySheet` for why the swipe waits.
+   * nothing to drag: see `useArmedRows` for why the swipe waits.
    */
   armed: boolean;
   switching: 'new' | string | null;
@@ -94,7 +94,9 @@ export const ChatHistoryRow = React.memo(function ChatHistoryRow({
   return (
     // Held still while renaming: a second drag would close the row the
     // spinner is being shown on, with the rename still running.
-    <Swipe ref={swipeRef} haptics removeOnCommit disabled={renaming}>
+    // `panelsOnTouch`: the tiles are half of what a swipe row costs to mount,
+    // and most rows are never swiped.
+    <Swipe ref={swipeRef} haptics removeOnCommit panelsOnTouch disabled={renaming}>
       {canRename ? (
         <Swipe.Start>
           {/* `keepOpen` exempts it from `removeOnCommit`: a full swipe here
