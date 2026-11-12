@@ -9,6 +9,7 @@ import { SquareArtwork } from '@/components/square-artwork';
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
 import { elevation } from '@/constants/theme';
+import { WholePostsRow, type WholePostsRowProps } from '@/features/blogs/components/whole-posts-row';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { BlogArticleFilter } from '@/services/blogs/articles';
 import { monogramOf } from '@/utils/monogram';
@@ -38,6 +39,11 @@ export type BlogHeroProps = {
   onFollow: () => void;
   onUnfollow: () => void;
   onOpenSite: () => void;
+  /**
+   * For a blog whose feed carries only openings: where its posts are read, and
+   * the way to change it (null when its publisher has settled it).
+   */
+  wholePosts: Omit<WholePostsRowProps, 'muted'> | null;
 };
 
 /**
@@ -60,6 +66,7 @@ export function BlogHero({
   onFollow,
   onUnfollow,
   onOpenSite,
+  wholePosts,
 }: BlogHeroProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
@@ -105,6 +112,8 @@ export function BlogHero({
         ) : (
           <GoldButton label="FOLLOW" size="compact" onPress={onFollow} loading={loading} disabled={loading || !canFollow} />
         )}
+
+        {wholePosts ? <WholePostsRow {...wholePosts} muted={muted} /> : null}
 
         {refreshError ? (
           <View className="flex-row items-start gap-2">

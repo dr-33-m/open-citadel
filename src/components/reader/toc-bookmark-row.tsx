@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { View } from "react-native";
+import { Keyboard, View } from "react-native";
 import type { Locator } from "@dr33m/react-native-readium";
 
 import { Bookmark as BookmarkIcon } from "@/components/icons";
@@ -39,6 +39,15 @@ export const BookmarkRow = React.memo(function BookmarkRow({
   /* The draft text lives here, in the row, mirrored from the uncontrolled
       input below — the list never re-renders on a keystroke. */
   const noteRef = useRef(data.note ?? "");
+  // Before the field goes: Android leaves the keyboard up once it has gone.
+  const cancelEdit = () => {
+    Keyboard.dismiss();
+    onCancelEdit();
+  };
+  const saveNote = () => {
+    Keyboard.dismiss();
+    onSaveNote(data.id, noteRef.current.trim());
+  };
   const dateLabel = new Date(data.createdAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -89,13 +98,13 @@ export const BookmarkRow = React.memo(function BookmarkRow({
               autoFocus
             />
             <View className="mt-2 flex-row gap-4">
-              <Touchable onPress={onCancelEdit} hitSlop={8}>
+              <Touchable onPress={cancelEdit} hitSlop={8}>
                 <ThemedText type="labelSm" color={colors.mutedForeground}>
                   CANCEL
                 </ThemedText>
               </Touchable>
               <Touchable
-                onPress={() => onSaveNote(data.id, noteRef.current.trim())}
+                onPress={saveNote}
                 hitSlop={8}
               >
                 <ThemedText type="labelSm" color={colors.primary}>

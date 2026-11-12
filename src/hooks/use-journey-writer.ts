@@ -1,8 +1,8 @@
 import React from 'react';
 import { AppState } from 'react-native';
 
+import { useCloudIdentityId } from '@/hooks/use-cloud-identity';
 import { journalQuietChats, resetJournalRefusal } from '@/services/journey-writer';
-import { useAccountStore } from '@/stores/account';
 import { useSubscriptionStore } from '@/stores/subscription';
 
 /**
@@ -29,18 +29,18 @@ const MIN_RETURN_GAP_MS = 60_000;
  * Keeps Samwell's journal written up (see `services/journey-writer`).
  *
  * Mounted once at the root, beside `usePlanSync`, and keyed on the same
- * things the writer needs: a signed-in account with a plan. It sweeps when
+ * things the writer needs: somebody with a plan, an account or a guest. It sweeps when
  * that becomes true, when the app goes to the background (leaving the app is
  * the nearest thing to a conversation ending, so nothing has to have gone
  * quiet, and the screen is no longer being drawn, so it runs straight away),
  * and when it comes back (by which time most have).
  */
 export function useJourneyWriter(): void {
-  const signedIn = useAccountStore((s) => s.status === 'signedIn');
+  const identity = useCloudIdentityId();
   const plan = useSubscriptionStore((s) => s.plan);
 
   React.useEffect(() => {
-    if (!signedIn || !plan) return;
+    if (!identity || !plan) return;
     // A plan that just arrived is a new answer to "may this account write".
     resetJournalRefusal();
 
@@ -69,5 +69,5 @@ export function useJourneyWriter(): void {
       if (timer) clearTimeout(timer);
       subscription.remove();
     };
-  }, [signedIn, plan]);
+  }, [identity, plan]);
 }

@@ -20,6 +20,7 @@ import { useEpisodeRowRenderer } from "@/features/podcasts/hooks/use-episode-row
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
 import { useShowScreen, type ShowParams } from "@/features/podcasts/hooks/use-show-screen";
 import { useShowSheets } from "@/features/podcasts/hooks/use-show-sheets";
+import { useInteractiveWhen } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 import type { EpisodeItem } from "@/services/podcasts/records";
 
@@ -40,6 +41,7 @@ export default function ShowScreen() {
   const episodeActions = useEpisodeActions();
   const miniPlayer = useMiniPlayer(insets.bottom);
   const screen = useShowScreen(params, landed);
+  useInteractiveWhen(landed && !screen.resolving);
   const sheets = useShowSheets(screen.show, screen.unfollow);
   const renderItem = useEpisodeRowRenderer(episodeActions);
 

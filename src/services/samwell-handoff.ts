@@ -10,8 +10,9 @@
  * - a chat about a passage (from the reader or the Timeline) is made where
  *   the passage is, with its context, and opened there.
  */
+import { cachedChatSessions } from '@/query-manager/chat-sessions';
 import type { BookKind } from '@/db/schema';
-import { scheduleBackgroundTitles, useChatStore } from '@/stores/chat';
+import { dropProposal, scheduleBackgroundTitles, useChatStore } from '@/stores/chat';
 import { HUB, useHubStore } from '@/stores/hub';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
 
@@ -40,6 +41,7 @@ export async function leaveForNewChat(): Promise<void> {
     deviceLimit: null,
     queuedBehindTitle: false,
   });
+  dropProposal();
   // The chat just left may still be called "New chat" on device.
   scheduleBackgroundTitles();
 }
@@ -51,7 +53,7 @@ export async function leaveForNewChat(): Promise<void> {
  */
 export async function askSamwellAbout(book: { id: string; title: string; kind: BookKind }): Promise<void> {
   await leaveForNewChat();
-  useSamwellSessionStore.getState().set({ pendingBook: book, mode: 'chat' });
+  useSamwellSessionStore.getState().set({ pendingBook: book });
   useHubStore.getState().goTo(HUB.samwell);
 }
 
@@ -61,12 +63,39 @@ export async function askSamwellAbout(book: { id: string; title: string; kind: B
  * above the hub.
  */
 export async function showChatOnSamwellPage(sessionId: string): Promise<void> {
+  try {
+    await openOnSamwellPage(sessionId);
+  } finally {
+    useSamwellSessionStore.getState().set({ opening: false });
+  }
+}
+
+async function openOnSamwellPage(sessionId: string): Promise<void> {
   const chat = useChatStore.getState();
   // `openSession` names its session from the list, and a chat made or linked
   // elsewhere may not be in it yet; opened without its entry, the page would
   // take it for a new chat and start another on the first message.
-  if (!chat.sessions.some((s) => s.id === sessionId)) await chat.loadSessions();
+  if (!cachedChatSessions('reading').some((s) => s.id === sessionId)) await chat.loadSessions();
   if (useChatStore.getState().activeSession?.id !== sessionId) await chat.openSession(sessionId);
-  useSamwellSessionStore.getState().set({ pendingBook: null, mode: 'chat' });
+  useSamwellSessionStore.getState().set({ pendingBook: null });
   useHubStore.getState().goTo(HUB.samwell);
+}
+
+/**
+ * The same, from a screen over the hub that is closing on the way: the motion
+ * on the tap, the work once it has landed.
+ *
+ * Opening first and closing after (as a chat made a moment ago is opened)
+ * froze the screen for 1.7s on a Galaxy A33 with an older chat, since reading
+ * and drawing its transcript blocks the thread the close needs to start. So
+ * the hub turns to Samwell's page while still covered, showing the
+ * transcript's skeleton rather than whichever chat was there, the screen
+ * closes at once, and the chat is read once it has: no transcript mounts
+ * under a screen still moving.
+ */
+export function showChatAfterLeaving(sessionId: string, leave: () => void, closeMs: number): void {
+  useSamwellSessionStore.getState().set({ opening: true });
+  useHubStore.getState().goTo(HUB.samwell);
+  leave();
+  setTimeout(() => void showChatOnSamwellPage(sessionId), closeMs);
 }

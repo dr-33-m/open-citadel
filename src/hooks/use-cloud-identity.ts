@@ -73,6 +73,15 @@ export function readCloudIdentity(): CloudIdentity {
   return snapshot;
 }
 
+/**
+ * Whether anyone is here for Samwell Cloud to bill: an account, or a device
+ * that bought a plan without one. The floor under every cloud turn and the
+ * journal, so a guest who paid is never told apart from an account by accident.
+ */
+export function hasCloudIdentity(): boolean {
+  return readCloudIdentity().id !== null;
+}
+
 function subscribe(onChange: () => void): () => void {
   const account = useAccountStore.subscribe(onChange);
   const guest = useGuestStore.subscribe(onChange);

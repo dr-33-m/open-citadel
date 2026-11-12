@@ -6,7 +6,12 @@
  * publications whose posts sit behind a paywall are left out, since a reader
  * could follow them and read nothing. Anything else can be added by its
  * address.
+ *
+ * A publisher who asks to be left out (`explore: false` in
+ * `samwell-shared/publishers.ts`) is, through `listedDirectory`, without an
+ * app release.
  */
+import { publisherPermissions, type PublisherRule } from 'samwell-shared';
 
 export type DirectoryBlog = {
   title: string;
@@ -126,3 +131,11 @@ export const BLOG_DIRECTORY: DirectorySection[] = [
 
 /** Every blog in the directory, once, for searching. */
 export const DIRECTORY_BLOGS: DirectoryBlog[] = BLOG_DIRECTORY.flatMap((section) => section.blogs);
+
+/** The directory without the blogs whose publishers asked to be left out, and without a section they emptied. Pure. */
+export function listedDirectory(sections: readonly DirectorySection[], rules: readonly PublisherRule[]): DirectorySection[] {
+  if (!rules.some((rule) => rule.explore === false)) return [...sections];
+  return sections
+    .map((section) => ({ ...section, blogs: section.blogs.filter((blog) => publisherPermissions(blog.feedUrl, rules).explore) }))
+    .filter((section) => section.blogs.length > 0);
+}

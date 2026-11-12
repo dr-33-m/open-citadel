@@ -3,8 +3,8 @@ import TrackPlayer from "@rntp/player";
 
 import { ensureChapters } from "@/services/podcasts/chapters";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
-import { dequeue, upNextIds } from "@/services/podcasts/queue";
-import { mediaItemFrom, nativeUpNext, nowPlayingFrom, resumePosition } from "@/services/podcasts/player/media";
+import { dequeue } from "@/services/podcasts/queue";
+import { episodesAhead, mediaItemFrom, nativeUpNext, nowPlayingFrom, resumePosition } from "@/services/podcasts/player/media";
 import { finishEpisode, persistProgress, session, track } from "@/services/podcasts/player/session";
 import { applyCommands } from "@/services/player/commands";
 import { readyPlayer } from "@/services/player/events";
@@ -14,6 +14,9 @@ import type { EpisodeItem } from "@/services/podcasts/records";
 import { getShow } from "@/services/podcasts/shows";
 import { podcastPrefs, usePodcastPrefs } from "@/stores/podcast-prefs";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
+
+/** The latest `syncNativeQueue`; anything loading the native queue also moves it on, so older runs stand down. */
+let syncRun = 0;
 
 /** Takes on an episode that has just become current, however it got there. */
 export async function becomeCurrent(item: EpisodeItem, startAt: number | null): Promise<void> {
@@ -40,8 +43,8 @@ export async function becomeCurrent(item: EpisodeItem, startAt: number | null): 
 }
 
 /**
- * Plays an episode from where it was left (or from `startAt`), with Up Next
- * queued behind it.
+ * Plays an episode from where it was left (or from `startAt`), with the
+ * episodes ahead queued behind it.
  */
 export async function startEpisode(episodeId: string, startAt: number | null = null): Promise<void> {
   if (!readyPlayer()) {
@@ -66,18 +69,19 @@ export async function startEpisode(episodeId: string, startAt: number | null = n
   // Tracked before the native queue changes, so the transition event that
   // loading fires is recognised as this episode rather than read as a skip.
   track(item, start);
+  syncRun += 1;
   TrackPlayer.setMediaItems([mediaItemFrom(item, start), ...upNext], 0);
   await becomeCurrent(item, start);
   TrackPlayer.play();
 }
 
 /**
- * After an episode ends on its own: the next in Up Next, from the database
- * rather than the native queue, which only holds the first few ahead.
+ * After an episode ends on its own: the next one ahead, from the database
+ * rather than the native queue, which only holds the first few.
  */
 export async function advance(): Promise<void> {
-  const [next] = await upNextIds();
-  if (next) await startEpisode(next);
+  const [next] = await episodesAhead(null);
+  if (next) await startEpisode(next.id);
   else await stopPlayback();
 }
 
@@ -132,17 +136,21 @@ export function releasePlayerForSpeech(): void {
 }
 
 /**
- * Re-mirrors Up Next into the native queue after it changes in the app, so the
- * lock screen's "next" goes where the listener now expects.
+ * Re-mirrors the episodes ahead into the native queue after they change, so the
+ * lock screen's "next" and the end of the episode go where the listener expects.
  */
 export async function syncNativeQueue(): Promise<void> {
-  const { loaded } = store();
   const current = selectEpisode(store());
-  if (!loaded || !current) return;
+  if (!store().loaded || !current) return;
+  syncRun += 1;
+  const run = syncRun;
+  const upNext = await nativeUpNext(current.episodeId);
+  // Read first and swapped in one go, so the queue is never empty behind the
+  // episode, and only by the latest run: two at once would queue everything twice.
+  if (run !== syncRun || !store().loaded || selectEpisode(store())?.episodeId !== current.episodeId) return;
   const active = TrackPlayer.getActiveMediaItemIndex() ?? 0;
   const length = TrackPlayer.getQueue().length;
   if (length > active + 1) TrackPlayer.removeMediaItems(active + 1, length);
-  const upNext = await nativeUpNext(current.episodeId);
   if (upNext.length > 0) TrackPlayer.addMediaItems(upNext);
 }
 

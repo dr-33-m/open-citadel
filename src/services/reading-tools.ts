@@ -8,6 +8,7 @@
 import { listReachedChapters, readReachedChapter, type ChapterRead, type ChapterSummary } from '@/services/book-text/chapters';
 import { pickSection, reachedSections } from '@/services/book-text/extent';
 import { bookExtent, readableBooks, searchPassages, type PassageSearch } from '@/services/book-text/reading';
+import { CLOUD_BARRED, cloudBarredBookIds, isCloudBarred } from '@/services/blogs/cloud-permission';
 import { CHARS_PER_TOKEN, estimateTokens } from '@/services/context-budget';
 import { resolveLibraryBook } from '@/services/library-lookup';
 import { READING_LIMITS, TOOL_RESULT_TOKEN_BUDGET, type ToolRuntime } from '@/services/tool-limits';
@@ -29,6 +30,7 @@ const READ_FRAME_CHARS = 400;
 /** The book a title names (books and opened posts both), or the chat's own book with none. */
 function resolveReadingBook(title: string | undefined, ctx: ReadingToolContext): { book: Book } | { error: string } {
   const resolution = resolveLibraryBook(title, ctx.bookId, { includePosts: true });
+  if (resolution.ok && ctx.runtime === 'cloud' && isCloudBarred(resolution.book.id)) return { error: CLOUD_BARRED };
   if (resolution.ok) return { book: resolution.book };
   return { error: resolution.matches ? `${resolution.error} (did you mean: ${resolution.matches.join('; ')})` : resolution.error };
 }
@@ -58,6 +60,10 @@ export async function searchReading(args: Record<string, unknown>, ctx: ReadingT
   const title = typeof args.book_title === 'string' && args.book_title.trim() ? args.book_title : undefined;
   const chapter = args.chapter == null ? '' : String(args.chapter).trim();
   let scope: Book[] = readableBooks();
+  if (ctx.runtime === 'cloud') {
+    const barred = cloudBarredBookIds();
+    if (barred.size > 0) scope = scope.filter((book) => !barred.has(book.id));
+  }
   let section: number | undefined;
   // A chapter with no title is a chapter of the chat's own book.
   const narrowed = title !== undefined || chapter !== '';

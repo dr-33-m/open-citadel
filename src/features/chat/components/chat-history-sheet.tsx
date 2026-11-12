@@ -1,42 +1,19 @@
 import { MessageSquarePlus } from '@/components/icons';
 import React from 'react';
-import type { FlashListRef } from '@shopify/flash-list';
-import { LayoutAnimation, View } from 'react-native';
+import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ThemedText } from '@/components/themed-text';
-import { PageFade } from '@/components/scroll-fades';
-import { ChatHistoryRow } from '@/features/chat/components/chat-history-row';
+import { ChatHistoryList } from '@/features/chat/components/chat-history-list';
+import { ChatHistorySkeleton } from '@/features/chat/components/chat-history-skeleton';
 import { Item } from '@/components/ui/item';
 import { PrefixIcon } from '@/components/ui/prefix-icon';
 import { Sheet } from '@/components/ui/sheet';
-import { ChatHistorySkeleton } from '@/components/skeletons/chat-history-skeleton';
 import { Spinner } from '@/components/ui/spinner';
-import { Swipe, useSwipeGroup } from '@/components/ui/swipe';
+import { Swipe } from '@/components/ui/swipe';
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
 import type { ChatSession } from '@/stores/chat';
-
-const FILL: { flex: 1 } = { flex: 1 };
-
-/**
- * The rows below a deleted chat moving up into its place.
- *
- * Core `LayoutAnimation` rather than a Reanimated layout transition, because
- * this list is FlashList and that is the path it documents: its cells are
- * positioned by the list, and `prepareForLayoutAnimationRender()` turns
- * recycling off for the render so the right cells move. The deleted row has
- * already slid out, so only `update` animates. On-screen movement: ease-in-out.
- */
-const ROW_CLOSE = {
-  duration: 220,
-  update: { type: LayoutAnimation.Types.easeInEaseOut },
-};
-
-/** Hairline between rows — `Item.Separator` in the list's separator slot. */
-function RowSeparator() {
-  return <Item.Separator />;
-}
 
 /**
  * Chat history: past chats, swipe right to rename and left to delete, new chat
@@ -116,122 +93,36 @@ export function ChatHistorySheet({
         </Item.Content>
       </Item>
 
-      {/* `flex-1` on the group, not just the list: the group renders a plain
+      {/* The list mounts once the sheet has landed, behind rows of skeleton.
+          Mounted with the sheet, its measuring passes held the rise back
+          250-400ms after the tap. Mounted as the rise began, it cost the rise
+          no JS time, but iOS creates the rows' views on the main thread, the
+          one the spring runs on: a dropped frame just as the sheet slowed to
+          arrive, so it seemed to stop short (4 opens in 6, iOS dev build;
+          none once the list waited).
+
+          `flex-1` on the group, not just the list: the group renders a plain
           auto-height View, and a `flex:1` list inside an auto-height parent
           has nothing to grow into — the list measures 0 and the sheet renders
-          its title and the New chat row over empty space. The group is the
-          sheet body's fill child, so flexing it hands the remaining height
-          down to the list. */}
-      {/* Every row here is a `Swipe` — a pan gesture and three animated styles
-          apiece — so mounting the list is what the sheet's open used to wait
-          on. The title and the New chat row above cost nothing and stay put. */}
-      <Sheet.Deferred
-        skeleton={<ChatHistorySkeleton />}
-      >
-      <Swipe.Group className="flex-1">
-        <SessionList
-          sessions={sessions}
-          switching={switching}
-          renamingId={renamingId}
-          onSelect={onSelect}
-          onDelete={onDelete}
-          onRename={onRename}
-          primary={asColor(primary) ?? ''}
-          muted={asColor(mutedForeground) ?? ''}
-          ink={asColor(foreground) ?? ''}
-          onPrimary={asColor(primaryForeground) ?? ''}
-        />
-      </Swipe.Group>
+          its title and the New chat row over empty space. `Sheet.Deferred`
+          fills what the sheet body leaves, so flexing the group inside it
+          hands that height down to the list. */}
+      <Sheet.Deferred skeleton={<ChatHistorySkeleton count={sessions.length} />}>
+        <Swipe.Group className="flex-1">
+          <ChatHistoryList
+            sessions={sessions}
+            switching={switching}
+            renamingId={renamingId}
+            onSelect={onSelect}
+            onDelete={onDelete}
+            onRename={onRename}
+            primary={asColor(primary) ?? ''}
+            muted={asColor(mutedForeground) ?? ''}
+            ink={asColor(foreground) ?? ''}
+            onPrimary={asColor(primaryForeground) ?? ''}
+          />
+        </Swipe.Group>
       </Sheet.Deferred>
     </Sheet>
-  );
-}
-
-/**
- * The swipeable session rows. Split out so `useSwipeGroup` can read the
- * `Swipe.Group` above it — the hook has to be called from below the group.
- */
-function SessionList({
-  sessions,
-  switching,
-  renamingId,
-  onSelect,
-  onDelete,
-  onRename,
-  primary,
-  muted,
-  ink,
-  onPrimary,
-}: {
-  sessions: ChatSession[];
-  switching: 'new' | string | null;
-  renamingId: string | null;
-  onSelect: (id: string) => void;
-  onDelete: (session: ChatSession) => void;
-  onRename: (session: ChatSession) => Promise<void>;
-  primary: string;
-  muted: string;
-  ink: string;
-  onPrimary: string;
-}) {
-  const { closeAll } = useSwipeGroup();
-  const listRef = React.useRef<FlashListRef<ChatSession>>(null);
-
-  // Runs once the row has slid out. The layout animation has to be armed
-  // before the store drops the session, since it applies to the next commit.
-  const deleteWithReflow = React.useCallback(
-    (session: ChatSession) => {
-      listRef.current?.prepareForLayoutAnimationRender();
-      LayoutAnimation.configureNext(ROW_CLOSE);
-      onDelete(session);
-    },
-    [onDelete],
-  );
-
-  // Stable renderItem + memoized rows: a scroll or a `switching` flip
-  // reconciles only the rows whose props actually changed, not every
-  // mounted cell.
-  const renderItem = React.useCallback(
-    ({ item }: { item: ChatSession }) => (
-      <ChatHistoryRow
-        item={item}
-        switching={switching}
-        // A boolean, not the id: a rename starting or ending re-renders the
-        // one row it concerns, not every mounted row.
-        renaming={renamingId === item.id}
-        onSelect={onSelect}
-        onDelete={deleteWithReflow}
-        onRename={onRename}
-        primary={primary}
-        muted={muted}
-        ink={ink}
-        onPrimary={onPrimary}
-      />
-    ),
-    [switching, renamingId, onSelect, deleteWithReflow, onRename, primary, muted, ink, onPrimary],
-  );
-  // Both are read inside renderItem but live outside the data, so rows would
-  // keep a stale dimming or spinner without this.
-  const extraData = React.useMemo(() => ({ switching, renamingId }), [switching, renamingId]);
-
-  return (
-    // `popover`: the fade has to resolve to the sheet's own ground, not the
-    // page behind it, or it draws a band of the wrong shade along the edge.
-    <PageFade edges="both" surface="popover">
-      <Sheet.FlatList
-        ref={listRef}
-        style={FILL}
-        data={sessions}
-        keyExtractor={(item) => item.id}
-        extraData={extraData}
-        // Rows dragged aside are put back the moment a scroll begins — the
-        // group's documented recipe for a list that scrolls, and half of
-        // recycling safety: a row left open must never ride along into a
-        // reused cell.
-        onScrollBeginDrag={closeAll}
-        ItemSeparatorComponent={RowSeparator}
-        renderItem={renderItem}
-      />
-    </PageFade>
   );
 }

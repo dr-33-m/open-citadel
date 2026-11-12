@@ -22,6 +22,7 @@ import {
     readDirectoryAsync,
 } from "expo-file-system/legacy";
 
+import { reportHandled, startTimer, track } from "@/lib/observe";
 import { safeFileStem } from "@/utils/file-names";
 
 /**
@@ -75,12 +76,16 @@ async function copyIntoLibrary(
   sourceUri: string,
   originalName: string,
 ): Promise<string | null> {
+  const elapsed = startTimer();
   try {
     const dest = await uniqueDestPath(safeFileName(originalName));
     await copyAsync({ from: sourceUri, to: dest });
+    track({ name: "book.import", attributes: { format: "epub", ms: elapsed(), outcome: "done" } });
     return dest;
   } catch (e) {
     console.warn("[book-import] copy failed:", originalName, e);
+    track({ name: "book.import", attributes: { format: "epub", ms: elapsed(), outcome: "failed" } });
+    reportHandled("book.import", e);
     return null;
   }
 }

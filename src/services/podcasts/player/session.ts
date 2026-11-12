@@ -32,6 +32,14 @@ export const session = {
    * episode or pull the player back from read-aloud.
    */
   letGo: new Set<string>(),
+  /**
+   * Episodes the listener moved past with "next" before they ended. They stay
+   * part-way through, so without this "next" would go straight back to them.
+   * Forgotten when the listener next chooses something to play.
+   */
+  passedOver: new Set<string>(),
+  /** The episode the listener last pressed play on, as opposed to one the player moved on to. */
+  chosen: null as string | null,
 };
 
 /**

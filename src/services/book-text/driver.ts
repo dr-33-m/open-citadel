@@ -32,9 +32,22 @@ function over(db: SQLiteDatabase): SqlDriver {
   return driver;
 }
 
+/**
+ * Off, because this database holds an FTS5 table. Left on, closing the
+ * connection (which expo-sqlite does to every open database when the
+ * JavaScript runtime is torn down: a reload, a Metro restart, an update)
+ * walks `sqlite3_next_stmt` and finalizes every statement on it, FTS5's own
+ * internal ones included; `sqlite3_close` then disconnects the FTS5 table,
+ * which finalizes those same statements again and the app dies in
+ * `exsqlite3_finalize` under `fts5FreeVtab`. Nothing here leaves a statement
+ * open: every query goes through `runAsync`/`getAllAsync`/`execAsync`, which
+ * finalize their own.
+ */
+const OPEN_OPTIONS = { finalizeUnusedStatementsBeforeClosing: false } as const;
+
 export function bookTextDriver(): Promise<SqlDriver> {
   opening ??= (async () => {
-    const driver = over(await openDatabaseAsync(FILE));
+    const driver = over(await openDatabaseAsync(FILE, OPEN_OPTIONS));
     await prepareIndex(driver);
     return driver;
   })().catch((e) => {

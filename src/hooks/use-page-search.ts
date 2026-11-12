@@ -23,6 +23,8 @@ export function usePageSearch() {
 
   const open = React.useCallback(() => setSearching(true), []);
   const close = React.useCallback(() => {
+    // Android leaves the keyboard up when the focused field goes away.
+    Keyboard.dismiss();
     setSearching(false);
     setQuery('');
     setTerm('');
@@ -35,17 +37,6 @@ export function usePageSearch() {
     if (!navigation.isFocused()) return false;
     close();
   });
-  // The keyboard belongs to this page's field. Without this it stayed up
-  // over a result opened from the list, and over the page gone back to.
-  React.useEffect(() => {
-    if (!searching) return;
-    const offBlur = navigation.addListener('blur', () => Keyboard.dismiss());
-    const offRemove = navigation.addListener('beforeRemove', () => Keyboard.dismiss());
-    return () => {
-      offBlur();
-      offRemove();
-    };
-  }, [navigation, searching]);
 
   return { searching, query, setQuery, term, setTerm, open, close };
 }

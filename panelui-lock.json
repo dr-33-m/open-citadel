@@ -368,6 +368,18 @@
     "src/components/ui/task.tsx": {
       "item": "task",
       "digest": "sha256:35ff4431e7fa3da5a3fcae723e431bfeeaefe1edb327b10e7c0f6ec79930c99c"
+    },
+    "src/components/ui/timeline.tsx": {
+      "item": "timeline",
+      "digest": "sha256:0763ee5483ac157b7c61af9ed5eda5279b79df1380110449fc8aeeec2caa51d1"
+    },
+    "src/components/ui/timeline-geometry.ts": {
+      "item": "timeline",
+      "digest": "sha256:f19edc36a4a6d173886c72c92b64215303353d9664ce85db7a94a7d0fb2667c1"
+    },
+    "src/components/ui/refs.ts": {
+      "item": "refs",
+      "digest": "sha256:a0133f298e05bdb5632304b3916f9970da4cda80dc9c932223b171fc83b73166"
     }
   },
   "roots": {
@@ -714,6 +726,14 @@
       "icons",
       "use-direction",
       "shimmer",
+      "text"
+    ],
+    "timeline": [
+      "timeline",
+      "haptics",
+      "icons",
+      "use-direction",
+      "refs",
       "text"
     ]
   },

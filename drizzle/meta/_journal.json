@@ -197,6 +197,20 @@
       "when": 1793200000000,
       "tag": "0027_blog_queue_position",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1793300000000,
+      "tag": "0028_samwell_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1793400000000,
+      "tag": "0029_publisher_rights",
+      "breakpoints": true
     }
   ]
 }

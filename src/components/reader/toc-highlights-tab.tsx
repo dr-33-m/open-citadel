@@ -183,6 +183,7 @@ export function HighlightsTab({
             renderItem={renderItem}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
           />
         </PageFade>
       )}

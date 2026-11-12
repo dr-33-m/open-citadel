@@ -9,13 +9,16 @@
  */
 import { eq } from 'drizzle-orm';
 
+import { startTimer, track } from '@/lib/observe';
 import { db } from '@/db/client';
 import { blogs } from '@/db/schema';
 import { parseBlogFeed } from '@/services/blogs/feed-parser';
 import type { Blog } from '@/services/blogs/records';
 import { storeArticles } from '@/services/blogs/store-articles';
+import { pruneArticleCopies } from '@/services/blogs/article-copies';
 import { pruneStalePreviews } from '@/services/blogs/blogs';
 import { fetchFeed } from '@/services/feeds/fetch';
+import { refreshPublisherRules } from '@/services/publishers';
 import { nowIso } from '@/services/rows';
 
 const CONCURRENCY = 4;
@@ -49,6 +52,7 @@ export async function refreshBlog(blog: Blog, force = false): Promise<{ fresh: n
         // Kept once set: it may be the directory's icon or the site's, which a feed image should not replace.
         imageUrl: blog.imageUrl ?? parsed.imageUrl,
         language: parsed.language ?? blog.language,
+        rights: parsed.rights ?? blog.rights,
         httpValidator: result.validator,
         lastRefreshAt: nowIso(),
         lastRefreshError: null,
@@ -65,6 +69,7 @@ export async function refreshBlog(blog: Blog, force = false): Promise<{ fresh: n
 async function run(force: boolean): Promise<BlogRefreshSummary> {
   const due = (await db.select().from(blogs).where(eq(blogs.state, 'subscribed'))).filter((b) => force || isRefreshDue(b));
   const summary: BlogRefreshSummary = { refreshed: 0, fresh: 0, failed: 0 };
+  const elapsed = startTimer();
   const pending = [...due];
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, pending.length) }, async () => {
@@ -76,7 +81,13 @@ async function run(force: boolean): Promise<BlogRefreshSummary> {
       }
     }),
   );
+  if (summary.refreshed > 0) {
+    track({ name: 'feeds.refresh', attributes: { kind: 'blogs', feeds: summary.refreshed, failed: summary.failed, ms: elapsed() } });
+  }
   await pruneStalePreviews();
+  // What publishers ask first, since the sweep keeps to it.
+  await refreshPublisherRules();
+  await pruneArticleCopies();
   return summary;
 }
 

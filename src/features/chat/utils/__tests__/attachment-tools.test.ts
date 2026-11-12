@@ -6,7 +6,7 @@ describe('attachmentTool', () => {
   it('offers every kind before a chat exists', () => {
     const state = { hasSession: false, attachedKind: null, pendingKind: null, busy: false };
     for (const kind of ['book', 'article', 'episode'] as const) {
-      expect(attachmentTool(kind, state)).toEqual({ shown: true, attached: false, pickable: true, droppable: false });
+      expect(attachmentTool(kind, state)).toEqual({ shown: true, attached: false, pickable: true, droppable: false, startsNew: false });
     }
   });
 
@@ -18,12 +18,24 @@ describe('attachmentTool', () => {
 
   it("shows only the session's own kind once a chat exists, fixed", () => {
     const state = { hasSession: true, attachedKind: 'episode' as const, pendingKind: null, busy: false };
-    expect(attachmentTool('episode', state)).toEqual({ shown: true, attached: true, pickable: false, droppable: false });
+    expect(attachmentTool('episode', state)).toEqual({ shown: true, attached: true, pickable: false, droppable: false, startsNew: false });
     expect(attachmentTool('article', state).shown).toBe(false);
   });
 
   it('holds still while a reply streams', () => {
     const state = { hasSession: false, attachedKind: 'book' as const, pendingKind: 'book' as const, busy: true };
     expect(attachmentTool('book', state)).toMatchObject({ pickable: false, droppable: false });
+  });
+
+  it('keeps every kind in a chat that holds nothing, each starting a new chat', () => {
+    const state = { hasSession: true, attachedKind: null, pendingKind: null, busy: false };
+    for (const kind of ['book', 'article', 'episode'] as const) {
+      expect(attachmentTool(kind, state)).toEqual({ shown: true, attached: false, pickable: true, droppable: false, startsNew: true });
+    }
+  });
+
+  it('starts nothing new while a reply streams', () => {
+    const state = { hasSession: true, attachedKind: null, pendingKind: null, busy: true };
+    expect(attachmentTool('book', state)).toMatchObject({ shown: true, pickable: false, startsNew: true });
   });
 });

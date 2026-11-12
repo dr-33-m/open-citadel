@@ -112,16 +112,28 @@ export async function fetchFeed(url: string, validator?: string | null, signal?:
   };
 }
 
-/**
- * A web page, for finding a site's feed or reading a post in full. `url` is
- * where it ended up after redirects.
- */
-export async function fetchPage(url: string, signal?: AbortSignal): Promise<{ body: string; url: string }> {
+export type FetchedPage = {
+  body: string;
+  /** Where it ended up after redirects. */
+  url: string;
+  /** Its `X-Robots-Tag` header: what it asks of anything that reads it. Null when it sent none, or came early. */
+  robots: string | null;
+  /** It sent `tdm-reservation: 1`, the TDM Reservation Protocol's opt-out from text and data mining. */
+  tdmReserved: boolean;
+};
+
+/** A web page, for finding a site's feed or reading a post in full. */
+export async function fetchPage(url: string, signal?: AbortSignal): Promise<FetchedPage> {
   const ahead = await takeEarly(url);
-  if (ahead) return { body: ahead.xml, url: ahead.url };
+  if (ahead) return { body: ahead.xml, url: ahead.url, robots: null, tdmReserved: false };
   const response = await request(url, { Accept: "text/html, application/xhtml+xml, */*;q=0.8" }, signal);
   if (!response.ok) throw new FeedFetchError(describeStatus(response.status));
-  return { body: await response.text(), url: response.url || url };
+  return {
+    body: await response.text(),
+    url: response.url || url,
+    robots: response.headers.get("x-robots-tag"),
+    tdmReserved: response.headers.get("tdm-reservation")?.trim() === "1",
+  };
 }
 
 /**

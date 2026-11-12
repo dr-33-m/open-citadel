@@ -98,13 +98,15 @@
             "targetSdkVersion": 36,
             "minSdkVersion": 26,
             "enableCoreLibraryDesugaring": true,
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "enableMinifyInReleaseBuilds": true
           },
           "ios": {
             "deploymentTarget": "17.0"
           }
         }
       ],
+      "./plugins/withR8KeepRules",
       "expo-sharing",
       "./plugins/withBackgroundAudio",
       "./plugins/withNotificationIcon",

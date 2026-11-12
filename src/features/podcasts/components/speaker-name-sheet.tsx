@@ -1,5 +1,5 @@
 import React from 'react';
-import { Keyboard, View } from 'react-native';
+import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { GoldButton } from '@/components/ui/gold-button';
@@ -29,10 +29,8 @@ export function SpeakerNameSheet({ visible, name, onClose, onSave }: SpeakerName
     setDraft(name);
   }
   const clean = draft.trim();
-  // The keyboard goes with the sheet: left up, it sat over the transcript.
   const save = () => {
     if (!clean) return;
-    Keyboard.dismiss();
     onSave(clean);
   };
 

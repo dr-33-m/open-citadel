@@ -34,6 +34,7 @@ let state: ConnectionState = INITIAL_CONNECTION;
 // The developer menu's "force offline" and "flaky". See `dev-switches.ts`.
 let simulatedOffline = false;
 const watchers = new Set<(online: boolean) => void>();
+const networkWatchers = new Set<() => void>();
 let started = false;
 let recheckTimer: ReturnType<typeof setTimeout> | null = null;
 let checking = false;
@@ -44,6 +45,7 @@ function offlineNow(): boolean {
 
 function update(next: ConnectionState, simulated: boolean = simulatedOffline): void {
   const wasOffline = offlineNow();
+  const hadNetwork = phoneHasNetwork();
   state = next;
   simulatedOffline = simulated;
   const offline = offlineNow();
@@ -53,6 +55,9 @@ function update(next: ConnectionState, simulated: boolean = simulatedOffline): v
     // question "why did it think it was offline" actually gets asked.
     console.warn(offline ? `[Network] Offline: ${reason}.` : '[Network] Back online.');
     for (const watcher of watchers) watcher(!offline);
+  }
+  if (phoneHasNetwork() !== hadNetwork) {
+    for (const watcher of networkWatchers) watcher();
   }
   scheduleRecheck();
 }
@@ -113,6 +118,24 @@ function start(): void {
     if (appState === 'active' && isOffline(state)) void recheckConnection();
   });
   void readOsNetwork().then((hasNetwork) => update(withNetwork(state, hasNetwork)));
+}
+
+/**
+ * Whether the phone has a network at all. Not the same as being online: Samwell
+ * Cloud being down makes the app offline, but says nothing about reaching
+ * anywhere else, such as a podcast's host.
+ */
+export function phoneHasNetwork(): boolean {
+  return !simulatedOffline && state.hasNetwork;
+}
+
+/** Calls `onChange` whenever `phoneHasNetwork` changes. Returns the way to stop. */
+export function watchNetwork(onChange: () => void): () => void {
+  start();
+  networkWatchers.add(onChange);
+  return () => {
+    networkWatchers.delete(onChange);
+  };
 }
 
 /** Whether the app is online right now. */

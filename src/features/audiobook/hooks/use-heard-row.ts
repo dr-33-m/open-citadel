@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { rowOf, type SentenceRow } from '@/features/audiobook/utils/sentence-rows';
+import { heardRow, rowOf, type SentenceRow } from '@/features/audiobook/utils/sentence-rows';
 import { useCurrentSegment } from '@/features/podcasts/hooks/use-current-segment';
 import { sentenceStarts } from '@/services/audiobook';
 import { useAudiobook } from '@/stores/audiobook';
@@ -47,5 +47,5 @@ export function useHeardRow(rows: readonly SentenceRow[], sentenceId: string | n
     [rows, placeRow],
   );
 
-  return { current: starts ? segment.current : rowOf(rows, sentenceId), place };
+  return { current: heardRow(segment.current, rows, sentenceId), place };
 }

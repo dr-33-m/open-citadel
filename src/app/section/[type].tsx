@@ -14,13 +14,13 @@ import { BookGrid } from '@/features/library/components/book-grid';
 import { BookQueueList } from '@/features/library/components/book-queue-list';
 import { BookSheets } from '@/features/library/components/book-sheets';
 import { CollectionList } from '@/features/library/components/collection-list';
-import { LibrarySearchField } from '@/features/library/components/library-search-field';
 import { NewCollectionPrompt } from '@/features/library/components/new-collection-prompt';
 import { useBookSection } from '@/features/library/hooks/use-book-section';
 import { useBookSheets } from '@/features/library/hooks/use-book-sheets';
 import { useCollectionsSection } from '@/features/library/hooks/use-collections-section';
 import { useNewCollection } from '@/features/library/hooks/use-new-collection';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { useInteractiveWhen, useScreenInteractive } from '@/hooks/use-screen-interactive';
 import { useSettledOnce } from '@/navigation/use-settled-once';
 
 const COLUMNS = 2;
@@ -38,6 +38,9 @@ function BookSection({ type }: { type: string | undefined }) {
   // Heavy work (the grid, the sheets) waits for the drawer to land.
   // Content mounts when the slide has actually finished, and stays mounted.
   const landed = useSettledOnce();
+  // The grid and the queue draw their own skeleton handover; the screen is
+  // usable once it has landed and they mount.
+  useInteractiveWhen(landed);
   const section = useBookSection(type);
   const sheets = useBookSheets();
   const muted = tokens['--color-muted-foreground'];
@@ -45,7 +48,14 @@ function BookSection({ type }: { type: string | undefined }) {
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <DrawerHeader title={section.title} subtitle={section.subtitle} onClose={section.close}>
+      <DrawerHeader
+        title={section.title}
+        subtitle={section.subtitle}
+        onClose={section.close}
+        search={section.search}
+        searchLabel="Search by title or author"
+        canSearch={section.canSearch}
+      >
         {section.rescan ? (
           <IconButton onPress={section.rescan.onPress} label="Rescan the library">
             {/* Gold only while it is actually running, which is a state and not decoration. */}
@@ -58,11 +68,6 @@ function BookSection({ type }: { type: string | undefined }) {
           </IconButton>
         ) : null}
       </DrawerHeader>
-      <LibrarySearchField
-        value={section.search.query}
-        onChange={section.search.setQuery}
-        placeholder="Search by title or author…"
-      />
       {section.view === 'queue' ? (
         <BookQueueList
           queue={section.queue}
@@ -95,6 +100,7 @@ function CollectionsSection() {
   const tokens = useThemeTokens();
   // Content mounts when the slide has actually finished, and stays mounted.
   const landed = useSettledOnce();
+  const interactive = useScreenInteractive();
   const section = useCollectionsSection();
   const newCollection = useNewCollection();
   const skeleton = (
@@ -105,13 +111,19 @@ function CollectionsSection() {
 
   return (
     <ThemedView className="flex-1" style={{ paddingTop: insets.top }}>
-      <DrawerHeader title="Collections" subtitle={section.subtitle} onClose={section.close}>
+      <DrawerHeader
+        title="Collections"
+        subtitle={section.subtitle}
+        onClose={section.close}
+        search={section.search}
+        searchLabel="Search collections"
+        canSearch={section.canSearch}
+      >
         <IconButton onPress={newCollection.open} label="New collection">
           <Plus size={18} color={tokens['--color-foreground']} strokeWidth={2} />
         </IconButton>
       </DrawerHeader>
-      <LibrarySearchField value={section.query} onChange={section.setQuery} placeholder="Search collections…" />
-      <Handover ready={landed} skeleton={skeleton}>
+      <Handover onShown={interactive} ready={landed} skeleton={skeleton}>
         <CollectionList
           collections={section.results}
           columns={COLUMNS}

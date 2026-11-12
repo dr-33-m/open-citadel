@@ -53,6 +53,8 @@ import {
   type ViewProps,
   type ViewToken,
 } from 'react-native';
+import type { ComponentType, MutableRefObject } from 'react';
+import { KeyboardChatScrollView } from 'react-native-keyboard-controller';
 import Animated, {
   runOnJS,
   useAnimatedRef,
@@ -93,6 +95,8 @@ interface MessageScrollerDriver {
 }
 
 interface MessageScrollerContextValue {
+  /** LOCAL EDIT: see `onOpened` on `MessageScrollerProps`. */
+  onOpenedRef: MutableRefObject<(() => void) | undefined>;
   scrollRef: ReturnType<typeof useAnimatedRef<Animated.ScrollView>>;
   registerDriver: (driver: MessageScrollerDriver | null) => void;
   /** 1 while the reader is at the live edge, 0 otherwise. Drives follow state. */
@@ -112,7 +116,7 @@ interface MessageScrollerContextValue {
   following: React.RefObject<boolean>;
   /** Set once the viewport has opened; rows laid out before that are history. */
   openedRef: React.RefObject<boolean>;
-  registerItem: (id: string, y: number, anchor: boolean) => void;
+  registerItem: (id: string, y: number, anchor: boolean, arrived?: boolean) => void;
   unregisterItem: (id: string) => void;
   scrollToEnd: (animated?: boolean) => void;
   scrollToStart: (animated?: boolean) => void;
@@ -190,6 +194,16 @@ export interface MessageScrollerProps extends ViewProps {
    * rather than at the very bottom of whatever the reply happened to be.
    */
   defaultScrollPosition?: MessageScrollerPosition;
+  /**
+   * LOCAL EDIT: re-apply after `panelui-cli update`.
+   *
+   * Called once the transcript has opened at `defaultScrollPosition`, a frame
+   * after the scroll is applied. A long transcript laid out where the reader
+   * can see it opens at the top and then jumps to the end; a caller that keeps
+   * it hidden until this fires can fade it in already in place, as Bluesky's
+   * chat does.
+   */
+  onOpened?: () => void;
   children?: ReactNode;
 }
 
@@ -198,9 +212,14 @@ function MessageScrollerRoot({
   autoScroll = false,
   preserveScrollOnPrepend = true,
   defaultScrollPosition = 'end',
+  onOpened,
   children,
   ...props
 }: MessageScrollerProps) {
+  const onOpenedRef = useRef(onOpened);
+  useEffect(() => {
+    onOpenedRef.current = onOpened;
+  }, [onOpened]);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const atEnd = useSharedValue(1);
   const awayFromEdge = MESSAGE_SCROLLER_EDGE_THRESHOLD + 1;
@@ -230,7 +249,7 @@ function MessageScrollerRoot({
   );
 
   const registerItem = useCallback(
-    (id: string, y: number, anchor: boolean) => {
+    (id: string, y: number, anchor: boolean, arrived = true) => {
       const list = anchors.current;
       const isNewAnchor = anchor && !list.includes(id);
       /*
@@ -244,8 +263,13 @@ function MessageScrollerRoot({
        * Checked before this row joins `itemY`, so it is compared only with the
        * rows that were already there; a turn loaded above them is history and
        * moves nothing.
+       *
+       * LOCAL EDIT (2): `arrived` false for a turn that is history however it
+       * lands. A page of older turns drawn above a short first page put one of
+       * the reader's old questions below every row measured so far, which read
+       * as a send and threw them to the bottom as they scrolled up.
        */
-      if (isNewAnchor && autoScroll && openedRef.current && isBelowAll(y, itemY.current)) {
+      if (isNewAnchor && arrived && autoScroll && openedRef.current && isBelowAll(y, itemY.current)) {
         scrollToEnd(true);
       }
       itemY.current.set(id, y);
@@ -307,6 +331,7 @@ function MessageScrollerRoot({
       scrollToMessage,
       currentAnchorId,
       setCurrentAnchorId,
+      onOpenedRef,
     }),
     [
       scrollRef,
@@ -350,15 +375,33 @@ export interface MessageScrollerViewportProps
   > {
   className?: string;
   children?: ReactNode;
+  /** LOCAL EDIT: how far the composer sits above the keyboard's bottom, less any gap. Undefined leaves the transcript where it is when a keyboard opens. */
+  keyboardOffset?: number;
 }
 
+/** Its own props, typed plainly; it passes the rest on to a Reanimated ScrollView. */
+const ChatScrollView = KeyboardChatScrollView as unknown as ComponentType<
+  Omit<AnimatedScrollViewProps, 'ref'> & {
+    ref?: unknown;
+    keyboardLiftBehavior: 'never' | 'whenAtEnd';
+    offset: number;
+  }
+>;
+
 /**
+ * LOCAL EDIT (Open Citadel), re-apply after `panelui-cli update`: the scrollable
+ * is the keyboard controller's chat scroll view, which gives the transcript room
+ * under the keyboard and slides the last message up with it, without a layout
+ * pass per frame. Only while the reader is at the end: someone reading further
+ * back stays where they are, and can still scroll down to the last line.
+ *
  * The scrollable itself. Owns the three behaviours, because all three are
  * reactions to scroll and content-size events and this is where they arrive.
  */
 function MessageScrollerViewport({
   className,
   children,
+  keyboardOffset,
   ...props
 }: MessageScrollerViewportProps) {
   const {
@@ -377,6 +420,7 @@ function MessageScrollerViewport({
     scrollToEnd,
     scrollToMessage,
     setCurrentAnchorId,
+    onOpenedRef,
   } = useScroller('MessageScroller.Viewport');
 
   const contentHeight = useRef(0);
@@ -489,6 +533,8 @@ function MessageScrollerViewport({
       openedRef.current = true;
       previousY.current = new Map(itemY.current);
       openAt(defaultScrollPosition);
+      // LOCAL EDIT: a frame later, so the unanimated scroll has been applied.
+      requestAnimationFrame(() => onOpenedRef.current?.());
       return;
     }
 
@@ -545,8 +591,10 @@ function MessageScrollerViewport({
   }, [autoScroll, following, atEnd]);
 
   return (
-    <Animated.ScrollView
+    <ChatScrollView
       ref={scrollRef}
+      keyboardLiftBehavior={keyboardOffset === undefined ? 'never' : 'whenAtEnd'}
+      offset={keyboardOffset ?? 0}
       accessibilityRole="list"
       accessibilityLabel="Messages"
       scrollEventThrottle={16}
@@ -562,7 +610,7 @@ function MessageScrollerViewport({
       onContentSizeChange={onContentSizeChange}
     >
       {textChildren(children)}
-    </Animated.ScrollView>
+    </ChatScrollView>
   );
 }
 MessageScrollerViewport.displayName = 'MessageScroller.Viewport';
@@ -866,6 +914,11 @@ export interface MessageScrollerItemProps extends ViewProps {
   /** Stable id for this turn. `scrollToMessage` takes the same value. */
   messageId: string;
   /**
+   * LOCAL EDIT: false for a turn that was already in the conversation (history
+   * drawn as the reader scrolls up), so it is never mistaken for one just sent.
+   */
+  arrived?: boolean;
+  /**
    * Marks this row as the start of a turn. `defaultScrollPosition="last-anchor"`
    * opens on the last one, and it is what a saved thread should land on — the
    * question, not the tail of the answer to it.
@@ -883,13 +936,14 @@ function MessageScrollerItem({
   className,
   messageId,
   scrollAnchor = false,
+  arrived = true,
   children,
   ...props
 }: MessageScrollerItemProps) {
   const { registerItem, unregisterItem } = useScroller('MessageScroller.Item');
 
   const onLayout = (event: LayoutChangeEvent) => {
-    registerItem(messageId, event.nativeEvent.layout.y, scrollAnchor);
+    registerItem(messageId, event.nativeEvent.layout.y, scrollAnchor, arrived);
     props.onLayout?.(event);
   };
 

@@ -19,6 +19,7 @@ const { identify, reclaimStorePurchases, refresh, showToast, adopt, account, sub
   subscription: { status: 'none' as string },
 }));
 
+vi.mock('@/lib/observe', () => ({ reportHandled: vi.fn(), track: vi.fn(), startTimer: () => () => 0 }));
 vi.mock('@/services/purchases', () => ({ identify, reclaimStorePurchases }));
 vi.mock('@/services/guest-identity', () => ({
   GuestLinked: class GuestLinked extends Error {},

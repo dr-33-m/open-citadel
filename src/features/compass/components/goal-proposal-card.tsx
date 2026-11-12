@@ -13,19 +13,23 @@ type GoalProposalCardProps = {
   onApprove: () => void;
   onRefine: () => void;
   disabled?: boolean;
+  /** Set once the goal has started: the card keeps its title and this line. */
+  done?: string | null;
 };
 
 /**
  * The goal Samwell has arrived at, for the reader to approve or push back on.
  *
  * Presentational: it takes the proposal and two callbacks and reaches for
- * nothing. What it commits to is decided by the hook that owns it.
+ * nothing. What it commits to is decided by the hook that owns it. Once
+ * started it folds to its title and length: the detail is on the goal now.
  */
 export function GoalProposalCard({
   proposal,
   onApprove,
   onRefine,
   disabled,
+  done = null,
 }: GoalProposalCardProps) {
   const mutedForeground = useCSSVariable('--color-muted-foreground');
   const muted = asColor(mutedForeground);
@@ -43,11 +47,14 @@ export function GoalProposalCard({
       onApprove={onApprove}
       onRefine={onRefine}
       disabled={disabled}
+      done={done}
     >
       <ThemedText type="headlineSm">{proposal.title}</ThemedText>
-      <ThemedText type="bodySm" color={muted}>
-        {proposal.summary}
-      </ThemedText>
+      {!done && (
+        <ThemedText type="bodySm" color={muted}>
+          {proposal.summary}
+        </ThemedText>
+      )}
 
       <View className="flex-row flex-wrap items-center gap-x-3">
         <ThemedText type="labelSm" color={muted}>
@@ -63,6 +70,15 @@ export function GoalProposalCard({
         )}
       </View>
 
+      {!done && <ProposalDetail proposal={proposal} muted={muted} />}
+    </DraftCardShell>
+  );
+}
+
+/** What the goal asks for, drawn only while it waits for an answer. */
+function ProposalDetail({ proposal, muted }: { proposal: GoalProposal; muted: string | undefined }) {
+  return (
+    <>
       <View className="gap-3 pt-1">
         <ThemedText type="labelSm" color={muted}>
           {proposal.trackables.length === 1 ? 'WHAT YOU LOG' : `WHAT YOU LOG · ${proposal.trackables.length}`}
@@ -79,6 +95,6 @@ export function GoalProposalCard({
           {proposal.rationale}
         </ThemedText>
       )}
-    </DraftCardShell>
+    </>
   );
 }

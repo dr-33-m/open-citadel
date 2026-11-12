@@ -50,6 +50,7 @@ import { runMigrations } from "@/db/migrations";
 import { useThemeMode } from "@/hooks/use-theme";
 import { queryClient } from "@/lib/query-client";
 import { startQueryPersist } from "@/lib/query-persist";
+import { RouteKeyboard } from "@/navigation/route-keyboard";
 import { TransitionStack } from "@/navigation/stack";
 import {
     drawerTransition,
@@ -58,7 +59,11 @@ import {
     hubTransition,
     sideTransition,
 } from "@/navigation/transitions";
+import { useObserveContext } from "@/hooks/use-observe-context";
+import { configureObserve, ObserveRoot, reportHandled } from "@/lib/observe";
 import { installAppGate } from "@/services/app-gate";
+import { reportPreviousExits } from "@/services/exit-report";
+import { onIdle } from "@/lib/idle";
 import { importIncomingFile } from "@/services/book-import";
 import {
     startModelLifecycle,
@@ -85,6 +90,9 @@ import { Uniwind, useCSSVariable } from "uniwind";
 import { asColor } from "@/utils/colors";
 
 SplashScreen.preventAutoHideAsync();
+// Before anything mounts: the router's per-screen timings cannot be turned on
+// later, and sending follows the reader's choice from the first event.
+configureObserve();
 
 // Register Android background event handler at module level (before app renders)
 registerTTSBackgroundHandler();
@@ -102,6 +110,8 @@ installAppGate();
 // Catches throws from route module evaluation / rendering that would otherwise
 // crash the app with an unhandled JS exception on startup.
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  // A render that threw never reaches the global handler, so it is reported here.
+  useEffect(() => reportHandled("render", error), [error]);
   return (
     <View className="flex-1 items-center justify-center gap-4 p-6">
       <Text className="text-center text-[16px]">{error.message}</Text>
@@ -111,6 +121,10 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
     </View>
   );
 }
+
+/** Each page of Settings is its own screen in the stack, keyed by which page it is. */
+const settingsPaneId = (_name: string, params: Record<string, unknown>) =>
+  typeof params.pane === "string" ? params.pane : undefined;
 
 function RootLayoutContent() {
   const [fontsLoaded] = useFonts({
@@ -146,6 +160,10 @@ function RootLayoutContent() {
   // whichever screen is up, so offline mode is checked as promptly as cloud.
   usePlanSync();
   useGuestLink();
+  useObserveContext();
+  // What killed the app last time, if Android says it was memory or a fault.
+  // Once the thread is free: it is never worth a frame of the launch.
+  useEffect(() => onIdle(reportPreviousExits, 5000), []);
   // Samwell's journal: what he writes down about them once a conversation
   // goes quiet, for him to recall in later chats.
   useJourneyWriter();
@@ -326,6 +344,7 @@ function RootLayoutContent() {
                 moment they are ready. Its own node, so its poll re-renders
                 nothing else. */}
                 <TranscriptionWatch ready={dbReady} />
+                <RouteKeyboard />
                 {/* Hub and spokes. The hub is one route — Timeline, Library and
                 Samwell are pages of a pager inside it (`components/hub/hub-pager`),
                 because they are peers and a swipe between peers should track the
@@ -360,9 +379,18 @@ function RootLayoutContent() {
                     name="onboarding"
                     options={screenTransitions.fade}
                   />
+                  {/* Settings is a list that rises like a drawer, and a page
+                  per row that comes in from the side, each its own screen. */}
                   <TransitionStack.Screen
-                    name="settings"
+                    name="settings/index"
                     options={screenTransitions.drawer}
+                  />
+                  {/* One screen per page: without an id per pane, a link to a
+                  second page went back to the first one still open. */}
+                  <TransitionStack.Screen
+                    name="settings/[pane]"
+                    options={screenTransitions.side}
+                    dangerouslySingular={settingsPaneId}
                   />
                   {/* Edge-only: the reader turns pages with the same horizontal
                   swipe, so a screen-wide back gesture would eat every page turn. */}
@@ -461,7 +489,7 @@ function RootLayoutContent() {
  * above the layout so the portal host that sheets and toasts present into is
  * inside them.
  */
-export default function RootLayout() {
+function RootLayout() {
   return (
     <ThemeRelease>
       <RootThemeTokens>
@@ -470,3 +498,6 @@ export default function RootLayout() {
     </ThemeRelease>
   );
 }
+
+// Times the first render from the process starting (`cold_ttr`, `warm_ttr`).
+export default ObserveRoot.wrap(RootLayout);

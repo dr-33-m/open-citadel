@@ -28,8 +28,9 @@ import { asColor } from '@/utils/colors';
  * and message, and a status without a title has decided it does not want one
  * (see `SamwellStatus.title`), so these two are never a fallback for one.
  */
-const IDLE_TITLE = 'Ask Samwell about your books';
-const IDLE_MESSAGE = 'Analyse and learn with Samwell';
+// Both halves of him, now that reading and goals are one conversation.
+const IDLE_TITLE = 'Talk to Samwell';
+const IDLE_MESSAGE = 'About what you read, or a goal you want to work on.';
 
 /**
  * The way out of a status, with the first one carrying the weight.

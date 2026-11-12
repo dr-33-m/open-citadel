@@ -15,6 +15,7 @@ export type ArticleAction =
   | 'read'
   | 'unread'
   | 'original'
+  | 'remove-copy'
   | 'share'
   | 'blog';
 
@@ -25,7 +26,7 @@ type ArticleMenuOptions = {
   listen?: 'open' | 'locked' | null;
 };
 
-type MenuArticle = Pick<ArticleItem, 'savedAt' | 'favoritedAt' | 'finishedAt' | 'readAt'>;
+type MenuArticle = Pick<ArticleItem, 'savedAt' | 'favoritedAt' | 'finishedAt' | 'readAt' | 'bookId'>;
 
 /**
  * What can be done to a post in the state it is in, in menu order. The
@@ -55,6 +56,8 @@ export function articleMenu(article: MenuArticle, options: ArticleMenuOptions): 
     { key: 'original', label: 'Open the Original' },
     { key: 'share', label: 'Share' },
   );
+  // Only once opened, which is when a copy is made.
+  if (article.bookId) rows.push({ key: 'remove-copy', label: 'Remove Saved Copy', tone: 'destructive' });
   if (options.blogLink) rows.push({ key: 'blog', label: 'Go to Blog' });
   return rows;
 }

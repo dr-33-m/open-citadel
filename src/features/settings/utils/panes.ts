@@ -1,11 +1,11 @@
 /*
- * Settings is one screen: a short list, and a pane for each thing on it.
- * These are the rules for moving between them, kept apart from the screen so
- * they can be tested.
+ * Settings is a list, and a page for each thing on it. Each page is a route of
+ * its own (`app/settings/[pane]`), pushed from the list and built when it is
+ * opened, as Bluesky's settings screens and Expensify's settings pages are.
  */
 
-/** In the order they are built ahead: the likeliest to be opened first. */
-export const SETTINGS_PANES = ['samwell', 'voice', 'podcasts', 'profile'] as const;
+/** Every page Settings has. */
+export const SETTINGS_PANES = ['samwell', 'voice', 'podcasts', 'profile', 'memory'] as const;
 
 export type SettingsPane = (typeof SETTINGS_PANES)[number];
 
@@ -14,6 +14,7 @@ export const PANE_TITLES: Record<SettingsPane, string> = {
   samwell: 'Samwell',
   voice: 'Reading voice',
   podcasts: 'Podcasts',
+  memory: 'What Samwell knows',
 };
 
 export function isSettingsPane(value: unknown): value is SettingsPane {
@@ -21,24 +22,9 @@ export function isSettingsPane(value: unknown): value is SettingsPane {
 }
 
 /**
- * Where "back" goes from `trail`, the panes opened so far (empty on the list):
- * one pane up, or null for out of Settings altogether.
- *
- * `enteredAt` is the pane Settings was opened straight onto, from somewhere
- * that wanted that pane (the chat's "set Samwell up"). Back from there returns
- * to where the reader came from, not to a list they never saw.
+ * Pages whose body scrolls itself (a list) rather than inside the page's own
+ * scroll view.
  */
-export function stepBack(trail: readonly SettingsPane[], enteredAt: SettingsPane | null): SettingsPane[] | null {
-  if (trail.length === 0) return null;
-  if (trail.length === 1 && trail[0] === enteredAt) return null;
-  return trail.slice(0, -1);
-}
-
-/** The panes to build ahead of being opened: the first `count`, in order. */
-export function warmPanes(count: number): Record<SettingsPane, boolean> {
-  const warm = {} as Record<SettingsPane, boolean>;
-  SETTINGS_PANES.forEach((pane, index) => {
-    warm[pane] = index < count;
-  });
-  return warm;
+export function paneScrolls(pane: SettingsPane): boolean {
+  return pane !== 'memory';
 }

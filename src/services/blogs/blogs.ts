@@ -6,7 +6,8 @@
 import { and, asc, eq, inArray, isNull, lt, not, or, sql } from 'drizzle-orm';
 
 import { db } from '@/db/client';
-import { blogArticles, blogs, type BlogState } from '@/db/schema';
+import { blogArticles, blogs, type BlogState, type WholePosts } from '@/db/schema';
+import { releaseBlogCopies } from '@/services/blogs/article-copies';
 import { keptOnPurpose } from '@/services/blogs/articles';
 import type { DiscoveredBlog } from '@/services/blogs/discover';
 import type { Blog, BlogItem } from '@/services/blogs/records';
@@ -60,6 +61,7 @@ export async function storeDiscoveredBlog(found: DiscoveredBlog, state: BlogStat
     description: found.blog.description,
     imageUrl: found.blog.imageUrl,
     language: found.blog.language,
+    rights: found.blog.rights,
     lastRefreshAt: now,
     lastRefreshError: null,
     httpValidator: found.validator,
@@ -93,10 +95,12 @@ export async function followBlog(id: string): Promise<void> {
 
 /**
  * Stops following. Posts kept on purpose stay (queued, favorites, finished,
- * or opened, since a highlight lives on the opened copy); the rest go. The
- * blog stays as a preview while it holds any, so they can still be listed.
+ * or with highlights, notes or a chat on their copy); the rest go, reader
+ * copies included (`releaseBlogCopies`). The blog stays as a preview while it
+ * holds any, so they can still be listed.
  */
 export async function unfollowBlog(id: string): Promise<void> {
+  await releaseBlogCopies(id);
   db.transaction((tx) => {
     tx.delete(blogArticles)
       .where(and(eq(blogArticles.blogId, id), not(keptOnPurpose)))
@@ -105,6 +109,11 @@ export async function unfollowBlog(id: string): Promise<void> {
   });
   // Not tidied away here: the next refresh does that, which leaves an undo
   // right after unfollowing something to come back to.
+}
+
+/** How the reader chose to read a blog whose feed carries only openings (`WholePosts`). */
+export async function setBlogWholePosts(id: string, wholePosts: WholePosts): Promise<void> {
+  await db.update(blogs).set({ wholePosts }).where(eq(blogs.id, id));
 }
 
 /** How long a blog opened from Explore and not followed is kept: a week, as for podcasts. */

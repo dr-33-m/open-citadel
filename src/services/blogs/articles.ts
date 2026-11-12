@@ -27,9 +27,10 @@ const STARTED = 0.02;
 const FINISHED = 0.95;
 
 /**
- * A post kept on purpose: queued, a favorite, finished, or opened (a
- * highlight lives on the opened copy). Tidying a blog's old posts away, and
- * letting go of a preview nobody followed, both leave these alone.
+ * A post kept on purpose: queued, a favorite, finished, or with its reader
+ * copy still on the phone (how long that stays is `article-copies.ts`'s to
+ * say). Tidying a blog's old posts away, and letting go of a preview nobody
+ * followed, both leave these alone.
  */
 export const keptOnPurpose: SQL = sql`(${blogArticles.savedAt} is not null
   or ${blogArticles.favoritedAt} is not null
@@ -128,14 +129,19 @@ export async function setArticleFinished(id: string, finished: boolean): Promise
     .where(eq(blogArticles.id, id));
 }
 
-/** The post whose reader copy is `bookId`, as the player's star needs it; null when there is none. */
-export async function articleOfBook(bookId: string): Promise<{ id: string; favorite: boolean } | null> {
+/**
+ * The post whose reader copy is `bookId`: enough to open it again
+ * (`useOpenArticle`) and to draw the player's star. Null when there is none.
+ */
+export async function articleOfBook(
+  bookId: string,
+): Promise<{ id: string; title: string; link: string; favorite: boolean } | null> {
   const row = await db
-    .select({ id: blogArticles.id, favoritedAt: blogArticles.favoritedAt })
+    .select({ id: blogArticles.id, title: blogArticles.title, link: blogArticles.link, favoritedAt: blogArticles.favoritedAt })
     .from(blogArticles)
     .where(eq(blogArticles.bookId, bookId))
     .get();
-  return row ? { id: row.id, favorite: row.favoritedAt !== null } : null;
+  return row ? { id: row.id, title: row.title, link: row.link, favorite: row.favoritedAt !== null } : null;
 }
 
 /**

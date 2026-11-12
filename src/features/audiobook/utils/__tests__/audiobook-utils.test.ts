@@ -259,6 +259,17 @@ describe('sentenceRows', () => {
   });
 });
 
+describe('heardRow', () => {
+  it('goes by the clock, and by the sentence named where the clock has no row', async () => {
+    const { heardRow, sentenceRows } = await import('@/features/audiobook/utils/sentence-rows');
+    const sentence = (id: string, paragraph: number) => ({ id, section: 2, paragraph, offset: 0, text: id });
+    const rows = sentenceRows([sentence('2:1:0', 1), sentence('2:1:1', 1), sentence('2:2:0', 2)]);
+    expect(heardRow(1, rows, '2:2:0')).toBe(1);
+    expect(heardRow(-1, rows, '2:2:0')).toBe(2);
+    expect(heardRow(-1, rows, null)).toBe(-1);
+  });
+});
+
 describe('sentenceMarks', () => {
   it('marks the sentences a highlight in this chapter covers, whoever made it', async () => {
     const { sentenceMarks } = await import('@/features/audiobook/utils/sentence-marks');

@@ -1,5 +1,5 @@
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import type { GoalCategory, GoalPriority, LifecycleStatus } from "samwell-shared";
+import type { GoalCategory, GoalPriority, JournalNoteKind, LifecycleStatus } from "samwell-shared";
 
 export const books = sqliteTable("books", {
   id: text("id").primaryKey(),
@@ -511,17 +511,33 @@ export const goalOutcomes = sqliteTable("goal_outcomes", {
 
 export const journeyNotes = sqliteTable("journey_notes", {
   id: text("id").primaryKey(),
-  /** 'reflection' = distilled by Samwell (from a conversation, or an approved
-   *  Compass check-in); the rest are written deterministically. */
+  /** 'reflection' = distilled by Samwell (from an approved Compass check-in, or
+   *  a conversation written up before notes had kinds). The journal's own kinds
+   *  are `JournalNoteKind`. `book_*` and `goal_finished` are written
+   *  deterministically. */
   kind: text("kind")
-    .$type<"reflection" | "book_finished" | "book_removed" | "goal_finished">()
+    .$type<"reflection" | "book_finished" | "book_removed" | "goal_finished" | JournalNoteKind>()
     .notNull(),
   text: text("text").notNull(),
   /** JSON string[] for keyword retrieval */
   tags: text("tags"),
   /** Where it came from, for provenance: `chat:<sessionId>`, a book id, a goal id. */
   sourceRef: text("source_ref"),
+  /** A commitment's date, when they gave one. */
+  dueOn: text("due_on"),
+  /** When a commitment was done, dropped or replaced. Null while it is open. */
+  resolvedAt: text("resolved_at"),
   createdAt: text("created_at").notNull(),
+}, (table) => [index("journey_notes_kind_idx").on(table.kind, table.createdAt)]);
+
+/**
+ * Samwell's one picture of who they are, rewritten as he learns more and sent
+ * with every cloud turn. One row, `id` 1. On the device, like every journey note.
+ */
+export const samwellProfile = sqliteTable("samwell_profile", {
+  id: integer("id").primaryKey(),
+  text: text("text").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });
 
 // ── Daily reading (did the user actually read that day?) ─────────────────────
@@ -767,6 +783,12 @@ export const podcastListeningDays = sqliteTable(
 
 /** `preview`: opened from Explore and not followed, kept so its posts can be read. */
 export type BlogState = "subscribed" | "preview";
+/**
+ * How the reader chose to read a blog whose feed carries only the opening of
+ * each post: on the blog's own site, or fetched whole into the reader. Null
+ * until asked, which happens the first time such a post is opened.
+ */
+export type WholePosts = "site" | "app";
 
 export const blogs = sqliteTable(
   "blogs",
@@ -787,6 +809,10 @@ export const blogs = sqliteTable(
     lastRefreshError: text("last_refresh_error"),
     /** `ETag` or `Last-Modified` from the last fetch, for a conditional GET. */
     httpValidator: text("http_validator"),
+    /** See `WholePosts`. */
+    wholePosts: text("whole_posts").$type<WholePosts>(),
+    /** The feed's own copyright line (`<copyright>`, Atom `<rights>`), carried into every saved copy. */
+    rights: text("rights"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [uniqueIndex("blogs_feed_url_idx").on(table.feedUrl), index("blogs_state_idx").on(table.state)],
@@ -821,8 +847,19 @@ export const blogArticles = sqliteTable(
     favoritedAt: text("favorited_at"),
     /** Null until marked finished. A finished post leaves Continue Reading and the queue. */
     finishedAt: text("finished_at"),
-    /** The reader's copy (`books.kind = 'article'`), once opened. Never tidied away either. */
+    /**
+     * Whether the feed carries only the opening of the post (`feedExcerpt`,
+     * decided when the feed is read). Null on posts stored before it was
+     * asked, until the next refresh: `isTeaser` guesses for those.
+     */
+    feedExcerpt: integer("feed_excerpt", { mode: "boolean" }),
+    /**
+     * The reader's copy (`books.kind = 'article'`), once opened. Kept while
+     * it is kept on purpose or read lately (`article-copies.ts`).
+     */
     bookId: text("book_id"),
+    /** Whether that copy is the whole post (false: only the feed's opening). Null on copies made before it was asked, all whole. */
+    copyWhole: integer("copy_whole", { mode: "boolean" }),
   },
   (table) => [
     uniqueIndex("blog_articles_blog_link_idx").on(table.blogId, table.link),

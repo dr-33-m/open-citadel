@@ -118,6 +118,7 @@ export function AttachmentPickerSheet<T>({
               ItemSeparatorComponent={RowSeparator}
               // A row tapped with the keyboard up picks it, rather than only closing the keyboard.
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               renderItem={renderItem}
             />
           </PageFade>

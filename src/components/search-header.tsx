@@ -1,25 +1,23 @@
 import React from 'react';
 
-import { ChevronLeft, Search, X } from '@/components/icons';
+import { ChevronDown, ChevronLeft } from '@/components/icons';
+import { PageSearchMark } from '@/components/page-search-button';
+import { PageSearchField, type PageSearchFieldOptions } from '@/components/page-search-field';
 import { ScreenHeader } from '@/components/ui/screen-header';
-import { SearchBar } from '@/components/ui/search-bar';
 import { iconSize } from '@/constants/theme';
 import type { PageSearch } from '@/hooks/use-page-search';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
-type SearchHeaderProps = PageSearch & {
-  /** Shown until a search opens, when the field takes its place. */
-  title?: string;
-  onBack: () => void;
-  /** "Search episodes": the field's placeholder and the button's label. */
-  placeholder: string;
-  /** False until there is a list to search; the button's place is held. */
-  canSearch: boolean;
-  /** For a search that goes to a server: how long typing pauses before `term` is set. */
-  debounce?: number;
-  /** A server search is on its way; the field's ✕ gives way to a spinner. */
-  loading?: boolean;
-};
+type SearchHeaderProps = PageSearch &
+  PageSearchFieldOptions & {
+    /** Shown until a search opens, when the field takes its place. */
+    title?: string;
+    onBack: () => void;
+    /** The page rose as a drawer and leaves going down: Close rather than Back. */
+    drawer?: boolean;
+    /** False until there is a list to search; the button's place is held. */
+    canSearch: boolean;
+  };
 
 /**
  * A page's top bar with a search in it: Back, and a search button that turns
@@ -28,56 +26,34 @@ type SearchHeaderProps = PageSearch & {
  * starts, and the field never scrolls away from the results it is filtering.
  */
 export function SearchHeader({
-  searching,
-  query,
-  setQuery,
-  setTerm,
-  open,
-  close,
   title = '',
   onBack,
+  drawer = false,
   placeholder,
   canSearch,
   debounce,
   loading,
+  autoCapitalize,
+  ...search
 }: SearchHeaderProps) {
-  const tokens = useThemeTokens();
-  const primary = tokens['--color-primary'];
-
+  const ink = useThemeTokens()['--color-foreground'];
+  const { searching, open, close } = search;
+  const Leave = drawer ? ChevronDown : ChevronLeft;
   const field = searching ? (
-    <SearchBar
-      variant="filled"
-      size="sm"
-      placeholder={placeholder}
-      value={query}
-      onChangeText={setQuery}
-      debounce={debounce}
-      onDebouncedChange={debounce ? setTerm : undefined}
-      loading={loading}
-      returnKeyType="search"
-      autoCorrect={false}
-      // The search button was the tap asking for the keyboard.
-      autoFocus
-    />
+    <PageSearchField search={search} placeholder={placeholder} debounce={debounce} loading={loading} autoCapitalize={autoCapitalize} />
   ) : undefined;
-  const rightIcon = searching ? (
-    <X size={iconSize.default} color={primary} />
-  ) : canSearch ? (
-    <Search size={iconSize.default} color={primary} />
-  ) : undefined;
-  const rightLabel = searching ? 'Close search' : placeholder;
-  const onRightPress = searching ? close : open;
+  const rightIcon = searching || canSearch ? <PageSearchMark searching={searching} /> : undefined;
 
   return (
     <ScreenHeader
       title={title}
-      leftIcon={<ChevronLeft size={iconSize.default} color={tokens['--color-foreground']} />}
-      leftLabel="Back"
+      leftIcon={<Leave size={iconSize.default} color={ink} />}
+      leftLabel={drawer ? 'Close' : 'Back'}
       onLeftPress={onBack}
       center={field}
       rightIcon={rightIcon}
-      rightLabel={rightLabel}
-      onRightPress={onRightPress}
+      rightLabel={searching ? 'Close search' : placeholder}
+      onRightPress={searching ? close : open}
     />
   );
 }

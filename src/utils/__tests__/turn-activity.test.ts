@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseActivity, sameActivity, serializeActivity, settleActivity, turnActivity, withThought, type ActivityMessage } from '../turn-activity';
+import { isGoalTool, parseActivity, sameActivity, serializeActivity, settleActivity, turnActivity, withThought, type ActivityMessage } from '../turn-activity';
 
 const call = (id: string, name: string, args: unknown, extra: Record<string, unknown> = {}) => ({
   type: 'tool-call',
@@ -116,5 +116,22 @@ describe('withThought', () => {
 
   it('keeps an unmeasured thought, without a duration', () => {
     expect(withThought(null, 'Hmm.', undefined)?.thought).toEqual({ text: 'Hmm.', seconds: null });
+  });
+});
+
+describe('goal steps', () => {
+  it('says what he did with a goal, not "Working on it"', () => {
+    const activity = turnActivity(
+      conversation(
+        [call('a', 'get_compass_status', {}, { output: { formatted: '' } })],
+        [call('b', 'log_trackable', { trackable_id: 't1' })],
+      ),
+    );
+    expect(activity.steps.map((step) => step.title)).toEqual(['Looked over your goals', 'Writing that down']);
+  });
+
+  it('knows goal work from library work, for the icon', () => {
+    expect(isGoalTool('propose_goal')).toBe(true);
+    expect(isGoalTool('add_to_queue')).toBe(false);
   });
 });

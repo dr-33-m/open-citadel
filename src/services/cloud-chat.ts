@@ -4,7 +4,13 @@ import {
   COMPASS_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_APPROVAL_REQUIRED_TOOLS,
   ONBOARDING_FEEDS_PROP,
+  downloadFreeBooksTool,
   explainAppTool,
+  findFreeBooksTool,
+  findPodcastsTool,
+  followBlogsTool,
+  followPodcastsTool,
+  listBlogsTool,
   addNoteToHighlightTool,
   clearQueueTool,
   deleteBookTool,
@@ -67,6 +73,7 @@ import {
   type SearchResult,
   type ToolCallContext,
 } from '@/services/chat-tools';
+import { reportHandled } from '@/lib/observe';
 import type { ChapterListing, ReadingSearchResult } from '@/services/reading-tools';
 import { ArrowRight } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
@@ -78,9 +85,18 @@ import { createStreamTiming } from '@/services/stream-timing';
 import { createRequestResume } from '@/services/cloud-turn-resume';
 import { reportCloudReached, reportCloudUnreached } from '@/lib/network';
 import { createCircleWatch } from '@/utils/tool-circling';
+import {
+  runDownloadFreeBooks,
+  runFindFreeBooks,
+  runFindPodcasts,
+  runFollowBlogs,
+  runFollowPodcasts,
+  runListBlogs,
+} from '@/services/onboarding-tools';
 import { createOnboardingClientTools } from '@/services/onboarding-tools/client-tools';
 import { isToolCallMessage } from '@/services/chat-transcript';
 import { buildJourneySnapshot } from '@/services/journey';
+import { buildMemoryBlock } from '@/services/samwell-memory';
 import {
   formatCompassStatus,
   formatToday,
@@ -282,6 +298,8 @@ export function sayCloudTurnFailed(error: unknown): void {
     if (__DEV__) console.log('[Samwell Cloud] Unreachable:', error instanceof Error ? error.message : error);
   } else if (!refusal) {
     console.error('[Samwell Cloud] Turn failed:', error);
+    // Offline and a refusal are states, not faults; this is a fault.
+    reportHandled('samwell.cloud_turn', error);
   }
   showToast({
     key: TURN_FAILED_TOAST,
@@ -294,15 +312,14 @@ export function sayCloudTurnBlocked(message: string): void {
   showToast({ key: TURN_FAILED_TOAST, message });
 }
 
-export type SamwellTurnMode = 'reading' | 'compass' | 'onboarding';
+export type SamwellTurnMode = 'samwell' | 'onboarding';
 
 /**
  * Where the turn is posted.
  *
  * Onboarding is a separate route because it is billed separately: it is the
  * free introduction, granted once per account, and it never writes to the
- * usage table. Reading and Compass share the metered route and are told apart
- * by the `mode` forwarded prop.
+ * usage table. Everything else goes down the metered route.
  */
 function endpointFor(mode: SamwellTurnMode, baseUrl: string, metered: boolean): string {
   return mode === 'onboarding' && !metered
@@ -340,12 +357,14 @@ export interface CloudChatTurnOptions {
   /**
    * Which Samwell is answering.
    *
-   * `reading` is the library companion; `compass` is the same person turned
-   * toward the user's goal, carrying the Compass tools instead of the library
-   * ones; `onboarding` is him meeting somebody for the first time. Everything
-   * else about the turn — the transport, the streaming, the approvals, the
-   * reasoning — is deliberately identical, because the surfaces were only ever
-   * supposed to differ by what he is focused on.
+   * `samwell` is the one conversation: what they read and the goals they are
+   * working on, with the library tools and the goal tools together.
+   * `onboarding` is him meeting somebody for the first time. Everything else
+   * about the turn — the transport, the streaming, the approvals, the
+   * reasoning — is deliberately identical.
+   *
+   * The server still answers `reading` and `compass`, for the builds from
+   * before the two became one. Nothing here sends them.
    *
    * `onboarding` differs in one more way, and it is not about him: it goes to
    * a different route on the server, one the house pays for rather than the
@@ -466,36 +485,36 @@ function journeyMessages(mode: SamwellTurnMode): UIMessage[] {
   let snapshot = '';
   try {
     /*
-     * Compass gets the reading half only. Its own tools report the goal, the
+     * The reading half only. His Compass tools report the goal, the
      * trackables and the consistency properly — with ids, schedules, pauses
      * and the real ratio — and a second, cruder description of the same
      * numbers in the system prompt is how Samwell ends up quoting a figure
-     * that disagrees with the Insights screen. Reading chat keeps the goal
-     * lines, since it has no Compass tools to ask with and orientation is all
-     * it needs them for.
+     * that disagrees with the Insights screen.
+     *
+     * Reading chat used to keep the goal lines, since it had no Compass tools
+     * to ask with and orientation was all it needed them for. It has the tools
+     * now, as one Samwell, and asks (the prompt tells him to look before he
+     * speaks about a goal). Whether the lines should come back for the sake
+     * of reading chats is a question for the evals, not for a guess.
      */
-    snapshot = buildJourneySnapshot({ includeCompass: mode === 'reading' });
+    snapshot = buildJourneySnapshot({ includeCompass: false });
   } catch {
     // A journey that cannot be built is not a reason to lose the turn.
     return [];
   }
-  if (!snapshot) return [];
+  let memory = '';
+  try {
+    memory = buildMemoryBlock();
+  } catch {
+    // Nor is a memory that cannot be read.
+  }
+  const journey = snapshot
+    ? `Their journey so far (use it for continuity and to ground what you suggest; never assume beyond it):\n${snapshot}`
+    : '';
+  const content = [memory, journey].filter(Boolean).join('\n\n');
+  if (!content) return [];
 
-  return [
-    {
-      id: 'samwell-journey',
-      role: 'system',
-      createdAt: new Date(),
-      parts: [
-        {
-          type: 'text',
-          content:
-            'The user\'s journey so far (use it for continuity and to ground what you ' +
-            `suggest; never assume beyond it):\n${snapshot}`,
-        },
-      ],
-    },
-  ];
+  return [{ id: 'samwell-journey', role: 'system', createdAt: new Date(), parts: [{ type: 'text', content }] }];
 }
 
 /**
@@ -672,14 +691,7 @@ function statusForTool(toolName: string): string {
 }
 
 /**
- * Compass's tools.
- *
- * Thin on purpose: the work is in `compass-tools.ts`, which reads the same
- * engines the Compass screens read, so a number Samwell quotes and a number on
- * the Insights sheet cannot disagree.
- */
-/**
- * The journey-notes tool, defined once and handed to both factories.
+ * The journey-notes tool.
  *
  * Cloud only, by construction: it exists nowhere in the on-device tool
  * catalogue, so there is no window size at which an offline model can reach
@@ -694,7 +706,7 @@ function journeyTool(ctx: ToolCallContext) {
 
 /**
  * Finding a book and reading what is known about it, defined once and handed
- * to both factories, like the journey tool: what "this book is in the
+ * like the journey tool: what "this book is in the
  * library" means cannot be decided twice.
  */
 function libraryLookupTools(ctx: ToolCallContext) {
@@ -716,8 +728,8 @@ function libraryLookupTools(ctx: ToolCallContext) {
 }
 
 /**
- * The podcasts and blogs, defined once and handed to both factories like the
- * library lookups: what "the shows they follow" means is decided in one place.
+ * The podcasts and blogs, like the library lookups: what "the shows they
+ * follow" means is decided in one place.
  */
 function listeningTools() {
   return [
@@ -729,16 +741,38 @@ function listeningTools() {
   ] as const;
 }
 
-function createCompassClientTools(ctx: ToolCallContext) {
-  return clientTools(
+/**
+ * Finding and following what is out there: onboarding's own tools, so a show
+ * followed from a chat and one followed on the first day cannot differ.
+ */
+function discoveryTools() {
+  return [
+    findPodcastsTool.client(async (input) => runFindPodcasts(input)),
+    followPodcastsTool.client(async (input) => runFollowPodcasts(input)),
+    listBlogsTool.client(async () => runListBlogs()),
+    followBlogsTool.client(async (input) => runFollowBlogs(input)),
+    findFreeBooksTool.client(async (input) => runFindFreeBooks(input)),
+    downloadFreeBooksTool.client(async (input) => runDownloadFreeBooks(input)),
+  ] as const;
+}
+
+/**
+ * The goal tools: the device's own record of goals, read and written by the
+ * same engines the Compass sheets use.
+ *
+ * Thin on purpose: the work is in `compass-tools.ts`, so a number Samwell
+ * quotes and a number on the Insights sheet cannot disagree.
+ */
+function goalTools() {
+  return [
     getCompassStatusTool.client(async () => ({ formatted: formatCompassStatus() })),
     getTodayTool.client(async () => ({ formatted: formatToday() })),
     getTrackableHistoryTool.client(async (input) => ({
       formatted: formatTrackableHistory(input.trackable_id, input.days),
     })),
     logTrackableTool.client(async (input) => runLogTrackable(input)),
-    // The goal's life. Bound here and only here: this factory builds the
-    // Compass tool set, so reading chat never sees them.
+    // The goal's life. Never in the reading set, so a build that still sends
+    // `reading` never sees them.
     finishGoalTool.client(async (input) => runFinishGoal(input)),
     stopGoalTool.client(async (input) => runStopGoal(input)),
     setPrimaryGoalTool.client(async (input) => runSetPrimaryGoal(input)),
@@ -746,39 +780,11 @@ function createCompassClientTools(ctx: ToolCallContext) {
     resumeTrackableTool.client(async (input) => runResumeTrackable(input)),
     proposeGoalTool.client(async (input) => runProposeGoal(input)),
     proposeAdjustmentsTool.client(async (input) => runProposeAdjustments(input)),
-    // The same three executors reading chat uses. Two copies of "what does
-    // searching the library mean" is exactly the drift CLAUDE.md warns about.
-    searchHighlightsTool.client(async (input) => {
-      const { result } = await executeToolCall('search_highlights', input, ctx);
-      const results = Array.isArray(result) ? (result as SearchResult[]) : [];
-      return {
-        results,
-        formatted: formatToolResultForLLM('search_highlights', results, TOOL_RESULT_TOKEN_BUDGET.cloud),
-      };
-    }),
-    searchThoughtsTool.client(async (input) => {
-      const { result } = await executeToolCall('search_thoughts', input, ctx);
-      const results = Array.isArray(result) ? (result as SearchResult[]) : [];
-      return {
-        results,
-        formatted: formatToolResultForLLM('search_thoughts', results, TOOL_RESULT_TOKEN_BUDGET.cloud),
-      };
-    }),
-    searchReadingTool.client(async (input) => {
-      const { result } = await executeToolCall('search_reading', input, ctx);
-      const reading = (result ?? { snippets: [], chapters: [], preparing: 0 }) as ReadingSearchResult;
-      return {
-        results: reading.snippets,
-        formatted: formatToolResultForLLM('search_reading', reading, TOOL_RESULT_TOKEN_BUDGET.cloud),
-      };
-    }),
-    ...libraryLookupTools(ctx),
-    ...listeningTools(),
-    journeyTool(ctx),
-  );
+  ] as const;
 }
 
-function createSamwellClientTools(ctx: ToolCallContext) {
+/** What he does with their reading and their library, and the app explaining itself. */
+function readingClientTools(ctx: ToolCallContext) {
   return clientTools(
     // The app explaining itself. Bound here because the server offers it on
     // the reading route, and an offered tool with no executor is a turn that
@@ -998,8 +1004,18 @@ function createSamwellClientTools(ctx: ToolCallContext) {
       return result as { ok: boolean; id?: string; type?: 'thought'; error?: string };
     }),
     ...listeningTools(),
+    ...discoveryTools(),
     journeyTool(ctx),
   );
+}
+
+/**
+ * The one Samwell: the reading set and the goal tools together. The reading
+ * set already carries every tool the two share (search, library, listening,
+ * discovery, journey), so the goal tools are added once each.
+ */
+function createSamwellClientTools(ctx: ToolCallContext) {
+  return clientTools(...readingClientTools(ctx), ...goalTools());
 }
 
 type BookBatchResult = { ok: boolean; succeeded: string[]; failed: { title: string; error: string }[]; error?: string };
@@ -1074,7 +1090,7 @@ export async function sendCloudChatTurn({
   modelId,
   sessionId,
   bookId,
-  mode = 'reading',
+  mode = 'samwell',
   metered = false,
   inactivityMs,
   history,
@@ -1348,9 +1364,7 @@ export async function sendCloudChatTurn({
             // In order with what he said, not ahead of the line before it.
             onAction: (note) => sequence.then(() => onOnboardingAction?.(note)),
           })
-        : mode === 'compass'
-          ? createCompassClientTools({ sessionId, bookId, runtime: 'cloud' })
-          : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
+        : createSamwellClientTools({ sessionId, bookId, runtime: 'cloud' }),
     // Each request, as it goes out: the first, and every continuation.
     onResponse: () => {
       reachedThisRequest = false;

@@ -62,7 +62,7 @@ export function ListenSheet({ sheet }: { sheet: ListenState['sheet'] }) {
             <VoicePickerRow name={sheet.voiceName} onPress={sheet.onVoice} accessibilityLabel="Choose the voice" />
           </Animated.View>
           <Animated.View entering={revealIn(5)} className="self-stretch gap-4">
-            <GoldButton label="LISTEN" icon={Headphones} onPress={sheet.onListen} />
+            <GoldButton label="LISTEN" icon={Headphones} onPress={sheet.onListen} busy={!sheet.ready} />
             <Touchable
               className="flex-row items-center justify-center gap-2 py-1"
               onPress={sheet.onInfo}

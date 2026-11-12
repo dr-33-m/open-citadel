@@ -6,6 +6,7 @@
  */
 import { eq } from 'drizzle-orm';
 
+import { reportHandled, track } from '@/lib/observe';
 import { db } from '@/db/client';
 import { podcastEpisodes } from '@/db/schema';
 import { getEpisode } from '@/services/podcasts/episodes';
@@ -50,8 +51,13 @@ export function collectEpisodeTranscript(episodeId: string, jobId: string): Prom
   const running = collecting.get(jobId);
   if (running) return running;
   const job = (async () => {
-    const { doc, credits } = await collectTranscript(jobId);
+    const { doc, credits } = await collectTranscript(jobId).catch((err: unknown) => {
+      track({ name: 'transcript.collected', attributes: { outcome: 'failed' } });
+      reportHandled('transcript.collect', err);
+      throw err;
+    });
     const bookId = await saveTranscript(episodeId, doc);
+    track({ name: 'transcript.collected', attributes: { outcome: 'done' } });
     const title = db.select({ title: podcastEpisodes.title }).from(podcastEpisodes).where(eq(podcastEpisodes.id, episodeId)).get()?.title ?? '';
     return { episodeId, title, bookId, credits };
   })().finally(() => collecting.delete(jobId));

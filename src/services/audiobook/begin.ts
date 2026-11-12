@@ -10,6 +10,7 @@ import { loadScript } from '@/services/audiobook/script';
 import { book } from '@/services/audiobook/session';
 import { writeCurrent, writeHeardVoice } from '@/services/audiobook/settings';
 import { rememberedClock, startSentence, type StartFrom } from '@/services/audiobook/start';
+import { isCloudBarred } from '@/services/blogs/cloud-permission';
 import { applyCommands } from '@/services/player/commands';
 import { readyPlayer } from '@/services/player/events';
 import { markStarting, store, takePlayerFor } from '@/services/player/session';
@@ -18,7 +19,8 @@ import { selectBook } from '@/stores/player';
 import { useSettingsStore } from '@/stores/settings';
 
 /** The ways starting can end without sound. */
-export type StartResult = 'playing' | 'no-voice' | 'unreadable' | 'unavailable';
+/** `barred`: a post whose publisher keeps it from cloud voices (`isCloudBarred`). */
+export type StartResult = 'playing' | 'no-voice' | 'unreadable' | 'unavailable' | 'barred';
 
 /**
  * The book in the player, with its loader, before anything is read or made.
@@ -28,7 +30,10 @@ export type StartResult = 'playing' | 'no-voice' | 'unreadable' | 'unavailable';
  */
 function present(row: BookRow, voiceKey: string): void {
   const info = infoOf(row);
-  const shown = selectBook(store())?.bookId === info.id ? selectBook(store()) : rememberedClock(info.id, voiceKey);
+  const same = selectBook(store())?.bookId === info.id;
+  const shown = same ? selectBook(store()) : rememberedClock(info.id, voiceKey);
+  // Another book's sentence names a chapter of this one, which may not even be indexed yet.
+  if (!same) useAudiobook.getState().patch({ sentenceId: null });
   store().patch({
     current: {
       kind: 'book',
@@ -73,7 +78,8 @@ function stepAside(): Promise<void> {
 export function showBook(bookId: string): boolean {
   const row = bookRow(bookId);
   const voice = currentBookVoice();
-  if (!row || !voice || !readyPlayer()) return false;
+  // Not shown: `startBook` answers `barred` before anything moves.
+  if (!row || !voice || !readyPlayer() || isCloudBarred(bookId)) return false;
   const inPlayer = store().current;
   if (inPlayer && !(inPlayer.kind === 'book' && inPlayer.bookId === bookId)) steppingAside = stepAside();
   markStarting();
@@ -89,6 +95,7 @@ export function showBook(bookId: string): boolean {
 export async function startBook(bookId: string, options: StartFrom = {}): Promise<StartResult> {
   const row = bookRow(bookId);
   if (!row) return 'unreadable';
+  if (isCloudBarred(bookId)) return 'barred';
   const voice = currentBookVoice();
   if (!voice) return 'no-voice';
   if (!readyPlayer()) return 'unavailable';
@@ -121,6 +128,8 @@ export async function startBook(bookId: string, options: StartFrom = {}): Promis
   writeCurrent({ bookId, sentenceId: first.id });
   applyCommands('book');
   publish(s);
+  // Readings taken while the book was being read say where it was shown, often zero: not to be carried forward.
+  store().patch({ movedAt: Date.now() });
   void produce(s);
   return 'playing';
 }

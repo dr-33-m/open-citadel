@@ -1,6 +1,17 @@
+import {
+  COMPASS_CLIENT_TOOL_DEFINITIONS,
+  DISCOVERY_TOOL_NAMES,
+  SAMWELL_CLIENT_TOOL_DEFINITIONS,
+} from 'samwell-shared';
 import { describe, expect, it } from 'vitest';
 
-import { CLIENT_TOOLS_ADDED_LATER, offeredClientTools, offersAny } from '../offered-tools.js';
+import {
+  CLIENT_TOOLS_ADDED_LATER,
+  clientToolDefinitionsFor,
+  offeredClientTools,
+  offersAny,
+  uniqueByName,
+} from '../offered-tools.js';
 
 const defs = [{ name: 'search_highlights' }, { name: 'search_library' }, { name: 'add_to_queue' }];
 
@@ -37,5 +48,85 @@ describe('offersAny', () => {
   it('keeps the podcast and blog tools from builds that declare nothing', () => {
     expect(CLIENT_TOOLS_ADDED_LATER.has('list_my_podcasts')).toBe(true);
     expect(CLIENT_TOOLS_ADDED_LATER.has('search_blog_posts')).toBe(true);
+  });
+});
+
+describe('discovery tools', () => {
+  const finding = [{ name: 'find_podcasts' }, { name: 'search_highlights' }];
+
+  it('are never offered to a build that did not declare them', () => {
+    expect(offeredClientTools(finding, [{ name: 'search_highlights' }]).map((t) => t.name)).toEqual(['search_highlights']);
+  });
+
+  it('are never offered to a build that predates the list', () => {
+    expect(offeredClientTools(finding, undefined).map((t) => t.name)).toEqual(['search_highlights']);
+  });
+
+  it('are offered to a build that declared them, and so is how to use them', () => {
+    expect(offeredClientTools(finding, [{ name: 'find_podcasts' }]).map((t) => t.name)).toEqual(['find_podcasts']);
+    expect(offersAny([{ name: 'find_podcasts' }], DISCOVERY_TOOL_NAMES)).toBe(true);
+    expect(offersAny([{ name: 'search_highlights' }], DISCOVERY_TOOL_NAMES)).toBe(false);
+  });
+});
+
+describe('uniqueByName', () => {
+  it('keeps the first definition of each name, in order', () => {
+    const tools = [
+      { name: 'explain_app', from: 'reading' },
+      { name: 'search_highlights', from: 'reading' },
+      { name: 'get_today', from: 'compass' },
+      { name: 'search_highlights', from: 'compass' },
+    ];
+    expect(uniqueByName(tools)).toEqual([
+      { name: 'explain_app', from: 'reading' },
+      { name: 'search_highlights', from: 'reading' },
+      { name: 'get_today', from: 'compass' },
+    ]);
+  });
+});
+
+describe('clientToolDefinitionsFor', () => {
+  const namesOf = (mode: Parameters<typeof clientToolDefinitionsFor>[0]): string[] =>
+    clientToolDefinitionsFor(mode).map((tool) => tool.name);
+  const goalTools = ['get_compass_status', 'get_today', 'log_trackable', 'propose_goal', 'propose_adjustments', 'finish_goal'];
+  const libraryTools = ['search_highlights', 'tag_highlight', 'add_to_queue', 'explain_app', 'list_chapters'];
+
+  it('gives the one Samwell his goals and his library together', () => {
+    const names = namesOf('samwell');
+    for (const name of [...goalTools, ...libraryTools]) expect(names).toContain(name);
+  });
+
+  it('offers each tool once, since a provider refuses a request that names one twice', () => {
+    const names = namesOf('samwell');
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('offers the one Samwell everything either of his halves could', () => {
+    const names = new Set(namesOf('samwell'));
+    for (const name of [...namesOf('reading'), ...namesOf('compass')]) expect(names.has(name)).toBe(true);
+  });
+
+  it('keeps the builds from before the merge on exactly what they had', () => {
+    expect(namesOf('reading')).not.toContain('propose_goal');
+    expect(namesOf('compass')).not.toContain('add_to_queue');
+    expect(namesOf('compass')).toContain('propose_goal');
+    expect(namesOf('reading')).toContain('add_to_queue');
+  });
+
+  it('loses nothing by keeping the first of a tool both halves have', () => {
+    const library = new Map<string, (typeof SAMWELL_CLIENT_TOOL_DEFINITIONS)[number]>(
+      SAMWELL_CLIENT_TOOL_DEFINITIONS.map((tool) => [tool.name, tool]),
+    );
+    const shared = COMPASS_CLIENT_TOOL_DEFINITIONS.filter((tool) => library.has(tool.name));
+    // The two halves do share tools (search_highlights, the journey), so this is not an empty claim.
+    expect(shared.length).toBeGreaterThan(0);
+    for (const tool of shared) {
+      const first = library.get(tool.name)!;
+      expect({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }).toEqual({
+        name: first.name,
+        description: first.description,
+        inputSchema: first.inputSchema,
+      });
+    }
   });
 });

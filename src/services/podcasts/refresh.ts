@@ -12,6 +12,7 @@
  */
 import { and, eq } from "drizzle-orm";
 
+import { startTimer, track } from "@/lib/observe";
 import { db } from "@/db/client";
 import { podcasts } from "@/db/schema";
 import { autoDownload } from "@/services/podcasts/downloads";
@@ -43,6 +44,7 @@ async function run(force: boolean): Promise<RefreshSummary> {
 
   const summary: RefreshSummary = { refreshed: 0, fresh: 0, failed: 0 };
   if (shows.length === 0) return summary;
+  const elapsed = startTimer();
 
   const freshIds: string[] = [];
   const pending = [...shows];
@@ -64,6 +66,7 @@ async function run(force: boolean): Promise<RefreshSummary> {
   } finally {
     invalidatePodcastLibrary();
   }
+  track({ name: 'feeds.refresh', attributes: { kind: 'podcasts', feeds: summary.refreshed, failed: summary.failed, ms: elapsed() } });
   return summary;
 }
 

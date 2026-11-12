@@ -6,6 +6,7 @@ import { BlogsPage } from "@/components/hub/blogs-page";
 import { BooksPage } from "@/components/hub/books-page";
 import { LibraryHeader } from "@/components/hub/library-header";
 import { LibrarySidePlaceholder } from "@/components/hub/library-side-placeholder";
+import { ScreenInteractive } from "@/components/navigation/screen-interactive";
 import { PodcastsPage } from "@/components/hub/podcasts-page";
 import { ThemeScope } from "@/components/theme-scope";
 import { ViewSwitcher } from "@/components/view-switcher";
@@ -61,6 +62,9 @@ export function LibraryPage({ themeOrder }: { themeOrder: number }) {
         />
       </ThemeScope>
       <ViewSwitcher order={LIBRARY_TAB_ORDER} value={tab} sides={sides} />
+      {/* The app's launch is over when the side the reader left it on has
+          been built: its time to interactive on every ordinary start. */}
+      <ScreenInteractive when={built[tab] === true} />
       {miniPlayer.props ? (
         <ThemeScope order={themeOrder}>
           <MiniPlayer {...miniPlayer.props} />

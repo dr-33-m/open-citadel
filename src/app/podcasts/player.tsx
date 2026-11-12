@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedView } from "@/components/themed-view";
 import { BookPlayer } from "@/features/audiobook/components/book-player";
 import { EpisodePlayer } from "@/features/podcasts/components/episode-player";
+import { useInteractiveWhen } from "@/hooks/use-screen-interactive";
 import { useHeld } from "@/hooks/use-held";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import { useSettledOnce } from "@/navigation/use-settled-once";
@@ -25,6 +26,8 @@ export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
   const landed = useSettledOnce();
+  // Its controls are drawn from the first frame (see the structure skill): usable once it lands.
+  useInteractiveWhen(landed);
   const kind = useHeld(usePlayer((s) => s.current?.kind ?? null));
 
   if (!kind) return <ThemedView className="flex-1" />;

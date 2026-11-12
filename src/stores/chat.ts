@@ -2,15 +2,18 @@ import { onlineManager } from '@tanstack/react-query';
 import { and, eq } from 'drizzle-orm';
 import { create } from 'zustand';
 
+import { hasCloudIdentity } from '@/hooks/use-cloud-identity';
 import { showToast } from '@/components/toast/toast-provider';
 import { db } from '@/db/client';
 import { books, chatMessages, chatSessions, readingProgress } from '@/db/schema';
+import { reportHandled } from '@/lib/observe';
+import { replyOutcome } from '@/lib/observe/events';
 import { extractChapterTextToLocator } from '@/services/book-context';
 import { articleChatPrompt, articleText } from '@/services/blogs/article-chat';
+import { isCloudBarred } from '@/services/blogs/cloud-permission';
 import { episodeChatGrounding } from '@/services/podcasts/transcript/episode-chat';
 import {
-    listSessions,
-    messageRow,
+      messageRow,
     removeMessage,
     readMessages,
     removeSession,
@@ -18,6 +21,7 @@ import {
     type ChatMessage,
     type ChatSession,
 } from '@/services/chat-sessions';
+import { cachedChatSessions, refreshChatSessions, updateCachedChatSessions } from '@/query-manager/chat-sessions';
 import { conversationForTitle, RetitleError, suggestChatTitle } from '@/services/chat-title';
 import {
     APPROVAL_REQUIRED_TOOLS,
@@ -33,6 +37,7 @@ import {
 } from '@/services/chat-tools';
 import { isToolCallMessage, TOOL_CALL_PREFIX } from '@/services/chat-transcript';
 import { KEEP_GOING_MESSAGE, sayCloudTurnFailed, sayTurnPaused, sendCloudChatTurn } from '@/services/cloud-chat';
+import { startReplyMetric } from '@/services/samwell-reply-metric';
 import {
     estimateTokens,
     planReplay,
@@ -54,9 +59,9 @@ import { type KnownRef, refsInToolResults, repairRefMarkers } from '@/services/r
 import { splitThinking } from '@/utils/think-stream';
 import { settleActivity, withThought, type TurnActivity } from '@/utils/turn-activity';
 import { deviceToolResultBudget, TOOL_RESULT_TOKEN_BUDGET } from '@/services/tool-limits';
-import { useAccountStore } from '@/stores/account';
 import { useApprovalStore } from '@/stores/approval';
 import { useModelStore } from '@/stores/model';
+import { useSamwellSessionStore } from '@/stores/samwell-session';
 import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
 
@@ -68,7 +73,6 @@ import { useSubscriptionStore } from '@/stores/subscription';
 export type { ChatMessage, ChatSession };
 
 interface ChatStore {
-  sessions: ChatSession[];
   activeSession: ChatSession | null;
   messages: ChatMessage[];
   isGenerating: boolean;
@@ -153,6 +157,24 @@ interface ChatStore {
  * one has been named yet mean the same string.
  */
 export const NEW_CHAT_TITLE = 'New chat';
+
+/**
+ * Titles that are not a name yet: a new chat's, and the one Compass
+ * conversations started with before the merge. One whose first title never
+ * landed (offline, a failed call) is still named in the background, whichever
+ * surface it began on.
+ */
+const PLACEHOLDER_TITLES: ReadonlySet<string> = new Set([NEW_CHAT_TITLE, 'New conversation']);
+
+/**
+ * A goal or check-in card belongs to the conversation that proposed it, so it
+ * goes when that conversation does: another one opened, a new one started,
+ * this one deleted. Sending clears it too: something new has been said, so
+ * the card on screen is now the previous version.
+ */
+export function dropProposal(): void {
+  useSamwellSessionStore.getState().set({ compassDraft: null, refining: false });
+}
 
 /**
  * The rename currently running. One at a time: on device it is a generation on
@@ -412,9 +434,9 @@ async function titleLeftChats(): Promise<void> {
   if (errandRunning()) return;
   if (useSettingsStore.getState().samwellMode === 'cloud' || !isEngineLoaded()) return;
 
-  const { sessions, activeSession } = useChatStore.getState();
-  const waiting = sessions.filter(
-    (s) => s.title === NEW_CHAT_TITLE && !s.bookId && s.id !== activeSession?.id && !titleFailed.has(s.id),
+  const { activeSession } = useChatStore.getState();
+  const waiting = cachedChatSessions('reading').filter(
+    (s) => PLACEHOLDER_TITLES.has(s.title) && !s.bookId && s.id !== activeSession?.id && !titleFailed.has(s.id),
   );
 
   for (const session of waiting) {
@@ -426,7 +448,7 @@ async function titleLeftChats(): Promise<void> {
     await runErrand('Naming your last chat first…', async () => {
       try {
         const title = await suggestChatTitle(conversation);
-        const stillThere = useChatStore.getState().sessions.some((s) => s.id === session.id);
+        const stillThere = cachedChatSessions('reading').some((s) => s.id === session.id);
         if (title && stillThere) await useChatStore.getState().updateSessionTitle(session.id, title);
       } catch (err) {
         titleFailed.add(session.id);
@@ -649,14 +671,13 @@ function sendBlocked(): string | null {
   if (samwellMode === 'offline') return isEngineLoaded() ? null : 'Wake Samwell up to send it again.';
   if (!cloudBaseUrl) return 'Samwell Cloud is not set up in this build.';
   if (!onlineManager.isOnline()) return 'You are offline. Samwell Cloud needs a connection.';
-  // Grand Maester Samwell runs on accounts, so a turn with nobody behind it
-  // has nothing to bill and is not sent.
-  if (useAccountStore.getState().status !== 'signedIn') return 'Sign in to send it again.';
+  // A turn with nobody behind it has nothing to bill and is not sent. A guest
+  // who bought a plan is somebody: an account is not the way to the cloud.
+  if (!hasCloudIdentity()) return 'Choose a plan to send it again.';
   return null;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
-  sessions: [],
   activeSession: null,
   messages: [],
   isGenerating: false,
@@ -676,7 +697,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Reading only. Compass conversations live in the same two tables and are
     // listed by their own surface; mixing them would put a goal check-in in
     // the reading history, where it answers nobody's question.
-    set({ sessions: listSessions('reading') });
+    refreshChatSessions('reading');
   },
 
   async createSession({ bookId, title, contextText, passageText, thoughtText, contextLocator }) {
@@ -719,6 +740,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         updatedAt: ts,
       })
       .run();
+    dropProposal();
 
     // Persist the system message so history is always complete when reloading
     if (thoughtText) {
@@ -784,8 +806,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           .values({ id: uuid(), sessionId: id, role: 'system', content: episodePrompt, createdAt: ts })
           .run();
       } else if (bookRow && isArticle) {
-        // A post is grounded in the whole post, from the top.
-        const text = bookRow.filePath ? await articleText(bookRow.filePath) : null;
+        // A post is grounded in the whole post, from the top. Not one its
+        // publisher keeps from cloud AI: the chat may go to the cloud later,
+        // and on the phone his reading tools can still open it.
+        const text = bookRow.filePath && !isCloudBarred(bookId) ? await articleText(bookRow.filePath) : null;
         db.insert(chatMessages)
           .values({
             id: uuid(),
@@ -820,7 +844,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             sessionId: id,
             role: 'system',
             content:
-              `You are a reading assistant for "${bookRow.title}" by ${bookRow.author}. Help the user understand, analyse, and discuss the book. Be concise and insightful.` +
+              `You are talking with them about "${bookRow.title}" by ${bookRow.author}. Help them understand it, question it, and apply it to what they are working on.` +
               readExcerpt +
               (boundaryLine ? `\n\n${boundaryLine}` : ''),
             createdAt: ts,
@@ -857,8 +881,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (get().isGenerating) {
       get().stopGeneration();
     }
+    dropProposal();
 
-    const session = get().sessions.find((s) => s.id === id) ?? null;
+    const session = cachedChatSessions('reading').find((s) => s.id === id) ?? null;
     // The one reader of a transcript, so a reply's trail and sources come back with it.
     const messages = readMessages(id);
 
@@ -899,6 +924,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const { samwellMode, cloudBaseUrl, cloudModelId } = useSettingsStore.getState();
     if (sendBlocked()) return;
+    dropProposal();
 
     const userMsg: ChatMessage = {
       id: id ?? uuid(),
@@ -928,6 +954,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     if (samwellMode === 'cloud') {
       let finalContent = '';
+      const metric = startReplyMetric('cloud', cloudModelId);
       cloudAbort = new AbortController();
       try {
         const history = get().messages.filter((m) => m.id !== userMsg.id && !isLegacyIdentity(m));
@@ -936,10 +963,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           modelId: cloudModelId,
           sessionId: activeSession.id,
           bookId: activeSession.bookId,
+          // Reading and goals in one conversation. A server from before the
+          // merge reads this as reading chat, which is what this was.
+          mode: 'samwell',
           history,
           content,
           signal: cloudAbort.signal,
           onStreamingContent: (streamed) => {
+            metric.text();
             set({
               isThinking: false,
               isToolCalling: false,
@@ -956,6 +987,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // through rather than a guess.
           onThinkingDone: (seconds) => set({ thinkingSeconds: seconds }),
           onToolStatus: (status, name) => {
+            if (status !== null) metric.tool();
             set(() => ({
               isToolCalling: status !== null,
               toolCallStatus: status,
@@ -1001,6 +1033,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sayCloudTurnFailed(err);
       } finally {
         cloudAbort = null;
+        metric.end(replyOutcome(stopRequested, finalContent.length), finalContent.length);
       }
 
       if (finalContent.length > 0) {
@@ -1047,6 +1080,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
 
+    // From the press, so a wait behind a background title counts: it is a
+    // wait the reader sat through.
+    const metric = startReplyMetric('device', getEngine()?.entry.id);
     // A chat being named in the background finishes first, and nothing else
     // starts after it: the reader's message goes next.
     await finishBackgroundTitle();
@@ -1091,6 +1127,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         // would otherwise re-split the text and write the store unchanged.
         if (!shown || (shown === lastShown.text && step === lastShown.step)) return;
         lastShown = { text: shown, step };
+        metric.text();
         stream.push(shown);
       },
     };
@@ -1110,6 +1147,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const brain = getEngine()?.entry.id;
       if (brain) markRunStarted(brain);
       const turn = await sendDeviceTurn(conversation, content, hooks, userMsg.id);
+      metric.tools(turn.messages.filter((m) => m.role === 'tool').length);
 
       // A reply that ran out while still reasoning never crossed back, so the
       // clock is closed here rather than left running into the next turn.
@@ -1135,6 +1173,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         limitReached = 'context';
       } else {
         console.error('[Samwell] Generation error:', err);
+        reportHandled('samwell.device_turn', err);
       }
       // The model went away under the turn (a reload that failed): the store
       // is told, so the wake banner says so instead of sends doing nothing.
@@ -1146,6 +1185,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } finally {
       deviceTurn = null;
       markRunFinished();
+      metric.end(replyOutcome(stopRequested, finalContent.length, limitReached !== null), finalContent.length);
     }
 
     if (limitReached) {
@@ -1242,8 +1282,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Any approval still awaiting a response for this session would otherwise
     // leak an unresolved promise once the session it belongs to is gone.
     useApprovalStore.getState().clearSession(id);
+    updateCachedChatSessions('reading', (sessions) => sessions.filter((sess) => sess.id !== id));
+    if (get().activeSession?.id === id) dropProposal();
     set((s) => ({
-      sessions: s.sessions.filter((sess) => sess.id !== id),
       activeSession: s.activeSession?.id === id ? null : s.activeSession,
       messages: s.activeSession?.id === id ? [] : s.messages,
     }));
@@ -1251,8 +1292,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   async updateSessionTitle(id, title) {
     renameSession(id, title);
+    updateCachedChatSessions('reading', (sessions) =>
+      sessions.map((sess) => (sess.id === id ? { ...sess, title } : sess)),
+    );
     set((s) => ({
-      sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, title } : sess)),
       activeSession:
         s.activeSession?.id === id ? { ...s.activeSession, title } : s.activeSession,
     }));
@@ -1286,7 +1329,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
      */
     if (titleRefineInFlight) throw new RetitleError('Samwell is already renaming a chat.');
 
-    const session = get().sessions.find((s) => s.id === id);
+    const session = cachedChatSessions('reading').find((s) => s.id === id);
     if (!session) throw new RetitleError('That chat is no longer there.');
     // Book chats are named after their book, which is how they are found.
     if (session.bookId) throw new RetitleError('Chats about a book keep its name.');

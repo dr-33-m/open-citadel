@@ -15,6 +15,12 @@ vi.mock('@/services/book-text/chapters', () => ({
   readReachedChapter: (...args: unknown[]) => readReachedChapter(...args),
 }));
 vi.mock('@/services/library-lookup', () => ({ resolveLibraryBook: (...args: unknown[]) => resolveLibraryBook(...args) }));
+let barred = new Set<string>();
+vi.mock('@/services/blogs/cloud-permission', () => ({
+  CLOUD_BARRED: 'Its publisher asks that its posts are not sent to cloud AI.',
+  cloudBarredBookIds: () => barred,
+  isCloudBarred: (id: string) => barred.has(id),
+}));
 
 const BOOK = { id: 'b1', title: 'Meditations', author: 'Marcus Aurelius', kind: 'book' };
 const POST = { id: 'p1', title: 'On Habits', author: 'A Blogger', kind: 'article' };
@@ -30,6 +36,24 @@ beforeEach(() => {
   bookExtent.mockReset();
   resolveLibraryBook.mockReset();
   readReachedChapter.mockReset().mockResolvedValue({ error: 'nothing_read_yet' });
+  barred = new Set();
+});
+
+describe('a post its publisher keeps from cloud AI', () => {
+  it('is left out of a search in the cloud, and searched on the phone', async () => {
+    barred = new Set(['p1']);
+    await searchReading({ query: 'discipline' }, ctx);
+    expect(searchPassages.mock.calls[0][1].books).toEqual([BOOK]);
+    await searchReading({ query: 'discipline' }, { ...ctx, runtime: 'device' });
+    expect(searchPassages.mock.calls[1][1].books).toEqual([BOOK, POST]);
+  });
+
+  it('is not read to the cloud when named, and says why', async () => {
+    barred = new Set(['p1']);
+    resolveLibraryBook.mockReturnValue({ ok: true, book: POST });
+    expect(await readChapter({ book_title: 'On Habits', chapter: 1 }, ctx)).toEqual({ error: expect.stringMatching(/publisher/) });
+    expect(readReachedChapter).not.toHaveBeenCalled();
+  });
 });
 
 describe('searchReading', () => {

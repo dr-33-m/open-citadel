@@ -13,6 +13,7 @@ import { ShowGrid } from "@/features/podcasts/components/show-grid";
 import { TileGridSkeleton } from "@/components/skeletons/tile-grid-skeleton";
 import { useGenreScreen } from "@/features/podcasts/hooks/use-genre-screen";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import { useScreenInteractive } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /** A genre's whole chart, two shows to a row, from its Explore shelf's VIEW ALL. */
@@ -21,6 +22,7 @@ export default function GenreScreen() {
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
   const landed = useSettledOnce();
+  const interactive = useScreenInteractive();
   const screen = useGenreScreen(id);
 
   return (
@@ -32,7 +34,7 @@ export default function GenreScreen() {
         onLeftPress={screen.back}
       />
       {/* The grid mounts once the slide has landed and the chart is in. */}
-      <Handover ready={landed && !screen.loading} skeleton={<TileGridSkeleton label="Loading shows" />}>
+      <Handover onShown={interactive} ready={landed && !screen.loading} skeleton={<TileGridSkeleton label="Loading shows" />}>
         <PageFade>
           <ShowGrid
             tiles={screen.tiles}

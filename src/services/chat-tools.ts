@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
 import {
   OPEN_CITADEL_GUIDE,
-  SAMWELL_SYSTEM_PROMPT,
+  SAMWELL_DEVICE_SYSTEM_PROMPT,
   SAMWELL_SYSTEM_PROMPT_COMPACT,
   SAMWELL_SYSTEM_PROMPT_NO_TOOLS,
 } from 'samwell-shared';
@@ -619,7 +619,7 @@ export function promptAndToolsFor(
 ): PromptAndTools {
   const choices: PromptAndTools[] = enableToolCalling
     ? [
-        { systemPrompt: SAMWELL_SYSTEM_PROMPT, tools: SAMWELL_TOOLS },
+        { systemPrompt: SAMWELL_DEVICE_SYSTEM_PROMPT, tools: SAMWELL_TOOLS },
         { systemPrompt: SAMWELL_SYSTEM_PROMPT_COMPACT, tools: SAMWELL_DEVICE_TOOLS },
       ]
     : [];
@@ -697,6 +697,7 @@ export const TOOL_STATUS: Record<string, string> = {
   get_book_details: 'Looking that book up…',
   // Runs on the server, not here, but the status line is the same question.
   web_search: 'Searching the web…',
+  read_web_page: 'Reading that page…',
   start_reading: 'Opening that up…',
   clear_queue: 'Clearing your queue…',
   rename_book: 'Fixing that title…',

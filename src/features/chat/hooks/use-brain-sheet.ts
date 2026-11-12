@@ -1,5 +1,4 @@
 import React from 'react';
-import { Keyboard } from 'react-native';
 
 import { useModelSheet } from '@/features/settings/hooks/use-model-sheet';
 import { useModelStore } from '@/stores/model';
@@ -7,16 +6,6 @@ import { useSettingsStore } from '@/stores/settings';
 import { useSubscriptionStore } from '@/stores/subscription';
 
 export type BrainSheetHandle = { open: () => void };
-
-/** The host's ref, and a stable way to raise it with the keyboard put away first. */
-export function useBrainSheet() {
-  const ref = React.useRef<BrainSheetHandle>(null);
-  const open = React.useCallback(() => {
-    Keyboard.dismiss();
-    ref.current?.open();
-  }, []);
-  return { ref, open };
-}
 
 /**
  * Everything `BrainSheetHost` draws from: its own open state, raised through
