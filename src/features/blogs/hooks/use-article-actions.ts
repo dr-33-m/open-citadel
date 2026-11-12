@@ -7,9 +7,9 @@ import { Share } from 'react-native';
 import { showToast } from '@/components/toast/toast-provider';
 import { useListen } from '@/features/audiobook/hooks/use-listen';
 import { useListenState } from '@/features/audiobook/hooks/use-listen-state';
-import { useOpenArticle, type OpenablePost } from '@/features/blogs/hooks/use-open-article';
+import type { OpenablePost } from '@/features/blogs/hooks/use-open-article';
+import { useOpenPost } from '@/features/blogs/hooks/use-open-post';
 import { useRemoveCopy } from '@/features/blogs/hooks/use-remove-copy';
-import { useWholePosts } from '@/features/blogs/hooks/use-whole-posts';
 import type { WholePosts } from '@/db/schema';
 import type { ArticleAction } from '@/features/blogs/utils/article-menu';
 import { useSettledFocusEffect } from '@/navigation/use-settled-focus-effect';
@@ -30,9 +30,8 @@ import type { ArticleItem } from '@/services/blogs/records';
 export function useArticleActions() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const wholePosts = useWholePosts();
   const { removeCopy, sheet: removal } = useRemoveCopy();
-  const { prepareToListen, openArticle, chatAboutArticle } = useOpenArticle(wholePosts.ask);
+  const { prepareToListen, openArticle, chatAboutArticle, answer, wholePosts, changeWholePosts } = useOpenPost();
   const listen = useListen();
   const { listen: startListening } = listen;
   const listenState = useListenState();
@@ -51,15 +50,7 @@ export function useArticleActions() {
   );
 
   // Answered, the question gives way to what the reader was doing.
-  const { choose } = wholePosts;
-  const chooseWholePosts = React.useCallback(
-    (mode: WholePosts) =>
-      void choose(mode).then((resume) => {
-        if (resume?.intent === 'open') void openArticle(resume.post);
-        else if (resume?.intent === 'listen') void listenTo(resume.post);
-      }),
-    [choose, openArticle, listenTo],
-  );
+  const chooseWholePosts = React.useCallback((mode: WholePosts) => answer(mode, (post) => void listenTo(post)), [answer, listenTo]);
 
   const openBlog = React.useCallback(
     (blogId: string) => {
@@ -136,14 +127,9 @@ export function useArticleActions() {
     sheet: { visible: menuArticle !== null, article: menuArticle, listen: cloudAllowed ? listenState : undefined, onClose: closeMenu, onAction },
     listen,
     removal,
-    wholePosts: {
-      visible: wholePosts.visible,
-      copy: wholePosts.copy,
-      onChoose: chooseWholePosts,
-      onClose: wholePosts.close,
-    },
+    wholePosts: { ...wholePosts, onChoose: chooseWholePosts },
     /** The blog page's way to change how a summary-only blog is read. */
-    changeWholePosts: wholePosts.change,
+    changeWholePosts,
   };
 }
 

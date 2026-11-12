@@ -147,7 +147,7 @@ export function createDiscoveredBlogQueryOptions(feedUrl: string, options?: Opti
   } satisfies UseQueryOptions<string>;
 }
 
-/** The post a reader copy was made from (its id and favourite), for the player's star while it is heard. */
+/** The post a reader copy was made from: the player's star while it is heard, and a post chat's way back to it. */
 export function createArticleOfBookQueryOptions(bookId: string, options?: Options<Awaited<ReturnType<typeof articleOfBook>>>) {
   return {
     ...LIBRARY,

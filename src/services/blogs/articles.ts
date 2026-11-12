@@ -129,14 +129,19 @@ export async function setArticleFinished(id: string, finished: boolean): Promise
     .where(eq(blogArticles.id, id));
 }
 
-/** The post whose reader copy is `bookId`, as the player's star needs it; null when there is none. */
-export async function articleOfBook(bookId: string): Promise<{ id: string; favorite: boolean } | null> {
+/**
+ * The post whose reader copy is `bookId`: enough to open it again
+ * (`useOpenArticle`) and to draw the player's star. Null when there is none.
+ */
+export async function articleOfBook(
+  bookId: string,
+): Promise<{ id: string; title: string; link: string; favorite: boolean } | null> {
   const row = await db
-    .select({ id: blogArticles.id, favoritedAt: blogArticles.favoritedAt })
+    .select({ id: blogArticles.id, title: blogArticles.title, link: blogArticles.link, favoritedAt: blogArticles.favoritedAt })
     .from(blogArticles)
     .where(eq(blogArticles.bookId, bookId))
     .get();
-  return row ? { id: row.id, favorite: row.favoritedAt !== null } : null;
+  return row ? { id: row.id, title: row.title, link: row.link, favorite: row.favoritedAt !== null } : null;
 }
 
 /**
