@@ -88,7 +88,7 @@ ${input.rights ? `    <dc:rights>${esc(input.rights)}</dc:rights>\n` : ''}    <m
 <h1>${esc(input.title)}</h1>
 ${credit ? `<p><em>${esc(credit)}</em></p>\n` : ''}${input.bodyXhtml}
 <hr/>
-${input.rights ? `<p><small>${esc(input.rights)}</small></p>\n` : ''}<p><small>${input.opening ? `${esc(input.blogTitle)} shares the opening of each post. Read the rest on` : 'Read the original on'} <a href="${esc(input.link)}">${esc(hostName(input.link))}</a></small></p>
+${input.rights ? `<p><small>${esc(input.rights)}</small></p>\n` : ''}<p><small>${input.opening ? 'This is the start of the post. Read the rest on' : 'Read the original on'} <a href="${esc(input.link)}">${esc(hostName(input.link))}</a></small></p>
 </body>
 </html>`;
 

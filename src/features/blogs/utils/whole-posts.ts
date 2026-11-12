@@ -20,9 +20,14 @@ export type WholePostsLine = { text: string; canChange: boolean; mark: 'site' | 
 /** The blog page's line about where its posts are read. */
 export function wholePostsLine({ mode, allowed, host }: WholePostsState): WholePostsLine {
   if (!allowed) return { text: `Posts open on ${host}, as its publisher asks`, canChange: false, mark: 'site' };
-  if (mode === 'app') return { text: 'Whole posts are fetched into the reader', canChange: true, mark: 'reader' };
+  if (mode === 'app') return { text: 'Posts open in the reader', canChange: true, mark: 'reader' };
   if (mode === 'site') return { text: `Posts open on ${host}`, canChange: true, mark: 'site' };
-  return { text: 'Shares the opening of each post', canChange: true, mark: 'reader' };
+  return { text: 'Previews only. Choose where posts open', canChange: true, mark: 'reader' };
+}
+
+/** `Aeon's`, and `Paul Graham Essays'` rather than `Essays's`. */
+export function possessive(name: string): string {
+  return /s$/i.test(name) ? `${name}'` : `${name}'s`;
 }
 
 export type WholePostsChoiceCopy = { title: string; detail: string };
@@ -40,10 +45,10 @@ export type WholePostsAskCopy = {
 export function wholePostsAsk(blogTitle: string, host: string, onPage = false): WholePostsAskCopy {
   return {
     kicker: blogTitle.toUpperCase(),
-    title: 'Shares the opening of each post',
-    line: 'Its feed carries the first lines. Choose where you read the rest.',
-    site: { title: `On ${host}`, detail: 'As it was published, in the browser.' },
-    app: { title: 'In the reader', detail: `Fetched from ${host} as you open each post, for highlights, notes and Samwell.` },
-    note: onPage ? 'Saved on this phone only.' : "Saved on this phone only. Change this on the blog's page.",
+    title: `Where should ${possessive(blogTitle)} posts open?`,
+    line: `${blogTitle} only sends the first few lines of each post.`,
+    site: { title: `On ${host}`, detail: 'As it was published, in your browser.' },
+    app: { title: 'In the reader', detail: `Brought in from ${host} when you open a post, so you can highlight, take notes and ask Samwell.` },
+    note: onPage ? 'Saved on this phone only.' : `Saved on this phone only. Change this on ${possessive(blogTitle)} page.`,
   };
 }

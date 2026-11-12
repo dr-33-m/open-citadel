@@ -51,7 +51,7 @@ describe('articleEpubFiles', () => {
     expect(XMLValidator.validate(ruled['OEBPS/article.xhtml'])).toBe(true);
     expect(ruled['OEBPS/content.opf']).toContain('<dc:rights>© 2026 Farnam Street &amp; Co</dc:rights>');
     expect(ruled['OEBPS/article.xhtml']).toContain('© 2026 Farnam Street &amp; Co');
-    expect(ruled['OEBPS/article.xhtml']).toContain('Farnam Street shares the opening of each post. Read the rest on');
+    expect(ruled['OEBPS/article.xhtml']).toContain('This is the start of the post. Read the rest on');
     expect(files['OEBPS/content.opf']).not.toContain('dc:rights');
     expect(files['OEBPS/article.xhtml']).toContain('Read the original on');
   });
