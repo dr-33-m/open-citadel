@@ -262,6 +262,15 @@ export function hubTransition({
  * upward, so a drawer covered by a second drawer leaves upward while the new
  * one arrives from below — the same crossing motion, one level down. Clamped
  * here: a covered drawer recedes in place like any other covered screen.
+ *
+ * **The curve.** The preset rises on the library's default spring (stiffness
+ * 1000, damping 500, mass 3), damped nearly five times over: the snap-then-crawl
+ * the side screens were moved off (see `SIDE_EASE`). Measured on a Galaxy A33
+ * opening Settings, it covered three quarters of the screen in the first frame
+ * and crawled the last quarter for 650ms, the page underneath showing as a
+ * band above it the whole time, which read as that page flashing. The same
+ * standard ease as the side screens, so a drawer is on screen and settled when
+ * the curve ends.
  */
 export function drawerTransition({
   scrim,
@@ -271,6 +280,7 @@ export function drawerTransition({
   return {
     ...Transition.Presets.SlideFromBottom(),
     meta: { enterFrom: 0 },
+    transitionSpec: { open: SIDE_OPEN, close: SIDE_CLOSE },
     screenStyleInterpolator: (args) => {
       "worklet";
       // Defensive reads — see the note in `sideTransition`.
@@ -331,7 +341,7 @@ export const NOW_PLAYING_ART = "now-playing-art";
  * (the drag down), it mounts nothing, and a bounce on the way back into the
  * mini player read as a blip.
  */
-const PLAYER_OPEN = { duration: 360, easing: SIDE_EASE } as const;
+export const PLAYER_OPEN = { duration: 360, easing: SIDE_EASE } as const;
 const PLAYER_CLOSE = { duration: 240, dampingRatio: 1 } as const;
 
 /**

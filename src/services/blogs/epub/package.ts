@@ -7,11 +7,12 @@
  * the reader's own settings (theme, font, size) set the type, as they do for
  * every book.
  *
- * The post opens with where it is from and closes with a link to the
- * original, so a highlight read later, or a chat started from it, always
- * leads back to the writer.
+ * The post opens with where it is from and closes with the publisher's
+ * copyright line and a link to the original, so a highlight read later, or a
+ * chat started from it, always leads back to the writer. A copy of only the
+ * opening says so, and that the rest is on the publisher's site.
  */
-import { escapeAttribute } from '@/services/blogs/epub/xhtml';
+import { EPUB_CONTAINER, epubModified, escapeAttribute, languageTag } from '@/services/epub/parts';
 
 export type ArticleEpubInput = {
   /** Stable, so the same post always makes the same book identifier. */
@@ -24,24 +25,15 @@ export type ArticleEpubInput = {
   link: string;
   /** Strict XHTML, from `toXhtmlBody`. */
   bodyXhtml: string;
+  /** The feed's copyright line, set under the post as the publisher wrote it. */
+  rights?: string | null;
+  /** Only the opening the feed carries, not the whole post: the close says so, and where the rest is. */
+  opening?: boolean;
 };
 
 const DAY_MONTH_YEAR = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 
-const CONTAINER = `<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>`;
-
 const esc = escapeAttribute;
-
-/** A language tag XML accepts, from whatever the feed said ("en-US", "EN", nothing). */
-function languageTag(language: string | null): string {
-  const tag = (language ?? '').trim().replace(/_/g, '-');
-  return /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/.test(tag) ? tag : 'en';
-}
 
 function byline(input: ArticleEpubInput): string {
   const date = new Date(input.publishedAt);
@@ -55,7 +47,7 @@ function hostName(link: string): string {
 export function articleEpubFiles(input: ArticleEpubInput): Record<string, string> {
   const lang = languageTag(input.language);
   const identifier = `urn:open-citadel:article:${input.id}`;
-  const modified = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const modified = epubModified();
   const credit = byline(input);
 
   const opf = `<?xml version="1.0" encoding="UTF-8"?>
@@ -67,7 +59,7 @@ export function articleEpubFiles(input: ArticleEpubInput): Record<string, string
     <dc:publisher>${esc(input.blogTitle)}</dc:publisher>
     <dc:language>${lang}</dc:language>
     <dc:source>${esc(input.link)}</dc:source>
-    <meta property="dcterms:modified">${modified}</meta>
+${input.rights ? `    <dc:rights>${esc(input.rights)}</dc:rights>\n` : ''}    <meta property="dcterms:modified">${modified}</meta>
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
@@ -96,13 +88,13 @@ export function articleEpubFiles(input: ArticleEpubInput): Record<string, string
 <h1>${esc(input.title)}</h1>
 ${credit ? `<p><em>${esc(credit)}</em></p>\n` : ''}${input.bodyXhtml}
 <hr/>
-<p><small>Read the original on <a href="${esc(input.link)}">${esc(hostName(input.link))}</a></small></p>
+${input.rights ? `<p><small>${esc(input.rights)}</small></p>\n` : ''}<p><small>${input.opening ? 'This is the start of the post. Read the rest on' : 'Read the original on'} <a href="${esc(input.link)}">${esc(hostName(input.link))}</a></small></p>
 </body>
 </html>`;
 
   return {
     mimetype: 'application/epub+zip',
-    'META-INF/container.xml': CONTAINER,
+    'META-INF/container.xml': EPUB_CONTAINER,
     'OEBPS/content.opf': opf,
     'OEBPS/nav.xhtml': nav,
     'OEBPS/article.xhtml': article,

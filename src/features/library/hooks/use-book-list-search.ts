@@ -1,14 +1,11 @@
-import React from 'react';
-
+import { usePageSearch, useSearchResults } from '@/hooks/use-page-search';
 import type { Book } from '@/stores/books';
-import { matchesQuery } from '@/utils/format';
 
-/** A search over a list of books, by title or author. */
+const bookFields = (book: Book) => [book.title, book.author];
+
+/** A page's search over a list of books, by title or author. */
 export function useBookListSearch(books: Book[]) {
-  const [query, setQuery] = React.useState('');
-  const results = React.useMemo(
-    () => (query.trim() ? books.filter((b) => matchesQuery(query, b.title, b.author)) : books),
-    [books, query],
-  );
-  return { query, setQuery, results, emptyText: query ? 'No results.' : null };
+  const search = usePageSearch();
+  const results = useSearchResults(books, search, bookFields);
+  return { ...search, results, emptyText: search.query ? 'No results.' : null };
 }

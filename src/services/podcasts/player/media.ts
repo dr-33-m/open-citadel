@@ -1,19 +1,22 @@
 /** Translating episodes into what the native player and the mini player hold. */
-import TrackPlayer, { PlayerCommand, type MediaItem } from "@rntp/player";
+import type { MediaItem } from "@rntp/player";
 
 import { episodeArtwork, localFileUri } from "@/services/podcasts/download-paths";
-import { getEpisodeItem } from "@/services/podcasts/episodes";
-import { upNextIds } from "@/services/podcasts/queue";
+import { listShelf } from "@/services/podcasts/episodes";
+import { playOrder } from "@/services/podcasts/player/play-order";
+import { session } from "@/services/podcasts/player/session";
 import type { EpisodeItem } from "@/services/podcasts/records";
 import { getShow } from "@/services/podcasts/shows";
-import { podcastPrefs, usePodcastPrefs } from "@/stores/podcast-prefs";
-import type { NowPlaying } from "@/stores/podcast-player";
+import { phoneHasNetwork } from "@/lib/network";
+import { podcastPrefs } from "@/stores/podcast-prefs";
+import type { EpisodeNowPlaying } from "@/stores/player";
 
-/** How many Up Next episodes are handed to the native queue ahead of time. */
+/** How many of the episodes ahead are handed to the native queue ahead of time. */
 const NATIVE_LOOKAHEAD = 20;
 
-export function nowPlayingFrom(item: EpisodeItem): NowPlaying {
+export function nowPlayingFrom(item: EpisodeItem): EpisodeNowPlaying {
   return {
+    kind: "episode",
     episodeId: item.id,
     podcastId: item.podcastId,
     title: item.title,
@@ -43,46 +46,28 @@ export function mediaItemFrom(item: EpisodeItem, startAt = 0): MediaItem {
   };
 }
 
-/** The lock screen's and the headset's controls, with the listener's skip lengths. */
-export function applyCommands(): void {
-  const prefs = podcastPrefs();
-  TrackPlayer.setCommands({
-    capabilities: [
-      PlayerCommand.PlayPause,
-      PlayerCommand.SkipBackward,
-      PlayerCommand.SkipForward,
-      PlayerCommand.Seek,
-      PlayerCommand.Next,
-    ],
-    backwardInterval: prefs.skipBackSec,
-    forwardInterval: prefs.skipForwardSec,
-  });
-}
-
-/**
- * Sends the skip lengths to the native player again whenever the listener
- * changes them with an episode loaded, so the lock screen's skip buttons are
- * the lengths the app's own are, now rather than from the next episode.
- * Returns the way to stop.
- */
-export function followSkipLengths(isLoaded: () => boolean): () => void {
-  return usePodcastPrefs.subscribe((next, previous) => {
-    const changed = next.skipBackSec !== previous.skipBackSec || next.skipForwardSec !== previous.skipForwardSec;
-    if (changed && isLoaded()) applyCommands();
-  });
-}
-
 /** A show's own speed, or everyone's. */
 export async function speedFor(podcastId: string): Promise<number> {
   const show = await getShow(podcastId);
   return show?.playbackSpeed ?? podcastPrefs().playbackSpeed;
 }
 
-/** The first few of Up Next, as native queue items. */
+/**
+ * The episodes ahead of `excluding`, in the order they will play. With no
+ * network, only the downloaded ones: nothing else can play, so nothing else is
+ * next.
+ */
+export async function episodesAhead(excluding: string | null, downloadedOnly = !phoneHasNetwork()): Promise<EpisodeItem[]> {
+  const [inProgress, upNext] = await Promise.all([listShelf("continue"), listShelf("queue")]);
+  return playOrder(inProgress, upNext).filter(
+    (item) => item.id !== excluding && !session.passedOver.has(item.id) && (!downloadedOnly || localFileUri(item) !== null),
+  );
+}
+
+/** The first few episodes ahead, as native queue items. */
 export async function nativeUpNext(excluding: string): Promise<MediaItem[]> {
-  const ids = (await upNextIds()).filter((id) => id !== excluding).slice(0, NATIVE_LOOKAHEAD);
-  const items = await Promise.all(ids.map((id) => getEpisodeItem(id)));
-  return items.filter((i): i is EpisodeItem => i !== null).map(mediaItemFrom);
+  const items = await episodesAhead(excluding);
+  return items.slice(0, NATIVE_LOOKAHEAD).map((item) => mediaItemFrom(item));
 }
 
 /** Where to start: where it was left, unless that was the very end or it was played. */

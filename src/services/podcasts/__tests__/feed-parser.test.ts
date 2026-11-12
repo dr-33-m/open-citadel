@@ -32,6 +32,9 @@ const RSS = `<?xml version="1.0" encoding="UTF-8"?>
       <enclosure url="https://cdn.example.com/2.mp3" length="1234" type="audio/mpeg"/>
       <itunes:duration>1:02:03</itunes:duration>
       <podcast:chapters url="https://example.com/2.json" type="application/json+chapters"/>
+      <podcast:transcript url="https://example.com/2.html" type="text/html"/>
+      <podcast:transcript url="https://example.com/2.srt" type="application/x-subrip"/>
+      <podcast:transcript url="https://example.com/2.vtt" type="text/vtt"/>
       <psc:chapters version="1.2">
         <psc:chapter start="00:10:00" title="Middle"/>
         <psc:chapter start="0" title="Intro" href="https://example.com"/>
@@ -134,5 +137,15 @@ describe("parseDuration", () => {
     ["abc", 0],
   ])("%s → %d", (raw, expected) => {
     expect(parseDuration(raw)).toBe(expected);
+  });
+});
+
+describe("podcast:transcript", () => {
+  it("keeps the richest transcript the show lists, not the first", () => {
+    const feed = parseFeed(RSS);
+    const episode = feed.episodes.find((e) => e.guid === "ep-2");
+    expect(episode?.transcriptUrl).toBe("https://example.com/2.vtt");
+    expect(episode?.transcriptType).toBe("text/vtt");
+    expect(feed.episodes.find((e) => e.guid === "ep-1")?.transcriptUrl).toBeNull();
   });
 });

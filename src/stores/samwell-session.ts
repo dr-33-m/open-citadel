@@ -3,23 +3,25 @@ import type { CompassCheckinDraft, GoalProposal } from 'samwell-shared';
 
 import type { BookKind } from '@/db/schema';
 
-export type SamwellMode = 'chat' | 'compass';
-
-/** What the current Compass conversation has proposed, if anything. */
+/**
+ * What the current Compass conversation has proposed, if anything.
+ *
+ * `applied` marks a card already approved. It stays in the transcript, done,
+ * rather than vanishing: Samwell's line under it ("it's on screen for you to
+ * approve") would otherwise point at nothing.
+ */
 export type CompassDraft =
-  | { kind: 'plan'; proposal: GoalProposal }
-  | { kind: 'checkin'; draft: CompassCheckinDraft }
+  | { kind: 'plan'; proposal: GoalProposal; applied?: boolean }
+  | { kind: 'checkin'; draft: CompassCheckinDraft; applied?: boolean }
   | null;
 
 type SamwellSessionStore = {
-  /** Chat or Compass — the two things the one screen does. */
-  mode: SamwellMode;
   /** What is typed but not yet sent. */
   draft: string;
   /** The book, or blog post, a not-yet-created chat will be grounded in. */
   pendingBook: { id: string; title: string; kind: BookKind } | null;
 
-  /** The Compass conversation in progress, and the proposal it has reached. */
+  /** The goal or check-in card the conversation has reached, if any. */
   compassDraft: CompassDraft;
   /**
    * The user asked to work on the draft some more.
@@ -41,6 +43,13 @@ type SamwellSessionStore = {
    */
   skippedTrackableIds: string[];
 
+  /**
+   * A chat opened from another screen is on its way: the page shows the
+   * transcript's skeleton rather than the chat that was there before, until
+   * it has been read (`showChatAfterLeaving`).
+   */
+  opening: boolean;
+
   set: (patch: Partial<SamwellSessionStore>) => void;
 };
 
@@ -51,21 +60,21 @@ type SamwellSessionStore = {
  * looks at. It is a pushed screen now, so leaving it — by the back button, by
  * the swipe, or by opening a book from a recommendation — unmounts it, and
  * anything held in `useState` there would go with it. Most of what the screen
- * shows already lives in a store (`useChatStore`, `useCompassStore`,
- * `useCompassChatStore`); this is the rest: the composer's text, the picked
+ * shows already lives in a store (`useChatStore`, `useCompassStore`); this is
+ * the rest: the composer's text, the picked
  * book, the proposal on screen, and which trackables were waved off today.
- * Transcripts are not here — both surfaces persist theirs as chat sessions.
+ * Transcripts are not here: they persist as chat sessions.
  *
  * Deliberately not persisted to disk. This survives navigation, not a
  * relaunch.
  */
 export const useSamwellSessionStore = create<SamwellSessionStore>((set) => ({
-  mode: 'chat',
   draft: '',
   pendingBook: null,
   compassDraft: null,
   refining: false,
   skippedTrackableIds: [],
+  opening: false,
 
   set: (patch) => set(patch),
 }));

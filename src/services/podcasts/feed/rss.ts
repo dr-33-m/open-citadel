@@ -3,6 +3,7 @@ import type { ParsedChapter, ParsedEpisode, ParsedFeed } from "@/services/podcas
 import { parseFeedDate } from "@/services/feeds/dates";
 import { parseChapterStart, parseDuration, positiveInt } from "@/services/podcasts/feed/values";
 import { attr, firstLink, isNode, text, type Node } from "@/services/feeds/xml";
+import { bestTranscript } from "@/services/podcasts/transcript/formats";
 
 function parseChapters(item: Node): ParsedChapter[] {
   const container = item["psc:chapters"];
@@ -39,8 +40,9 @@ function parseRssItem(item: Node): ParsedEpisode | null {
   // An item with nothing to play is a blog post in a podcast's clothing.
   if (!audioUrl) return null;
 
-  const transcripts = Array.isArray(item["podcast:transcript"]) ? item["podcast:transcript"] : [];
-  const transcript = transcripts[0];
+  const listed = Array.isArray(item["podcast:transcript"]) ? item["podcast:transcript"] : [];
+  // The richest of the transcripts the show publishes, not merely the first.
+  const transcript = bestTranscript(listed.map((t) => ({ url: attr(t, "url"), type: attr(t, "type") })));
   const title = text(item.title) ?? text(item["itunes:title"]) ?? "Untitled episode";
 
   return {
@@ -56,8 +58,8 @@ function parseRssItem(item: Node): ParsedEpisode | null {
     durationSec: parseDuration(text(item["itunes:duration"])),
     fileSize,
     chaptersUrl: attr(item["podcast:chapters"], "url"),
-    transcriptUrl: attr(transcript, "url"),
-    transcriptType: attr(transcript, "type"),
+    transcriptUrl: transcript?.url ?? null,
+    transcriptType: transcript?.type ?? null,
     chapters: parseChapters(item),
   };
 }

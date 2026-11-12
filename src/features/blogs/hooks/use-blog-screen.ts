@@ -4,18 +4,22 @@ import React from 'react';
 
 import { RotateCcw } from '@/components/icons';
 import { showToast } from '@/components/toast/toast-provider';
+import { usePageSearch, useSearchResults } from '@/hooks/use-page-search';
 import type { BlogHeroProps } from '@/features/blogs/components/blog-hero';
+import { useWholePostsLine } from '@/features/blogs/hooks/use-whole-posts-line';
 import {
   createBlogArticlesQueryOptions,
   createBlogQueryOptions,
   createDiscoveredBlogQueryOptions,
   invalidateBlogLibrary,
 } from '@/query-manager/blogs';
+import type { WholePostsAsk } from '@/services/blogs/article-book';
 import type { BlogArticleFilter } from '@/services/blogs/articles';
 import { followBlog, getBlog, unfollowBlog } from '@/services/blogs/blogs';
 import { htmlToText } from '@/services/blogs/feed/text';
 import type { ArticleItem } from '@/services/blogs/records';
 import { refreshBlog } from '@/services/blogs/refresh';
+import { countLabel } from '@/utils/format';
 import { haptics } from '@/utils/haptics';
 import { hostOf } from '@/utils/urls';
 
@@ -23,6 +27,8 @@ import { hostOf } from '@/utils/urls';
 export type BlogParams = { id: string; feedUrl?: string; title?: string };
 
 const NO_ARTICLES: ArticleItem[] = [];
+
+const articleFields = (a: ArticleItem) => [a.title, a.author, a.summary];
 
 /** Reads the blog afresh and refreshes it, for a follow undone or a pull. */
 async function refreshById(id: string): Promise<void> {
@@ -34,14 +40,24 @@ async function refreshById(id: string): Promise<void> {
  * A blog's page: the blog, its posts (all, or only the unread), and what its
  * buttons do. Opened from Explore, the blog is fetched and kept as a preview
  * once the slide has landed, so its posts can be read before following.
+ * `changeWholePosts` puts up the question of how a summary-only blog is read
+ * (`useArticleActions`).
  */
-export function useBlogScreen(params: BlogParams, landed: boolean) {
+export function useBlogScreen(params: BlogParams, landed: boolean, changeWholePosts: (blog: WholePostsAsk) => void) {
   const found = params.id === 'found' ? (params.feedUrl ?? null) : null;
   const discovered = useQuery(createDiscoveredBlogQueryOptions(found ?? '', { enabled: found !== null && landed }));
   const blogId = found ? (discovered.data ?? null) : params.id;
   const { data: blog } = useQuery(createBlogQueryOptions(blogId ?? '', { enabled: blogId !== null }));
   const [filter, setFilter] = React.useState<BlogArticleFilter>('all');
-  const articles = useQuery(createBlogArticlesQueryOptions(blogId ?? '', filter, { enabled: blogId !== null && landed }));
+  const search = usePageSearch();
+  // A search looks through every post, read or not.
+  const articles = useQuery(
+    createBlogArticlesQueryOptions(blogId ?? '', search.searching ? 'all' : filter, {
+      enabled: blogId !== null && landed,
+      // Keep the list on screen while the other filter is read.
+      placeholderData: (previous) => previous,
+    }),
+  );
 
   const follow = useMutation({
     mutationFn: (id: string) => followBlog(id),
@@ -80,10 +96,14 @@ export function useBlogScreen(params: BlogParams, landed: boolean) {
   const rawDescription = blog?.description ?? null;
   const description = React.useMemo(() => (rawDescription ? htmlToText(rawDescription) : null), [rawDescription]);
 
+  const shownArticles = landed ? articles.data : undefined;
+  const host = siteUrl ? hostOf(siteUrl) : null;
+  const wholePosts = useWholePostsLine({ blog, siteUrl, host, articles: shownArticles, change: changeWholePosts });
+
   const failed = found !== null && discovered.isError;
   const hero: BlogHeroProps = {
     title,
-    host: siteUrl ? hostOf(siteUrl) : null,
+    host,
     imageUrl: blog?.imageUrl ?? null,
     description,
     following: blog?.state === 'subscribed',
@@ -95,21 +115,33 @@ export function useBlogScreen(params: BlogParams, landed: boolean) {
     onFollow,
     onUnfollow: unfollow,
     onOpenSite: openSite,
+    wholePosts,
   };
 
   // The posts are drawn once the slide has landed, never during it. Their read
   // is held until then too, but opening the blog from a list reads them ahead
   // at the tap (`useArticleActions`), and a cached answer would otherwise be
   // drawn into a page still moving.
-  const shown = landed ? articles.data : undefined;
+  const shown = shownArticles;
+  const results = useSearchResults(shown ?? NO_ARTICLES, search, articleFields);
+  const emptyText = search.query.trim()
+    ? 'No posts match.'
+    : filter === 'unread' && !search.searching
+      ? 'Nothing unread here.'
+      : 'No posts yet.';
 
   return {
     hero,
-    articles: shown ?? NO_ARTICLES,
+    articles: results,
+    search,
+    /** "12 POSTS" over a search's results, in the hero's place. */
+    resultsCount: countLabel(results.length, 'POST'),
     /** Still finding the blog, reading its posts or sliding in: the list shows its skeleton. */
     resolving: !failed && shown === undefined,
-    emptyText: filter === 'unread' ? 'Nothing unread here.' : 'No posts yet.',
-    canRefresh: blogId !== null,
+    emptyText,
+    /** Only a stored blog has posts to search, and only one not being searched is pulled for new ones. */
+    canSearch: blogId !== null,
+    canRefresh: blogId !== null && !search.searching,
     refreshing,
     refresh,
   };

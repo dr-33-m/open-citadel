@@ -7,7 +7,7 @@ import { Touchable } from '@/components/ui/touchable';
 import { playLabel } from '@/features/podcasts/utils/format';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { EpisodeItem } from '@/services/podcasts/records';
-import { useEpisodeBuffering, useEpisodePlayback } from '@/stores/podcast-player';
+import { useEpisodeBuffering, useEpisodePlayback } from '@/stores/player';
 
 type PlayChipProps = {
   episode: Pick<EpisodeItem, 'id' | 'positionSec' | 'durationSec' | 'playState'>;

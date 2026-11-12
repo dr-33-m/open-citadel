@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 
+import { track } from '@/lib/observe';
 import { ThemedView } from '@/components/themed-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConciergeSignInSheet } from '@/features/onboarding/components/concierge-sign-in-sheet';
@@ -48,6 +49,7 @@ export function OnboardingScreen() {
   const leaveForLibrary = React.useCallback(() => {
     // `replace`, never `push`. Onboarding is behind them and the system Back
     // button must not walk into it.
+    track({ name: 'onboarding.finished', attributes: {} });
     router.replace('/');
   }, [router]);
 

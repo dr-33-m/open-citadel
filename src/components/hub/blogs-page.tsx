@@ -7,7 +7,7 @@ import { Plus } from "@/components/icons";
 import { ScreenFab } from "@/components/screen-fab";
 import { layout } from "@/constants/theme";
 import { AddBlogSheet } from "@/features/blogs/components/add-blog-sheet";
-import { ArticleActionSheet } from "@/features/blogs/components/article-action-sheet";
+import { ArticleSheets } from "@/features/blogs/components/article-sheets";
 import { BlogsHome } from "@/features/blogs/components/blogs-home";
 import { BlogsHomeSkeleton } from "@/features/blogs/components/blogs-home-skeleton";
 import { BlogsWelcome } from "@/features/blogs/components/blogs-welcome";
@@ -70,7 +70,7 @@ export function BlogsPage({ bottomChrome, settleMs }: BlogsPageProps) {
       {/* The side's one creative action, the same floating button the other
           sides give theirs: find something new to read. */}
       <ScreenFab icon={Plus} accessibilityLabel="Find blogs" onPress={page.openExplore} />
-      <ArticleActionSheet {...articles.sheet} />
+      <ArticleSheets actions={articles} />
       <AddBlogSheet {...addBlog.sheet} />
     </View>
   );

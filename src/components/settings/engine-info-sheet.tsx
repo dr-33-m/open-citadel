@@ -25,7 +25,8 @@ const CONTENT: Record<EngineMode, InfoContent> = {
       "In the Cloud, Samwell has three expert levels to choose from: Maester, Grand Maester and Archmaester.",
       "Deeper thinking and sharper insight than any phone can manage.",
       "Compass only available here, with Samwell cloud.",
-      "Needs an internet connection. Only what each request needs is sent, nothing more.",
+      "What you ask, and the passages of your reading he needs to answer, are sent through Open Citadel to the brain's maker. Only what each request needs.",
+      "Needs an internet connection.",
     ],
   },
 };

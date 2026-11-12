@@ -24,6 +24,13 @@ import { useToastStack } from '@/components/toast/use-toast-stack';
 const ENTER_OFFSET = 200;
 const HIDDEN_SCALE = 0.7;
 const AUTO_DISMISS_MS = 3000;
+/**
+ * A toast with something to press stays longer. Three seconds is enough to
+ * read "Renamed"; it is not enough to read "He will forget that note", decide,
+ * and reach the Undo, which measured on a Galaxy A33 was gone before the
+ * thumb got there.
+ */
+const ACTION_DISMISS_MS = 6000;
 const FADE_IN_MS = 200;
 const EXIT_MS = 160;
 /** The exit drifts back the way it came in, which for a top toast is upward. */
@@ -163,6 +170,7 @@ export function ToastItem({
 
   // A busy toast waits for its work, however long that takes.
   const persistent = toast.persistent === true || toast.busy === true || toast.accessory != null;
+  const lifeMs = toast.onActionPress ? ACTION_DISMISS_MS : AUTO_DISMISS_MS;
 
   const restartTimer = React.useCallback(() => {
     if (exiting.current) return;
@@ -171,8 +179,8 @@ export function ToastItem({
     // still leaves on its own.
     // Nor does anything while the pile is spread; see below.
     if (persistent || spread) return;
-    timer.current = setTimeout(() => dismiss('timeout'), AUTO_DISMISS_MS);
-  }, [clearTimer, dismiss, persistent, spread]);
+    timer.current = setTimeout(() => dismiss('timeout'), lifeMs);
+  }, [clearTimer, dismiss, lifeMs, persistent, spread]);
 
 
   const commitSwipeDismiss = React.useCallback(() => dismiss('swipe'), [dismiss]);

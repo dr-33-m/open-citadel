@@ -18,7 +18,7 @@ import type { ParsedArticle } from '@/services/blogs/feed-parser';
 import { KEEP_PER_BLOG } from '@/services/blogs/records';
 import { chunk, newId, nowIso, yieldToUi } from '@/services/rows';
 
-/** Rows per INSERT: fifteen columns a row, well under SQLite's 999 bound values. */
+/** Rows per INSERT: sixteen columns a row, well under SQLite's 999 bound values. */
 const INSERT_CHUNK = 40;
 
 /** Stores a feed's posts for a blog. Returns how many were new. */
@@ -39,6 +39,7 @@ export async function storeArticles(blogId: string, articles: ParsedArticle[]): 
     author: a.author,
     summary: a.summary,
     contentHtml: a.contentHtml,
+    feedExcerpt: a.excerpt,
     imageUrl: a.imageUrl,
     publishedAt: a.publishedAt,
     fetchedAt,
@@ -55,6 +56,7 @@ export async function storeArticles(blogId: string, articles: ParsedArticle[]): 
           author: sql`excluded.author`,
           summary: sql`excluded.summary`,
           contentHtml: sql`excluded.content_html`,
+          feedExcerpt: sql`excluded.feed_excerpt`,
           imageUrl: sql`excluded.image_url`,
         },
       });

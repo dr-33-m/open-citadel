@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { ActionButton } from '@/components/action-button';
+import { Check } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Card } from '@/components/ui/card';
 import { GoldButton } from '@/components/ui/gold-button';
@@ -24,6 +25,12 @@ type DraftCardShellProps = {
    */
   onRefine: () => void;
   disabled?: boolean;
+  /**
+   * The status line of a card already approved ("GOAL STARTED"). It takes the
+   * buttons' place and the gold edge goes quiet: nothing here asks for an
+   * answer any more.
+   */
+  done?: string | null;
   children: React.ReactNode;
 };
 
@@ -41,34 +48,47 @@ export function DraftCardShell({
   onApprove,
   onRefine,
   disabled = false,
+  done = null,
   children,
 }: DraftCardShellProps) {
   const [primary, mutedForeground] = useCSSVariable([
     '--color-primary',
     '--color-muted-foreground',
   ]);
+  const muted = asColor(mutedForeground);
+  const edge = done ? 'border-l-2 border-l-border' : 'border-l-2 border-l-primary';
 
   return (
-    <Card className="border-l-2 border-l-primary">
+    <Card className={edge}>
       <Card.Content className="gap-3 p-4">
-        <ThemedText type="labelSm" color={asColor(primary)}>
+        <ThemedText type="labelSm" color={done ? muted : asColor(primary)}>
           {label}
         </ThemedText>
         <View className="gap-3">{children}</View>
-        {/* Two answers of equal standing, so they are the same 40pt box and
-            the fill alone marks the one that accepts. The 56pt bar is for a
+        {/* Approved, a status line takes the buttons' place. Waiting, two
+            answers of equal standing, so they are the same 40pt box and the
+            fill alone marks the one that accepts. The 56pt bar is for a
             button that is its screen's whole purpose, and in a card among
             messages it out-shouted the proposal it sat under. */}
-        <View className="mt-1 gap-2">
-          <GoldButton label={approveLabel} size="compact" onPress={disabled ? undefined : onApprove} />
-          <ActionButton
-            label="WORK ON IT MORE"
-            onPress={disabled ? undefined : onRefine}
-            tint={asColor(mutedForeground)}
-            centered
-            className="h-10"
-          />
-        </View>
+        {done ? (
+          <View className="mt-1 flex-row items-center gap-2">
+            <Check size={16} color={muted} />
+            <ThemedText type="labelSm" color={muted}>
+              {done}
+            </ThemedText>
+          </View>
+        ) : (
+          <View className="mt-1 gap-2">
+            <GoldButton label={approveLabel} size="compact" onPress={disabled ? undefined : onApprove} />
+            <ActionButton
+              label="WORK ON IT MORE"
+              onPress={disabled ? undefined : onRefine}
+              tint={muted}
+              centered
+              className="h-10"
+            />
+          </View>
+        )}
       </Card.Content>
     </Card>
   );

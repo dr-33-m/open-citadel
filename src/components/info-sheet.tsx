@@ -1,10 +1,10 @@
 import React from 'react';
 import { View } from 'react-native';
 
+import { FitSheet } from '@/components/fit-sheet';
 import { Info } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Alert } from '@/components/ui/alert';
-import { Sheet } from '@/components/ui/sheet';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 /** What an info sheet says: the thing's kind, what it is, and what is worth knowing. */
@@ -28,35 +28,61 @@ export interface InfoSheetProps {
   children?: React.ReactNode;
   /** Opened from inside another sheet: it rises over that one instead of replacing it. */
   nested?: boolean;
+  /** Under everything: the choice the sheet explains, where it asks for one (sharing app performance). */
+  footer?: React.ReactNode;
 }
+
+/**
+ * Taller than a `FitSheet`'s usual cap: an "i" is read before a choice is
+ * made, so on an ordinary phone at ordinary text size all of it should show
+ * at once, and it scrolls only where the screen truly cannot hold it.
+ */
+const HEIGHT_RATIO = 0.9;
+
+/** The body under the pinned header: 24 either side, 24 from the header and between its parts. */
+const BODY = { paddingHorizontal: 24, paddingTop: 24, gap: 24 } as const;
 
 /**
  * What the circled "i" on a choice opens: the choice's kind and name, then
  * the few things worth knowing as points, each on a small gold square.
  *
  * One sheet for every "i" in the app (Samwell on-device and cloud, the cloud
- * reading voices, a voice box's version), so a reader who has opened one
- * knows how to read the next.
+ * reading voices, a voice box's version, sharing app performance), so a reader
+ * who has opened one knows how to read the next. It is a `FitSheet`: as tall as
+ * what it says, and where that is more than the screen allows (a small phone,
+ * large text), the points scroll under the pinned title while the footer's
+ * choice stays at the bottom.
  */
-export function InfoSheet({ visible, onClose, info, children, nested = false }: InfoSheetProps) {
+export function InfoSheet({ visible, onClose, info, children, nested = false, footer }: InfoSheetProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
 
+  const header = info ? (
+    <View className="gap-1 px-6">
+      <ThemedText type="labelSm" color={tokens['--color-primary']}>
+        {info.label}
+      </ThemedText>
+      <ThemedText type="headlineSm">{info.title}</ThemedText>
+      {info.line ? (
+        <ThemedText type="bodyMd" color={muted} className="pt-1">
+          {info.line}
+        </ThemedText>
+      ) : null}
+    </View>
+  ) : null;
+
   return (
-    <Sheet visible={visible} onClose={onClose} stackBehavior={nested ? 'push' : undefined}>
+    <FitSheet
+      visible={visible}
+      onClose={onClose}
+      header={header}
+      contentStyle={BODY}
+      heightRatio={HEIGHT_RATIO}
+      footer={footer ? <View className="px-6 pt-6">{footer}</View> : undefined}
+      stackBehavior={nested ? 'push' : undefined}
+    >
       {info ? (
-        <View className="gap-6 px-6">
-          <View className="gap-1">
-            <ThemedText type="labelSm" color={tokens['--color-primary']}>
-              {info.label}
-            </ThemedText>
-            <ThemedText type="headlineSm">{info.title}</ThemedText>
-            {info.line ? (
-              <ThemedText type="bodyMd" color={muted} className="pt-1">
-                {info.line}
-              </ThemedText>
-            ) : null}
-          </View>
+        <>
           {children}
           {info.points.length > 0 ? (
             <View className="gap-3">
@@ -84,8 +110,8 @@ export function InfoSheet({ visible, onClose, info, children, nested = false }: 
               </Alert.Content>
             </Alert>
           ) : null}
-        </View>
+        </>
       ) : null}
-    </Sheet>
+    </FitSheet>
   );
 }

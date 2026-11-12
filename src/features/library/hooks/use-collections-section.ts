@@ -1,27 +1,27 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 
+import { usePageSearch, useSearchResults } from '@/hooks/use-page-search';
 import { useCollectionsStore } from '@/stores/collections';
-import { countLabel, matchesQuery } from '@/utils/format';
+import { countLabel } from '@/utils/format';
+
+const collectionFields = (collection: { name: string }) => [collection.name];
 
 /** Collections' "View all": every collection, searchable by name. */
 export function useCollectionsSection() {
   const router = useRouter();
   const collections = useCollectionsStore((s) => s.collections);
-  const [query, setQuery] = React.useState('');
-  const results = React.useMemo(
-    () => collections.filter((c) => matchesQuery(query, c.name)),
-    [collections, query],
-  );
+  const search = usePageSearch();
+  const results = useSearchResults(collections, search, collectionFields);
   const openCollection = React.useCallback((id: string) => router.push(`/collection/${id}` as any), [router]);
   const close = React.useCallback(() => router.back(), [router]);
 
   return {
     subtitle: countLabel(collections.length, 'COLLECTION'),
-    query,
-    setQuery,
+    search,
+    canSearch: collections.length > 0,
     results,
-    emptyText: query ? 'No results.' : 'No collections yet.',
+    emptyText: search.query ? 'No results.' : 'No collections yet.',
     openCollection,
     close,
   };

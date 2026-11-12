@@ -2,6 +2,7 @@ import React from 'react';
 import type { PurchasesPackage } from 'react-native-purchases';
 import type { PlanId } from 'samwell-shared';
 
+import { track } from '@/lib/observe';
 import { showToast } from '@/components/toast/toast-provider';
 import { GuestLinked } from '@/services/guest-identity';
 import { identify, reclaimStorePurchases } from '@/services/purchases';
@@ -189,6 +190,9 @@ export function usePlanCheckout({
         return;
       }
       await buy(intent.plan, intent.packageToBuy);
+      // Done when a plan is now active; otherwise the store sheet was closed or failed (the store says which).
+      const bought = useSubscriptionStore.getState().status === 'active';
+      track({ name: 'billing.purchase', attributes: { plan: intent.plan, outcome: bought ? 'done' : 'stopped' } });
     },
     [buy, restore],
   );

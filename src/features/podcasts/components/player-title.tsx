@@ -9,14 +9,17 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 type PlayerTitleProps = {
   title: string;
-  showTitle: string;
+  /** Whose it is: the show, or a book's author. */
+  subtitle: string;
+  /** What a tap on the line under the title does, and what a screen reader says it does. */
+  onSubtitle?: () => void;
+  subtitleLabel?: string;
   favorite: boolean;
-  onOpenShow: () => void;
   onToggleFavorite: () => void;
 };
 
 /** What is playing and whose it is, with the favourite star at its side. */
-export function PlayerTitle({ title, showTitle, favorite, onOpenShow, onToggleFavorite }: PlayerTitleProps) {
+export function PlayerTitle({ title, subtitle, onSubtitle, subtitleLabel, favorite, onToggleFavorite }: PlayerTitleProps) {
   const tokens = useThemeTokens();
   return (
     <View className="flex-row items-start gap-3">
@@ -24,9 +27,15 @@ export function PlayerTitle({ title, showTitle, favorite, onOpenShow, onToggleFa
         <ThemedText type="headlineMd" numberOfLines={2}>
           {title}
         </ThemedText>
-        <Touchable onPress={onOpenShow} hitSlop={6} accessibilityRole="link" accessibilityLabel={`Go to ${showTitle}`}>
+        <Touchable
+          onPress={onSubtitle}
+          disabled={!onSubtitle}
+          hitSlop={6}
+          accessibilityRole={onSubtitle ? 'link' : 'text'}
+          accessibilityLabel={subtitleLabel ?? subtitle}
+        >
           <ThemedText type="bodySm" color={tokens['--color-muted-foreground']} numberOfLines={1}>
-            {showTitle}
+            {subtitle}
           </ThemedText>
         </Touchable>
       </View>

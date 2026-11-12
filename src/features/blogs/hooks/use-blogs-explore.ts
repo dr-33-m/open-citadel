@@ -3,10 +3,12 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 
 import { looksLikeAddress, searchDirectory } from '@/features/blogs/utils/explore';
+import { usePageSearch } from '@/hooks/use-page-search';
 import { backTo } from '@/navigation/navigate';
 import { createFollowedFeedsQueryOptions } from '@/query-manager/blogs';
 import { prefetchDiscoveredBlog } from '@/services/blogs/actions';
-import { BLOG_DIRECTORY, DIRECTORY_BLOGS, type DirectoryBlog } from '@/services/blogs/directory';
+import { BLOG_DIRECTORY, listedDirectory, type DirectoryBlog } from '@/services/blogs/directory';
+import { publisherRules } from '@/services/publishers';
 
 /** What Explore shows under its search field. */
 export type BlogsExploreView = 'search' | 'sections';
@@ -20,11 +22,15 @@ const NO_FEEDS = new Set<string>();
  */
 export function useBlogsExplore() {
   const router = useRouter();
-  const [query, setQuery] = React.useState('');
+  const search = usePageSearch();
   const { data: followed = NO_FEEDS } = useQuery(createFollowedFeedsQueryOptions());
+  // Read once a visit: the rules change at most once a day.
+  const sections = React.useMemo(() => listedDirectory(BLOG_DIRECTORY, publisherRules()), []);
+  const listed = React.useMemo(() => sections.flatMap((section) => section.blogs), [sections]);
 
-  const term = query.trim();
-  const results = React.useMemo(() => searchDirectory(DIRECTORY_BLOGS, term), [term]);
+  // An emptied field is the sections again at once, not after the pause.
+  const term = search.query.trim() ? search.term.trim() : '';
+  const results = React.useMemo(() => searchDirectory(listed, term), [listed, term]);
   const address = looksLikeAddress(term) ? term : null;
 
   const openBlog = React.useCallback(
@@ -44,9 +50,8 @@ export function useBlogsExplore() {
 
   return {
     view,
-    setQuery,
-    clearQuery: () => setQuery(''),
-    sections: BLOG_DIRECTORY,
+    search,
+    sections,
     followed,
     results,
     address,

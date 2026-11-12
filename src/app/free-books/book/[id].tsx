@@ -16,6 +16,7 @@ import { FreeBookSkeleton } from "@/features/free-books/components/free-book-ske
 import type { FreeBookParams } from "@/features/free-books/hooks/use-open-catalog-book";
 import { useFreeBookScreen } from "@/features/free-books/hooks/use-free-book-screen";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import { useScreenInteractive } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /**
@@ -32,6 +33,7 @@ export default function FreeBookScreen() {
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
   const landed = useSettledOnce();
+  const interactive = useScreenInteractive();
   const screen = useFreeBookScreen(params);
 
   // Opened with nothing known (a link straight to it), there is no hero to
@@ -43,7 +45,7 @@ export default function FreeBookScreen() {
         showsVerticalScrollIndicator={false}
       >
         <FreeBookHero {...screen.hero} />
-        <Handover fill={false} ready={landed && screen.loaded} skeleton={<FreeBookAboutSkeleton />}>
+        <Handover onShown={interactive} fill={false} ready={landed && screen.loaded} skeleton={<FreeBookAboutSkeleton />}>
           <FreeBookAbout {...screen.about} />
         </Handover>
       </TransitionScrollView>

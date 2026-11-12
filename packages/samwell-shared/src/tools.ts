@@ -72,7 +72,7 @@ export const ReadingSnippetSchema = z.object({
 
 export const SearchReadingInputSchema = z.object({
   query: z.string(),
-  /** Search one book or blog post instead of everything read. */
+  /** Search one book, blog post or podcast transcript instead of everything read. */
   book_title: z.string().optional(),
   /** With book_title: search one chapter, by number or title. */
   chapter: z.string().optional(),
@@ -388,7 +388,7 @@ export const searchHighlightsTool = toolDefinition({
 export const searchReadingTool = toolDefinition({
   name: 'search_reading',
   description:
-    "Search the FULL TEXT of everything the user has read: books they are reading or have finished, and blog posts they have opened. Ranked, best passages first; each hit says its book, chapter number and paragraph number. Put exact phrases in double quotes; other words are matched by their stem (\"leading\" finds \"leaders\"). Give book_title to search one book or post, and chapter as well to search one chapter. Only ever returns text the user has ALREADY read, never anything past their reading position. Then read_chapter with the hit's chapter and a from_paragraph a little before it to read the passage in context. Cite the book when you use what it says.",
+    "Search the FULL TEXT of everything the user has read: books they are reading or have finished, blog posts they have opened, and podcast episodes they have a transcript of (each paragraph of a transcript opens with its speaker and time). Ranked, best passages first; each hit says its book, chapter number and paragraph number. Put exact phrases in double quotes; other words are matched by their stem (\"leading\" finds \"leaders\"). Give book_title to search one book, post or episode, and chapter as well to search one chapter. Only ever returns text the user has ALREADY read, never anything past their reading position. Then read_chapter with the hit's chapter and a from_paragraph a little before it to read the passage in context. Cite the book when you use what it says.",
   inputSchema: SearchReadingInputSchema,
   outputSchema: SearchReadingOutputSchema,
 });
@@ -396,7 +396,7 @@ export const searchReadingTool = toolDefinition({
 export const listChaptersTool = toolDefinition({
   name: 'list_chapters',
   description:
-    "List the chapters of one of the user's books or blog posts that they have ALREADY reached: each chapter's number, title, length in words and paragraphs, and which one they are partway through. The map before read_chapter or a search inside one chapter. Never lists chapters past the user's reading position, since a chapter title gives away plot as readily as the text does.",
+    "List the chapters of one of the user's books, blog posts or podcast transcripts that they have ALREADY reached: each chapter's number, title, length in words and paragraphs, and which one they are partway through. The map before read_chapter or a search inside one chapter. Never lists chapters past the user's reading position, since a chapter title gives away plot as readily as the text does.",
   inputSchema: ListChaptersInputSchema,
   outputSchema: ListChaptersOutputSchema,
 });
@@ -412,7 +412,7 @@ export const readChapterTool = toolDefinition({
 export const suggestNextBookTool = toolDefinition({
   name: 'suggest_next_book',
   description:
-    "List the user's library (books queued to read, currently reading, and finished), so you can recommend what they should read next given where they are in their journey. Only recommend titles that appear in this list (the user's own library); never invent books they don't own. To find a particular book, use search_library instead.",
+    "List the user's library (books queued to read, currently reading, and finished), so you can recommend what they should read next given where they are in their journey. From this tool, only name titles that appear in this list; never pretend they own a book they do not. To find a particular book, use search_library instead. To suggest something new, see what you have been told about recommending.",
   inputSchema: SuggestNextBookInputSchema,
   outputSchema: SuggestNextBookOutputSchema,
 });

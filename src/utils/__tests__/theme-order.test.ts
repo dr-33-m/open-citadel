@@ -7,7 +7,6 @@ import {
   librarySideOrder,
   nextRelease,
   releasedThrough,
-  settingsPaneOrder,
 } from '../theme-order';
 
 describe('who takes a theme when', () => {
@@ -36,17 +35,10 @@ describe('who takes a theme when', () => {
     for (const side of [0, 1, 2]) expect(librarySideOrder(side, false, THEME_ORDER.next)).toBeGreaterThan(lastPage);
   });
 
-  it('hands the open pane of Settings its theme with the press, the rest last', () => {
-    expect(settingsPaneOrder(2, true)).toBe(THEME_ORDER.now);
-    const lastSide = librarySideOrder(2, false, THEME_ORDER.next);
-    for (const pane of [0, 1, 2, 3]) expect(settingsPaneOrder(pane, false)).toBeGreaterThan(lastSide);
-  });
-
   it('has a step for everything it orders', () => {
     const all = [
       ...[0, 1, 2].map((page) => hubPageOrder(page, -1)),
       ...[0, 1, 2].map((side) => librarySideOrder(side, false, 0)),
-      ...[0, 1, 2, 3].map((pane) => settingsPaneOrder(pane, false)),
     ];
     expect(new Set(all).size).toBe(all.length);
     expect(Math.max(...all)).toBe(THEME_ORDER.last);

@@ -43,6 +43,7 @@ export function ExploreResults({ results, followed, address, emptyText, bottomPa
         contentContainerStyle={{ paddingBottom: bottomPadding }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       />
     </PageFade>
   );

@@ -9,6 +9,8 @@ export type ParsedArticle = {
   author: string | null;
   /** The post as the feed carries it: the whole thing, or only a summary. */
   contentHtml: string | null;
+  /** True when that is only the opening of the post (`feedExcerpt`). */
+  excerpt: boolean;
   /** Plain text, at most `SUMMARY_LENGTH` characters, for a row in a list. */
   summary: string | null;
   imageUrl: string | null;
@@ -24,5 +26,7 @@ export type ParsedBlog = {
   description: string | null;
   imageUrl: string | null;
   language: string | null;
+  /** The feed's copyright line, as plain text. */
+  rights: string | null;
   articles: ParsedArticle[];
 };

@@ -1,9 +1,8 @@
-import { ArrowBigDownDash, ArrowBigUpDash, Compass, MessageSquare, Send, Square } from '@/components/icons';
+import { ArrowBigDownDash, ArrowBigUpDash, Send, Square } from '@/components/icons';
 import React from 'react';
 import { TextInput, View } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
-import { IconSwitch, type IconSwitchItem } from '@/components/icon-switch';
 import { NewChatButton } from '@/components/samwell/new-chat-button';
 import { SamwellPlaceholder } from '@/components/samwell-placeholder';
 import { ToggleButton } from '@/components/ui/toggle-button';
@@ -13,46 +12,17 @@ import { elevation, fontFamily, iconSize, stackedShadow } from '@/constants/them
 import { asColor } from '@/utils/colors';
 import { cn } from '@/lib/cn';
 
-const MODES: readonly IconSwitchItem<'chat' | 'compass'>[] = [
-  { key: 'chat', label: 'Chat', icon: MessageSquare },
-  { key: 'compass', label: 'Compass', icon: Compass },
-];
-
 type SamwellControlCenterProps = {
-  mode: 'chat' | 'compass';
-  onSelectMode: (mode: 'chat' | 'compass') => void;
-  /** Held while Samwell is working. Switching mode mid-turn would swap the
-   * screen out from under a reply that is still arriving, and in chat mode it
-   * also risks a second caller reaching the engine. */
-  lockMode?: boolean;
   /** Whether the drawer under this card is out. Owned by the caller, which
    * renders the drawer itself — this card only holds the handle. */
   toolboxOpen: boolean;
   onToggleToolbox: () => void;
-  /**
-   * Whether this mode has any tools to show.
-   *
-   * False offline in Compass, where every tool would open a sheet onto an
-   * empty store. The handle goes away with them rather than staying to open an
-   * empty drawer, which is the same rule the mode's own controls follow.
-   */
-  hasTools?: boolean;
   text: string;
   onChangeText: (t: string) => void;
   onSend: () => void;
   busy: boolean;
   placeholder: string;
-  /**
-   * This mode has nothing to talk to — offline Compass, which is cloud-only.
-   *
-   * The field stops taking input and the mode's own action buttons go away
-   * entirely, rather than sitting there inert: a row of controls that does
-   * nothing when pressed reads as broken, and the empty state above already
-   * says what to do about it.
-   */
-  unavailable?: boolean;
-  /** Chat mode only — replaces Send with a Stop button while a reply is
-   * actively generating, matching the old per-session chat screen. */
+  /** Replaces Send with a Stop button while a reply is actively generating. */
   showStop?: boolean;
   onStop?: () => void;
   /**
@@ -62,14 +32,13 @@ type SamwellControlCenterProps = {
    * and the cursor lands here, instead of the card being dismissed.
    */
   inputRef?: React.RefObject<TextInput | null>;
-  /** What the new-conversation button says it does: "New chat", or "New conversation" in Compass. */
-  newChatLabel: string;
-  /** Starts a fresh conversation in this mode. Absent while that would cut a turn off. */
+  /** Starts a fresh conversation. Absent while that would cut a turn off. */
   onNewChat?: () => void;
 };
 
 /**
- * The control unit: what you are writing, and which mode you are in.
+ * The control unit: what you are writing, a fresh conversation, and the
+ * handle of the drawer of tools underneath.
  *
  * It used to hold everything, and in Compass that had grown to seven targets
  * in one row — a two-cell mode switch, three sheets, history and send. Once a
@@ -77,29 +46,24 @@ type SamwellControlCenterProps = {
  * weight as the thing you press twice a month, and the next surface either
  * makes it worse or does not get a button at all.
  *
- * So the row keeps only what is true of every session: the field, the mode
- * switch, and send. Everything a mode brings with it went into the drawer
- * underneath, behind the handle beside the switch. The drawer is the caller's
+ * So the row keeps only what is true of every conversation: the field, a
+ * fresh start, and send. Every tool went into the drawer underneath, behind
+ * the handle. (The Chat / Compass switch that sat here went when the two
+ * became one Samwell.) The drawer is the caller's
  * to render (`SamwellToolbox`) because it belongs to the floating stack rather
  * than to this card; this card just holds the handle.
  */
 export function SamwellControlCenter({
-  mode,
-  onSelectMode,
-  lockMode,
   toolboxOpen,
   onToggleToolbox,
-  hasTools = true,
   text,
   onChangeText,
   onSend,
   busy,
   placeholder,
-  unavailable = false,
   showStop = false,
   onStop,
   inputRef,
-  newChatLabel,
   onNewChat,
 }: SamwellControlCenterProps) {
   // Literal colours for consumers a className can't reach: lucide icon props
@@ -114,7 +78,7 @@ export function SamwellControlCenter({
       // parchment. See `stackedShadow`.
       '--color-shadow-stacked',
     ]);
-  const canSend = text.trim().length > 0 && !busy && !unavailable;
+  const canSend = text.trim().length > 0 && !busy;
 
   // "Stop was tapped and the turn has not wound down." Reset on the edge where
   // the Stop button goes away rather than in an effect — setState during
@@ -159,9 +123,6 @@ export function SamwellControlCenter({
         { zIndex: 1 },
       ]}
     >
-      {/* The goal every Compass control below is scoped to, and the way to
-          another. Above the field because it is context, not an action. */}
-
       {/* No border/background of its own — reads as part of the same card
           surface rather than a boxed field inside it.
 
@@ -176,7 +137,7 @@ export function SamwellControlCenter({
           multiline
           value={text}
           onChangeText={onChangeText}
-          editable={!busy && !unavailable}
+          editable={!busy}
         />
         <SamwellPlaceholder
           text={placeholder}
@@ -186,29 +147,14 @@ export function SamwellControlCenter({
       </View>
 
       <View className="flex-row items-center gap-2">
-        {/* The chat/compass switch: the app's one mode switch, the same as
-            the Library header's, its lifted card sliding to the mode chosen.
+        {/* A fresh conversation, then the drawer of tools. */}
+        <NewChatButton label="New chat" color={asColor(mutedForeground)} onPress={onNewChat} />
 
-            It stays on the card rather than moving into the drawer. Which
-            mode you are in is the one thing that changes what everything else
-            on this screen means, including what is in the drawer, so it is
-            not something to go looking for. */}
-        <IconSwitch items={MODES} value={mode} onChange={onSelectMode} locked={lockMode} />
+        {/* The drawer handle. The arrow points the way the surfaces move: up
+            to pull the drawer out and lift the card, down to put it away.
 
-        {/* A fresh conversation, between the mode it would be in and that
-            mode's tools. Gone with the mode's other controls when the mode
-            has nothing to talk to. */}
-        {!unavailable && (
-          <NewChatButton label={newChatLabel} color={asColor(mutedForeground)} onPress={onNewChat} />
-        )}
-
-        {/* The drawer handle, next to the switch: the mode, then the mode's
-            own tools. The arrow points the way the surfaces move — up to pull
-            the drawer out and lift the card, down to put it away.
-
-            Vendored ToggleButton, squared off and given the same bordered box
-            as the switch beside it, so the row still reads as one set. */}
-        {hasTools && (
+            Vendored ToggleButton, squared off and given a bordered box, so the
+            row reads as one set. */}
         <ToggleButton
           variant="ghost"
           iconOnly
@@ -231,7 +177,6 @@ export function SamwellControlCenter({
             />
           )}
         </ToggleButton>
-        )}
 
         <View className="flex-1" />
 

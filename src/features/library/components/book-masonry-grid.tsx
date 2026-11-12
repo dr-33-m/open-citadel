@@ -114,6 +114,7 @@ export function BookMasonryGrid<B extends TileBook>({
         contentContainerStyle={contentStyle}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         ListEmptyComponent={
           <View className="w-full items-center pt-16">
             <ThemedText type="bodySm" color={mutedForeground}>

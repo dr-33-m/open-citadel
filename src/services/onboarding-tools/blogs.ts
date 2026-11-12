@@ -7,7 +7,7 @@
  * is chosen from far better by reading than by matching keywords against it.
  */
 import { followByAddress } from '@/services/blogs/actions';
-import { BLOG_DIRECTORY, DIRECTORY_BLOGS } from '@/services/blogs/directory';
+import { BLOG_DIRECTORY, listedDirectory } from '@/services/blogs/directory';
 import {
   blogBySlug,
   followOutcome,
@@ -15,13 +15,17 @@ import {
   type FollowResult,
 } from '@/services/onboarding-tools/format';
 import { invalidateBlogLibrary } from '@/query-manager/blogs/invalidate';
+import { publisherRules } from '@/services/publishers';
+
+/** The directory as Explore lists it: without the blogs whose publishers asked to be left out. */
+const listed = () => listedDirectory(BLOG_DIRECTORY, publisherRules());
 
 export function runListBlogs(): { formatted: string } {
-  return { formatted: formatBlogDirectory(BLOG_DIRECTORY) };
+  return { formatted: formatBlogDirectory(listed()) };
 }
 
 export async function runFollowBlogs(input: { blog_ids: string[] }): Promise<FollowResult> {
-  const chosen = [...new Set(input.blog_ids)].flatMap((slug) => blogBySlug(DIRECTORY_BLOGS, slug) ?? []);
+  const chosen = [...new Set(input.blog_ids)].flatMap((slug) => blogBySlug(listed().flatMap((section) => section.blogs), slug) ?? []);
   if (chosen.length === 0) {
     return {
       ok: false,

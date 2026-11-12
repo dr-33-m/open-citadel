@@ -48,6 +48,7 @@ const TOOL_ORB: Record<string, ThinkingOrbState> = {
   search_blog_posts: 'searching',
   // Run on the server, but drawn the same: he is looking something up.
   web_search: 'searching',
+  read_web_page: 'searching',
 
   // Weighing options rather than fetching a row.
   propose_goal: 'solving',

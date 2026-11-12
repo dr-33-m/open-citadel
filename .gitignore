@@ -56,9 +56,16 @@ app-example
 # tarballs and builds
 *.tgz
 build-*.apk
-.claude
-# Agent skills — reference material for tooling, not app source (177 files, 1.5MB)
-.agents/
+# Agent skills: the ones from skills.sh are restored from skills-lock.json. Only
+# our own have no source to restore from, so only those are kept here.
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/open-citadel-*
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/open-citadel-*/
 .vscode/
 # Local build artifacts. `eas build --local` drops these in the repo root.
 build-*.tar.gz

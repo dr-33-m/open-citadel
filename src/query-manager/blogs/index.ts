@@ -1,6 +1,7 @@
 export { invalidateBlogLibrary } from './invalidate';
 export { blogKeys, type BlogSection } from './keys';
 export {
+  createArticleOfBookQueryOptions,
   createAskableArticlesQueryOptions,
   createBlogArticlesQueryOptions,
   createBlogQueryOptions,

@@ -1,8 +1,8 @@
 /**
- * Reading chat's transcript: the shared `Transcript`, plus what only chat has.
- * A status banner over it (the model is asleep, the plan ran out), the empty
- * state in its place, and the reader's message drawn before the store has it
- * (on-device priming is a real wait).
+ * Samwell's transcript: the shared `Transcript`, plus a status banner over it
+ * (the model is asleep, the plan ran out), the empty state in its place, the
+ * reader's message drawn before the store has it (on-device priming is a real
+ * wait), and the goal or check-in card a turn proposed.
  */
 import React from "react";
 import type { ViewStyle } from "react-native";
@@ -12,6 +12,8 @@ import {
     SamwellStatusEmptyState,
 } from "@/features/chat/components/samwell-status";
 import { Transcript } from "@/features/chat/components/transcript";
+import { TranscriptSkeleton } from "@/features/chat/components/transcript-skeleton";
+import { holdCardReply } from "@/features/chat/utils/card-reply";
 import type { SamwellStatus } from "@/features/chat/hooks/use-samwell-status";
 import type { TurnIndicator } from "@/features/chat/utils/agent-activity";
 import type { ChatMessage } from "@/stores/chat";
@@ -19,6 +21,8 @@ import type { TurnActivity } from "@/utils/turn-activity";
 import type { PodcastCardKind } from '@/services/listening-tools/card';
 
 interface ChatTranscriptProps {
+  /** A chat opened from another screen is still being read: its skeleton, not the last chat. */
+  opening: boolean;
   /** Which conversation this is. The scroller is keyed on it, so opening
    *  another one opens it rather than inheriting where the last one was left. */
   sessionId: string | null;
@@ -41,15 +45,19 @@ interface ChatTranscriptProps {
   pendingUserMessage: { id: string; content: string } | null;
   contentColumn: ViewStyle;
   floatingClearance: ViewStyle;
+  keyboardOffset?: number;
   onNavigateToHighlight: (bookId: string, locator: string) => void;
   onNavigateToTimeline: () => void;
   onNavigateToBook: (bookId: string) => void;
   onNavigateToPodcast: (kind: PodcastCardKind, id: string) => void;
   /** Sends again a message of the reader's that never got a reply. */
   onResendMessage: (id: string) => void;
+  /** The card the conversation has reached (a goal, a check-in), drawn at its foot. */
+  card?: React.ReactNode;
 }
 
 export function ChatTranscript({
+  opening,
   sessionId,
   messages,
   streamingContent,
@@ -61,11 +69,13 @@ export function ChatTranscript({
   pendingUserMessage,
   contentColumn,
   floatingClearance,
+  keyboardOffset,
   onNavigateToHighlight,
   onNavigateToTimeline,
   onNavigateToBook,
   onNavigateToPodcast,
   onResendMessage,
+  card,
 }: ChatTranscriptProps) {
   /*
    * The turns to draw: what the store has, plus the one it does not have yet.
@@ -105,10 +115,14 @@ export function ChatTranscript({
     ];
   }, [messages, pendingUserMessage, awaitingStore, sessionId]);
 
+  // The line introducing a card is drawn under it; see `holdCardReply`.
+  const held = React.useMemo(() => holdCardReply(turns, card != null), [turns, card]);
+
   const isEmpty = turns.length === 0 && !streamingContent;
   // The reply in flight is drawn once it has words or has started doing
   // something: a search runs before a word of the answer exists.
   const live = streamingContent.length > 0 || (streamingActivity?.steps.length ?? 0) > 0;
+  if (opening) return <TranscriptSkeleton contentColumn={contentColumn} floatingClearance={floatingClearance} />;
   if (isEmpty) {
     return (
       <SamwellStatusEmptyState status={status} style={floatingClearance} />
@@ -123,7 +137,9 @@ export function ChatTranscript({
 
       <Transcript
         sessionId={sessionId}
-        turns={turns}
+        turns={held.turns}
+        aside={card}
+        trailingReply={held.trailingReply}
         live={live}
         streamingContent={streamingContent}
         streamingActivity={streamingActivity}
@@ -133,6 +149,7 @@ export function ChatTranscript({
         lastStreamedMessageId={lastStreamedMessageId}
         contentColumn={contentColumn}
         floatingClearance={floatingClearance}
+        keyboardOffset={keyboardOffset}
         onNavigateToHighlight={onNavigateToHighlight}
         onNavigateToTimeline={onNavigateToTimeline}
         onNavigateToBook={onNavigateToBook}

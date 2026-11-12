@@ -65,6 +65,7 @@ export function CollectionList({ collections, columns, emptyText, bottomInset, o
         columnWrapperClassName="mb-4 gap-4"
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         ListEmptyComponent={empty}
         {...RENDER_BUDGET}
       />

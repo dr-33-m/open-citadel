@@ -2,7 +2,7 @@
   "expo": {
     "name": "Open Citadel",
     "slug": "open-citadel",
-    "version": "1.5.2",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/icons/ios-dark.png",
     "scheme": "opencitadel",
@@ -98,16 +98,19 @@
             "targetSdkVersion": 36,
             "minSdkVersion": 26,
             "enableCoreLibraryDesugaring": true,
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "enableMinifyInReleaseBuilds": true
           },
           "ios": {
             "deploymentTarget": "17.0"
           }
         }
       ],
+      "./plugins/withR8KeepRules",
       "expo-sharing",
       "./plugins/withBackgroundAudio",
-      "./plugins/withNotificationIcon"
+      "./plugins/withNotificationIcon",
+      "./plugins/withResilientOkHttp"
     ],
     "experiments": {
       "typedRoutes": true,

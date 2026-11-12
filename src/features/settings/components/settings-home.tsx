@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 
-import { AudioLines, BookOpen, MessageCircleHeart, MicSignal, Sun, User, ZodiacPisces } from '@/components/icons';
+import { Activity, AudioLines, BookOpen, Brain, MessageCircleHeart, MicSignal, Sun, User, ZodiacPisces } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Switch } from '@/components/ui/switch';
 import { SectionLabel } from '@/features/settings/components/section-label';
@@ -16,6 +16,13 @@ export type SettingsHomeProps = {
   summaries: Record<SettingsPane, string>;
   light: boolean;
   onLightChange: (light: boolean) => void;
+  /** Whether the app sends how it performed (`usePerformanceSharing`), and its line. */
+  sharing: boolean;
+  sharingLine: string;
+  /** Turning it on opens what it sends first; turning it off is at once. */
+  onSharingChange: (sharing: boolean) => void;
+  /** The "i": what is sent, and the choice. */
+  onSharingInfo: () => void;
   onOpen: (destination: SettingsPane) => void;
   onOpenNote: () => void;
 };
@@ -43,11 +50,16 @@ export const SettingsHome = React.memo(function SettingsHome({
   summaries,
   light,
   onLightChange,
+  sharing,
+  sharingLine,
+  onSharingChange,
+  onSharingInfo,
   onOpen,
   onOpenNote,
 }: SettingsHomeProps) {
   const tokens = useThemeTokens();
   const toggleLight = () => onLightChange(!light);
+  const toggleSharing = () => onSharingChange(!sharing);
 
   return (
     <View className="gap-8">
@@ -59,6 +71,12 @@ export const SettingsHome = React.memo(function SettingsHome({
           title="Samwell"
           detail={summaries.samwell}
           onPress={() => onOpen('samwell')}
+        />
+        <SettingsRow
+          icon={Brain}
+          title="What Samwell knows"
+          detail={summaries.memory}
+          onPress={() => onOpen('memory')}
         />
       </Group>
 
@@ -85,9 +103,17 @@ export const SettingsHome = React.memo(function SettingsHome({
           onPress={toggleLight}
         />
         <SettingsRow
+          icon={Activity}
+          title="Share app performance"
+          detail={sharingLine}
+          onInfo={onSharingInfo}
+          accessory={<Switch value={sharing} onValueChange={onSharingChange} />}
+          onPress={toggleSharing}
+        />
+        <SettingsRow
           icon={MessageCircleHeart}
-          title="A note from the author"
-          detail="Thamsanqa Dreem"
+          title="Community"
+          detail="A note from Thamsanqa"
           opens="sheet"
           onPress={onOpenNote}
         />

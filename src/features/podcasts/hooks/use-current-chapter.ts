@@ -3,7 +3,7 @@ import React from 'react';
 import { estimatedPlayback, readPlayback } from '@/features/podcasts/hooks/use-playback-clock';
 import { chapterIndexAt } from '@/features/podcasts/utils/playback-position';
 import type { Chapter } from '@/query-manager/podcasts';
-import { usePodcastPlayer } from '@/stores/podcast-player';
+import { usePlayer } from '@/stores/player';
 
 /**
  * The chapter playing, for the title above the scrubber.
@@ -19,8 +19,8 @@ import { usePodcastPlayer } from '@/stores/podcast-player';
  * screen has landed (see `readPlayback`).
  */
 export function useCurrentChapter(chapters: Chapter[], fallbackPosition: number, active: boolean): Chapter | null {
-  const loaded = usePodcastPlayer((s) => s.loaded);
-  const isPlaying = usePodcastPlayer((s) => s.isPlaying);
+  const loaded = usePlayer((s) => s.loaded);
+  const isPlaying = usePlayer((s) => s.isPlaying);
   const [position, setPosition] = React.useState(() => estimatedPlayback()?.position ?? fallbackPosition);
   const polling = active && loaded && chapters.length > 0;
 

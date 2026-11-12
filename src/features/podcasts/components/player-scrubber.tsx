@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
+import { ThemedText } from '@/components/themed-text';
 import { ClockText } from '@/features/podcasts/components/clock-text';
 import { useScrubber } from '@/features/podcasts/hooks/use-scrubber';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -16,10 +17,12 @@ type PlayerScrubberProps = {
   onSeek: (seconds: number) => void;
   /** Takes touches. False while the player is still opening. */
   live: boolean;
+  /** Between the two times: a book's time left, in words. */
+  middleLabel?: string | null;
 };
 
 /** Where the episode is, and the way to move it. The behaviour is `useScrubber`'s. */
-export function PlayerScrubber({ position, duration, onSeek, live }: PlayerScrubberProps) {
+export function PlayerScrubber({ position, duration, onSeek, live, middleLabel = null }: PlayerScrubberProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
   const scrubber = useScrubber(position, duration, onSeek, THUMB, live);
@@ -40,8 +43,13 @@ export function PlayerScrubber({ position, duration, onSeek, live }: PlayerScrub
           <Animated.View pointerEvents="none" className="absolute bg-primary" style={[THUMB_BOX, scrubber.thumbStyle]} />
         </View>
       </GestureDetector>
-      <View className="flex-row justify-between">
+      <View className="flex-row items-center justify-between">
         <ClockText text={scrubber.elapsedText} color={muted} align="left" />
+        {middleLabel ? (
+          <ThemedText type="labelSm" color={muted} numberOfLines={1} className="flex-1 text-center">
+            {middleLabel}
+          </ThemedText>
+        ) : null}
         <ClockText text={scrubber.remainingText} color={muted} align="right" />
       </View>
     </View>

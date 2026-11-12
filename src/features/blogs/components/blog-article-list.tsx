@@ -43,6 +43,9 @@ export function BlogArticleList({
       ListEmptyComponent={empty}
       contentContainerStyle={{ paddingBottom: bottomPadding }}
       showsVerticalScrollIndicator={false}
+      // A result is opened with one tap while the search keyboard is up, and a drag puts the keyboard away.
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       onScroll={onScroll}
       refreshControl={refreshControl}
     />

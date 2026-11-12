@@ -8,6 +8,8 @@ import {
   CircleX,
   Clock,
   FolderPlus,
+  Headphones,
+  Lock,
   Pencil,
   RotateCcw,
   Star,
@@ -24,6 +26,8 @@ import type { Book, BookStatus } from '@/stores/books';
 
 const ICONS: Record<BookMenuAction, LucideIcon> = {
   open: BookOpen,
+  listen: Headphones,
+  'listen-locked': Lock,
   favorite: Star,
   unfavorite: StarOff,
   collection: FolderPlus,
@@ -46,6 +50,9 @@ type BookActionSheetProps = {
   onAddToCollection?: (bookId: string) => void;
   onDelete?: (bookId: string) => void;
   onEditTitle?: (bookId: string) => void;
+  /** Listening in a cloud voice, where the screen offers it: open, or behind a padlock that sells a plan. */
+  listen?: 'open' | 'locked';
+  onListen?: (bookId: string) => void;
 };
 
 /**
@@ -62,6 +69,8 @@ export function BookActionSheet({
   onAddToCollection,
   onDelete,
   onEditTitle,
+  listen,
+  onListen,
 }: BookActionSheetProps) {
   const tokens = useThemeTokens();
 
@@ -72,9 +81,16 @@ export function BookActionSheet({
   // has to do is render nothing once there is nothing to render.
   if (!book) return <Sheet visible={visible} onClose={onClose}>{null}</Sheet>;
 
-  const rows = bookMenu(book, { collections: !!onAddToCollection, rename: !!onEditTitle, delete: !!onDelete });
+  const rows = bookMenu(book, {
+    collections: !!onAddToCollection,
+    rename: !!onEditTitle,
+    delete: !!onDelete,
+    listen: onListen ? listen : null,
+  });
   const handlers: Record<BookMenuAction, () => void> = {
     open: () => onOpen(book.id),
+    listen: () => onListen?.(book.id),
+    'listen-locked': () => onListen?.(book.id),
     favorite: () => onToggleFavorite(book.id),
     unfavorite: () => onToggleFavorite(book.id),
     collection: () => onAddToCollection?.(book.id),

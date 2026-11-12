@@ -12,6 +12,9 @@ import { ThemedText } from "@/components/themed-text";
 import { spacing } from "@/constants/theme";
 import { asColor } from "@/utils/colors";
 
+/** A lucide icon, or a brand mark drawn the same way (`brand-icons`: Discord). */
+export type ButtonMark = LucideIcon | React.ComponentType<{ size?: number; color?: string }>;
+
 type GoldButtonProps = {
   label: string;
   accessibilityLabel?: string;
@@ -24,7 +27,7 @@ type GoldButtonProps = {
    * own, and the pair read as two different kinds of control rather than two
    * doors into one flow. Left off where the button stands alone.
    */
-  icon?: LucideIcon;
+  icon?: ButtonMark;
   /**
    * How much of a commitment the press is.
    *

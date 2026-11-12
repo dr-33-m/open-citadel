@@ -12,8 +12,8 @@ import { nowIso } from '@/services/rows';
 
 /**
  * `latest`: every followed blog's posts, newest first. `continue`: posts
- * opened and left part-read. `queue`: kept to read later, in the order they
- * were added. `favorites`: latest first. `finished`: most recently finished
+ * opened and left part-read. `queue`: kept to read later, in the reader's
+ * order (`services/blogs/queue`). `favorites`: latest first. `finished`: most recently finished
  * first.
  */
 export type ArticleShelf = 'latest' | 'continue' | 'queue' | 'favorites' | 'finished';
@@ -27,9 +27,10 @@ const STARTED = 0.02;
 const FINISHED = 0.95;
 
 /**
- * A post kept on purpose: queued, a favorite, finished, or opened (a
- * highlight lives on the opened copy). Tidying a blog's old posts away, and
- * letting go of a preview nobody followed, both leave these alone.
+ * A post kept on purpose: queued, a favorite, finished, or with its reader
+ * copy still on the phone (how long that stays is `article-copies.ts`'s to
+ * say). Tidying a blog's old posts away, and letting go of a preview nobody
+ * followed, both leave these alone.
  */
 export const keptOnPurpose: SQL = sql`(${blogArticles.savedAt} is not null
   or ${blogArticles.favoritedAt} is not null
@@ -52,7 +53,7 @@ export async function listShelf(shelf: ArticleShelf, limit: number): Promise<Art
     case 'latest':
       return select(eq(blogs.state, 'subscribed'), [desc(blogArticles.publishedAt)], limit);
     case 'queue':
-      return select(isNotNull(blogArticles.savedAt), [asc(blogArticles.savedAt)], limit);
+      return select(isNotNull(blogArticles.savedAt), [asc(blogArticles.queuePosition), asc(blogArticles.savedAt)], limit);
     case 'favorites':
       return select(isNotNull(blogArticles.favoritedAt), [desc(blogArticles.favoritedAt)], limit);
     case 'finished':
@@ -104,14 +105,6 @@ export async function setArticleRead(id: string, read: boolean): Promise<void> {
     .where(eq(blogArticles.id, id));
 }
 
-/** Into the queue, at its end, or out of it. */
-export async function setArticleQueued(id: string, queued: boolean): Promise<void> {
-  await db
-    .update(blogArticles)
-    .set({ savedAt: queued ? nowIso() : null })
-    .where(eq(blogArticles.id, id));
-}
-
 export async function setArticleFavorite(id: string, favorite: boolean): Promise<void> {
   await db
     .update(blogArticles)
@@ -130,10 +123,25 @@ export async function setArticleFinished(id: string, finished: boolean): Promise
     .update(blogArticles)
     .set(
       finished
-        ? { finishedAt: at, savedAt: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` }
+        ? { finishedAt: at, savedAt: null, queuePosition: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` }
         : { finishedAt: null },
     )
     .where(eq(blogArticles.id, id));
+}
+
+/**
+ * The post whose reader copy is `bookId`: enough to open it again
+ * (`useOpenArticle`) and to draw the player's star. Null when there is none.
+ */
+export async function articleOfBook(
+  bookId: string,
+): Promise<{ id: string; title: string; link: string; favorite: boolean } | null> {
+  const row = await db
+    .select({ id: blogArticles.id, title: blogArticles.title, link: blogArticles.link, favoritedAt: blogArticles.favoritedAt })
+    .from(blogArticles)
+    .where(eq(blogArticles.bookId, bookId))
+    .get();
+  return row ? { id: row.id, title: row.title, link: row.link, favorite: row.favoritedAt !== null } : null;
 }
 
 /**
@@ -145,7 +153,7 @@ export async function finishArticleOfBook(bookId: string): Promise<boolean> {
   const at = nowIso();
   const changed = await db
     .update(blogArticles)
-    .set({ finishedAt: at, savedAt: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` })
+    .set({ finishedAt: at, savedAt: null, queuePosition: null, readAt: sql`coalesce(${blogArticles.readAt}, ${at})` })
     .where(and(eq(blogArticles.bookId, bookId), isNull(blogArticles.finishedAt)))
     .returning({ id: blogArticles.id });
   return changed.length > 0;

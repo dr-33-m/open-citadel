@@ -1,7 +1,9 @@
 /**
  * Podcast playback, through the shared native player.
  *
- * The native queue mirrors ours: the episode playing, then Up Next. That is
+ * The native queue mirrors ours: the episode playing, then anything marked
+ * "Play next", then the rest of Continue Listening, then Up Next (with no
+ * network, only the downloaded ones). That is
  * what lets the lock screen's "next", a headset button, or simply the end of
  * an episode move on without the app being awake to do it, and the app catches
  * up when the transition event arrives (marks the last one played if it ran to
@@ -17,14 +19,16 @@
  * items), `lifecycle` (starting, moving on, stopping), `controls` and `events`.
  */
 export {
+  keepAhead,
   playEpisode,
-  seekTo,
-  setSleepTimer,
-  setSpeed,
-  skipBy,
-  togglePlayback,
+  playEpisodeFrom,
+  seekEpisode,
+  setEpisodeSpeed,
+  skipEpisode,
+  sleepAtEpisodeEnd,
+  toggleEpisode,
 } from "@/services/podcasts/player/controls";
-export { registerPodcastBackgroundHandler, restoreNowPlaying } from "@/services/podcasts/player/events";
+export { restoreNowPlaying } from "@/services/podcasts/player/events";
 export {
   finishCurrentAndAdvance,
   releasePlayerForSpeech,

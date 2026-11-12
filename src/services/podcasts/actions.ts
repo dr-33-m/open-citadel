@@ -2,7 +2,7 @@
  * Everything a listener can do, as the screens call it.
  *
  * Each action is the database change plus whatever has to follow it, in one
- * place: a change to Up Next is mirrored into the native player so the lock
+ * place: a change to what plays next is mirrored into the native player so the lock
  * screen agrees, marking the playing episode played moves the player on, and
  * every change tells the library to re-read. A screen calling one of these
  * cannot forget half of it, which is the whole reason they are not inlined at
@@ -14,9 +14,9 @@ import * as queue from "@/services/podcasts/queue";
 import { appleIdFromLink, resolveFeedUrl, type DiscoveredShow } from "@/services/podcasts/discovery";
 import { fetchFeedEarly, normalizeFeedUrl } from "@/services/feeds/fetch";
 import { addShowFromFeed, refreshShow } from "@/services/podcasts/feed-sync";
-import { finishCurrentAndAdvance, stopPlayback, syncNativeQueue } from "@/services/podcasts/player";
+import { finishCurrentAndAdvance, keepAhead, stopPlayback, syncNativeQueue } from "@/services/podcasts/player";
 import * as shows from "@/services/podcasts/shows";
-import { usePodcastPlayer } from "@/stores/podcast-player";
+import { selectEpisode, selectEpisodeId, usePlayer } from "@/stores/player";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
 
 /** Older than this, a show opened from Explore is refreshed as it opens. */
@@ -33,7 +33,7 @@ export async function setFavorite(ids: string[], favorite: boolean): Promise<voi
 }
 
 export async function markPlayed(ids: string[], played: boolean): Promise<void> {
-  const current = usePodcastPlayer.getState().current?.episodeId;
+  const current = selectEpisodeId(usePlayer.getState());
   const inPlayer = played && current != null && ids.includes(current);
   const rest = inPlayer ? ids.filter((id) => id !== current) : ids;
   await episodeState.setPlayed(rest, played);
@@ -53,7 +53,7 @@ export async function markSeen(ids: string[] | "all"): Promise<void> {
 
 export async function resetPosition(ids: string[]): Promise<void> {
   await episodeState.resetPosition(ids);
-  invalidatePodcastLibrary();
+  await afterQueueChange();
 }
 
 export async function markShowSeen(showId: string): Promise<void> {
@@ -62,7 +62,8 @@ export async function markShowSeen(showId: string): Promise<void> {
 }
 
 export async function addToQueue(ids: string[], where: "next" | "last"): Promise<void> {
-  const current = usePodcastPlayer.getState().current?.episodeId;
+  const current = selectEpisodeId(usePlayer.getState());
+  keepAhead(ids);
   await queue.enqueue(
     ids.filter((id) => id !== current),
     where,
@@ -91,7 +92,9 @@ export async function download(ids: string[]): Promise<string[]> {
 }
 
 export async function removeDownload(ids: string[]): Promise<void> {
+  // It tells the library to re-read itself, so only the player is left to tell.
   await deleteDownloads(ids);
+  await syncNativeQueue();
 }
 
 // ── Shows ───────────────────────────────────────────────────────────────────
@@ -106,7 +109,7 @@ export async function subscribe(showId: string): Promise<void> {
  * episode in the player if it was one of them.
  */
 export async function unsubscribe(showId: string): Promise<void> {
-  if (usePodcastPlayer.getState().current?.podcastId === showId) await stopPlayback();
+  if (selectEpisode(usePlayer.getState())?.podcastId === showId) await stopPlayback();
   await deleteShowDownloads(showId);
   await shows.deleteShow(showId);
   await afterQueueChange();

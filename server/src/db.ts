@@ -14,6 +14,8 @@ import {
     type TokenWorkload,
 } from 'samwell-shared';
 
+import { createTranscribeJobs } from './transcribe-jobs.js';
+
 const dbUrl = process.env.DATABASE_URL ?? 'file:./samwell-cloud.sqlite';
 
 export const db = createClient({ url: dbUrl });
@@ -131,6 +133,9 @@ export async function initDb(): Promise<void> {
   // table by its new column name. See `ensureBillingSchema`.
   await ensureBillingSchema(db);
   await seedForecastDefaults();
+  // Podcast transcription jobs, created here so every table an account owns
+  // exists before `deleteAccountData` can be asked to clear it.
+  await createTranscribeJobs(db).ensureSchema();
 
   // Nullable with no default: null means "not refreshed from OpenRouter yet",
   // which `resolveContextTokens` reads as the conservative floor rather than
@@ -977,6 +982,7 @@ export async function deleteAccountData(accountId: string): Promise<void> {
       { sql: 'DELETE FROM credit_ledger WHERE account_id = ?', args: [accountId] },
       { sql: 'DELETE FROM onboarding_grants WHERE account_id = ?', args: [accountId] },
       { sql: 'DELETE FROM tts_spend WHERE account_id = ?', args: [accountId] },
+      { sql: 'DELETE FROM transcription_jobs WHERE account_id = ?', args: [accountId] },
       /*
        * The one row that is edited rather than dropped. A redeemed insider
        * code must stay spent - deleting an account cannot be a way to hand

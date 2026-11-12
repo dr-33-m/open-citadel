@@ -119,6 +119,12 @@ type SettingsState = {
   setCloudModelId: (modelId: string) => Promise<void>;
   setCloudThinkingBudget: (budget: CloudThinkingBudget) => Promise<void>;
   setTtsVoice: (voice: string | null, language?: string | null) => Promise<void>;
+  /**
+   * The cloud voice, chosen for a book heard in the player: remembered as the
+   * cloud choice, and the reading voice too only when that is already a cloud
+   * one. A reader whose read-aloud is on the phone stays on the phone.
+   */
+  setTtsCloudVoice: (voice: string) => Promise<void>;
   setTtsRate: (rate: number) => Promise<void>;
 };
 
@@ -260,6 +266,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
 
 
+  setTtsCloudVoice: async (voice: string) => {
+    if (isCloudVoice(get().ttsVoice) && get().ttsVoice !== voice) {
+      await get().setTtsVoice(voice);
+      return;
+    }
+    const ttsCloudPicks = rememberCloudPick(get().ttsCloudPicks, voice);
+    set({ ttsCloudVoice: voice, ttsCloudPicks });
+    await saveSetting('ttsCloudVoice', voice);
+    await saveSetting('ttsCloudPicks', JSON.stringify(ttsCloudPicks));
+  },
+
   /*
    * The store hears first and the database after. The writes are synchronous
    * SQLite on this thread, several of them, and with the state set behind them
@@ -277,12 +294,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     // device side is touched: the on-device voice it replaced is still the
     // one "Continue on-device" goes back to.
     if (isCloudVoice(voice)) {
-      const ttsCloudPicks = rememberCloudPick(get().ttsCloudPicks, voice);
-      set({ ttsVoice: voice, ttsVoiceLanguage: null, ttsCloudVoice: voice, ttsCloudPicks });
+      set({ ttsVoice: voice, ttsVoiceLanguage: null });
+      // Remembered as the cloud choice in the same moment; its writes run behind.
+      const remembered = get().setTtsCloudVoice(voice);
       await saveSetting('ttsVoice', voice);
       await db.delete(appSettings).where(eq(appSettings.key, 'ttsVoiceLanguage'));
-      await saveSetting('ttsCloudVoice', voice);
-      await saveSetting('ttsCloudPicks', JSON.stringify(ttsCloudPicks));
+      await remembered;
       return;
     }
 

@@ -13,11 +13,14 @@ import { contentColumn, iconSize, layout } from "@/constants/theme";
 import { EpisodeDetails } from "@/features/podcasts/components/episode-details";
 import { EpisodeDetailsSkeleton } from "@/features/podcasts/components/episode-details-skeleton";
 import { EpisodeHero } from "@/features/podcasts/components/episode-hero";
+import { EpisodeHighlightsSheet } from "@/features/podcasts/components/episode-highlights-sheet";
+import { EpisodeTranscriptBar } from "@/features/podcasts/components/episode-transcript-bar";
 import { EpisodePageSkeleton } from "@/features/podcasts/components/episode-page-skeleton";
 import { MiniPlayer } from "@/features/podcasts/components/mini-player";
 import { useEpisodeScreen } from "@/features/podcasts/hooks/use-episode-screen";
 import { useMiniPlayer } from "@/features/podcasts/hooks/use-mini-player";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import { useScreenInteractive } from "@/hooks/use-screen-interactive";
 import { useSettledOnce } from "@/navigation/use-settled-once";
 
 /**
@@ -34,6 +37,7 @@ export default function EpisodeScreen() {
   const insets = useSafeAreaInsets();
   const tokens = useThemeTokens();
   const landed = useSettledOnce();
+  const interactive = useScreenInteractive();
   const screen = useEpisodeScreen(id, landed);
   const miniPlayer = useMiniPlayer(insets.bottom);
   const { episode, hero } = screen;
@@ -59,10 +63,13 @@ export default function EpisodeScreen() {
             onRemoveDownload={hero.removeDownload}
             onToggleFavorite={hero.toggleFavorite}
             onTogglePlayed={hero.togglePlayed}
+            transcript={
+              <EpisodeTranscriptBar episode={episode} line={screen.transcriptLine} live={landed} highlights={screen.highlightsBox} />
+            }
           />
         </View>
         {screen.hasDetails ? (
-          <Handover fill={false} ready={landed} skeleton={<EpisodeDetailsSkeleton />}>
+          <Handover onShown={interactive} fill={false} ready={landed} skeleton={<EpisodeDetailsSkeleton />}>
             <EpisodeDetails
               chapters={screen.chapters}
               notes={screen.notes}
@@ -96,6 +103,7 @@ export default function EpisodeScreen() {
       />
       {body}
       {miniPlayer.props ? <MiniPlayer {...miniPlayer.props} /> : null}
+      {landed ? <EpisodeHighlightsSheet highlights={screen.highlights} /> : null}
     </ThemedView>
   );
 }

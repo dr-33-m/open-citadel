@@ -24,7 +24,7 @@ describe('chapterIndexAt', () => {
 });
 
 describe('positionSince', () => {
-  const read: PositionRead = { episodeId: 'e', position: 100, duration: 600, at: 1_000, rate: 1.5 };
+  const read: PositionRead = { itemId: 'e', position: 100, duration: 600, at: 1_000, rate: 1.5 };
 
   it('carries on at the playback speed', () => {
     expect(positionSince(read, 3_000)).toBe(103);

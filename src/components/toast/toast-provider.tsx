@@ -29,8 +29,8 @@ const ToastContext = React.createContext<ToastContextValue | null>(null);
 /**
  * Raise a toast from outside React.
  *
- * A title rename is decided in a store (`stores/chat.ts`,
- * `stores/compass-chat.ts`), nowhere near a component, and it should announce
+ * A title rename is decided in a store (`stores/chat.ts`), nowhere near a
+ * component, and it should announce
  * itself with the same notice the log deck uses. The provider registers its
  * enqueue function here while it is mounted; a call before that, or after the
  * tree is gone, is a silent no-op rather than a crash. Components still use

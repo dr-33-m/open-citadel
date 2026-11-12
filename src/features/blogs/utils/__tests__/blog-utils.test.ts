@@ -5,21 +5,34 @@ import { looksLikeAddress, searchDirectory } from '@/features/blogs/utils/explor
 import { articleMeta } from '@/features/blogs/utils/format';
 
 describe('articleMenu', () => {
-  const FRESH = { savedAt: null, favoritedAt: null, finishedAt: null, readAt: null };
+  const FRESH = { savedAt: null, favoritedAt: null, finishedAt: null, readAt: null, bookId: null };
 
   it('offers what a book offers, in the state the post is in', () => {
     const fresh = articleMenu(FRESH, { blogLink: true }).map((r) => r.key);
     expect(fresh).toEqual(['open', 'chat', 'favorite', 'queue', 'finish', 'read', 'original', 'share', 'blog']);
-    const kept = articleMenu({ savedAt: 'x', favoritedAt: 'x', finishedAt: null, readAt: 'y' }, { blogLink: false }).map(
+    const kept = articleMenu({ savedAt: 'x', favoritedAt: 'x', finishedAt: null, readAt: 'y', bookId: null }, { blogLink: false }).map(
       (r) => r.key,
     );
     expect(kept).toEqual(['open', 'chat', 'unfavorite', 'dequeue', 'finish', 'unread', 'original', 'share']);
+  });
+
+  it('offers Listen after Read where it is offered, locked without a plan', () => {
+    expect(articleMenu(FRESH, { blogLink: true, listen: 'open' }).map((r) => r.key).slice(0, 3)).toEqual(['open', 'listen', 'chat']);
+    const locked = articleMenu(FRESH, { blogLink: true, listen: 'locked' })[1];
+    expect(locked).toMatchObject({ key: 'listen-locked', label: 'Listen', tone: 'muted' });
+    expect(articleMenu(FRESH, { blogLink: true, listen: null }).map((r) => r.key)).not.toContain('listen');
   });
 
   it('keeps a finished post off the queue', () => {
     const keys = articleMenu({ ...FRESH, finishedAt: 'x', readAt: 'x' }, { blogLink: false }).map((r) => r.key);
     expect(keys).not.toContain('queue');
     expect(keys).toContain('unfinish');
+  });
+
+  it('offers removing the saved copy once there is one, last but the blog', () => {
+    expect(articleMenu(FRESH, { blogLink: true }).map((r) => r.key)).not.toContain('remove-copy');
+    const opened = articleMenu({ ...FRESH, bookId: 'b1' }, { blogLink: true }).map((r) => r.key);
+    expect(opened.slice(-3)).toEqual(['share', 'remove-copy', 'blog']);
   });
 
   it('writes its labels without em dashes', () => {

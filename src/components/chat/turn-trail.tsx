@@ -2,14 +2,14 @@ import React from 'react';
 import { View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
-import { BookOpen, Check, CircleAlert, CircleX, Globe, Library, Search } from '@/components/icons';
+import { BookOpen, Check, CircleAlert, CircleX, Compass, Globe, Library, Search } from '@/components/icons';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Task, type TaskStatus } from '@/components/ui/task';
 import { Text } from '@/components/ui/text';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { motion } from '@/constants/theme';
 import { asColor } from '@/utils/colors';
-import type { StepStatus, TurnStep } from '@/utils/turn-activity';
+import { isGoalTool, type StepStatus, type TurnStep } from '@/utils/turn-activity';
 
 const ICON = 14;
 /** Task's own title style, for the headers drawn here without its chevron. */
@@ -19,6 +19,7 @@ const TITLE_FILL = `flex-1 ${TITLE}`;
 /** What a running step is drawn with: the kind of work, since it has no outcome yet. */
 function WorkIcon({ tool, color }: { tool: string; color: string | undefined }) {
   if (tool === 'web_search') return <Globe size={ICON} color={color} />;
+  if (isGoalTool(tool)) return <Compass size={ICON} color={color} />;
   if (tool === 'read_chapter' || tool === 'list_chapters' || tool === 'search_reading') return <BookOpen size={ICON} color={color} />;
   if (tool.startsWith('search_')) return <Search size={ICON} color={color} />;
   return <Library size={ICON} color={color} />;

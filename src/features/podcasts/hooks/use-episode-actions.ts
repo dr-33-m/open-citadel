@@ -8,17 +8,16 @@ import { downloadWithToast } from '@/features/podcasts/hooks/download-with-toast
 import { openEpisodePage, openShowPage } from '@/features/podcasts/hooks/open-podcast-page';
 import type { EpisodeAction } from '@/features/podcasts/utils/episode-menu';
 import * as actions from '@/services/podcasts/actions';
-import { playEpisode, togglePlayback } from '@/services/podcasts/player';
+import { playEpisode, toggleEpisode } from '@/services/podcasts/player';
 import type { EpisodeItem } from '@/services/podcasts/records';
-import { usePodcastPlayer } from '@/stores/podcast-player';
+import { selectEpisodeId, usePlayer } from '@/stores/player';
 
 /**
  * Playing an episode from anywhere: its own play control pauses it when it
  * is the one playing, and starts it (from where it was left) otherwise.
  */
 export function playOrToggle(episodeId: string): void {
-  const current = usePodcastPlayer.getState().current;
-  if (current?.episodeId === episodeId) void togglePlayback();
+  if (selectEpisodeId(usePlayer.getState()) === episodeId) void toggleEpisode();
   else void playEpisode(episodeId);
 }
 
@@ -27,7 +26,7 @@ export function playOrToggle(episodeId: string): void {
  * that lists episodes. One implementation, so "Play next" on a shelf and
  * "Play next" on a show's page cannot come to mean different things.
  */
-export function useEpisodeActions() {
+export function useEpisodeActions({ onHighlights }: { onHighlights?: () => void } = {}) {
   const router = useRouter();
   const [menuEpisode, setMenuEpisode] = React.useState<EpisodeItem | null>(null);
 
@@ -43,9 +42,9 @@ export function useEpisodeActions() {
       switch (action) {
         case 'play': {
           // Resume, never restart: the one already in the player just carries on.
-          const player = usePodcastPlayer.getState();
-          if (player.current?.episodeId !== episode.id) void playEpisode(episode.id);
-          else if (!player.isPlaying) void togglePlayback();
+          const player = usePlayer.getState();
+          if (selectEpisodeId(player) !== episode.id) void playEpisode(episode.id);
+          else if (!player.isPlaying) void toggleEpisode();
           return;
         }
         case 'play-next':
@@ -93,12 +92,15 @@ export function useEpisodeActions() {
         case 'show':
           openShow(episode.podcastId);
           return;
+        case 'highlights':
+          onHighlights?.();
+          return;
       }
     },
-    [openShow],
+    [onHighlights, openShow],
   );
 
-  const currentId = usePodcastPlayer((s) => s.current?.episodeId ?? null);
+  const currentId = usePlayer(selectEpisodeId);
 
   return {
     menuEpisode,
@@ -113,6 +115,7 @@ export function useEpisodeActions() {
       visible: menuEpisode !== null,
       episode: menuEpisode,
       isCurrent: menuEpisode !== null && menuEpisode.id === currentId,
+      highlights: onHighlights !== undefined,
       onClose: closeMenu,
       onAction,
     },

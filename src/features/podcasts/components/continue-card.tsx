@@ -11,7 +11,7 @@ import { playLabel } from '@/features/podcasts/utils/format';
 import { episodeArtwork } from '@/services/podcasts/download-paths';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { EpisodeItem } from '@/services/podcasts/records';
-import { useEpisodePlayback } from '@/stores/podcast-player';
+import { useEpisodePlayback } from '@/stores/player';
 
 /** Fills the card's media box, edge to edge, with no frame of its own. */
 const FILL = { width: '100%', height: '100%', borderWidth: 0 } as const;

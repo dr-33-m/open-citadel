@@ -4,20 +4,25 @@ import { asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { podcastEpisodes } from "@/db/schema";
 import { markSeen } from "@/services/podcasts/episode-state";
+import { splitAfterMove, splitQueue } from "@/services/podcasts/player/play-order";
 import { nowIso } from "@/services/podcasts/records";
 
-async function queueIds(): Promise<string[]> {
-  const rows = await db
-    .select({ id: podcastEpisodes.id })
+async function queueRows() {
+  return db
+    .select({ id: podcastEpisodes.id, queuePosition: podcastEpisodes.queuePosition })
     .from(podcastEpisodes)
     .where(isNotNull(podcastEpisodes.queuePosition))
     .orderBy(asc(podcastEpisodes.queuePosition));
-  return rows.map((r) => r.id);
 }
 
-/** Writes Up Next back in the given order, 0..n, and clears anything not in it. */
-async function writeQueue(ordered: string[]): Promise<void> {
+/**
+ * Writes Up Next back in the given order and clears anything not in it. The
+ * "Play next" block counts up to -1 and the rest from 0, so the block is both
+ * the front of the list and marked as what it is.
+ */
+async function writeQueue({ playNext, rest }: { playNext: string[]; rest: string[] }): Promise<void> {
   const now = nowIso();
+  const ordered = [...playNext, ...rest];
   db.transaction((tx) => {
     tx.update(podcastEpisodes)
       .set({ queuePosition: null })
@@ -25,7 +30,7 @@ async function writeQueue(ordered: string[]): Promise<void> {
       .run();
     ordered.forEach((id, index) => {
       tx.update(podcastEpisodes)
-        .set({ queuePosition: index, updatedAt: now })
+        .set({ queuePosition: index - playNext.length, updatedAt: now })
         .where(eq(podcastEpisodes.id, id))
         .run();
     });
@@ -40,8 +45,8 @@ async function writeQueue(ordered: string[]): Promise<void> {
  */
 export async function enqueue(ids: string[], where: "next" | "last"): Promise<void> {
   if (ids.length === 0) return;
-  const rest = (await queueIds()).filter((id) => !ids.includes(id));
-  await writeQueue(where === "next" ? [...ids, ...rest] : [...rest, ...ids]);
+  const { playNext, rest } = splitQueue((await queueRows()).filter((row) => !ids.includes(row.id)));
+  await writeQueue(where === "next" ? { playNext: [...ids, ...playNext], rest } : { playNext, rest: [...rest, ...ids] });
   await markSeen(ids);
 }
 
@@ -54,16 +59,14 @@ export async function dequeue(ids: string[]): Promise<void> {
 }
 
 export async function moveInQueue(id: string, toIndex: number): Promise<void> {
-  const ordered = (await queueIds()).filter((q) => q !== id);
-  ordered.splice(Math.max(0, Math.min(toIndex, ordered.length)), 0, id);
-  await writeQueue(ordered);
+  await writeQueue(splitAfterMove(await queueRows(), id, toIndex));
 }
 
 export async function clearQueue(): Promise<void> {
-  await writeQueue([]);
+  await writeQueue({ playNext: [], rest: [] });
 }
 
 /** The queue as ids, in order, for the player to mirror. */
 export async function upNextIds(): Promise<string[]> {
-  return queueIds();
+  return (await queueRows()).map((row) => row.id);
 }

@@ -1,6 +1,6 @@
 import { ScrollView } from 'react-native-gesture-handler';
 import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, View, type TextInput } from 'react-native';
+import { View, type TextInput } from 'react-native';
 import { useCSSVariable } from 'uniwind';
 
 import { Chip } from '@/components/ui/chip';
@@ -157,7 +157,6 @@ export function NewThoughtSheet({
   };
 
   const handleClose = () => {
-    Keyboard.dismiss();
     setText('');
     setSelectedColor(HIGHLIGHT_COLORS[0]);
     setTags([]);

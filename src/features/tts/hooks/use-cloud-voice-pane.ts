@@ -39,9 +39,12 @@ import { useSubscriptionStore } from '@/stores/subscription';
 export function useCloudVoicePane({
   onLockedMaker,
   sample,
+  cloudOnly = false,
 }: {
   onLockedMaker: (maker: string, plan: PlanId) => void;
   sample: { plan: PlanId; key: string | null; onPick: (key: string) => void } | null;
+  /** Chosen for a book being heard: the cloud choice, never pulling a reader's read-aloud off the phone (`setTtsCloudVoice`). */
+  cloudOnly?: boolean;
 }) {
   const figures = useQuery(createCloudVoicesQueryOptions()).data ?? null;
   const held = useSubscriptionStore((s) => (s.status === 'active' ? s.plan : null));
@@ -52,6 +55,7 @@ export function useCloudVoicePane({
   const ttsCloudVoice = useSettingsStore((s) => s.ttsCloudVoice);
   const storedPicks = useSettingsStore((s) => s.ttsCloudPicks);
   const setTtsVoice = useSettingsStore((s) => s.setTtsVoice);
+  const setTtsCloudVoice = useSettingsStore((s) => s.setTtsCloudVoice);
   // While sampling nothing is saved, so the picks made in the samples are
   // remembered here, for as long as the pane is open.
   const [samplePicks, setSamplePicks] = useState<string[]>([]);
@@ -68,7 +72,7 @@ export function useCloudVoicePane({
     if (sampling) {
       setSamplePicks((current) => rememberCloudPick(current, key));
       sampling.onPick(key);
-    } else void setTtsVoice(key);
+    } else void (cloudOnly ? setTtsCloudVoice(key) : setTtsVoice(key));
   };
 
   // Plain functions: the React Compiler memoises them, and hand-written

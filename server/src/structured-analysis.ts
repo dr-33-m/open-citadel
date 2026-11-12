@@ -35,6 +35,12 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
    * place entirely.
    */
   failureCode?: string;
+  /**
+   * What the run cost, attempts summed, once it has finished either way. For
+   * a caller that charges the cost as part of something larger (a
+   * transcript's speaker names), rather than as a turn of its own.
+   */
+  onCost?: (costUsd: number) => void;
 }): Promise<z.infer<TSchema>> {
   // Accumulated across attempts, not overwritten: a retry can follow a first
   // attempt that already burned real, billed tokens (it replied, but the
@@ -92,6 +98,7 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
       result = await attempt();
     }
 
+    args.onCost?.(usage.cost ?? 0);
     await updateUsageEvent(args.usageEventId, {
       status: 'completed',
       promptTokens: usageRecorded ? (usage.promptTokens ?? null) : null,
@@ -106,6 +113,7 @@ export async function runStructuredAnalysis<TSchema extends z.ZodType>(args: {
       `[Samwell Cloud] structured analysis failed (${args.failureCode ?? 'structured_analysis_failed'}):`,
       error,
     );
+    args.onCost?.(usage.cost ?? 0);
     // Even a fully-failed run (both attempts exhausted) may have consumed
     // real tokens on the failed attempt(s) — record whatever was billed
     // rather than losing it just because no attempt ultimately validated.

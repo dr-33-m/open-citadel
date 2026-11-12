@@ -8,19 +8,7 @@
 import type { EpisodeItem } from '@/services/podcasts/records';
 import { formatPubDate } from '@/utils/pub-date';
 
-/**
- * `1:02:03`, or `12:34` under an hour. For the scrubber, whose labels are
- * written on the UI thread, so it is a worklet as well as a plain function.
- */
-export function formatClock(totalSec: number): string {
-  'worklet';
-  const sec = Math.max(0, Math.floor(totalSec));
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
-  return `${h > 0 ? `${h}:` : ''}${mm}:${String(s).padStart(2, '0')}`;
-}
+export { formatClock } from '@/utils/clock';
 
 /** `1 hr 5 min`, `45 min`, `1 min`. Empty when the length is not known. */
 export function formatDuration(totalSec: number): string {

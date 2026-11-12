@@ -45,6 +45,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
   type ReactElement,
   type ReactNode,
 } from 'react';
@@ -556,6 +557,18 @@ export interface SwipeProps extends Omit<ViewProps, 'children'> {
    * can hold an action that does not remove it.
    */
   removeOnCommit?: boolean;
+  /**
+   * Citadel edit: draw the action panels only once the row is first touched.
+   *
+   * The panels are hidden until a drag opens them, yet each one mounts its
+   * tiles, icons and labels with the row: about half of what a swipe row costs
+   * to mount (the History sheet's rows, iOS dev build). A list of rows pays
+   * that for every row nobody swipes. With this set, the touch that starts a
+   * drag draws them: the drag only moves the row once it has gone 12pt
+   * sideways, by which time they have mounted and been measured. `open()`
+   * before a first touch draws them and opens once they are measured.
+   */
+  panelsOnTouch?: boolean;
   /** Told which side opened, or `null` when the row closed. */
   onOpenChange?: (side: SwipeOpenSide) => void;
   /** Extra classes for the moving row. */
@@ -581,12 +594,22 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
       disabled = false,
       haptics = false,
       removeOnCommit = false,
+      panelsOnTouch = false,
       onOpenChange,
       onLayout,
       ...props
     },
     ref
   ) => {
+    /**
+     * Citadel edit: whether the panels are drawn — see `panelsOnTouch`. The
+     * state draws them; the shared value lets the gesture ask only once.
+     */
+    const [panelsDrawn, setPanelsDrawn] = useState(!panelsOnTouch);
+    const panelsAsked = useSharedValue(!panelsOnTouch);
+    const drawPanels = useCallback(() => setPanelsDrawn(true), []);
+    /** A side `open()` was asked for before its panel had been measured. */
+    const pendingOpen = useRef<SwipeSide | null>(null);
     const sign = useDirectionSign();
     const reducedMotion = useReducedMotion();
     /** The row's own width, which is how far a removal has to carry it. */
@@ -709,13 +732,20 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
       () => ({
         open: (side) => {
           const width = side === 'start' ? startWidth.value : endWidth.value;
-          if (width === 0) return;
+          if (width === 0) {
+            // Citadel edit: not drawn yet (`panelsOnTouch`). Draw the panels
+            // and open once this side has been measured.
+            pendingOpen.current = side;
+            panelsAsked.set(true);
+            drawPanels();
+            return;
+          }
           offset.value = withSpring(side === 'start' ? width : -width, SPRING);
           announce(side);
         },
         close,
       }),
-      [offset, startWidth, endWidth, announce, close]
+      [offset, startWidth, endWidth, announce, close, panelsAsked, drawPanels]
     );
 
     /**
@@ -801,6 +831,11 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
           .onBegin(() => {
             origin.value = offset.value;
             armed.value = false;
+            // Citadel edit: see `panelsOnTouch`.
+            if (!panelsAsked.get()) {
+              panelsAsked.set(true);
+              scheduleOnRN(drawPanels);
+            }
           })
           .onUpdate((event) => {
             // The gesture is raw pixels and the offset is logical, so a
@@ -916,6 +951,8 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
         tick,
         reportOpen,
         announce,
+        panelsAsked,
+        drawPanels,
       ]
     );
 
@@ -948,6 +985,18 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
     const measure = (target: SharedValue<number>) => (event: LayoutChangeEvent) => {
       target.value = event.nativeEvent.layout.width;
     };
+
+    /** Citadel edit: an `open()` that came before the panels were drawn. */
+    const openIfPending = useCallback(
+      (side: SwipeSide, event: LayoutChangeEvent) => {
+        if (pendingOpen.current !== side) return;
+        pendingOpen.current = null;
+        const width = event.nativeEvent.layout.width;
+        offset.set(withSpring(side === 'start' ? width : -width, SPRING));
+        announce(side);
+      },
+      [offset, announce]
+    );
 
     /**
      * A swipe is invisible to a screen reader, so every action is offered as an
@@ -989,7 +1038,7 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
             onLayout?.(event);
           }}
         >
-          {hasStart ? (
+          {hasStart && panelsDrawn ? (
             // Yoga puts the panel on the edge text begins at and mirrors it for
             // us; only the transform above had to be turned around.
             <Animated.View
@@ -1007,14 +1056,17 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
                */}
               <View
                 className="absolute bottom-0 end-0 top-0 flex-row items-stretch"
-                onLayout={measure(startWidth)}
+                onLayout={(event) => {
+                  measure(startWidth)(event);
+                  openIfPending('start', event);
+                }}
               >
                 {startNode}
               </View>
             </Animated.View>
           ) : null}
 
-          {hasEnd ? (
+          {hasEnd && panelsDrawn ? (
             <Animated.View
               className={cn(
                 'absolute bottom-0 end-0 top-0 overflow-hidden',
@@ -1024,7 +1076,10 @@ const SwipeRoot = forwardRef<SwipeHandle, SwipeProps>(
             >
               <View
                 className="absolute bottom-0 start-0 top-0 flex-row items-stretch"
-                onLayout={measure(endWidth)}
+                onLayout={(event) => {
+                  measure(endWidth)(event);
+                  openIfPending('end', event);
+                }}
               >
                 {endNode}
               </View>

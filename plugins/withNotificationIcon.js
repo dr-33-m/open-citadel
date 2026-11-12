@@ -12,7 +12,9 @@ const { withDangerousMod } = require('expo/config-plugins');
  * in on every prebuild.
  *
  * They are the app icon's monochrome mark in white on nothing: Android draws
- * a status bar icon from its alpha alone.
+ * a status bar icon from its alpha alone. `drawable/` holds the vector marks
+ * the media notification's own buttons use (Highlight, for a book, named in
+ * the `@rntp/player` patch), copied in the same way.
  */
 const SOURCE = path.join('assets', 'icons', 'notification');
 

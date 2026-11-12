@@ -10,6 +10,7 @@ import {
 
 // Hoisted above the imports by vitest; only the pure functions are tested.
 vi.mock('@/db/client', () => ({ db: {} }));
+vi.mock('@/query-manager/samwell-memory/invalidate', () => ({ invalidateSamwellMemory: vi.fn() }));
 
 function note(text: string, createdAt: string, tags: string[] = []): JourneyNote {
   return {

@@ -8,7 +8,6 @@ import { Touchable } from '@/components/ui/touchable';
 import { approvalCopy } from '@/services/approval-copy';
 import { useApprovalStore, type PendingApproval } from '@/stores/approval';
 import { useChatStore } from '@/stores/chat';
-import { useCompassChatStore } from '@/stores/compass-chat';
 import { asColor } from '@/utils/colors';
 
 /**
@@ -33,19 +32,11 @@ export function ApprovalSheet() {
     '--color-destructive-foreground',
   ]);
   const activeSessionId = useChatStore((s) => s.activeSession?.id);
-  // Compass talks on its own thread and its turn is on screen exactly while it
-  // is in flight, so its approval is shown while it runs.
-  const compassRunning = useCompassChatStore((s) => s.submitting);
-  const compassSessionId = useCompassChatStore((s) => s.activeSessionId);
   // Only the approval for the conversation on screen. One from a session the
   // reader has left stays pending in the store without floating over this one.
-  const pending = useApprovalStore((s) => {
-    if (compassRunning && compassSessionId) {
-      const compass = s.pendingBySession.get(compassSessionId)?.request ?? null;
-      if (compass) return compass;
-    }
-    return activeSessionId ? (s.pendingBySession.get(activeSessionId)?.request ?? null) : null;
-  });
+  const pending = useApprovalStore((s) =>
+    activeSessionId ? (s.pendingBySession.get(activeSessionId)?.request ?? null) : null,
+  );
   const respond = useApprovalStore((s) => s.respond);
 
   /** The request on the sheet, kept through its exit animation. */

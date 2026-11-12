@@ -1,0 +1,282 @@
+1
+00:00:00,300 --> 00:00:01,524
+SPEAKER_00: Hey, Travis
+Albritton here.
+
+2
+00:00:01,564 --> 00:00:05,110
+So I hope these episodes have
+been super helpful for you
+
+3
+00:00:05,150 --> 00:00:07,857
+getting your show off the ground
+and having the confidence that
+
+4
+00:00:07,897 --> 00:00:10,843
+you need to really launch a
+podcast, which is such an
+
+5
+00:00:10,884 --> 00:00:11,505
+incredible thing.
+
+6
+00:00:11,544 --> 00:00:15,473
+Now, I recently had the
+opportunity to sit down for a
+
+7
+00:00:15,512 --> 00:00:18,660
+conversation with Eric Newsom,
+who has been an executive
+
+8
+00:00:18,679 --> 00:00:21,926
+producer on some of the biggest
+podcasts in the world, many of
+
+9
+00:00:22,086 --> 00:00:27,876
+NPR's podcasts, Ted's podcasts,
+and just brings a lot of insight
+
+10
+00:00:28,117 --> 00:00:30,881
+and depth of wisdom to
+podcasting.
+
+11
+00:00:30,920 --> 00:00:33,204
+And so I wanted to share this
+with you as kind of like a
+
+12
+00:00:34,146 --> 00:00:35,088
+podcasting 201.
+
+13
+00:00:35,607 --> 00:00:39,113
+This interview is what to do
+once you have your show going
+
+14
+00:00:39,554 --> 00:00:41,618
+and you really want to see
+what's the next step, what's the
+
+15
+00:00:41,718 --> 00:00:45,685
+next level that I can get to
+with my podcast.
+
+16
+00:00:45,965 --> 00:00:49,773
+He just wrote a brand new book
+on podcasting called Make Noise.
+
+17
+00:00:50,213 --> 00:00:52,579
+I will leave a link to the book
+in the episode description.
+
+18
+00:00:52,618 --> 00:00:53,820
+It's a fantastic book.
+
+19
+00:00:54,182 --> 00:00:57,389
+So I hope that this conversation
+is helpful for you and that you
+
+20
+00:00:57,408 --> 00:00:58,210
+get a lot out of it.
+
+21
+00:00:58,691 --> 00:01:01,277
+And without further ado, here's
+my conversation with Eric
+
+22
+00:01:01,337 --> 00:01:01,597
+Newsom.
+
+23
+00:01:05,471 --> 00:01:10,719
+SPEAKER_01: So my name is Eric
+Newsom, and I spent most of the
+
+24
+00:01:10,739 --> 00:01:13,424
+early part of my career in
+broadcast and eventually worked
+
+25
+00:01:13,465 --> 00:01:14,826
+my way up to working at NPR.
+
+26
+00:01:14,867 --> 00:01:20,695
+And I started there in 2004, and
+less than a year later, I was in
+
+27
+00:01:20,756 --> 00:01:25,123
+the cafeteria line at NPR, and
+the guy who was our COO at the
+
+28
+00:01:25,183 --> 00:01:28,287
+time was behind me trying to
+make some kind of awkward
+
+29
+00:01:28,347 --> 00:01:28,808
+chitchat.
+
+30
+00:01:29,349 --> 00:01:30,951
+He says, well, what's
+interesting that you've seen
+
+31
+00:01:31,012 --> 00:01:31,332
+lately?
+
+32
+00:01:31,393 --> 00:01:33,295
+And I said, well, there's this
+podcasting thing.
+
+33
+00:01:33,334 --> 00:01:35,819
+And I started explaining to him
+in the lunch line, just to kind
+
+34
+00:01:35,858 --> 00:01:36,819
+of make conversation.
+
+35
+00:01:36,859 --> 00:01:40,965
+He's like, oh, come by and give
+me a little spiel on it.
+
+36
+00:01:41,025 --> 00:01:43,468
+And so I came, I made an
+appointment, went and gave him a
+
+37
+00:01:43,528 --> 00:01:44,049
+spiel.
+
+38
+00:01:44,069 --> 00:01:47,674
+A couple of weeks later, he
+shows back up at my door and
+
+39
+00:01:47,775 --> 00:01:50,938
+says, you have a team of eight
+and you have 12 weeks.
+
+40
+00:01:51,439 --> 00:01:53,623
+And at the end of that 12 weeks,
+we want there to be NPR
+
+41
+00:01:53,644 --> 00:01:54,265
+podcasts.
+
+42
+00:01:54,965 --> 00:01:55,706
+I'm like, okay.
+
+43
+00:01:55,867 --> 00:01:57,269
+And we actually delivered it a
+month.
+
+44
+00:01:57,290 --> 00:01:58,070
+We got an extra month.
+
+45
+00:01:58,912 --> 00:01:59,492
+We delivered it.
+
+46
+00:01:59,533 --> 00:02:00,894
+It was 32 podcasts.
+
+47
+00:02:01,135 --> 00:02:03,859
+And then for the following
+decade, I kind of remained kind
+
+48
+00:02:03,900 --> 00:02:06,745
+of the editorial lead on NPR
+podcasts, both podcasts.
+
+49
+00:02:06,745 --> 00:02:09,568
+figuring out how to take NPR
+programming and have it thrive
+
+50
+00:02:09,609 --> 00:02:13,775
+in the podcast world, sound
+authentic there, and also making
+
+51
+00:02:13,835 --> 00:02:16,459
+new things that were intended
+originally to be in that space.
+
+52
+00:02:17,139 --> 00:02:18,722
+And did that for a decade.
+
+53
+00:02:18,923 --> 00:02:21,787
+And then a couple of years ago,
+probably four and a half years
+
+54
+00:02:21,847 --> 00:02:24,830
+or so ago, I left NPR and went
+to Audible, which is part of the
+
+55
+00:02:24,890 --> 00:02:31,661
+Amazon extended universe, and
+created the original content
+
+56
+00:02:31,700 --> 00:02:32,382
+team there.
+
+57
+00:02:32,802 --> 00:02:38,500
+And Then about a year or so ago,
+one of my friends and I left and
+
+58
+00:02:38,539 --> 00:02:43,496
+started Magnificent Noise, which
+is a podcast production and
+
+59
+00:02:43,536 --> 00:02:45,401
+consultation company based in
+New York.
+
+60
+00:02:45,962 --> 00:02:49,550
+SPEAKER_00: And so now you have
+your first podcast-related book,

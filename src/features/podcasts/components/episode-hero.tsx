@@ -32,6 +32,8 @@ type EpisodeHeroProps = {
   onRemoveDownload: () => void;
   onToggleFavorite: () => void;
   onTogglePlayed: () => void;
+  /** Under the tiles: the episode's Transcript and Ask Samwell boxes. */
+  transcript?: React.ReactNode;
 };
 
 /**
@@ -52,6 +54,7 @@ export function EpisodeHero({
   onRemoveDownload,
   onToggleFavorite,
   onTogglePlayed,
+  transcript,
 }: EpisodeHeroProps) {
   const tokens = useThemeTokens();
   const muted = tokens['--color-muted-foreground'];
@@ -138,6 +141,7 @@ export function EpisodeHero({
           <EpisodeActionTile key={tile.key} tile={tile} gold={tokens['--color-primary']} ink={tokens['--color-foreground']} />
         ))}
       </View>
+      {transcript}
     </View>
   );
 }

@@ -595,9 +595,13 @@ export const useBooksStore = create<BooksState>((set, get) => ({
     }
 
     const reordered = [...rest.slice(0, insertAt), ...moving, ...rest.slice(insertAt)];
-    for (let i = 0; i < reordered.length; i++) {
-      await db.update(books).set({ queueOrder: i }).where(eq(books.id, reordered[i].id));
-    }
+    // One transaction, not a write awaited per book: a drag lands this on
+    // every drop, and a long queue was that many round trips on the JS thread.
+    db.transaction((tx) => {
+      reordered.forEach((book, i) => {
+        tx.update(books).set({ queueOrder: i }).where(eq(books.id, book.id)).run();
+      });
+    });
     await get().loadBooks();
   },
 

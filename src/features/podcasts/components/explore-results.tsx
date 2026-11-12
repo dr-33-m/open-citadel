@@ -41,6 +41,7 @@ export function ExploreResults({ results, emptyText, isFollowed, bottomPadding, 
         drawDistance={LIST_DRAW_DISTANCE}
         contentContainerStyle={{ paddingBottom: bottomPadding }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={<ListEmpty text={emptyText} />}
       />

@@ -23,7 +23,8 @@ export function chapterIndexAt(chapters: readonly { startSec: number }[], positi
 
 /** One reading of the native player, and how fast the audio was moving when it was taken. */
 export type PositionRead = {
-  episodeId: string;
+  /** The episode, or the book, the reading is of. */
+  itemId: string;
   position: number;
   duration: number;
   /** `Date.now()` when it was read. */

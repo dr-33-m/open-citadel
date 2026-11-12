@@ -1,5 +1,5 @@
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import type { GoalCategory, GoalPriority, LifecycleStatus } from "samwell-shared";
+import type { GoalCategory, GoalPriority, JournalNoteKind, LifecycleStatus } from "samwell-shared";
 
 export const books = sqliteTable("books", {
   id: text("id").primaryKey(),
@@ -39,7 +39,12 @@ export const books = sqliteTable("books", {
   kind: text("kind").$type<BookKind>().notNull().default("book"),
 });
 
-export type BookKind = "book" | "article";
+/**
+ * What a `books` row holds. A blog post or a podcast transcript is written
+ * as a generated EPUB so the reader, Samwell's search, highlights and Compass
+ * reach it with no code of their own; book lists filter `kind = 'book'`.
+ */
+export type BookKind = "book" | "article" | "episode";
 
 export const readingProgress = sqliteTable("reading_progress", {
   id: text("id").primaryKey(),
@@ -506,17 +511,33 @@ export const goalOutcomes = sqliteTable("goal_outcomes", {
 
 export const journeyNotes = sqliteTable("journey_notes", {
   id: text("id").primaryKey(),
-  /** 'reflection' = distilled by Samwell (from a conversation, or an approved
-   *  Compass check-in); the rest are written deterministically. */
+  /** 'reflection' = distilled by Samwell (from an approved Compass check-in, or
+   *  a conversation written up before notes had kinds). The journal's own kinds
+   *  are `JournalNoteKind`. `book_*` and `goal_finished` are written
+   *  deterministically. */
   kind: text("kind")
-    .$type<"reflection" | "book_finished" | "book_removed" | "goal_finished">()
+    .$type<"reflection" | "book_finished" | "book_removed" | "goal_finished" | JournalNoteKind>()
     .notNull(),
   text: text("text").notNull(),
   /** JSON string[] for keyword retrieval */
   tags: text("tags"),
   /** Where it came from, for provenance: `chat:<sessionId>`, a book id, a goal id. */
   sourceRef: text("source_ref"),
+  /** A commitment's date, when they gave one. */
+  dueOn: text("due_on"),
+  /** When a commitment was done, dropped or replaced. Null while it is open. */
+  resolvedAt: text("resolved_at"),
   createdAt: text("created_at").notNull(),
+}, (table) => [index("journey_notes_kind_idx").on(table.kind, table.createdAt)]);
+
+/**
+ * Samwell's one picture of who they are, rewritten as he learns more and sent
+ * with every cloud turn. One row, `id` 1. On the device, like every journey note.
+ */
+export const samwellProfile = sqliteTable("samwell_profile", {
+  id: integer("id").primaryKey(),
+  text: text("text").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });
 
 // ── Daily reading (did the user actually read that day?) ─────────────────────
@@ -579,6 +600,8 @@ export type EpisodeDownloadStatus =
   | "downloading"
   | "downloaded"
   | "failed";
+/** Whether an episode's transcript is on this phone, or being made in the cloud. */
+export type EpisodeTranscriptStatus = "none" | "transcribing" | "ready";
 
 export const podcasts = sqliteTable(
   "podcasts",
@@ -692,6 +715,21 @@ export const podcastEpisodes = sqliteTable(
     downloadCover: text("download_cover"),
     downloadedAt: text("downloaded_at"),
     downloadError: text("download_error"),
+    /** Whether this phone holds a transcript, or a cloud job is making one. */
+    transcriptStatus: text("transcript_status")
+      .$type<EpisodeTranscriptStatus>()
+      .notNull()
+      .default("none"),
+    /** Where the transcript came from: the show's own feed, or Scribe. */
+    transcriptSource: text("transcript_source").$type<"feed" | "scribe">(),
+    /** The transcript's JSON file NAME, resolved on use for the reason `downloadFile` gives. */
+    transcriptFile: text("transcript_file"),
+    /** The Samwell Cloud job making it, while `transcribing`. */
+    transcriptJobId: text("transcript_job_id"),
+    /** The `books` row (kind `episode`) the transcript is written into for Samwell. */
+    transcriptBookId: text("transcript_book_id"),
+    /** When the transcript arrived, for the composer's Today / This week filters. */
+    transcriptAt: text("transcript_at"),
     /** Cleared once a download is deleted, so auto-download does not fetch it again. */
     autoDownloadEligible: integer("auto_download_eligible").notNull().default(1),
     addedAt: text("added_at").notNull(),
@@ -703,6 +741,7 @@ export const podcastEpisodes = sqliteTable(
     index("podcast_episodes_queue_idx").on(table.queuePosition),
     index("podcast_episodes_last_played_idx").on(table.lastPlayedAt),
     index("podcast_episodes_download_idx").on(table.downloadStatus),
+    index("podcast_episodes_transcript_idx").on(table.transcriptStatus, table.transcriptAt),
   ],
 );
 
@@ -744,6 +783,12 @@ export const podcastListeningDays = sqliteTable(
 
 /** `preview`: opened from Explore and not followed, kept so its posts can be read. */
 export type BlogState = "subscribed" | "preview";
+/**
+ * How the reader chose to read a blog whose feed carries only the opening of
+ * each post: on the blog's own site, or fetched whole into the reader. Null
+ * until asked, which happens the first time such a post is opened.
+ */
+export type WholePosts = "site" | "app";
 
 export const blogs = sqliteTable(
   "blogs",
@@ -764,6 +809,10 @@ export const blogs = sqliteTable(
     lastRefreshError: text("last_refresh_error"),
     /** `ETag` or `Last-Modified` from the last fetch, for a conditional GET. */
     httpValidator: text("http_validator"),
+    /** See `WholePosts`. */
+    wholePosts: text("whole_posts").$type<WholePosts>(),
+    /** The feed's own copyright line (`<copyright>`, Atom `<rights>`), carried into every saved copy. */
+    rights: text("rights"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [uniqueIndex("blogs_feed_url_idx").on(table.feedUrl), index("blogs_state_idx").on(table.state)],
@@ -792,17 +841,31 @@ export const blogArticles = sqliteTable(
     readAt: text("read_at"),
     /** Null unless in the queue (kept to read later); the column predates the name. */
     savedAt: text("saved_at"),
+    /** Where it sits in the queue, 0 first; null when not queued. Set and cleared with `savedAt`. */
+    queuePosition: integer("queue_position"),
     /** Null unless a favorite. */
     favoritedAt: text("favorited_at"),
     /** Null until marked finished. A finished post leaves Continue Reading and the queue. */
     finishedAt: text("finished_at"),
-    /** The reader's copy (`books.kind = 'article'`), once opened. Never tidied away either. */
+    /**
+     * Whether the feed carries only the opening of the post (`feedExcerpt`,
+     * decided when the feed is read). Null on posts stored before it was
+     * asked, until the next refresh: `isTeaser` guesses for those.
+     */
+    feedExcerpt: integer("feed_excerpt", { mode: "boolean" }),
+    /**
+     * The reader's copy (`books.kind = 'article'`), once opened. Kept while
+     * it is kept on purpose or read lately (`article-copies.ts`).
+     */
     bookId: text("book_id"),
+    /** Whether that copy is the whole post (false: only the feed's opening). Null on copies made before it was asked, all whole. */
+    copyWhole: integer("copy_whole", { mode: "boolean" }),
   },
   (table) => [
     uniqueIndex("blog_articles_blog_link_idx").on(table.blogId, table.link),
     index("blog_articles_published_idx").on(table.publishedAt),
     index("blog_articles_saved_idx").on(table.savedAt),
+    index("blog_articles_queue_idx").on(table.queuePosition),
     index("blog_articles_favorited_idx").on(table.favoritedAt),
     index("blog_articles_finished_idx").on(table.finishedAt),
     index("blog_articles_book_idx").on(table.bookId),

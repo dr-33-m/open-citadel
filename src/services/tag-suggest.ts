@@ -29,6 +29,20 @@ export type SuggestTagsInput = {
   existingTags: string[];
 };
 
+/**
+ * The text a highlight was lifted from, as Suggest tags reads it: its stored
+ * `{ before, after }` joined, or nothing when it has none or it will not read.
+ */
+export function highlightSurrounding(context: string | null | undefined): string | undefined {
+  if (!context) return undefined;
+  try {
+    const { before, after } = JSON.parse(context) as { before?: string; after?: string };
+    return [before, after].filter(Boolean).join(' … ') || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function clamp(value: string | undefined, max: number): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
