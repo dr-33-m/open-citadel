@@ -13,7 +13,7 @@
  * Info frame, and the first one declares only the first clause. Believed, by
  * this clock or by Android's player (which stops where it says the audio
  * ends), it cut every such sentence off at the clause. Such a file is made
- * one (`asOneMp3`): one Xing frame, true for all of it. Not none: without
+ * one (`mp3Track`): one Xing frame, true for all of it. Not none: without
  * one, Android's player guesses a VBR file's length from its first frame,
  * which is quiet and small, and waited out a sentence seven times too long.
  *
@@ -163,14 +163,22 @@ function truthfulXing(bytes: Uint8Array, info: { start: number; header: FrameHea
   return frame;
 }
 
+export interface Mp3Track {
+  /** The file made one (`truthfulXing`), or null when it is one already. */
+  mended: Uint8Array | null;
+  /** Seconds of audio in it. */
+  seconds: number;
+}
+
 /**
- * The MP3 as one file: its audio frames behind a single Xing frame that
- * counts them all, or null when it is one file already (one Info frame at
- * most, nothing between its frames).
+ * An MP3 as a track, in one walk of its frames: its length, and the file
+ * made one when it is several joined (one Info frame at most and nothing
+ * between its frames is one already): its audio frames behind a single Xing
+ * frame that counts them all.
  */
-export function asOneMp3(bytes: Uint8Array): Uint8Array | null {
-  const { kept, info, infoFrames, foreign } = walk(bytes);
-  if (kept.length === 0 || (infoFrames <= 1 && foreign === 0)) return null;
+export function mp3Track(bytes: Uint8Array): Mp3Track {
+  const { seconds, kept, info, infoFrames, foreign } = walk(bytes);
+  if (kept.length === 0 || (infoFrames <= 1 && foreign === 0)) return { mended: null, seconds };
   const offsets: number[] = [];
   let audio = 0;
   for (const [from, to] of kept) {
@@ -178,12 +186,12 @@ export function asOneMp3(bytes: Uint8Array): Uint8Array | null {
     audio += to - from;
   }
   const lead = info ? truthfulXing(bytes, info, offsets, info.header.length + audio) : new Uint8Array(0);
-  const out = new Uint8Array(lead.length + audio);
-  out.set(lead, 0);
+  const mended = new Uint8Array(lead.length + audio);
+  mended.set(lead, 0);
   let at = lead.length;
   for (const [from, to] of kept) {
-    out.set(bytes.subarray(from, to), at);
+    mended.set(bytes.subarray(from, to), at);
     at += to - from;
   }
-  return out;
+  return { mended, seconds };
 }

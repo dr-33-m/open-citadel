@@ -61,7 +61,8 @@ export async function moveToDownload({ play }: { play?: boolean } = {}): Promise
   const heard = position > 0 ? position : tracked.lastPosition;
   const fileCopy = readCopyRow(item.id).downloadCopy;
   const at = sameMomentOnFile(item.id, heard, playedCopy(item.id), fileCopy);
-  const playing = play ?? store().isPlaying;
+  // Buffering is playing too: a stream that has run dry was still meant to play.
+  const playing = play ?? (store().isPlaying || store().isBuffering);
   rememberCopy(item.id, fileCopy);
   loadNativeQueue([mediaItemFrom(item, at), ...upNext]);
   await becomeCurrent(item, at, fileCopy);

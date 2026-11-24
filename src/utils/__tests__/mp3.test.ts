@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mp3DurationSec, readFrameHeader, asOneMp3 } from '@/utils/mp3-duration';
+import { mp3DurationSec, mp3Track, readFrameHeader } from '@/utils/mp3';
 
 /** An MPEG-1 layer III mono frame at `kbps` and 44.1 kHz, padded with zeros. */
 function frame(kbpsIndex: number): Uint8Array {
@@ -65,7 +65,7 @@ describe('mp3DurationSec', () => {
   });
 });
 
-describe('asOneMp3', () => {
+describe('mp3Track', () => {
   /** The frame count, byte count and flags of the Xing frame at the start. */
   function xingOf(bytes: Uint8Array): { flags: number; frames: number; total: number } {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -77,9 +77,11 @@ describe('asOneMp3', () => {
   it('makes MP3s joined one after another one file, with one Xing frame true for all of it', () => {
     const audio = [frame(9), frame(5), frame(9), frame(14)];
     const joined = join(xing(2), audio[0], audio[1], xing(2), audio[2], audio[3]);
-    const one = asOneMp3(joined)!;
+    const { mended, seconds } = mp3Track(joined);
+    const one = mended!;
     expect(one.subarray(417)).toEqual(join(...audio));
     expect(xingOf(one)).toEqual({ flags: 0x7, frames: 4, total: one.length });
+    expect(seconds).toBeCloseTo(4 * FRAME_SEC, 6);
     expect(mp3DurationSec(one)).toBeCloseTo(4 * FRAME_SEC, 6);
   });
 
@@ -87,13 +89,15 @@ describe('asOneMp3', () => {
     const id3 = new Uint8Array(10 + 20);
     id3.set([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 20]);
     const joined = join(xing(2), frame(9), frame(9), id3, frame(5), new Uint8Array([1, 2, 3]), frame(9), frame(9));
-    const one = asOneMp3(joined)!;
+    const { mended, seconds } = mp3Track(joined);
+    const one = mended!;
     expect(one.subarray(417)).toEqual(join(frame(9), frame(9), frame(5), frame(9), frame(9)));
     expect(xingOf(one).frames).toBe(5);
+    expect(seconds).toBeCloseTo(5 * FRAME_SEC, 6);
   });
 
-  it('is null for a file that is one already', () => {
-    expect(asOneMp3(join(frame(9), frame(5), frame(9)))).toBeNull();
-    expect(asOneMp3(join(xing(3), frame(9), frame(5), frame(9)))).toBeNull();
+  it('leaves a file that is one already, and still measures it', () => {
+    expect(mp3Track(join(frame(9), frame(5), frame(9)))).toEqual({ mended: null, seconds: expect.closeTo(3 * FRAME_SEC, 6) });
+    expect(mp3Track(join(xing(3), frame(9), frame(5), frame(9))).mended).toBeNull();
   });
 });
