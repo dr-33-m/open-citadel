@@ -737,10 +737,10 @@ export const podcastEpisodes = sqliteTable(
     /** When the transcript arrived, for the composer's Today / This week filters. */
     transcriptAt: text("transcript_at"),
     /**
-     * How the transcript's clock maps onto the copy of the episode last
-     * played, as JSON `{ identity, segments }` (`samwell-shared` `TimeMap`).
-     * Shows that stitch ads into each download give every copy a different
-     * clock; null until a copy other than the transcribed one has been mapped.
+     * How the transcript's clock maps onto each copy of the episode mapped,
+     * as JSON `[{ identity, segments }]`, newest first (`samwell-shared`
+     * `TimeMap`). Shows that stitch ads into each download give every copy a
+     * different clock; null until a copy has been mapped.
      */
     transcriptTimeMap: text("transcript_time_map"),
     /**

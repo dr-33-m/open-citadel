@@ -14,32 +14,49 @@
  */
 import { EMPTY_TIME_MAP, toAudioTime, toTranscriptTime, type TimeMap } from 'samwell-shared';
 
+import { phoneHasNetwork } from '@/lib/network';
 import { queryClient } from '@/lib/query-client';
 import { reportHandled } from '@/lib/observe';
 import { transcriptKeys } from '@/query-manager/transcripts/keys';
 import { playedCopy } from '@/services/podcasts/transcript/audio-copy';
 import { mapAudioCopy } from '@/services/podcasts/transcript/cloud';
-import { readCopyRow, saveTimeMap, type AudioCopy } from '@/services/podcasts/transcript/copy-row';
+import { mapOfCopy, readCopyRow, saveTimeMap, type AudioCopy } from '@/services/podcasts/transcript/copy-row';
 import { readFingerprint } from '@/services/podcasts/transcript/store';
 
-/** Episodes whose copy is being mapped now, so a second play does not ask again. */
+/** Copies being mapped now (`episodeId identity`), so a second play does not ask again. */
 const mapping = new Set<string>();
+const mappingKey = (episodeId: string, identity: string) => `${episodeId} ${identity}`;
 
 /**
- * The map for the copy of `episodeId` being played: the kept one when it was
- * made for that copy. Not played this session, the last copy mapped stands in
- * (most likely the same one again), for reading before pressing play. Played
- * with the copy not known, none: better the transcript's own clock than one
- * moved by a map made for some other copy.
+ * The map for the copy of `episodeId` being played: the one kept for that
+ * copy. Not played this session, the copy it most likely will be stands in
+ * (its download, else the copy last mapped), for reading before pressing
+ * play. Played with the copy not known, none: better the transcript's own
+ * clock than one moved by a map made for some other copy.
  *
  * Read from the row each time, which is cheap: it is read when it changes and
  * on a tap, never on the player's tick.
  */
 export function timeMapFor(episodeId: string): TimeMap {
-  const kept = readCopyRow(episodeId).timeMap;
+  const row = readCopyRow(episodeId);
   const copy = playedCopy(episodeId);
-  if (copy === undefined) return kept?.segments ?? EMPTY_TIME_MAP;
-  return kept && copy && kept.identity === copy.identity ? kept.segments : EMPTY_TIME_MAP;
+  if (copy === undefined) {
+    const likely = row.downloadCopy ? mapOfCopy(row, row.downloadCopy.identity) : (row.timeMaps[0] ?? null);
+    return likely?.segments ?? EMPTY_TIME_MAP;
+  }
+  return (copy && mapOfCopy(row, copy.identity)?.segments) || EMPTY_TIME_MAP;
+}
+
+/**
+ * A copy's map when it is known: empty for the very copy transcribed, null
+ * for a transcript with no fingerprint or a copy not mapped yet. For moving
+ * the same moment from one copy to another (`player/to-file.ts`).
+ */
+export function knownMapOf(episodeId: string, copy: AudioCopy): TimeMap | null {
+  const row = readCopyRow(episodeId);
+  if (!row.transcriptCopy) return null;
+  if (row.transcriptCopy === copy.identity) return EMPTY_TIME_MAP;
+  return mapOfCopy(row, copy.identity)?.segments ?? null;
 }
 
 /** Where a moment of the transcript is heard in the copy being played. */
@@ -61,15 +78,19 @@ export function audioToTranscript(episodeId: string, audioSec: number): number |
 export async function ensureTimeMap(episodeId: string, copy: AudioCopy | null): Promise<void> {
   // The copy given to the player decides which map the transcript reads.
   announce(episodeId);
-  if (!copy || mapping.has(episodeId)) return;
-  const { timeMap, transcriptCopy } = readCopyRow(episodeId);
-  if (!transcriptCopy || timeMap?.identity === copy.identity) return;
-  if (transcriptCopy === copy.identity) {
+  if (!copy) return;
+  const key = mappingKey(episodeId, copy.identity);
+  if (mapping.has(key)) return;
+  const row = readCopyRow(episodeId);
+  if (!row.transcriptCopy || mapOfCopy(row, copy.identity)) return;
+  if (row.transcriptCopy === copy.identity) {
     saveTimeMap(episodeId, { identity: copy.identity, segments: [] });
     announce(episodeId);
     return;
   }
-  mapping.add(episodeId);
+  // Offline the server cannot be asked: it is, the next time this copy plays online.
+  if (!phoneHasNetwork()) return;
+  mapping.add(key);
   announce(episodeId);
   try {
     const fingerprint = await readFingerprint(episodeId);
@@ -79,7 +100,7 @@ export async function ensureTimeMap(episodeId: string, copy: AudioCopy | null): 
     // Played on the transcript's own clock, as before, and asked again next time.
     reportHandled('transcript.time_map', error);
   } finally {
-    mapping.delete(episodeId);
+    mapping.delete(key);
     announce(episodeId);
   }
 }
@@ -96,5 +117,7 @@ export interface TimeMapState {
 }
 
 export function timeMapState(episodeId: string): TimeMapState {
-  return { segments: timeMapFor(episodeId), syncing: mapping.has(episodeId) };
+  // Only the copy being heard: a download mapped meanwhile leaves the stream in step.
+  const copy = playedCopy(episodeId);
+  return { segments: timeMapFor(episodeId), syncing: copy ? mapping.has(mappingKey(episodeId, copy.identity)) : false };
 }
