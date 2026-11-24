@@ -14,7 +14,7 @@ export const PANE_TITLES: Record<SettingsPane, string> = {
   samwell: 'Samwell',
   voice: 'Reading voice',
   podcasts: 'Podcasts',
-  memory: 'What Samwell knows',
+  memory: 'Biography',
 };
 
 export function isSettingsPane(value: unknown): value is SettingsPane {

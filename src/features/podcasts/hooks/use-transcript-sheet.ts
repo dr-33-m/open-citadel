@@ -1,14 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
+import { EMPTY_TIME_MAP } from 'samwell-shared';
 
 import { useCurrentSegment } from '@/features/podcasts/hooks/use-current-segment';
 import { useFollowAlong } from '@/hooks/use-follow-along';
 import { useEpisodeHighlightEditor } from '@/features/podcasts/hooks/use-episode-highlight-editor';
+import { useSyncWait } from '@/features/podcasts/hooks/use-sync-wait';
 import { useTranscriptActions } from '@/features/podcasts/hooks/use-transcript-actions';
+import { copyClock } from '@/features/podcasts/utils/transcript-clock';
 import { markedLines } from '@/features/podcasts/utils/transcript-highlights';
 import { followLines, lineMatches, type TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
 import { isTimed, matchLabel } from '@/features/podcasts/utils/transcript-rows';
-import { createEpisodeHighlightsQueryOptions, createTranscriptQueryOptions } from '@/query-manager/transcripts';
+import { createEpisodeHighlightsQueryOptions, createTimeMapQueryOptions, createTranscriptQueryOptions } from '@/query-manager/transcripts';
 import type { EpisodeHighlight } from '@/services/podcasts/transcript/highlights';
 import { selectEpisodeId, usePlayer } from '@/stores/player';
 
@@ -32,10 +35,16 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
   const query = useQuery(createTranscriptQueryOptions(episodeId ?? '', { enabled: visible && episodeId !== null }));
   const doc = query.data ?? null;
   const lines = React.useMemo(() => (doc ? followLines(doc) : NO_LINES), [doc]);
-  const starts = React.useMemo(() => lines.map((line) => line.start), [lines]);
+  // The copy being played may not share the transcript's clock (`time-map.ts`):
+  // the lines are followed and labelled on the copy's, and keep their own.
+  const timeMap = useQuery(createTimeMapQueryOptions(episodeId ?? '', { enabled: visible && episodeId !== null })).data;
+  const segments = timeMap?.segments ?? EMPTY_TIME_MAP;
+  const { starts, times } = React.useMemo(() => copyClock(lines, segments), [lines, segments]);
   const kept = useQuery(createEpisodeHighlightsQueryOptions(episodeId ?? '', { enabled: visible && episodeId !== null })).data;
   const marked = React.useMemo(() => markedLines(lines, kept ?? []), [lines, kept]);
   const isCurrent = usePlayer((s) => selectEpisodeId(s) === episodeId);
+  // Only the episode being heard waits to be matched to its copy, and not for long.
+  const syncing = useSyncWait(visible && isCurrent && (timeMap?.syncing ?? false));
   const timed = doc ? isTimed(doc) : false;
   const { current, place } = useCurrentSegment(starts, visible && isCurrent && timed);
 
@@ -88,7 +97,11 @@ export function useTranscriptSheet({ episodeId, visible, preparing }: { episodeI
 
   return {
     lines: data,
-    loading: preparing || (query.isPending && visible) || (placing && isCurrent && timed),
+    /** The time drawn beside each line, by its index, on the clock of the copy being heard. */
+    times,
+    loading: preparing || (query.isPending && visible) || (placing && isCurrent && timed) || syncing,
+    /** Being matched to the copy heard: the loader says so, in place of lines that would not follow it yet. */
+    syncing,
     // Not while a just-saved transcript is being read back.
     empty: !preparing && query.isSuccess && !query.isFetching && doc === null,
     lit,

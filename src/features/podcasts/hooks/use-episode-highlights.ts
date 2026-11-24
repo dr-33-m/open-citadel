@@ -5,7 +5,7 @@ import React from 'react';
 import { useEpisodeHighlightEditor } from '@/features/podcasts/hooks/use-episode-highlight-editor';
 import { highlightsLabel } from '@/features/podcasts/utils/transcript-highlights';
 import { createEpisodeHighlightsQueryOptions } from '@/query-manager/transcripts';
-import { playEpisodeFrom } from '@/services/podcasts/player';
+import { playTranscriptMoment } from '@/services/podcasts/transcript/play-moment';
 import type { EpisodeHighlight } from '@/services/podcasts/transcript/highlights';
 import { locatorSeconds } from '@/utils/locator-time';
 
@@ -30,7 +30,7 @@ export function useEpisodeHighlights({ episodeId, title }: { episodeId: string |
       const seconds = locatorSeconds(locator);
       if (!episodeId || seconds === null) return;
       setOpen(false);
-      void playEpisodeFrom(episodeId, seconds);
+      void playTranscriptMoment(episodeId, seconds);
     },
     [episodeId],
   );

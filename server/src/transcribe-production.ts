@@ -3,6 +3,9 @@
  * billing, identity and Samwell. Its own file so `transcribe.ts` and the
  * worker stay things the tests can build without touching any of them.
  */
+import { alignFingerprints } from './audio-align/align.js';
+import { fingerprintAudio } from './audio-align/decode.js';
+import { resolveAudioUrl } from './audio-align/resolve.js';
 import { billing } from './billing.js';
 import { db, getDefaultModelIdForPlan, recordUsageEvent } from './db.js';
 import { readIdentity } from './identity.js';
@@ -42,6 +45,10 @@ export const transcribeWorker = createTranscribeWorker({
   billing,
   apiKey: () => process.env.OPENROUTER_API_KEY,
   nameSpeakers,
+  audio: {
+    resolve: (url) => resolveAudioUrl(url),
+    fingerprint: (url, signal) => fingerprintAudio(url, { signal }),
+  },
 });
 
 export const transcribeRoutes = createTranscribeRoutes({
@@ -51,4 +58,5 @@ export const transcribeRoutes = createTranscribeRoutes({
   worker: transcribeWorker,
   recordUsageEvent,
   apiKey: () => process.env.OPENROUTER_API_KEY,
+  align: async (playingUrl, transcribed, signal) => alignFingerprints(transcribed, await fingerprintAudio(playingUrl, { signal })),
 });

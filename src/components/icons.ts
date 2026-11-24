@@ -27,6 +27,7 @@ export { default as BookmarkPlus } from 'lucide-react-native/icons/bookmark-plus
 export { default as Brain } from 'lucide-react-native/icons/brain';
 export { default as BrainCircuit } from 'lucide-react-native/icons/brain-circuit';
 export { default as BookOpen } from 'lucide-react-native/icons/book-open';
+export { default as BookUser } from 'lucide-react-native/icons/book-user';
 export { default as Calendar } from 'lucide-react-native/icons/calendar';
 export { default as CalendarCheck2 } from 'lucide-react-native/icons/calendar-check-2';
 export { default as CalendarClock } from 'lucide-react-native/icons/calendar-clock';

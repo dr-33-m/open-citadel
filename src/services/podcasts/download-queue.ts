@@ -11,6 +11,8 @@ import { podcastEpisodes, podcasts } from "@/db/schema";
 import { coverNameFor, dropUnusedCovers, refreshPlayingCover, withSavedCover } from "@/services/podcasts/download-covers";
 import { ensureFolder, fileNameFor, setStatus } from "@/services/podcasts/download-files";
 import { folderUri } from "@/services/podcasts/download-paths";
+import { copyToDownload } from "@/services/podcasts/transcript/audio-copy";
+import { ensureTimeMap } from "@/services/podcasts/transcript/time-map";
 import { nowIso } from "@/services/podcasts/records";
 import { usePodcastDownloads } from "@/stores/podcast-downloads";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
@@ -20,8 +22,19 @@ const CONCURRENCY = 2;
 const PROGRESS_INTERVAL_MS = 250;
 
 const waiting: string[] = [];
-const running = new Map<string, DownloadResumable>();
-const cancelled = new Set<string>();
+
+/** A download begun: its copy being asked for until `task` is set, then fetching. */
+interface InFlight {
+  task: DownloadResumable | null;
+  cancelled: boolean;
+}
+
+/**
+ * Every download begun and not yet settled, entered the moment it is begun:
+ * what the concurrency limit counts, what a cancel reaches at any stage, and
+ * what says an episode is pending.
+ */
+const inFlight = new Map<string, InFlight>();
 
 /** How a download ended. */
 export type DownloadOutcome = "downloaded" | "failed" | "cancelled";
@@ -45,10 +58,10 @@ function settle(id: string, outcome: DownloadOutcome): void {
 
 /** Whether an episode is waiting for, or in the middle of, a download. */
 export function isPending(id: string): boolean {
-  return waiting.includes(id) || running.has(id);
+  return waiting.includes(id) || inFlight.has(id);
 }
 
-async function runOne(id: string): Promise<DownloadOutcome> {
+async function runOne(id: string, flight: InFlight): Promise<DownloadOutcome> {
   const rows = await db
     .select({
       id: podcastEpisodes.id,
@@ -68,13 +81,17 @@ async function runOne(id: string): Promise<DownloadOutcome> {
   const target = `${folderUri()}${name}`;
   const store = usePodcastDownloads.getState();
   let lastReport = 0;
-  const task = createDownloadResumable(episode.audioUrl, target, {}, (p) => {
+  // The exact copy, so the download remembers which one it is and a
+  // transcript can be mapped onto it (`transcript/audio-copy.ts`).
+  const copy = await copyToDownload(episode.audioUrl);
+  if (flight.cancelled) return "cancelled";
+  const task = createDownloadResumable(copy?.url ?? episode.audioUrl, target, {}, (p) => {
     const now = Date.now();
     if (now - lastReport < PROGRESS_INTERVAL_MS || p.totalBytesExpectedToWrite <= 0) return;
     lastReport = now;
     store.setProgress(id, p.totalBytesWritten / p.totalBytesExpectedToWrite);
   });
-  running.set(id, task);
+  flight.task = task;
   await setStatus([id], { downloadStatus: "downloading", downloadError: null });
   store.setProgress(id, 0);
   invalidatePodcastLibrary();
@@ -82,7 +99,7 @@ async function runOne(id: string): Promise<DownloadOutcome> {
   try {
     await ensureFolder();
     const result = await task.downloadAsync();
-    if (cancelled.has(id)) return "cancelled";
+    if (flight.cancelled) return "cancelled";
     if (!result || result.status >= 400) {
       throw new Error(result ? `The server refused the download (error ${result.status}).` : "The download stopped.");
     }
@@ -92,11 +109,12 @@ async function runOne(id: string): Promise<DownloadOutcome> {
     const coverUrl = episode.imageUrl ?? episode.showImageUrl;
     let stopped = false;
     await withSavedCover(coverUrl, async (cover) => {
-      stopped = cancelled.has(id);
+      stopped = flight.cancelled;
       if (stopped) return;
       await setStatus([id], {
         downloadStatus: "downloaded",
         downloadFile: name,
+        downloadCopy: copy ? JSON.stringify(copy) : null,
         downloadCover: cover,
         downloadedAt: nowIso(),
         ...(info.exists && info.size ? { fileSize: info.size } : {}),
@@ -107,9 +125,11 @@ async function runOne(id: string): Promise<DownloadOutcome> {
       if (coverUrl) await dropUnusedCovers([coverNameFor(coverUrl)]);
       return "cancelled";
     }
+    // Mapped now, while its host still serves this copy to be listened to.
+    void ensureTimeMap(id, copy);
     return "downloaded";
   } catch (err) {
-    if (cancelled.has(id)) return "cancelled";
+    if (flight.cancelled) return "cancelled";
     await deleteAsync(target, { idempotent: true }).catch(() => {});
     await setStatus([id], {
       downloadStatus: "failed",
@@ -117,20 +137,23 @@ async function runOne(id: string): Promise<DownloadOutcome> {
     });
     return "failed";
   } finally {
-    running.delete(id);
-    cancelled.delete(id);
     store.clear(id);
     invalidatePodcastLibrary();
   }
 }
 
 function pump(): void {
-  while (running.size < CONCURRENCY && waiting.length > 0) {
+  while (inFlight.size < CONCURRENCY && waiting.length > 0) {
     const id = waiting.shift()!;
-    void runOne(id)
+    const flight: InFlight = { task: null, cancelled: false };
+    inFlight.set(id, flight);
+    void runOne(id, flight)
       .catch((): DownloadOutcome => "failed")
       .then((outcome) => settle(id, outcome))
-      .finally(pump);
+      .finally(() => {
+        inFlight.delete(id);
+        pump();
+      });
   }
 }
 
@@ -148,10 +171,10 @@ export async function cancelDownloads(ids: string[]): Promise<void> {
       waiting.splice(index, 1);
       settle(id, "cancelled");
     }
-    const task = running.get(id);
-    if (task) {
-      cancelled.add(id);
-      await task.cancelAsync().catch(() => {});
+    const flight = inFlight.get(id);
+    if (flight) {
+      flight.cancelled = true;
+      await flight.task?.cancelAsync().catch(() => {});
     }
   }
 }

@@ -1,13 +1,15 @@
 import type { FlashListRef } from '@shopify/flash-list';
 import React from 'react';
+import { View } from 'react-native';
 
-import { ScrollText } from '@/components/icons';
+import { RefreshCw, ScrollText } from '@/components/icons';
 import { FollowAlongSheet, FollowAlongTitle } from '@/components/follow-along/follow-along-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { Touchable } from '@/components/ui/touchable';
 import { TranscriptRow, type TranscriptRowColors } from '@/features/podcasts/components/transcript-row';
 import { TranscriptSearch } from '@/features/podcasts/components/transcript-search';
 import { TranscriptSkeleton } from '@/features/podcasts/components/transcript-skeleton';
+import { TranscriptSyncing } from '@/features/podcasts/components/transcript-syncing';
 import { FollowAlongTransport } from '@/features/podcasts/components/follow-along-transport';
 import type { TranscriptSheetState } from '@/features/podcasts/hooks/use-transcript-sheet';
 import type { TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
@@ -21,6 +23,8 @@ type TranscriptSheetProps = {
   /** Everything but the list's ref, which comes on its own so it goes straight to the list. */
   state: Omit<TranscriptSheetState, 'listRef'>;
   listRef: React.RefObject<FlashListRef<TranscriptLine> | null>;
+  /** Transcribe the episode again. No button without it. */
+  onRetranscribe?: () => void;
 };
 
 const keyOf = (line: TranscriptLine) => String(line.index);
@@ -32,19 +36,20 @@ const keyOf = (line: TranscriptLine) => String(line.index);
  * (title, line, search) is pinned above the list; under it, while the
  * episode plays, the scrubber and the transport.
  */
-export function TranscriptSheet({ visible, onClose, line, state, listRef }: TranscriptSheetProps) {
+export function TranscriptSheet({ visible, onClose, line, state, listRef, onRetranscribe }: TranscriptSheetProps) {
   const tokens = useThemeTokens();
   const gold = tokens['--color-primary'];
   const muted = tokens['--color-muted-foreground'];
   const ink = tokens['--color-foreground'];
   const band = tokens['--color-muted'];
   const colors = React.useMemo<TranscriptRowColors>(() => ({ ink, gold, muted, band }), [band, gold, ink, muted]);
-  const { lit, match, marked, dim, gutter, onRow, onLongPress, onHeading } = state;
+  const { lit, match, marked, dim, gutter, times, onRow, onLongPress, onHeading } = state;
 
   const renderItem = React.useCallback(
     ({ item }: { item: TranscriptLine }) => (
       <TranscriptRow
         line={item}
+        time={times[item.index] ?? null}
         lit={item.index === lit}
         dim={dim}
         match={item.index === match}
@@ -56,21 +61,28 @@ export function TranscriptSheet({ visible, onClose, line, state, listRef }: Tran
         onHeading={onHeading}
       />
     ),
-    [colors, dim, gutter, lit, marked, match, onHeading, onLongPress, onRow],
+    [colors, dim, gutter, lit, marked, match, onHeading, onLongPress, onRow, times],
   );
 
   // Anything a row draws from outside its line, so the list redraws when it changes.
-  const extra = React.useMemo(() => ({ lit, match, dim, marked }), [dim, lit, marked, match]);
+  const extra = React.useMemo(() => ({ lit, match, dim, marked, times }), [dim, lit, marked, match, times]);
 
   const empty = state.empty ? (
     <ThemedText type="bodySm" color={muted} className="px-6 pt-4">
       There is no transcript for this episode yet.
     </ThemedText>
   ) : null;
-  const readAction = (
-    <Touchable onPress={() => void state.readInReader()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Read in the reader">
-      <ScrollText size={20} color={gold} />
-    </Touchable>
+  const actions = (
+    <View className="flex-row items-center gap-5">
+      {onRetranscribe ? (
+        <Touchable onPress={onRetranscribe} hitSlop={8} accessibilityRole="button" accessibilityLabel="Transcribe again">
+          <RefreshCw size={20} color={gold} />
+        </Touchable>
+      ) : null}
+      <Touchable onPress={() => void state.readInReader()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Read in the reader">
+        <ScrollText size={20} color={gold} />
+      </Touchable>
+    </View>
   );
 
   return (
@@ -79,11 +91,11 @@ export function TranscriptSheet({ visible, onClose, line, state, listRef }: Tran
       onClose={onClose}
       header={
         <>
-          <FollowAlongTitle title="Transcript" line={line} action={readAction} />
+          <FollowAlongTitle title="Transcript" line={line} action={actions} />
           <TranscriptSearch {...state.search} />
         </>
       }
-      skeleton={<TranscriptSkeleton />}
+      skeleton={state.syncing ? <TranscriptSyncing /> : <TranscriptSkeleton />}
       loading={state.loading}
       empty={empty}
       list={{

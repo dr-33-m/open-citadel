@@ -18,6 +18,7 @@ import { getEpisode, listChapters } from '@/services/podcasts/episodes';
 import { showName } from '@/services/podcasts/records';
 import { episodeChatPrompt } from '@/services/podcasts/transcript/episode-prompt';
 import { readTranscript } from '@/services/podcasts/transcript/store';
+import { audioToTranscript } from '@/services/podcasts/transcript/time-map';
 
 /** The grounding for a chat about the episode whose transcript is this book. Null when it is not one. */
 export async function episodeChatGrounding(bookId: string): Promise<string | null> {
@@ -35,7 +36,8 @@ export async function episodeChatGrounding(bookId: string): Promise<string | nul
     showTitle: showName(detail.show),
     durationSec: detail.episode.durationSec || doc?.durationSec || 0,
     chapters: chapters.map((c) => ({ startSec: c.startSec, title: c.title })),
-    positionSec: detail.episode.positionSec,
+    // Where they are in the transcript, which the copy they hear may not share the clock of.
+    positionSec: audioToTranscript(row.id, detail.episode.positionSec) ?? detail.episode.positionSec,
     doc,
   });
 }

@@ -5,8 +5,11 @@
  * the line's place in the list: the lines are cut again every time the
  * transcript is read, and a better cut must not lose anyone's highlights. So
  * each is found again by its words, the nearest copy to its moment winning
- * when a line is said twice ("Exactly.").
+ * when a line is said twice ("Exactly."), and closely enough rather than
+ * word for word, over as many lines as it now takes, for a transcript made
+ * again (`passage-match.ts`).
  */
+import { findPassage, PassageIndex } from '@/features/podcasts/utils/passage-match';
 import type { TranscriptLine } from '@/features/podcasts/utils/transcript-lines';
 import { DEFAULT_HIGHLIGHT_COLOR } from '@/constants/highlights';
 import { highlightSeconds } from '@/services/podcasts/transcript/highlight-locator';
@@ -21,21 +24,17 @@ export type Mark = { id: string; color: string };
 export function markedLines(lines: readonly TranscriptLine[], highlights: readonly Kept[]): Map<number, Mark> {
   const marked = new Map<number, Mark>();
   if (highlights.length === 0) return marked;
-  const byText = new Map<string, TranscriptLine[]>();
-  for (const line of lines) {
-    const same = byText.get(line.text);
-    if (same) same.push(line);
-    else byText.set(line.text, [line]);
-  }
+  const index = new PassageIndex(lines);
   for (const highlight of highlights) {
-    const candidates = byText.get(highlight.text);
-    if (!candidates) continue;
     const at = highlightSeconds(highlight.locator);
-    const best =
-      at === null
-        ? candidates[0]
-        : candidates.reduce((near, line) => (Math.abs(line.start - at) < Math.abs(near.start - at) ? line : near));
-    marked.set(best.index, { id: highlight.id, color: highlight.color || DEFAULT_HIGHLIGHT_COLOR });
+    // Near its moment only: a transcript made again has already looked
+    // everywhere and moved it there, and the whole of a long one is too much
+    // to read through on every draw. Word for word or not, the same rule:
+    // the same words said elsewhere ("Right.") are another line.
+    const found = findPassage(index, highlight.text, at, { nearOnly: at !== null });
+    if (!found) continue;
+    const mark = { id: highlight.id, color: highlight.color || DEFAULT_HIGHLIGHT_COLOR };
+    for (let line = found.first; line <= found.last; line++) marked.set(line, mark);
   }
   return marked;
 }

@@ -16,21 +16,31 @@ export function performanceLine(sharing: boolean): string {
   return sharing ? 'Helping make it faster' : 'Recommended';
 }
 
-/** What the "i" says, and what the choice to turn it on is made after. */
+/**
+ * What the "i" says, and what the choice to turn it on is made after. In
+ * the order a person asks: what is this, what is sent, what is not and can
+ * I stop it. Every point is something `lib/observe` really sends: its named
+ * events and the brain and plan they carry (`use-observe-context`), errors
+ * scrubbed of addresses, and what EAS Observe adds itself (the phone, its
+ * state at launch, the slowest request's website, a country from the
+ * connection, a random install id). Change it alongside them.
+ */
 export const PERFORMANCE_INFO: InfoContent = {
   label: 'APP PERFORMANCE',
   title: 'Help make Open Citadel faster',
-  line: 'When this is on, the app sends how it performed, so slow and broken parts can be found and fixed.',
+  line: 'When it is on, the app sends us how well it runs, so we can fix what is slow or broken.',
+  pointsLabel: 'WHAT IS SENT',
   points: [
-    'How long the app takes to open, each screen to be ready, and Samwell to answer.',
-    'Errors it ran into, with web addresses and file names taken out.',
-    "Your phone's model, system, language, network and battery state, and the app's version.",
-    'Your rough country, from your IP address, and the website of the slowest request as the app opens.',
-    'Never what you read, write or say to Samwell, and never your name or account.',
+    'How long your library takes to load, and where its slowest download came from.',
+    'How long each screen and Samwell take.',
+    'Errors and crashes, with web addresses and file names removed.',
+    'Your phone model, system version, language, battery and network.',
+    'Your country, from your internet connection.',
+    'Which brain Samwell uses, and your plan.',
   ],
   notice: {
-    title: 'Off until you turn it on',
-    body: 'Used only by Open Citadel, to find and fix slow parts. Your phone is counted by a random id, not by who you are. Turn it off here at any time.',
+    title: 'Never sent',
+    body: 'What you read, write or say to Samwell, or who you are. Your phone is known only by a random id, and you can turn this off here at any time.',
   },
 };
 

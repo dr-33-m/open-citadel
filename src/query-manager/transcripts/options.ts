@@ -7,6 +7,7 @@ import { listEpisodeHighlights, type EpisodeHighlight } from '@/services/podcast
 import { transcribingEpisodes } from '@/services/podcasts/transcript/jobs';
 import { listTranscribedEpisodes, type TranscribedEpisode } from '@/services/podcasts/transcript/library';
 import { readTranscript } from '@/services/podcasts/transcript/store';
+import { timeMapState, type TimeMapState } from '@/services/podcasts/transcript/time-map';
 import type { TranscriptWindow } from '@/services/podcasts/transcript/windows';
 
 type Options<T, TData = T> = Omit<UseQueryOptions<T, Error, TData>, 'queryKey' | 'queryFn'>;
@@ -32,6 +33,19 @@ export function createEpisodeHighlightsQueryOptions(episodeId: string, options?:
     queryKey: transcriptKeys.highlights(episodeId),
     queryFn: async () => listEpisodeHighlights(episodeId),
   } satisfies UseQueryOptions<EpisodeHighlight[]>;
+}
+
+/**
+ * How the transcript's clock maps onto the copy of the episode being played
+ * (empty when they are the same), and whether that copy is being mapped now.
+ */
+export function createTimeMapQueryOptions(episodeId: string, options?: Options<TimeMapState>) {
+  return {
+    ...LOCAL,
+    ...options,
+    queryKey: transcriptKeys.timeMap(episodeId),
+    queryFn: async () => timeMapState(episodeId),
+  } satisfies UseQueryOptions<TimeMapState>;
 }
 
 /** Episodes with a transcript whose latest moment falls in the window, newest first. */

@@ -94,6 +94,11 @@ export function speechFormatFor(model: Pick<CloudVoiceModel, 'formats'>, wanted:
  */
 export const CLOUD_VOICE_MAX_CHARACTERS = 1_500;
 
+/** Whether a cloud voice model is Kokoro's, whatever its size or version. */
+export function isKokoroModel(modelId: string): boolean {
+  return modelId.startsWith('hexgrad/kokoro');
+}
+
 // -- Converting token prices -------------------------------------------------
 
 /**
@@ -368,7 +373,7 @@ export function parseCloudVoiceKey(
  * samples cannot disagree about it.
  */
 export function listedVoices(model: Pick<CloudVoiceModel, 'id' | 'voices'>): string[] {
-  if (model.id.startsWith('hexgrad/kokoro')) {
+  if (isKokoroModel(model.id)) {
     return model.voices.filter((voice) => /^[ab][fm]_/.test(voice));
   }
   return model.voices;

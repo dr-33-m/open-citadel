@@ -14,7 +14,12 @@ export const transcriptKeys = {
   transcribed: (window: TranscriptWindow) => [...podcastKeys.library(), 'transcribed', window] as const,
   transcribing: () => [...podcastKeys.library(), 'transcribing'] as const,
   /** Invalidated on its own after a highlight is kept or removed: the transcript itself is not read again. */
-  highlights: (episodeId: string) => [...podcastKeys.library(), 'highlights', episodeId] as const,
+  highlights: (episodeId: string) => [...transcriptKeys.allHighlights(), episodeId] as const,
+  /** Every episode's highlights, for one invalidation when any highlight changes. */
+  allHighlights: () => [...podcastKeys.library(), 'highlights'] as const,
+
+  /** The map from the transcript's clock to the copy being played (`time-map.ts`), set when a copy is mapped. */
+  timeMap: (episodeId: string) => [...podcastKeys.library(), 'time-map', episodeId] as const,
 
   job: (jobId: string) => ['transcripts', 'job', jobId] as const,
 };

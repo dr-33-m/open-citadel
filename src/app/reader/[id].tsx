@@ -38,6 +38,7 @@ import { useReaderOpenMetric } from "@/features/reader/hooks/use-reader-open-met
 import { useCloudVoiceFailure } from "@/features/reader/hooks/use-cloud-voice-failure";
 import { useReadAloudBridge } from "@/features/reader/hooks/use-read-aloud-bridge";
 import { readerVoiceId } from "@/services/device-tts/catalogue";
+import { useListenInBook } from "@/features/audiobook/hooks/use-listen-in-book";
 import { useReadAlong } from "@/features/audiobook/hooks/use-read-along";
 import { ReadAloudBanner } from "@/features/reader/components/read-aloud-banner";
 import { HighlightMenu } from "@/components/reader/highlight-menu";
@@ -845,14 +846,26 @@ export default function ReaderScreen() {
         onSkipNext: () => readerRef.current?.ttsSkipNext(),
       };
 
+  // Listen, pressed with nothing playing: the audiobook from this page when
+  // the voice is a cloud one it can play, else the reader's own read-aloud.
+  const listenInBook = useListenInBook({
+    bookId: id,
+    readerRef,
+    locatorRef: currentLocatorRef,
+    readAloud: handleTTSToggle,
+  });
+
   // The read-aloud icon, for a book heard in the player: stops it while its
   // controls are up, else (paused in the mini player) starts it, as an
-  // unlit icon would read aloud.
+  // unlit icon would read aloud. With nothing playing it is Listen, and
+  // while read-aloud plays it stops that.
   const ttsToggle = readAlong.following
     ? readAlong.controls.active
       ? readAlong.controls.onStop
       : readAlong.controls.onPlayPause
-    : handleTTSToggle;
+    : isTTSActive
+      ? handleTTSToggle
+      : listenInBook;
 
   const initialLocation = useMemo(
     () => jumpLocator ?? readAlong.initialLocator ?? savedLocator ?? undefined,

@@ -14,6 +14,8 @@ import { MemoryEvent } from '@/features/samwell-memory/components/memory-event';
 import type { MemoryNoteView, MemoryRow } from '@/features/samwell-memory/utils/memory-rows';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
+/** Where the biography lives and the one use it is put to: nothing about collecting what is said. */
+const PRIVACY_NOTE = 'Kept on this phone. Samwell Cloud uses it only to answer you, and keeps none of it.';
 const EMPTY_TEXT = 'Nothing yet. When you talk with Samwell in the cloud, what he wants to remember about you shows up here.';
 
 const keyOf = (row: MemoryRow) => row.key;
@@ -53,22 +55,25 @@ export function MemoryList({ rows, onOpenNote, onOpenPortrait, onForgetAll }: Me
     [muted, onOpenNote, onOpenPortrait],
   );
 
-  const header = (
-    <View className="flex-row items-center gap-2 pb-6">
-      <Lock size={14} color={muted} />
-      <ThemedText type="bodySm" color={muted} className="flex-1">
-        Kept on this phone. Sent only with your own messages.
-      </ThemedText>
+  // Where it is kept and what it is used for, at the foot, under the one
+  // thing to do with it: shown before there is anything in it too.
+  const footer = (
+    <View className="mt-10 gap-4">
+      {rows.length > 0 ? (
+        <Touchable onPress={onForgetAll} accessibilityRole="button" className="items-center border border-border py-3">
+          <ThemedText type="labelSm" color={muted}>
+            FORGET EVERYTHING
+          </ThemedText>
+        </Touchable>
+      ) : null}
+      <View className="flex-row items-center justify-center gap-2">
+        <Lock size={14} color={muted} />
+        <ThemedText type="bodySm" color={muted} className="shrink text-center">
+          {PRIVACY_NOTE}
+        </ThemedText>
+      </View>
     </View>
   );
-  const footer =
-    rows.length > 0 ? (
-      <Touchable onPress={onForgetAll} accessibilityRole="button" className="mt-10 items-center border border-border py-3">
-        <ThemedText type="labelSm" color={muted}>
-          FORGET EVERYTHING
-        </ThemedText>
-      </Touchable>
-    ) : null;
 
   return (
     <PageFade>
@@ -80,7 +85,6 @@ export function MemoryList({ rows, onOpenNote, onOpenPortrait, onForgetAll }: Me
         style={contentColumn}
         contentContainerStyle={contentStyle}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={header}
         ListFooterComponent={footer}
         ListEmptyComponent={<ListEmpty text={EMPTY_TEXT} />}
         initialNumToRender={4}

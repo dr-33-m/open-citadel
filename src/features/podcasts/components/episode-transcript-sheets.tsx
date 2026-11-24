@@ -17,6 +17,7 @@ const TRANSCRIBE_INFO: InfoContent = {
   points: [
     'Every line is marked with its speaker and its time.',
     "ElevenLabs is given the episode's address and fetches the audio from the show itself.",
+    'Shows that put different ads in each download are lined up with the copy you hear.',
     'The transcript stays on this phone. The server keeps no copy once it arrives.',
     'You are charged the real cost, and only when the transcript arrives.',
     'If it fails or you stop it, nothing is charged.',
@@ -37,6 +38,8 @@ type TranscriptViewerProps = {
   preparing?: boolean;
   /** Under the transcript's title: "The Show · 1 hr 30 min". */
   line: string;
+  /** Transcribe it again, where the episode's transcript buttons can confirm what that costs. */
+  onRetranscribe?: () => void;
 };
 
 /**
@@ -44,11 +47,11 @@ type TranscriptViewerProps = {
  * is opened: the player, the episode page, an episode chat's badge. A
  * container: its hook re-renders this, not the screen.
  */
-export function TranscriptViewer({ episodeId, visible, onClose, preparing = false, line }: TranscriptViewerProps) {
+export function TranscriptViewer({ episodeId, visible, onClose, preparing = false, line, onRetranscribe }: TranscriptViewerProps) {
   const { listRef, ...state } = useTranscriptSheet({ episodeId, visible, preparing });
   return (
     <>
-      <TranscriptSheet visible={visible} onClose={onClose} line={line} state={state} listRef={listRef} />
+      <TranscriptSheet visible={visible} onClose={onClose} line={line} state={state} listRef={listRef} onRetranscribe={onRetranscribe} />
       <FollowAlongMenuSheet {...state.menu} />
       {state.editor ? <HighlightMenu {...state.editor} /> : null}
       <SpeakerNameSheet {...state.rename} />

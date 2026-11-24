@@ -14,6 +14,8 @@ export type InfoContent = {
   title: string;
   /** One line under the title, saying what the thing is like. */
   line?: string;
+  /** A heading over the points, where they are one kind of thing ("WHAT IS SENT"). */
+  pointsLabel?: string;
   points: string[];
   /** A caution drawn after the points, for what this is not good at. */
   notice?: { title: string; body: string };
@@ -86,6 +88,11 @@ export function InfoSheet({ visible, onClose, info, children, nested = false, fo
           {children}
           {info.points.length > 0 ? (
             <View className="gap-3">
+              {info.pointsLabel ? (
+                <ThemedText type="labelSm" color={muted}>
+                  {info.pointsLabel}
+                </ThemedText>
+              ) : null}
               {info.points.map((point) => (
                 <View key={point} className="flex-row gap-3">
                   <View className="mt-2 h-1 w-1 bg-primary" />

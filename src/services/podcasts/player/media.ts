@@ -30,13 +30,15 @@ export function nowPlayingFrom(item: EpisodeItem): EpisodeNowPlaying {
 /**
  * `startAt`, in seconds, is where the native queue starts this item when it
  * is loaded first (see the `@rntp/player` patch): a seek sent after the load
- * could land before it on Android and be undone.
+ * could land before it on Android and be undone. `copyUrl` is the exact copy
+ * to stream, for an episode whose transcript is mapped by copy
+ * (`transcript/audio-copy.ts`).
  */
-export function mediaItemFrom(item: EpisodeItem, startAt = 0): MediaItem {
+export function mediaItemFrom(item: EpisodeItem, startAt = 0, copyUrl: string | null = null): MediaItem {
   return {
     mediaId: item.id,
     startPosition: startAt,
-    url: localFileUri(item) ?? item.audioUrl,
+    url: localFileUri(item) ?? copyUrl ?? item.audioUrl,
     title: item.title,
     artist: item.showTitle,
     albumTitle: item.showTitle,
