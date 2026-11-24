@@ -85,15 +85,27 @@ export async function deleteHighlightNote(noteId: string): Promise<void> {
   await db.delete(notes).where(eq(notes.id, noteId));
 }
 
+/** A highlight's new place, and the words it now holds there with those around them. */
+export interface HighlightMove {
+  id: string;
+  locator: object;
+  chapter: string | null;
+  text: string;
+  context: { before?: string; after?: string };
+}
+
 /**
  * Highlights moved to new places (a transcript made again), in one
  * transaction, and every list told once.
  */
-export function moveHighlights(moves: readonly { id: string; locator: object; chapter: string | null }[]): void {
+export function moveHighlights(moves: readonly HighlightMove[]): void {
   if (moves.length === 0) return;
   db.transaction((tx) => {
     for (const move of moves) {
-      tx.update(highlights).set({ locator: JSON.stringify(move.locator), chapter: move.chapter }).where(eq(highlights.id, move.id)).run();
+      tx.update(highlights)
+        .set({ locator: JSON.stringify(move.locator), chapter: move.chapter, text: move.text, context: JSON.stringify(move.context) })
+        .where(eq(highlights.id, move.id))
+        .run();
     }
   });
   invalidateHighlightLists();
