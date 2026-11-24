@@ -3,17 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { listenWay, whyNotListening } from '@/features/audiobook/utils/listen-way';
 
 describe('listenWay', () => {
-  it('starts the audiobook for a cloud voice the audiobook can play', () => {
-    expect(listenWay({ cloudVoiceChosen: true, bookVoiceReady: true })).toBe('audiobook');
+  it('starts the audiobook when it has a cloud voice, a cloud voice picked or none at all', () => {
+    expect(listenWay({ phoneVoiceChosen: false, bookVoiceReady: true })).toBe('audiobook');
   });
 
-  it('keeps read-aloud for a voice on the phone, plan or not', () => {
-    expect(listenWay({ cloudVoiceChosen: false, bookVoiceReady: true })).toBe('read-aloud');
-    expect(listenWay({ cloudVoiceChosen: false, bookVoiceReady: false })).toBe('read-aloud');
+  it('keeps read-aloud for a voice picked on the phone, plan or not', () => {
+    expect(listenWay({ phoneVoiceChosen: true, bookVoiceReady: true })).toBe('read-aloud');
+    expect(listenWay({ phoneVoiceChosen: true, bookVoiceReady: false })).toBe('read-aloud');
   });
 
-  it('keeps read-aloud for a cloud voice the audiobook cannot play yet (no plan reaching it)', () => {
-    expect(listenWay({ cloudVoiceChosen: true, bookVoiceReady: false })).toBe('read-aloud');
+  it('keeps read-aloud when the audiobook has no cloud voice to play (no plan reaching it)', () => {
+    expect(listenWay({ phoneVoiceChosen: false, bookVoiceReady: false })).toBe('read-aloud');
   });
 });
 

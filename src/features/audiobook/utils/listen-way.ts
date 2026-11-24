@@ -3,9 +3,11 @@
  *
  * Listen in the Library and Listen inside the book both start the audiobook:
  * the player, a cloud voice, the reader following along. The audiobook only
- * has cloud voices, so inside the book a reader whose voice is on the phone
- * (its own, or Enhanced), or who has no cloud voice to hear it in, keeps the
- * reader's own read-aloud rather than being sold a plan to hear a page.
+ * has cloud voices, so inside the book a reader who picked a voice on the
+ * phone (its own, or Enhanced), or who has no cloud voice to hear it in, keeps
+ * the reader's own read-aloud rather than being sold a plan to hear a page.
+ * A reader who never picked a voice has not chosen the phone's: the audiobook
+ * is what Listen means, as it is in the Library.
  *
  * Pure, so it can be tested on its own.
  */
@@ -13,9 +15,12 @@ import type { StartResult } from '@/services/audiobook';
 
 export type ListenWay = 'audiobook' | 'read-aloud';
 
-/** Inside the book: the audiobook when the chosen voice is a cloud one it can play, else read-aloud. */
-export function listenWay({ cloudVoiceChosen, bookVoiceReady }: { cloudVoiceChosen: boolean; bookVoiceReady: boolean }): ListenWay {
-  return cloudVoiceChosen && bookVoiceReady ? 'audiobook' : 'read-aloud';
+/**
+ * Inside the book: the audiobook when it has a cloud voice to play and the
+ * reader has not picked a voice on the phone, else read-aloud.
+ */
+export function listenWay({ phoneVoiceChosen, bookVoiceReady }: { phoneVoiceChosen: boolean; bookVoiceReady: boolean }): ListenWay {
+  return bookVoiceReady && !phoneVoiceChosen ? 'audiobook' : 'read-aloud';
 }
 
 /** Why a book or post could not be started, for a toast. */

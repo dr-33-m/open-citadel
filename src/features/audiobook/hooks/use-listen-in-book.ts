@@ -18,9 +18,9 @@ const TOAST = 'audiobook-listen-in-book';
  * is in the player), as Listen from the Library does but without leaving the
  * page for the player.
  *
- * Only for a cloud voice the audiobook can play (`listenWay`): a voice on the
- * phone, or a cloud voice with no plan reaching it, gets `readAloud`, the
- * reader's own read-aloud, as before.
+ * Only when the audiobook has a cloud voice to play (`listenWay`): a voice
+ * picked on the phone, or no plan reaching a cloud voice, gets `readAloud`,
+ * the reader's own read-aloud, as before.
  */
 export function useListenInBook({
   bookId,
@@ -41,8 +41,9 @@ export function useListenInBook({
 
   return React.useCallback(() => {
     if (!bookId || starting.current) return;
+    const picked = useSettingsStore.getState().ttsVoice;
     const way = listenWay({
-      cloudVoiceChosen: isCloudVoice(useSettingsStore.getState().ttsVoice),
+      phoneVoiceChosen: picked != null && !isCloudVoice(picked),
       bookVoiceReady: currentBookVoice() !== null,
     });
     if (way === 'read-aloud') {
