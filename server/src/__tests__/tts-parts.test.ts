@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CLOUD_VOICE_CATALOG } from 'samwell-shared';
 
 import { createSpeechGuards } from '../tts-guards.js';
-import { lookupGeneration, lookupGenerationCost, parseAudioFormat, speechBody, spokenText } from '../tts-upstream.js';
+import { lookupGeneration, lookupGenerationCost, parseAudioFormat, speechBody } from '../tts-upstream.js';
 import { createVoiceCatalog, VOICE_MODELS_DDL } from '../voice-catalog.js';
 import { voiceFigures } from '../voice-figures.js';
 import { readVoicePrice, refreshVoiceMetadata, toVoiceModel } from '../voice-metadata.js';
@@ -35,30 +35,6 @@ describe('speechBody', () => {
   it('asks for zero retention, and leaves speed out unless given', () => {
     const body = speechBody({ modelId: 'm/x', voice: 'v', text: 't', format: 'pcm' });
     expect(body).toEqual({ model: 'm/x', input: 't', voice: 'v', response_format: 'pcm', provider: { zdr: true } });
-  });
-
-  it('sends Kokoro a colon that ends a clause as a semicolon', () => {
-    const body = speechBody({ modelId: 'hexgrad/kokoro-82m', voice: 'af_heart', text: 'Three rules: eat, sleep.', format: 'mp3' });
-    expect(body.input).toBe('Three rules; eat, sleep.');
-  });
-});
-
-describe('spokenText', () => {
-  it('mends every clause-ending colon for Kokoro, before a space or a line break', () => {
-    expect(spokenText('hexgrad/kokoro-82m', 'Note: one.\nWhy:\nTwo: three.')).toBe('Note; one.\nWhy;\nTwo; three.');
-  });
-
-  it('leaves a colon with no space after it: a time, an address, a ratio', () => {
-    const text = 'At 10:30 see https://example.org in a 3:2 frame.';
-    expect(spokenText('hexgrad/kokoro-82m', text)).toBe(text);
-  });
-
-  it('leaves a colon at the very end, where nothing follows to lose', () => {
-    expect(spokenText('hexgrad/kokoro-82m', 'As follows:')).toBe('As follows:');
-  });
-
-  it('sends every other maker the text as it is', () => {
-    expect(spokenText('google/gemini-tts', 'Note: one.')).toBe('Note: one.');
   });
 });
 

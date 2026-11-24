@@ -1,12 +1,21 @@
 /**
- * How long an MP3 plays, read from its own frame headers.
+ * How long an MP3 plays, read from its own frame headers, and the same MP3
+ * without the frames that only describe it.
  *
  * The audiobook keeps every sentence as the MP3 the voice made, and its
  * clock is the lengths of those files. Asking the native player would mean
- * loading each one; the bytes already say it. An ID3 tag in front is skipped
- * by its declared size; a Xing or Info frame (what a VBR encoder writes
- * first) gives the frame count outright; otherwise the frames are walked and
+ * loading each one; the bytes already say it. The frames are walked and
  * their samples summed, which is exact for CBR and VBR alike.
+ *
+ * A Xing or Info frame (what an encoder writes first) is not trusted. Kokoro's
+ * maker reads a sentence a clause at a time and joins the MP3s, so a
+ * sentence with a semicolon or a colon in it is two files, each with its own
+ * Info frame, and the first one declares only the first clause. Believed, by
+ * this clock or by Android's player (which stops where it says the audio
+ * ends), it cut every such sentence off at the clause. Such a file is made
+ * one (`asOneMp3`): one Xing frame, true for all of it. Not none: without
+ * one, Android's player guesses a VBR file's length from its first frame,
+ * which is quiet and small, and waited out a sentence seven times too long.
  *
  * Pure, so it can be tested on its own.
  */
@@ -50,46 +59,131 @@ export function readFrameHeader(bytes: Uint8Array, at: number): FrameHeader | nu
   return { length, sampleRate, samples, mono, mpeg1 };
 }
 
-/** Bytes taken by an ID3v2 tag at the very start, or 0. */
-function id3Size(bytes: Uint8Array): number {
-  if (bytes.length < 10 || bytes[0] !== 0x49 || bytes[1] !== 0x44 || bytes[2] !== 0x33) return 0;
-  const size = ((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) | ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f);
-  const footer = bytes[5] & 0x10 ? 10 : 0;
+/** Bytes taken by an ID3v2 tag at `at`, or 0. A file joined onto another may bring its own. */
+function id3Size(bytes: Uint8Array, at = 0): number {
+  if (bytes.length < at + 10 || bytes[at] !== 0x49 || bytes[at + 1] !== 0x44 || bytes[at + 2] !== 0x33) return 0;
+  const size = ((bytes[at + 6] & 0x7f) << 21) | ((bytes[at + 7] & 0x7f) << 14) | ((bytes[at + 8] & 0x7f) << 7) | (bytes[at + 9] & 0x7f);
+  const footer = bytes[at + 5] & 0x10 ? 10 : 0;
   return 10 + size + footer;
 }
 
-/** The frame count a Xing/Info frame declares, or null when the first frame is not one. */
-function xingFrames(bytes: Uint8Array, at: number, header: FrameHeader): number | null {
+/** Whether the frame at `at` is a Xing or Info frame: no audio, only what its encoder says about the file. */
+function isInfoFrame(bytes: Uint8Array, at: number, header: FrameHeader): boolean {
   const sideInfo = header.mpeg1 ? (header.mono ? 17 : 32) : header.mono ? 9 : 17;
   const tag = at + 4 + sideInfo;
-  if (tag + 12 > bytes.length) return null;
+  if (tag + 4 > bytes.length) return false;
   const id = String.fromCharCode(bytes[tag], bytes[tag + 1], bytes[tag + 2], bytes[tag + 3]);
-  if (id !== 'Xing' && id !== 'Info') return null;
-  const flags = (bytes[tag + 4] << 24) | (bytes[tag + 5] << 16) | (bytes[tag + 6] << 8) | bytes[tag + 7];
-  if (!(flags & 0x1)) return null;
-  return ((bytes[tag + 8] << 24) | (bytes[tag + 9] << 16) | (bytes[tag + 10] << 8) | bytes[tag + 11]) >>> 0;
+  return id === 'Xing' || id === 'Info';
+}
+
+/** How far on to look for the next frame past bytes that are not one. */
+const RESYNC_BYTES = 4096;
+
+/** The next frame at or after `from` that another frame follows (or that ends the file), or -1. */
+function nextFrame(bytes: Uint8Array, from: number): number {
+  const end = Math.min(bytes.length, from + RESYNC_BYTES);
+  for (let at = from; at < end; at++) {
+    const frame = readFrameHeader(bytes, at);
+    if (frame && (at + frame.length >= bytes.length || readFrameHeader(bytes, at + frame.length))) return at;
+  }
+  return -1;
+}
+
+interface Walk {
+  seconds: number;
+  /** The byte ranges of the audio frames, in order. */
+  kept: [number, number][];
+  /** The first Xing or Info frame, the one a rewritten file keeps. */
+  info: { start: number; header: FrameHeader } | null;
+  infoFrames: number;
+  /** Joined-on tags and stray bytes passed over. */
+  foreign: number;
+}
+
+function walk(bytes: Uint8Array): Walk {
+  const result: Walk = { seconds: 0, kept: [], info: null, infoFrames: 0, foreign: 0 };
+  let at = nextFrame(bytes, id3Size(bytes));
+  if (at < 0) return result;
+  while (at < bytes.length) {
+    const tag = id3Size(bytes, at);
+    if (tag > 0) {
+      result.foreign += 1;
+      at += tag;
+      continue;
+    }
+    const frame = readFrameHeader(bytes, at);
+    if (!frame) {
+      const next = nextFrame(bytes, at + 1);
+      if (next < 0) break;
+      result.foreign += 1;
+      at = next;
+      continue;
+    }
+    if (isInfoFrame(bytes, at, frame)) {
+      result.infoFrames += 1;
+      result.info ??= { start: at, header: frame };
+    } else {
+      result.seconds += frame.samples / frame.sampleRate;
+      result.kept.push([at, Math.min(at + frame.length, bytes.length)]);
+    }
+    at += frame.length;
+  }
+  return result;
 }
 
 /** Seconds of audio in an MP3, or 0 when no frame can be found. */
 export function mp3DurationSec(bytes: Uint8Array): number {
-  let at = id3Size(bytes);
-  // A stray byte or two before the first frame: look a little way on for it.
-  const searchEnd = Math.min(bytes.length, at + 4096);
-  let first: FrameHeader | null = null;
-  for (; at < searchEnd; at++) {
-    first = readFrameHeader(bytes, at);
-    if (first && (at + first.length === bytes.length || readFrameHeader(bytes, at + first.length))) break;
-    first = null;
+  return walk(bytes).seconds;
+}
+
+/**
+ * A Xing frame that tells the truth about `frames` audio frames in `total`
+ * bytes (itself included), on the first Info frame's own header: the frame
+ * count, the byte count and, where the frame has room, a seek table, so a
+ * player knows the length and can seek within it. Everything else in the
+ * frame (the encoder's notes about the first part only) is zeroed.
+ */
+function truthfulXing(bytes: Uint8Array, info: { start: number; header: FrameHeader }, offsets: number[], total: number): Uint8Array {
+  const { header } = info;
+  const frame = bytes.slice(info.start, info.start + header.length);
+  const tag = 4 + (header.mpeg1 ? (header.mono ? 17 : 32) : header.mono ? 9 : 17);
+  frame.fill(0, 4);
+  const withToc = tag + 16 + 100 <= frame.length;
+  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+  frame.set([0x58, 0x69, 0x6e, 0x67], tag); // 'Xing'
+  view.setUint32(tag + 4, withToc ? 0x7 : 0x3);
+  view.setUint32(tag + 8, offsets.length);
+  view.setUint32(tag + 12, total);
+  if (withToc) {
+    for (let i = 0; i < 100; i++) {
+      const at = header.length + offsets[Math.floor((i / 100) * offsets.length)];
+      frame[tag + 16 + i] = Math.min(255, Math.floor((at / total) * 256));
+    }
   }
-  if (!first) return 0;
-  const declared = xingFrames(bytes, at, first);
-  if (declared !== null) return (declared * first.samples) / first.sampleRate;
-  let seconds = 0;
-  while (at < bytes.length) {
-    const frame = readFrameHeader(bytes, at);
-    if (!frame) break;
-    seconds += frame.samples / frame.sampleRate;
-    at += frame.length;
+  return frame;
+}
+
+/**
+ * The MP3 as one file: its audio frames behind a single Xing frame that
+ * counts them all, or null when it is one file already (one Info frame at
+ * most, nothing between its frames).
+ */
+export function asOneMp3(bytes: Uint8Array): Uint8Array | null {
+  const { kept, info, infoFrames, foreign } = walk(bytes);
+  if (kept.length === 0 || (infoFrames <= 1 && foreign === 0)) return null;
+  const offsets: number[] = [];
+  let audio = 0;
+  for (const [from, to] of kept) {
+    offsets.push(audio);
+    audio += to - from;
   }
-  return seconds;
+  const lead = info ? truthfulXing(bytes, info, offsets, info.header.length + audio) : new Uint8Array(0);
+  const out = new Uint8Array(lead.length + audio);
+  out.set(lead, 0);
+  let at = lead.length;
+  for (const [from, to] of kept) {
+    out.set(bytes.subarray(from, to), at);
+    at += to - from;
+  }
+  return out;
 }

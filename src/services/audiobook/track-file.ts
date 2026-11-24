@@ -4,13 +4,14 @@
  *
  * Every voice answers MP3 to the audiobook (the server encodes for those that
  * only make PCM), so the cached piece is the track itself and its length is
- * read from its own frames. An older server may still answer PCM: that is
+ * read from its own frames. A piece made of several MP3s joined (Kokoro's,
+ * for any sentence with a clause in it) is made one first (`mp3-duration.ts`). An older server may still answer PCM: that is
  * wrapped in a WAV header once, beside the cache, so the book plays anyway.
  */
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { pieceFileUri, type PieceFile } from '@/services/cloud-tts/audio-cache';
-import { mp3DurationSec } from '@/utils/mp3-duration';
+import { asOneMp3, mp3DurationSec } from '@/utils/mp3-duration';
 
 export interface TrackFile {
   uri: string;
@@ -62,8 +63,16 @@ export async function trackFile(key: string): Promise<TrackFile | null> {
   const piece = await pieceFileUri(key);
   if (!piece) return null;
   if (piece.kind === 'pcm') return wavFrom(key, piece);
-  const seconds = mp3DurationSec(await new File(piece.uri).bytes());
-  return { uri: piece.uri, mimeType: 'audio/mpeg', seconds };
+  const file = new File(piece.uri);
+  let bytes: Uint8Array = await file.bytes();
+  // Once per piece, kept pieces too: MP3s joined into one, so the player reads
+  // the whole sentence rather than stopping where the first part says it ends.
+  const audio = asOneMp3(bytes);
+  if (audio) {
+    file.write(audio);
+    bytes = audio;
+  }
+  return { uri: piece.uri, mimeType: 'audio/mpeg', seconds: mp3DurationSec(bytes) };
 }
 
 /** WAV copies made for an older server's PCM: they are only needed while the book plays. */

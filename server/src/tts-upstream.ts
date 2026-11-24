@@ -13,7 +13,7 @@
  * content type in an unexpected shape or a cost lookup that never answers all
  * have a fallback, and CLOUD-VOICES-HANDOVER.md says what to look at first.
  */
-import { isKokoroModel, type SpeechFormat } from 'samwell-shared';
+import type { SpeechFormat } from 'samwell-shared';
 
 import { PROVIDER_PREFERENCES } from './openrouter.js';
 
@@ -32,25 +32,10 @@ export interface SpeechRequest {
   format: SpeechFormat;
 }
 
-/**
- * The text a maker is sent.
- *
- * Kokoro in the cloud skips the words after a colon, up to the end of the
- * sentence: "There are three rules: eat, sleep, and read." is heard as "There
- * are three rules." Kokoro itself reads a colon well (its phonemizer and the
- * model were both tried here with one), so it is the maker's own handling of
- * the text, before Kokoro, that loses them. A colon that ends a clause is sent
- * as a semicolon, which Kokoro pauses on about as long. One with no space
- * after it is not a clause end and is left: "10:30", "https://", "3:2".
- */
-export function spokenText(modelId: string, text: string): string {
-  return isKokoroModel(modelId) ? text.replace(/:(?=\s)/g, ';') : text;
-}
-
 export function speechBody(request: SpeechRequest): Record<string, unknown> {
   return {
     model: request.modelId,
-    input: spokenText(request.modelId, request.text),
+    input: request.text,
     voice: request.voice,
     response_format: request.format,
     // Zero retention on speech as on chat: the page being read is sent to the
