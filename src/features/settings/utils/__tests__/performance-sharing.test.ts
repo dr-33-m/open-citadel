@@ -15,7 +15,12 @@ describe('PERFORMANCE_INFO', () => {
     const text = JSON.stringify(PERFORMANCE_INFO).toLowerCase();
     expect(text).not.toContain('anonymous');
     expect(text).toContain('random id');
-    expect(PERFORMANCE_INFO.points.at(-1)).toMatch(/^Never what you read/);
+    expect(PERFORMANCE_INFO.notice?.title).toBe('Never sent');
+    expect(PERFORMANCE_INFO.notice?.body).toMatch(/^What you read, write or say to Samwell/);
     expect(text).not.toContain('—');
+  });
+
+  it('keeps each thing sent to a short line', () => {
+    for (const point of PERFORMANCE_INFO.points) expect(point.length).toBeLessThanOrEqual(80);
   });
 });

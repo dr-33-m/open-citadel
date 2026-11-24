@@ -167,11 +167,12 @@ export function createTranscribeJobs(client: Client, now: () => number = () => D
     },
 
     /** A job for this episode the phone can still use: running, or ready and waiting. */
-    async reusableFor(accountId: string, episodeKey: string): Promise<JobRow | null> {
+    async reusableFor(accountId: string, episodeKey: string, options: { runningOnly?: boolean } = {}): Promise<JobRow | null> {
+      const finished = options.runningOnly ? '' : ` OR (status = 'ready' AND result_json IS NOT NULL)`;
       return (
         await select(
           `SELECT * FROM transcription_jobs WHERE account_id = ? AND episode_key = ?
-             AND (${active} OR (status = 'ready' AND result_json IS NOT NULL))
+             AND (${active}${finished})
            ORDER BY created_at_ms DESC LIMIT 1`,
           [accountId, episodeKey],
         )

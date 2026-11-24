@@ -70,6 +70,7 @@ export async function deleteDownloads(ids: string[]): Promise<void> {
   await setStatus(ids, {
     downloadStatus: "none",
     downloadFile: null,
+    downloadCopy: null,
     downloadCover: null,
     downloadedAt: null,
     downloadError: null,

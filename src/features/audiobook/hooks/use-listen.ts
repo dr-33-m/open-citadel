@@ -8,6 +8,7 @@ import { paceOf } from '@/features/audiobook/utils/book-clock';
 import { bookVoice } from '@/features/audiobook/utils/book-voice';
 import { listenInfo, listenPlansLine } from '@/features/audiobook/utils/listen-info';
 import { listenEstimate, listenStats } from '@/features/audiobook/utils/listen-estimate';
+import { whyNotListening } from '@/features/audiobook/utils/listen-way';
 import { landOnCloud } from '@/features/tts/hooks/use-voice-source';
 import { cloudVoiceLabel } from '@/features/tts/utils/cloud-voice-names';
 import { whenSheetsClosed } from '@/lib/sheets-closing';
@@ -25,13 +26,6 @@ const TOAST = 'audiobook-listen';
 
 /** What Listen is given: a book from the Library, or a blog post's reader copy (`listenItem`). */
 export type ListenTarget = Pick<BookInfo, 'id' | 'title' | 'author' | 'coverUrl'> & { post?: boolean };
-
-const whyNot = (result: StartResult, post: boolean) =>
-  result === 'unavailable'
-    ? 'Audio is not available on this phone.'
-    : result === 'barred'
-      ? 'Its publisher asks that its posts are not read in a cloud voice.'
-      : `This ${post ? 'post' : 'book'} can't be read aloud yet.`;
 
 /**
  * Listen, from a book's menu or a blog post's.
@@ -71,7 +65,7 @@ export function useListen() {
     async (bookId: string, post: boolean) => {
       const settle = (result: StartResult) => {
         if (result === 'no-voice') setSelling(true);
-        else if (result !== 'playing') showToast({ key: TOAST, message: whyNot(result, post) });
+        else if (result !== 'playing') showToast({ key: TOAST, message: whyNotListening(result, post) });
       };
       // The book in the mini player at once, its loader on, whatever was
       // playing silenced. Then one movement at a time: the sheet Listen was

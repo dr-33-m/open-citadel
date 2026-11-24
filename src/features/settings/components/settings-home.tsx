@@ -1,12 +1,12 @@
 import React from 'react';
 import { View } from 'react-native';
 
-import { Activity, AudioLines, BookOpen, Brain, MessageCircleHeart, MicSignal, Sun, User, ZodiacPisces } from '@/components/icons';
+import { Activity, AudioLines, BookOpen, BookUser, MessageCircleHeart, MicSignal, Sun, User, ZodiacPisces } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { Switch } from '@/components/ui/switch';
 import { SectionLabel } from '@/features/settings/components/section-label';
 import { SettingsRow } from '@/features/settings/components/settings-row';
-import type { SettingsPane } from '@/features/settings/utils/panes';
+import { PANE_TITLES, type SettingsPane } from '@/features/settings/utils/panes';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 export type SettingsHomeProps = {
@@ -73,8 +73,8 @@ export const SettingsHome = React.memo(function SettingsHome({
           onPress={() => onOpen('samwell')}
         />
         <SettingsRow
-          icon={Brain}
-          title="What Samwell knows"
+          icon={BookUser}
+          title={PANE_TITLES.memory}
           detail={summaries.memory}
           onPress={() => onOpen('memory')}
         />

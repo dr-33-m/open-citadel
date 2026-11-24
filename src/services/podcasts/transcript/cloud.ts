@@ -6,7 +6,7 @@
  * refused is turned into one of a few kinds, because each has its own toast
  * or its own sheet; a status code is no use to anybody listening.
  */
-import { TranscriptDocSchema, type TranscribeJobView, type TranscribeRequest, type TranscriptDoc } from 'samwell-shared';
+import { TimeMapAnswerSchema, TranscriptDocSchema, type TimeMapSegment, type TranscribeJobView, type TranscribeRequest, type TranscriptDoc } from 'samwell-shared';
 
 import { SAMWELL_CLOUD_BASE_URL } from '@/constants/samwell-cloud';
 import { NotSignedIn, cloudHeaders, cloudJsonHeaders } from '@/services/cloud-identity';
@@ -43,10 +43,10 @@ async function headers(json = false): Promise<Record<string, string>> {
 }
 
 /** One call, with a timeout Hermes can do (no `AbortSignal.timeout` there). Offline becomes a refusal. */
-async function call(path: string, init: RequestInit = {}, signal?: AbortSignal): Promise<Response> {
+async function call(path: string, init: RequestInit = {}, signal?: AbortSignal, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
   if (!SAMWELL_CLOUD_BASE_URL) throw new TranscribeError('failed');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const cancel = () => controller.abort();
   signal?.addEventListener('abort', cancel, { once: true });
   try {
@@ -98,6 +98,29 @@ export async function collectTranscript(jobId: string): Promise<{ doc: Transcrip
   const parsed = TranscriptDocSchema.safeParse(body.transcript);
   if (!parsed.success) throw new TranscribeError('failed');
   return { doc: parsed.data, credits: Number(body.credits ?? 0) };
+}
+
+/**
+ * Past the server's own limit for listening to a copy (three minutes,
+ * `audio-align/decode.ts`), so it is the server that gives up and says so.
+ */
+const MAP_TIMEOUT_MS = 4 * 60_000;
+
+/**
+ * The copy of the episode at `audioUrl` mapped onto the clock of the copy a
+ * transcript was made from, by that copy's fingerprint (`time-map.ts`). Free,
+ * and minutes at worst: the server fetches the copy and listens to it.
+ */
+export async function mapAudioCopy(audioUrl: string, fingerprint: string, signal?: AbortSignal): Promise<TimeMapSegment[]> {
+  const response = await call(
+    '/align',
+    { method: 'POST', headers: await headers(true), body: JSON.stringify({ audioUrl, fingerprint }) },
+    signal,
+    MAP_TIMEOUT_MS,
+  );
+  const answer = TimeMapAnswerSchema.safeParse(await response.json().catch(() => null));
+  if (!response.ok || !answer.success) throw new TranscribeError(response.status === 429 ? 'busy' : 'failed');
+  return answer.data.segments;
 }
 
 /** The reader's Stop: the server releases the hold, and nothing is charged. */

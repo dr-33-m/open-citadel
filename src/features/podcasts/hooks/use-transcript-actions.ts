@@ -11,8 +11,8 @@ import { linePassage } from '@/features/podcasts/utils/transcript-rows';
 import { queryClient } from '@/lib/query-client';
 import { invalidatePodcastLibrary } from '@/query-manager/podcasts';
 import { transcriptKeys } from '@/query-manager/transcripts';
-import { playEpisodeFrom } from '@/services/podcasts/player';
 import { addEpisodeHighlight } from '@/services/podcasts/transcript/highlights';
+import { playTranscriptMoment } from '@/services/podcasts/transcript/play-moment';
 import { ensureEpisodeBook, renameSpeaker } from '@/services/podcasts/transcript/store';
 import { showChatOnSamwellPage } from '@/services/samwell-handoff';
 import { useChatStore } from '@/stores/chat';
@@ -62,7 +62,7 @@ export function useTranscriptActions({
   const onRow = React.useCallback(
     (line: TranscriptLine) => {
       // A transcript without times has nowhere to play from.
-      if (episodeId && line.time !== null) void playEpisodeFrom(episodeId, line.start);
+      if (episodeId && line.time !== null) void playTranscriptMoment(episodeId, line.start);
     },
     [episodeId],
   );

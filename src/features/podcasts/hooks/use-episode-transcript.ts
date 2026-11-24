@@ -5,6 +5,7 @@ import React from 'react';
 import { showToast } from '@/components/toast/toast-provider';
 import { useTranscribeConfirm, type ConfirmReason } from '@/features/podcasts/hooks/use-transcribe-confirm';
 import { transcriptButtons, transcriptView } from '@/features/podcasts/utils/transcript-state';
+import { whenSheetsClosed } from '@/lib/sheets-closing';
 import { createTranscribeJobQueryOptions } from '@/query-manager/transcripts';
 import type { EpisodeItem } from '@/services/podcasts/records';
 import { fetchFeedTranscript } from '@/services/podcasts/transcript/feed';
@@ -99,13 +100,28 @@ export function useEpisodeTranscript(episode: TranscriptEpisode | null) {
     } else confirm.open('samwell');
   };
 
+  // From inside the transcript: it closes, and the confirm sheet says what a
+  // new one costs.
+  const onRetranscribe = () => {
+    if (!id || view !== 'ready') return;
+    setSheetOpen(false);
+    whenSheetsClosed(() => confirm.open('again'));
+  };
+
   return {
     view,
     buttons: { ...transcriptButtons(view, progress), onTranscript, onAskSamwell },
     confirm: confirm.sheet,
     info: confirm.info,
     plans: confirm.plans,
-    transcript: { visible: sheetOpen, onClose: () => setSheetOpen(false), episodeId: id, preparing: feed.isPending },
+    // Offered once there is a transcript to replace, not while a show's own is still arriving.
+    transcript: {
+      visible: sheetOpen,
+      onClose: () => setSheetOpen(false),
+      episodeId: id,
+      preparing: feed.isPending,
+      onRetranscribe: view === 'ready' && !feed.isPending ? onRetranscribe : undefined,
+    },
     openChat,
   };
 }

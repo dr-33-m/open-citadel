@@ -1,3 +1,60 @@
+diff --git a/lib/module/extensions/speech/tasks/kokoroTextToSpeech.js b/lib/module/extensions/speech/tasks/kokoroTextToSpeech.js
+index 9a920b1b2fb56477b908913359b47706ceefa9f9..c95566d9068a45f1aed1f4b1e46dc6730ab65610 100644
+--- a/lib/module/extensions/speech/tasks/kokoroTextToSpeech.js
++++ b/lib/module/extensions/speech/tasks/kokoroTextToSpeech.js
+@@ -67,6 +67,41 @@ const tokenBounds = spec => {
+  * @typeParam K Voice keys record constraint.
+  */
+ 
++/*
++ * Open Citadel patch: a phonemizer is never disposed.
++ *
++ * Disposing one frees its neural G2P model (an ExecuTorch Module), and on some
++ * Android phones `Module::~Module` segfaults right there and takes the app
++ * with it (Play Console: PhonemizerHostObject dispose -> ~NeuralPhonemizer ->
++ * ~Module). So each phonemizer is made once per config and runtime, shared by
++ * every Kokoro pipeline built over that config, and kept referenced for the
++ * life of the process: a dropped reference would run the same destructor when
++ * the garbage collector frees the host object. A pipeline's own `dispose`
++ * still frees its two models and its tensors, which is where the memory is.
++ *
++ * Sharing assumes one pipeline phonemizes at a time, which is how the app uses
++ * them; two at once over one config would see RESOURCE_BUSY.
++ */
++const sharedPhonemizers = [];
++function sharedPhonemizer(config, runtime) {
++  const key = JSON.stringify(config);
++  const found = sharedPhonemizers.find(entry => entry.key === key && entry.runtime === runtime);
++  if (found) return found.made;
++  const made = wrapAsync(createPhonemizer, runtime)(config);
++  const entry = {
++    key,
++    runtime,
++    made
++  };
++  sharedPhonemizers.push(entry);
++  // A failed creation is not kept, so the next pipeline tries again.
++  made.catch(() => {
++    const index = sharedPhonemizers.indexOf(entry);
++    if (index >= 0) sharedPhonemizers.splice(index, 1);
++  });
++  return made;
++}
++
+ /**
+  * Creates a Kokoro Text-to-Speech pipeline.
+  *
+@@ -202,8 +237,8 @@ export async function createKokoroTextToSpeech(config, runtime) {
+     if (minTokens > maxTokens) {
+       throw RnExecuTorchError('SCHEMA_MISMATCH', `The duration predictor and the synthesizer share no token count ` + `(${predictorTokens.min}..${predictorTokens.max} and ` + `${synthesizerTokens.min}..${synthesizerTokens.max}).`);
+     }
+-    const phonemizer = await wrapAsync(createPhonemizer, runtime)(config.phonemizer);
+-    scope.track(phonemizer);
++    // Shared and never disposed: see `sharedPhonemizer` above.
++    const phonemizer = await sharedPhonemizer(config.phonemizer, runtime);
+ 
+     // Pre-parse the voice matrices into memory
+     const parsedVoices = {};
 diff --git a/lib/module/fetcher/fetcher.js b/lib/module/fetcher/fetcher.js
 index 8699b4188a6355e2cbc378514217b48c6bd83177..9f5ab60015ead2223a3dda251e3bfa1d0e0c0fbe 100644
 --- a/lib/module/fetcher/fetcher.js
@@ -20,6 +77,75 @@ index 8699b4188a6355e2cbc378514217b48c6bd83177..9f5ab60015ead2223a3dda251e3bfa1d
    }, (received, total) => {
      const recv = Number(received);
      const tot = Number(total);
+diff --git a/src/extensions/speech/tasks/kokoroTextToSpeech.ts b/src/extensions/speech/tasks/kokoroTextToSpeech.ts
+index a61f1a5691cb86377af009a7d77dae5bf0d9ffa0..3da94992182e6a069c419d24f36ba205e9025ddb 100644
+--- a/src/extensions/speech/tasks/kokoroTextToSpeech.ts
++++ b/src/extensions/speech/tasks/kokoroTextToSpeech.ts
+@@ -21,7 +21,7 @@ import {
+ import { wrapAsync } from '../../../core/runtime';
+ import { createResourceScope } from '../../../core/lifetime';
+ import { RnExecuTorchError } from '../../../core/error';
+-import { createPhonemizer, type PhonemizerConfig } from '../utils/phonemizer';
++import { createPhonemizer, type Phonemizer, type PhonemizerConfig } from '../utils/phonemizer';
+ import { partition } from '../utils/textPartitioner';
+ import { repeatInterleave } from '../../math';
+ import {
+@@ -144,6 +144,44 @@ export type KokoroTextToSpeech<K extends PropertyKey = string> = {
+   readonly synthesizeStop: () => void;
+ };
+ 
++/*
++ * Open Citadel patch: a phonemizer is never disposed.
++ *
++ * Disposing one frees its neural G2P model (an ExecuTorch Module), and on some
++ * Android phones `Module::~Module` segfaults right there and takes the app
++ * with it (Play Console: PhonemizerHostObject dispose -> ~NeuralPhonemizer ->
++ * ~Module). So each phonemizer is made once per config and runtime, shared by
++ * every Kokoro pipeline built over that config, and kept referenced for the
++ * life of the process: a dropped reference would run the same destructor when
++ * the garbage collector frees the host object. A pipeline's own `dispose`
++ * still frees its two models and its tensors, which is where the memory is.
++ *
++ * Sharing assumes one pipeline phonemizes at a time, which is how the app uses
++ * them; two at once over one config would see RESOURCE_BUSY.
++ */
++const sharedPhonemizers: {
++  key: string;
++  runtime: WorkletRuntime | undefined;
++  made: Promise<Phonemizer>;
++}[] = [];
++function sharedPhonemizer(
++  config: PhonemizerConfig,
++  runtime: WorkletRuntime | undefined
++): Promise<Phonemizer> {
++  const key = JSON.stringify(config);
++  const found = sharedPhonemizers.find((entry) => entry.key === key && entry.runtime === runtime);
++  if (found) return found.made;
++  const made = wrapAsync(createPhonemizer, runtime)(config);
++  const entry = { key, runtime, made };
++  sharedPhonemizers.push(entry);
++  // A failed creation is not kept, so the next pipeline tries again.
++  made.catch(() => {
++    const index = sharedPhonemizers.indexOf(entry);
++    if (index >= 0) sharedPhonemizers.splice(index, 1);
++  });
++  return made;
++}
++
+ /**
+  * Creates a Kokoro Text-to-Speech pipeline.
+  *
+@@ -274,8 +312,8 @@ export async function createKokoroTextToSpeech<K extends PropertyKey>(
+       );
+     }
+ 
+-    const phonemizer = await wrapAsync(createPhonemizer, runtime)(config.phonemizer);
+-    scope.track(phonemizer);
++    // Shared and never disposed: see `sharedPhonemizer` above.
++    const phonemizer = await sharedPhonemizer(config.phonemizer, runtime);
+ 
+     // Pre-parse the voice matrices into memory
+     const parsedVoices = {} as Record<K, Float32Array>;
 diff --git a/src/fetcher/fetcher.ts b/src/fetcher/fetcher.ts
 index 1ae112716dc32674109099bf74959ccca506ed21..5e6a7211d2c2e148f82055e069d48d203eb56dfe 100644
 --- a/src/fetcher/fetcher.ts

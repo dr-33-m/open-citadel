@@ -3,7 +3,7 @@ import React from 'react';
 import type { BookKind } from '@/db/schema';
 import { useEpisodeOfBook } from '@/features/podcasts/hooks/use-episode-of-book';
 import { useBookCover } from '@/hooks/use-book-cover';
-import { playEpisodeFrom } from '@/services/podcasts/player';
+import { playTranscriptMoment } from '@/services/podcasts/transcript/play-moment';
 import { useBooksStore } from '@/stores/books';
 import { useChatStore } from '@/stores/chat';
 import { useSamwellSessionStore } from '@/stores/samwell-session';
@@ -45,10 +45,13 @@ export function useSamwellAttachment(): SamwellAttachment {
   );
 }
 
-/** In an episode chat, a cited time plays the episode from there. */
+/**
+ * In an episode chat, a cited time plays the episode from there. Samwell cites
+ * the transcript's clock, so it is moved to where the moment is heard.
+ */
 export function useEpisodeTimePlayer(episode: SamwellAttachment['episode']) {
   return React.useMemo(
-    () => (episode ? (seconds: number) => void playEpisodeFrom(episode.episodeId, seconds) : null),
+    () => (episode ? (seconds: number) => void playTranscriptMoment(episode.episodeId, seconds) : null),
     [episode],
   );
 }

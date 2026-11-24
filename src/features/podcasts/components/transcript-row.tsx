@@ -21,6 +21,8 @@ export type TranscriptRowColors = {
 
 type TranscriptRowProps = {
   line: TranscriptLine;
+  /** The time drawn beside it: when it is heard in the copy being played (`transcript-clock.ts`). Null for none. */
+  time: string | null;
   /** The line being spoken: its time gold, a gold rule beside it, at full strength. */
   lit: boolean;
   /** Following the audio: every other line steps back. */
@@ -51,6 +53,7 @@ type TranscriptRowProps = {
  */
 export const TranscriptRow = React.memo(function TranscriptRow({
   line,
+  time,
   lit,
   dim,
   match,
@@ -85,7 +88,7 @@ export const TranscriptRow = React.memo(function TranscriptRow({
     match && { backgroundColor: colors.band },
     pressed && styles.pressed,
   ];
-  const label = `${line.time ? `${line.time}. ` : ''}${mark ? 'Highlighted. ' : ''}${line.text}`;
+  const label = `${time ? `${time}. ` : ''}${mark ? 'Highlighted. ' : ''}${line.text}`;
 
   return (
     <View>
@@ -114,8 +117,8 @@ export const TranscriptRow = React.memo(function TranscriptRow({
         accessibilityState={{ selected: lit }}
       >
         {lit ? <View style={[styles.rule, { backgroundColor: colors.gold }]} /> : null}
-        {line.time ? (
-          <Text style={[typography.labelSm, styles.time, { width: gutter, color: lit ? colors.gold : colors.muted }]}>{line.time}</Text>
+        {time ? (
+          <Text style={[typography.labelSm, styles.time, { width: gutter, color: lit ? colors.gold : colors.muted }]}>{time}</Text>
         ) : null}
         <Text style={[styles.words, { color: colors.ink }, dim && !lit && styles.dimmed]}>
           {mark ? <Text style={{ backgroundColor: `${mark}${MARKER_ALPHA}` }}>{line.text}</Text> : line.text}

@@ -9,8 +9,8 @@
  * launches. The transcript, its book and its chats outlive the episode being
  * unfollowed, as a post's copy outlives its blog dropping it.
  */
-import { and, eq } from 'drizzle-orm';
-import { documentDirectory, getInfoAsync, makeDirectoryAsync, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
+import { and, eq, sql } from 'drizzle-orm';
+import { deleteAsync, documentDirectory, getInfoAsync, makeDirectoryAsync, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
 import { TranscriptDocSchema, type TranscriptDoc } from 'samwell-shared';
 
 import { db } from '@/db/client';
@@ -25,6 +25,17 @@ const TRANSCRIPTS_DIR = `${documentDirectory}transcripts/`;
 const EPISODES_DIR = `${documentDirectory}episodes/`;
 
 const fileFor = (name: string) => `${TRANSCRIPTS_DIR}${name}`;
+/**
+ * The fingerprint of the copy a transcript was made from (`time-map.ts`),
+ * beside the transcript rather than in it: hundreds of kilobytes an hour that
+ * only mapping a copy reads, kept out of every read of the transcript itself.
+ */
+const fingerprintFor = (episodeId: string) => fileFor(`${episodeId}.fp`);
+
+/** The fingerprint kept with the episode's transcript, or null without one. */
+export async function readFingerprint(episodeId: string): Promise<string | null> {
+  return readAsStringAsync(fingerprintFor(episodeId)).catch(() => null);
+}
 
 /** The transcript on this phone for an episode, or null when there is none (or it cannot be read). */
 export async function readTranscript(episodeId: string): Promise<TranscriptDoc | null> {
@@ -74,14 +85,28 @@ async function writeEpisodeBook(episodeId: string, doc: TranscriptDoc): Promise<
   return bookId;
 }
 
-/** Keeps a transcript that just arrived: the JSON, the EPUB, and the episode row saying so. */
-export async function saveTranscript(episodeId: string, doc: TranscriptDoc): Promise<string> {
+/**
+ * Keeps a transcript that just arrived: the JSON, the EPUB, and the episode
+ * row saying so. `sameCopy` is the same transcript saved again (a speaker
+ * renamed), which keeps the copy it was made from, its fingerprint and map.
+ */
+export async function saveTranscript(episodeId: string, doc: TranscriptDoc, options: { sameCopy?: boolean } = {}): Promise<string> {
   const name = `${episodeId}.json`;
+  const { audio, ...text } = doc;
   await makeDirectoryAsync(TRANSCRIPTS_DIR, { intermediates: true }).catch(() => {});
-  await writeAsStringAsync(fileFor(name), JSON.stringify(doc));
+  await writeAsStringAsync(fileFor(name), JSON.stringify(text));
+  if (!options.sameCopy) {
+    if (audio) await writeAsStringAsync(fingerprintFor(episodeId), audio.fingerprint);
+    else await deleteAsync(fingerprintFor(episodeId), { idempotent: true }).catch(() => {});
+  }
   const bookId = await writeEpisodeBook(episodeId, doc);
+  // A map belongs to the copy the transcript was made from: dropped for a
+  // transcript made from another copy, or from none known.
+  const copy = audio?.identity ?? null;
+  const was = db.select({ copy: podcastEpisodes.transcriptCopy }).from(podcastEpisodes).where(eq(podcastEpisodes.id, episodeId)).get()?.copy ?? null;
   db.update(podcastEpisodes)
     .set({
+      ...(options.sameCopy ? {} : { transcriptCopy: copy, ...(was === copy ? {} : { transcriptTimeMap: null }) }),
       transcriptStatus: 'ready',
       transcriptSource: doc.source,
       transcriptFile: name,
@@ -125,7 +150,7 @@ export async function renameSpeaker(episodeId: string, speaker: number, name: st
   const clean = name.replace(/\s+/g, ' ').trim().slice(0, 80);
   if (!doc || !clean || speaker < 0 || speaker >= doc.speakers.length) return doc;
   const next = { ...doc, speakers: doc.speakers.map((old, i) => (i === speaker ? clean : old)) };
-  await saveTranscript(episodeId, next);
+  await saveTranscript(episodeId, next, { sameCopy: true });
   return next;
 }
 
@@ -138,10 +163,13 @@ export function setTranscribing(episodeId: string, jobId: string): void {
   invalidatePodcastLibrary();
 }
 
-/** A cloud job ended without a transcript: stopped, failed or expired. A transcript already here stays. */
+/**
+ * A cloud job ended without a transcript: stopped, failed or expired. A
+ * transcript already here (one being made again) stays, and is ready again.
+ */
 export function clearTranscribing(episodeId: string): void {
   db.update(podcastEpisodes)
-    .set({ transcriptStatus: 'none', transcriptJobId: null })
+    .set({ transcriptStatus: sql`CASE WHEN ${podcastEpisodes.transcriptFile} IS NOT NULL THEN 'ready' ELSE 'none' END`, transcriptJobId: null })
     .where(and(eq(podcastEpisodes.id, episodeId), eq(podcastEpisodes.transcriptStatus, 'transcribing')))
     .run();
   invalidatePodcastLibrary();

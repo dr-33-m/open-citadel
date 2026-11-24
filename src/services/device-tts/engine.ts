@@ -194,6 +194,10 @@ export function stop(): void {
  * where it is a tight fit (`stores/model`). The voice loads again the next
  * time something is read aloud. Takes its turn in the synthesis queue, so it
  * never frees a pipeline that is mid-utterance.
+ *
+ * Frees the two Kokoro models, not the phonemizer: that is kept for the life
+ * of the app and shared by the next pipeline, because freeing it crashed some
+ * phones natively (`patches/react-native-executorch.patch`).
  */
 export function releaseVoice(): Promise<void> {
   if (!engine) return Promise.resolve();

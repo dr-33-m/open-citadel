@@ -7,14 +7,18 @@ import { TranscribeError } from '@/services/podcasts/transcript/cloud';
 import { stopEpisodeTranscription, transcribeEpisode } from '@/services/podcasts/transcript/jobs';
 import { useSubscriptionStore } from '@/stores/subscription';
 
-/** Why the sheet is up: the Transcribe button, or Ask Samwell on an episode with no transcript yet. */
-export type ConfirmReason = 'transcript' | 'samwell';
+/**
+ * Why the sheet is up: the Transcribe button, Ask Samwell on an episode with
+ * no transcript yet, or Transcribe again from inside a transcript.
+ */
+export type ConfirmReason = 'transcript' | 'samwell' | 'again';
 
 export type ConfirmEpisode = { id: string; durationSec: number; transcriptJobId: string | null };
 
 const LINES: Record<ConfirmReason, string> = {
   transcript: 'Read along, find any moment, and talk it through with Samwell.',
   samwell: 'Samwell needs the transcript to talk about this episode.',
+  again: 'A new transcript that follows the copy you hear. Your highlights move with their words.',
 };
 
 /**
@@ -51,7 +55,7 @@ export function useTranscribeConfirm(
   );
 
   const start = useMutation({
-    mutationFn: (id: string) => transcribeEpisode(id),
+    mutationFn: ({ id, fresh }: { id: string; fresh: boolean }) => transcribeEpisode(id, { fresh }),
     onSuccess: () => {
       const why = reason ?? 'transcript';
       setReason(null);
@@ -83,7 +87,7 @@ export function useTranscribeConfirm(
   const onAction = () => {
     if (!episode) return;
     if (figure.short != null) setPlansOpen(true);
-    else start.mutate(episode.id);
+    else start.mutate({ id: episode.id, fresh: reason === 'again' });
   };
   const onStop = () => {
     if (episode?.transcriptJobId) stop.mutate({ id: episode.id, jobId: episode.transcriptJobId });

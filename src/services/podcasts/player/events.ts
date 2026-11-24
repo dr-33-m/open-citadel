@@ -7,16 +7,20 @@ import TrackPlayer, { Event, PlaybackState, type BackgroundEvent, type MediaItem
 
 import { isBookItem } from "@/services/audiobook/media-id";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
-import { watchNetwork } from "@/lib/network";
+import { phoneHasNetwork, watchNetwork } from "@/lib/network";
 import { advance, becomeCurrent, syncNativeQueue } from "@/services/podcasts/player/lifecycle";
 import { recoverFromFailedStream } from "@/services/podcasts/player/recover";
+import { moveToDownload } from "@/services/podcasts/player/to-file";
 import { nowPlayingFrom, speedFor } from "@/services/podcasts/player/media";
 import { applyCommands } from "@/services/player/commands";
 import { finishEpisode, persistProgress, ranToTheEnd, session, track } from "@/services/podcasts/player/session";
 import { addPlayerHandler, readyPlayer } from "@/services/player/events";
 import { store } from "@/services/player/session";
 import { selectEpisode } from "@/stores/player";
+import type { EpisodeItem } from "@/services/podcasts/records";
 import { getShow } from "@/services/podcasts/shows";
+import { copyBeingPlayed } from "@/services/podcasts/transcript/audio-copy";
+import { ensureTimeMap } from "@/services/podcasts/transcript/time-map";
 import { podcastPrefs, usePodcastPrefs } from "@/stores/podcast-prefs";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
 
@@ -57,7 +61,21 @@ async function adopt(mediaId: string): Promise<boolean> {
   const show = await getShow(item.podcastId);
   track(item, item.positionSec, show?.skipEndingSec ?? 0);
   store().patch({ current: nowPlayingFrom(item), loaded: true });
+  mapCopyBeingPlayed(item);
   return true;
+}
+
+/** Which copy the native player is playing, for the transcript's map (`transcript/audio-copy.ts`). */
+function mapCopyBeingPlayed(item: EpisodeItem): void {
+  let url: string | undefined;
+  try {
+    // An address the app gave it is a string; anything else is no copy of ours.
+    const active = TrackPlayer.getActiveMediaItem()?.url;
+    url = typeof active === "string" ? active : undefined;
+  } catch {
+    url = undefined;
+  }
+  void copyBeingPlayed(item, url).then((copy) => ensureTimeMap(item.id, copy));
 }
 
 /** Finishes the tracked episode and moves on. Lets go first, so no later tick writes a position back onto it. */
@@ -119,9 +137,18 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
 
 addPlayerHandler('episode', handleEvent);
 
-// What can play next depends on the network, and the native queue was filled
-// before it changed.
-watchNetwork(() => void syncNativeQueue());
+/**
+ * What can play next depends on the network, and the native queue was filled
+ * before it changed. Gone offline, an episode being streamed that is
+ * downloaded moves onto its file first (`to-file.ts`), which fills the queue
+ * behind it as it goes.
+ */
+async function onNetworkChange(): Promise<void> {
+  if (!phoneHasNetwork() && (await moveToDownload())) return;
+  await syncNativeQueue();
+}
+
+watchNetwork(() => void onNetworkChange().catch(() => {}));
 
 /**
  * Puts the last episode back in the mini player after a restart, paused and
@@ -153,6 +180,7 @@ export async function restoreNowPlaying(): Promise<void> {
     // controls, and nothing else says them again for an episode already playing.
     applyCommands("episode");
     track(item, TrackPlayer.getProgress().position);
+    mapCopyBeingPlayed(item);
     store().patch({
       current: nowPlayingFrom(item),
       loaded: true,

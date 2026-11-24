@@ -23,6 +23,7 @@ export * from './samwell-prompt';
 export * from './tags';
 export * from './takeaway';
 export * from './tools';
+export * from './time-map';
 export * from './transcripts';
 export * from './voices';
 export * from './web-search';
