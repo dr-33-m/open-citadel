@@ -3,6 +3,7 @@ import { asc, desc, eq } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { DEFAULT_HIGHLIGHT_COLOR } from '@/constants/highlights';
 import { highlights, notes } from '@/db/schema';
+import { invalidateHighlightLists } from '@/query-manager/highlights';
 import { localDayString } from '@/utils/day';
 
 export type NewHighlight = {
@@ -39,6 +40,7 @@ export async function insertHighlight(highlight: NewHighlight): Promise<string> 
     createdAt: now,
     createdDay: localDayString(new Date(now)),
   });
+  invalidateHighlightLists();
   return id;
 }
 
@@ -52,6 +54,7 @@ export function listBookHighlights(bookId: string): HighlightRow[] {
 /** A highlight's colour, its tags (a JSON list) or the chat it opened. */
 export async function updateHighlight(id: string, updates: { color?: string; tags?: string; chatSessionId?: string }): Promise<void> {
   await db.update(highlights).set(updates).where(eq(highlights.id, id));
+  invalidateHighlightLists();
 }
 
 export type HighlightNoteRow = typeof notes.$inferSelect;
@@ -82,8 +85,23 @@ export async function deleteHighlightNote(noteId: string): Promise<void> {
   await db.delete(notes).where(eq(notes.id, noteId));
 }
 
+/**
+ * Highlights moved to new places (a transcript made again), in one
+ * transaction, and every list told once.
+ */
+export function moveHighlights(moves: readonly { id: string; locator: object; chapter: string | null }[]): void {
+  if (moves.length === 0) return;
+  db.transaction((tx) => {
+    for (const move of moves) {
+      tx.update(highlights).set({ locator: JSON.stringify(move.locator), chapter: move.chapter }).where(eq(highlights.id, move.id)).run();
+    }
+  });
+  invalidateHighlightLists();
+}
+
 /** Removes a highlight and the notes written on it. */
 export async function deleteHighlight(id: string): Promise<void> {
   await db.delete(notes).where(eq(notes.highlightId, id));
   await db.delete(highlights).where(eq(highlights.id, id));
+  invalidateHighlightLists();
 }

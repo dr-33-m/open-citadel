@@ -1,0 +1,1 @@
+export { invalidateHighlightLists } from './invalidate';
