@@ -248,3 +248,110 @@ describe('/transcribe', () => {
     expect(body.credits).toBe(413);
   });
 });
+
+describe('/transcribe, for shows that stitch ads into each download', () => {
+  const COPY = 'https://cdn.example.com/ep412/default.mp3_ads-for-here_81711699.mp3?session=abc';
+
+  function withAudio(fingerprint: (url: string) => Promise<Uint32Array>) {
+    worker = createTranscribeWorker({
+      jobs,
+      billing,
+      apiKey: () => 'sk-test',
+      fetchImpl: fakeFetch(),
+      nameSpeakers: async (doc) => ({ doc, costUsd: 0 }),
+      audio: { resolve: async () => ({ url: COPY, identity: 'copy-412' }), fingerprint },
+    });
+  }
+
+  it('transcribes the resolved copy, and the transcript carries that copy’s fingerprint', async () => {
+    await seedPlan('maester');
+    const heard: string[] = [];
+    withAudio(async (url) => {
+      heard.push(url);
+      return new Uint32Array([1, 2, 3]);
+    });
+    const { jobId } = (await (await post()).json()) as { jobId: string };
+    await worker.settled(jobId);
+    expect(scribeCalls[0]).toMatchObject({ input_audio: { url: COPY } });
+    expect(heard).toEqual([COPY]);
+    const body = (await (await get(`/${jobId}/result`)).json()) as { transcript: { audio?: { identity: string; fingerprint: string } } };
+    expect(body.transcript.audio?.identity).toBe('copy-412');
+    expect(Buffer.from(body.transcript.audio!.fingerprint, 'base64').byteLength).toBe(12);
+  });
+
+  it('still hands over the transcript when the fingerprint cannot be made', async () => {
+    await seedPlan('maester');
+    withAudio(async () => {
+      throw new Error('ffmpeg missing');
+    });
+    const { jobId } = (await (await post()).json()) as { jobId: string };
+    await worker.settled(jobId);
+    const body = (await (await get(`/${jobId}/result`)).json()) as { transcript: { audio?: unknown; segments: unknown[] } };
+    expect(body.transcript.segments.length).toBeGreaterThan(0);
+    expect(body.transcript.audio).toBeUndefined();
+  });
+});
+
+describe('POST /transcribe/align', () => {
+  const fingerprint = Buffer.from(new Uint32Array(2_000).fill(7).buffer).toString('base64');
+  const route = (align?: (url: string, words: Uint32Array) => Promise<{ audioStart: number; audioEnd: number; transcriptStart: number }[]>) =>
+    createTranscribeRoutes({
+      identify: async () => ({ id: ACCOUNT }),
+      billing,
+      jobs,
+      worker,
+      recordUsageEvent: async () => undefined,
+      apiKey: () => 'sk-test',
+      align,
+    });
+  const ask = (app: ReturnType<typeof route>, body: unknown) =>
+    app.request('/align', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('answers the map of the copy the phone plays', async () => {
+    const seen: { url: string; words: number }[] = [];
+    const app = route(async (url, words) => {
+      seen.push({ url, words: words.length });
+      return [{ audioStart: 0, audioEnd: 100, transcriptStart: 30 }];
+    });
+    const answer = await ask(app, { audioUrl: 'https://cdn.example.com/ep.mp3', fingerprint });
+    expect(answer.status).toBe(200);
+    expect(await answer.json()).toEqual({ segments: [{ audioStart: 0, audioEnd: 100, transcriptStart: 30 }] });
+    expect(seen).toEqual([{ url: 'https://cdn.example.com/ep.mp3', words: 2_000 }]);
+  });
+
+  it('refuses a private address and a fingerprint too short to place anything', async () => {
+    const app = route(async () => []);
+    expect((await ask(app, { audioUrl: 'http://127.0.0.1/ep.mp3', fingerprint })).status).toBe(400);
+    expect((await ask(app, { audioUrl: 'https://cdn.example.com/ep.mp3', fingerprint: 'AAAA' })).status).toBe(400);
+  });
+
+  it('says the episode could not be reached when its host fails', async () => {
+    const app = route(async () => {
+      throw new Error('404');
+    });
+    const answer = await ask(app, { audioUrl: 'https://cdn.example.com/ep.mp3', fingerprint });
+    expect(answer.status).toBe(502);
+    expect(await answer.json()).toEqual({ error: 'audio_unreachable' });
+  });
+
+  it('is not offered by a server without the means', async () => {
+    expect((await ask(route(), { audioUrl: 'https://cdn.example.com/ep.mp3', fingerprint })).status).toBe(500);
+  });
+});
+
+describe('/transcribe, asked afresh', () => {
+  it('makes a new transcript rather than handing back the one just collected', async () => {
+    await seedPlan('maester');
+    const first = (await (await post()).json()) as { jobId: string };
+    await worker.settled(first.jobId);
+    expect((await get(`/${first.jobId}/result`)).status).toBe(200);
+
+    const again = (await (await post()).json()) as { jobId: string };
+    expect(again.jobId).toBe(first.jobId);
+
+    const fresh = (await (await post({ ...episode, fresh: true })).json()) as { jobId: string };
+    expect(fresh.jobId).not.toBe(first.jobId);
+    await worker.settled(fresh.jobId);
+    expect(scribeCalls).toHaveLength(2);
+  });
+});

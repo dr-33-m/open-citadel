@@ -115,6 +115,14 @@ export const TranscriptDocSchema = z.object({
    */
   speakers: z.array(z.string()),
   segments: z.array(TranscriptSegmentSchema),
+  /**
+   * The copy of the episode that was transcribed, for shows that stitch
+   * different ads into each download: which copy it was (`audioIdentity`)
+   * and its fingerprint, base64, so another copy can be mapped onto the
+   * transcript's clock later (`time-map.ts`). Absent from transcripts made
+   * before it was kept, and from a show's own.
+   */
+  audio: z.object({ identity: z.string(), fingerprint: z.string() }).optional(),
 });
 
 export type TranscriptSegment = z.infer<typeof TranscriptSegmentSchema>;
@@ -260,6 +268,11 @@ export const TranscribeRequestSchema = z.object({
   showAuthor: z.string().max(500).optional(),
   /** The show's own description, as plain text: where a host introduces themself. */
   showDescription: z.string().max(4_000).optional(),
+  /**
+   * A new transcript even when one was just made: the reader asked to
+   * transcribe it again. Only a job still running is handed back.
+   */
+  fresh: z.boolean().optional(),
 });
 
 export type TranscribeRequest = z.infer<typeof TranscribeRequestSchema>;

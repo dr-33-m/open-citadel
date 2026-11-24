@@ -708,6 +708,12 @@ export const podcastEpisodes = sqliteTable(
      */
     downloadFile: text("download_file"),
     /**
+     * Which copy of the episode the download is, as JSON `{ url, identity }`
+     * (`transcript/audio-copy.ts`): shows that stitch ads into each download
+     * give every copy its own clock, and a transcript is mapped onto this one.
+     */
+    downloadCopy: text("download_copy"),
+    /**
      * The cover saved with the download, so it is there offline: a name in the
      * same folder, resolved on use like `downloadFile`. Episodes that share a
      * picture (most of a show) share the one file.
@@ -730,6 +736,20 @@ export const podcastEpisodes = sqliteTable(
     transcriptBookId: text("transcript_book_id"),
     /** When the transcript arrived, for the composer's Today / This week filters. */
     transcriptAt: text("transcript_at"),
+    /**
+     * How the transcript's clock maps onto the copy of the episode last
+     * played, as JSON `{ identity, segments }` (`samwell-shared` `TimeMap`).
+     * Shows that stitch ads into each download give every copy a different
+     * clock; null until a copy other than the transcribed one has been mapped.
+     */
+    transcriptTimeMap: text("transcript_time_map"),
+    /**
+     * Which copy of the episode the transcript was made from
+     * (`TranscriptDoc.audio.identity`), when it carries that copy's
+     * fingerprint: what says a copy played here needs mapping, without
+     * reading the transcript.
+     */
+    transcriptCopy: text("transcript_copy"),
     /** Cleared once a download is deleted, so auto-download does not fetch it again. */
     autoDownloadEligible: integer("auto_download_eligible").notNull().default(1),
     addedAt: text("added_at").notNull(),

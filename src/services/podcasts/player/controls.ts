@@ -3,7 +3,8 @@ import TrackPlayer from "@rntp/player";
 
 import { heldPosition } from "@/utils/seek-hold";
 import { saveProgress } from "@/services/podcasts/episode-state";
-import { startEpisode } from "@/services/podcasts/player/lifecycle";
+import { startEpisode, type StartAt } from "@/services/podcasts/player/lifecycle";
+import { transcriptToAudio } from "@/services/podcasts/transcript/time-map";
 import { session, settlePausedSeek } from "@/services/podcasts/player/session";
 import { markSeeking, markStarting, store } from "@/services/player/session";
 import { selectEpisode, selectPlaying } from "@/stores/player";
@@ -14,7 +15,7 @@ import { usePodcastPrefs } from "@/stores/podcast-prefs";
  * Plays the episode the listener chose, from where it was left (or from
  * `startAt`), with the episodes ahead queued behind it.
  */
-export async function playEpisode(episodeId: string, startAt: number | null = null): Promise<void> {
+export async function playEpisode(episodeId: string, startAt: StartAt = null): Promise<void> {
   session.chosen = episodeId;
   session.passedOver.clear();
   await startEpisode(episodeId, startAt);
@@ -30,13 +31,14 @@ export function keepAhead(ids: string[]): void {
  * transcript, a time Samwell cited. A seek, and play if paused, when it is
  * the episode already in the player; otherwise the episode started there.
  */
-export async function playEpisodeFrom(episodeId: string, seconds: number): Promise<void> {
+export async function playEpisodeFrom(episodeId: string, at: Exclude<StartAt, null>): Promise<void> {
   const { loaded } = store();
   if (selectEpisode(store())?.episodeId !== episodeId || !loaded) {
-    await playEpisode(episodeId, seconds);
+    await playEpisode(episodeId, at);
     return;
   }
-  seekEpisode(seconds);
+  // Already playing: the copy is known, and so is the map onto it.
+  seekEpisode(typeof at === "number" ? at : transcriptToAudio(episodeId, at.transcriptSec));
   if (!selectPlaying(store())) await toggleEpisode();
 }
 

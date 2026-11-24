@@ -15,6 +15,8 @@
  */
 import { TRANSCRIPTION_MODEL, transcriptionCostUsd, usdToCreditsUp, type PlanId, type TranscriptDoc } from 'samwell-shared';
 
+import { fingerprintToText } from './audio-align/fingerprint.js';
+import type { ResolvedAudio } from './audio-align/resolve.js';
 import type { BillingService } from './billing.js';
 import type { JobRow, TranscribeJobs } from './transcribe-jobs.js';
 import { keytermsFrom, requestTranscription } from './transcribe-upstream.js';
@@ -36,7 +38,17 @@ export interface TranscribeWorkerDeps {
   apiKey(): string | undefined;
   nameSpeakers: NameSpeakers;
   fetchImpl?: typeof fetch;
+  /**
+   * The one copy of the episode both the transcriber and the fingerprint
+   * hear (`audio-align/`). Without it the feed's address goes to the
+   * transcriber as it is, and the transcript carries no fingerprint.
+   */
+  audio?: {
+    resolve(url: string): Promise<ResolvedAudio>;
+    fingerprint(url: string, signal: AbortSignal): Promise<Uint32Array>;
+  };
 }
+
 
 export type CollectResult =
   | { ok: true; doc: TranscriptDoc; credits: number }
@@ -52,13 +64,42 @@ export function createTranscribeWorker(deps: TranscribeWorkerDeps) {
   }
 
   async function run(job: JobRow, signal: AbortSignal): Promise<void> {
+    // The fingerprint runs beside the transcription and ends with it: any way
+    // the job stops short (a failure, Scribe hearing nothing, a Stop), the
+    // episode is no longer being listened to for a transcript nobody gets.
+    const printing = new AbortController();
+    const stopPrinting = () => printing.abort();
+    signal.addEventListener('abort', stopPrinting, { once: true });
+    try {
+      await transcribe(job, signal, printing.signal);
+    } finally {
+      stopPrinting();
+      signal.removeEventListener('abort', stopPrinting);
+    }
+  }
+
+  async function transcribe(job: JobRow, signal: AbortSignal, printSignal: AbortSignal): Promise<void> {
     const apiKey = deps.apiKey();
     if (!apiKey) return fail(job, 'provider_failed', 'OPENROUTER_API_KEY is not configured');
     if (!(await deps.jobs.advance(job.id, 'transcribing'))) return;
 
     const { request } = job;
+    // Shows that stitch ads into each download would serve the transcriber
+    // and the fingerprint different copies. Resolved here, both hear one. A
+    // host that cannot be resolved still has its episode transcribed, only
+    // without a fingerprint to map another copy by.
+    const { audio } = deps;
+    const copy = audio ? await audio.resolve(request.audioUrl).catch(() => null) : null;
+    const audioUrl = copy?.url ?? request.audioUrl;
+    const printing =
+      audio && copy
+        ? audio.fingerprint(audioUrl, printSignal).catch((error) => {
+            console.warn(`[Transcribe] ${job.id} fingerprint failed, transcript kept without it:`, String(error).slice(0, 300));
+            return null;
+          })
+        : Promise.resolve(null);
     const outcome = await requestTranscription(
-      { audioUrl: request.audioUrl, format: request.format, keyterms: keytermsFrom(request.showAuthor, request.title, request.showTitle, request.notes) },
+      { audioUrl, format: request.format, keyterms: keytermsFrom(request.showAuthor, request.title, request.showTitle, request.notes) },
       { apiKey, fetchImpl: deps.fetchImpl, signal },
     );
     if (signal.aborted) return;
@@ -90,6 +131,10 @@ export function createTranscribeWorker(deps: TranscribeWorkerDeps) {
       }
     }
     if (signal.aborted) return;
+
+    const printed = await printing;
+    if (signal.aborted) return;
+    if (copy && printed && printed.length > 0) doc = { ...doc, audio: { identity: copy.identity, fingerprint: fingerprintToText(printed) } };
 
     const costUsd = scribeCost + namingCost;
     await deps.jobs.markReady(job.id, { resultJson: JSON.stringify(doc), costUsd, audioSeconds });

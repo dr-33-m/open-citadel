@@ -9,7 +9,8 @@
  */
 
 const TIMEOUT_MS = 20_000;
-const USER_AGENT = "OpenCitadel/1.0 (+https://www.open-citadel.online)";
+/** How the app names itself to podcast hosts and feeds: one name for a feed, a copy or a download. */
+export const USER_AGENT = "OpenCitadel/1.0 (+https://www.open-citadel.online)";
 
 export type FeedFetchResult =
   | { status: "not-modified" }

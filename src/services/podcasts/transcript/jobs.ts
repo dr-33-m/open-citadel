@@ -12,21 +12,25 @@ import { podcastEpisodes } from '@/db/schema';
 import { getEpisode } from '@/services/podcasts/episodes';
 import { showName } from '@/services/podcasts/records';
 import { showNotesToText } from '@/services/podcasts/show-notes';
+import { addressToTranscribe } from '@/services/podcasts/transcript/audio-copy';
 import {
   collectTranscript,
   pendingTranscriptions,
   startTranscription,
   stopTranscription,
 } from '@/services/podcasts/transcript/cloud';
+import { reanchorEpisodeHighlights } from '@/services/podcasts/transcript/highlights';
 import { clearTranscribing, saveTranscript, setTranscribing } from '@/services/podcasts/transcript/store';
 
 /** Asks Samwell Cloud to transcribe an episode. Throws a `TranscribeError` when refused. */
-export async function transcribeEpisode(episodeId: string): Promise<{ jobId: string; credits: number }> {
+export async function transcribeEpisode(episodeId: string, options: { fresh?: boolean } = {}): Promise<{ jobId: string; credits: number }> {
   const detail = await getEpisode(episodeId);
   if (!detail) throw new Error('This episode is no longer in your library.');
   const { episode, show } = detail;
   const started = await startTranscription({
-    audioUrl: episode.audioUrl,
+    // A downloaded episode is transcribed from the copy on the phone while its
+    // host still serves it, so the transcript follows that very file.
+    audioUrl: await addressToTranscribe(episodeId, episode.audioUrl),
     durationSec: episode.durationSec,
     episodeKey: episode.guid ?? episode.audioUrl,
     title: episode.title.slice(0, 500),
@@ -36,6 +40,7 @@ export async function transcribeEpisode(episodeId: string): Promise<{ jobId: str
     showAuthor: show.author?.slice(0, 500) || undefined,
     showDescription: showNotesToText(show.description)?.slice(0, 4_000) || undefined,
     mimeType: episode.mimeType,
+    fresh: options.fresh || undefined,
   });
   setTranscribing(episodeId, started.jobId);
   return started;
@@ -57,6 +62,8 @@ export function collectEpisodeTranscript(episodeId: string, jobId: string): Prom
       throw err;
     });
     const bookId = await saveTranscript(episodeId, doc);
+    // Made again: the highlights on the transcript it replaced move onto it.
+    await reanchorEpisodeHighlights(episodeId, doc).catch((err: unknown) => reportHandled('transcript.reanchor', err));
     track({ name: 'transcript.collected', attributes: { outcome: 'done' } });
     const title = db.select({ title: podcastEpisodes.title }).from(podcastEpisodes).where(eq(podcastEpisodes.id, episodeId)).get()?.title ?? '';
     return { episodeId, title, bookId, credits };

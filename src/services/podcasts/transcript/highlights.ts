@@ -9,10 +9,10 @@ import type { TranscriptDoc } from 'samwell-shared';
 
 import { db } from '@/db/client';
 import { highlights, podcastEpisodes } from '@/db/schema';
-import { insertHighlight } from '@/services/highlights';
+import { insertHighlight, moveHighlights } from '@/services/highlights';
 import { listChapters } from '@/services/podcasts/episodes';
-import { playEpisodeFrom } from '@/services/podcasts/player';
-import { episodeHighlightLocator, highlightSeconds, type EpisodeHighlightPlace } from '@/services/podcasts/transcript/highlight-locator';
+import { playTranscriptMoment } from '@/services/podcasts/transcript/play-moment';
+import { episodeHighlightLocator, highlightSeconds, placeOfWords, segmentWords, type EpisodeHighlightPlace } from '@/services/podcasts/transcript/highlight-locator';
 import { ensureEpisodeBook } from '@/services/podcasts/transcript/store';
 
 export type EpisodeHighlight = typeof highlights.$inferSelect;
@@ -59,6 +59,38 @@ export async function playHighlight(bookId: string, locator: string | null): Pro
   const seconds = highlightSeconds(locator);
   const episodeId = seconds === null ? null : episodeOfBook(bookId);
   if (episodeId === null || seconds === null) return false;
-  await playEpisodeFrom(episodeId, seconds);
+  // Kept on the transcript's clock, heard on the copy's.
+  await playTranscriptMoment(episodeId, seconds);
   return true;
+}
+
+/**
+ * The episode's highlights moved onto a transcript made again. Its blocks are
+ * cut and timed afresh (and, from another copy of the episode, by another
+ * clock), so each highlight is found again by its words and given its new
+ * block and moment. One whose words the new transcript lacks is left as it
+ * was: still listed, still playable from its old moment.
+ */
+export async function reanchorEpisodeHighlights(episodeId: string, doc: TranscriptDoc): Promise<void> {
+  const kept = listEpisodeHighlights(episodeId);
+  if (kept.length === 0) return;
+  const chapters = (await listChapters(episodeId)).map((chapter) => ({ startSec: chapter.startSec, title: chapter.title }));
+  const words = segmentWords(doc);
+  const moves = kept.flatMap((highlight) => {
+    const place = placeOfWords(doc, words, highlight.text, highlightSeconds(highlight.locator));
+    if (!place) return [];
+    const { locator, chapter } = episodeHighlightLocator(doc, chapters, { ...place, text: highlight.text, ...oldSurroundings(highlight.locator) });
+    return [{ id: highlight.id, locator, chapter }];
+  });
+  moveHighlights(moves);
+}
+
+/** The words either side a highlight was kept with, carried to its new place. */
+function oldSurroundings(locator: string | null): { before?: string; after?: string } {
+  try {
+    const text = (JSON.parse(locator ?? '{}') as { text?: { before?: string; after?: string } }).text;
+    return { before: text?.before, after: text?.after };
+  } catch {
+    return {};
+  }
 }

@@ -12,15 +12,23 @@ import { clearStarting, clearWaits, markStarting, onTakenOver, store, takePlayer
 import { selectEpisode } from "@/stores/player";
 import type { EpisodeItem } from "@/services/podcasts/records";
 import { getShow } from "@/services/podcasts/shows";
+import { copyToPlay, rememberQueuedCopy, type AudioCopy } from "@/services/podcasts/transcript/audio-copy";
+import { ensureTimeMap, transcriptToAudio } from "@/services/podcasts/transcript/time-map";
 import { podcastPrefs, usePodcastPrefs } from "@/stores/podcast-prefs";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
 
 /** The latest `syncNativeQueue`; anything loading the native queue also moves it on, so older runs stand down. */
 let syncRun = 0;
 
-/** Takes on an episode that has just become current, however it got there. */
-export async function becomeCurrent(item: EpisodeItem, startAt: number | null): Promise<void> {
+/**
+ * Takes on an episode that has just become current, however it got there.
+ * `copy` is the copy of it a press of play gave the player (`copyToPlay`);
+ * the next in the queue plays its file or the feed's address, which is
+ * worked out here. Either way its transcript is mapped onto what is heard.
+ */
+export async function becomeCurrent(item: EpisodeItem, startAt: number | null, copy?: AudioCopy | null): Promise<void> {
   session.letGo.delete(item.id);
+  void ensureTimeMap(item.id, copy === undefined ? rememberQueuedCopy(item) : copy);
   // Seek before anything is awaited: after a native transition the audio is
   // already running from 0:00, and every moment spent reading is heard.
   let position = startAt ?? resumePosition(item, 0);
@@ -43,10 +51,21 @@ export async function becomeCurrent(item: EpisodeItem, startAt: number | null): 
 }
 
 /**
+ * Where an episode is started: a time in it, a moment of its transcript
+ * (`time-map.ts`: moved to where it is heard once the copy to be played is
+ * known), or null for where it was left.
+ */
+export type StartAt = number | { transcriptSec: number } | null;
+
+/** Counts presses of play, so a slow start never overtakes the press after it. */
+let startRun = 0;
+
+/**
  * Plays an episode from where it was left (or from `startAt`), with the
  * episodes ahead queued behind it.
  */
-export async function startEpisode(episodeId: string, startAt: number | null = null): Promise<void> {
+export async function startEpisode(episodeId: string, startAt: StartAt = null): Promise<void> {
+  const run = ++startRun;
   if (!readyPlayer()) {
     store().patch({ error: "Audio playback is not available on this device." });
     return;
@@ -60,18 +79,27 @@ export async function startEpisode(episodeId: string, startAt: number | null = n
     clearStarting();
     return;
   }
+  // The exact copy, for an episode whose transcript is mapped by copy: the
+  // one the player streams is then the one mapped. Asked before anything is
+  // tracked, and only the latest press carries on past it.
+  // The queue behind it and the show's settings are read meanwhile; the show
+  // decides where it starts: where it was left, or past the intro.
+  const [{ streamUrl, copy }, upNext, show] = await Promise.all([copyToPlay(item), nativeUpNext(item.id), getShow(item.podcastId)]);
+  if (run !== startRun) return;
   applyCommands("episode");
-  const upNext = await nativeUpNext(item.id);
-  // Decided before loading, so the queue loads where it starts: where it was
-  // left, or past the intro.
-  const show = await getShow(item.podcastId);
-  const start = startAt ?? resumePosition(item, show?.skipIntroSec ?? 0);
+  // A transcript moment is moved to this copy's clock now that the copy is known.
+  const start =
+    startAt === null
+      ? resumePosition(item, show?.skipIntroSec ?? 0)
+      : typeof startAt === "number"
+        ? startAt
+        : transcriptToAudio(item.id, startAt.transcriptSec);
   // Tracked before the native queue changes, so the transition event that
   // loading fires is recognised as this episode rather than read as a skip.
   track(item, start);
   syncRun += 1;
-  TrackPlayer.setMediaItems([mediaItemFrom(item, start), ...upNext], 0);
-  await becomeCurrent(item, start);
+  TrackPlayer.setMediaItems([mediaItemFrom(item, start, streamUrl), ...upNext], 0);
+  await becomeCurrent(item, start, copy);
   TrackPlayer.play();
 }
 
