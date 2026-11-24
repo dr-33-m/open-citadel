@@ -42,8 +42,18 @@ export const queryClient = new QueryClient({
  * "Window focus" is the app coming back to the front. A stale network query
  * (a chart, a search) refetches then; the library's queries never go stale on
  * their own, so they do not.
+ *
+ * The listener is put back each time the cache is mounted, and starts from
+ * where the app is now. Back on Android closes the app's screen while the
+ * player keeps its JavaScript alive: the cache is unmounted (its listener
+ * removed, still believing the app is in the background) and mounted again
+ * only after the app has come back to the front, so it never hears that it
+ * did. Every polling query then stood still until the next trip to the
+ * background, a transcript job among them, stuck at 0% after it was done.
  */
 focusManager.setEventListener((handleFocus) => {
+  const now = AppState.currentState as string | null;
+  if (now && now !== 'unknown') handleFocus(now === 'active');
   const subscription = AppState.addEventListener('change', (state) => handleFocus(state === 'active'));
   return () => subscription.remove();
 });
