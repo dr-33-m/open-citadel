@@ -56,7 +56,7 @@ export function useSettingsSummaries(): Record<SettingsPane, string> {
       samwell: samwellSummary({ mode: samwellMode, brain, cloudBrain, plan: planName }),
       voice: voiceSummary({ mode, name: voice }),
       podcasts: podcastSummary({ skipBackSec, skipForwardSec }),
-      memory: 'What he knows of you so far',
+      memory: 'Your story, as Samwell tells it',
     };
   }, [samwellMode, ttsVoice, brain, cloudBrain, plan, signedIn, email, isGuest, skipBackSec, skipForwardSec]);
 }
