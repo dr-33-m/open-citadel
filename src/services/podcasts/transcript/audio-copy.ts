@@ -45,6 +45,14 @@ const PATIENT_WAIT_MS = 10_000;
  * queue). Absent: not played this session.
  */
 const copies = new Map<string, { copy: AudioCopy | null; at: number }>();
+/**
+ * Copies that answered after play stopped waiting for them: that play went
+ * ahead on the feed's address, and the next play of the episode streams the
+ * copy found, rather than asking again and perhaps missing again.
+ */
+const late = new Map<string, AudioCopy & { at: number }>();
+
+const wait = (ms: number) => new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms));
 
 /** The player has been given this episode: as this copy, or as one not known. */
 export function rememberCopy(episodeId: string, copy: AudioCopy | null): void {
@@ -106,9 +114,45 @@ export async function copyToPlay(item: EpisodeItem): Promise<PlayCopy> {
   }
   const kept = copies.get(item.id);
   if (kept?.copy && Date.now() - kept.at < FRESH_MS) return { streamUrl: kept.copy.url, copy: kept.copy };
-  const copy = await resolveAudioCopy(item.audioUrl, PLAY_WAIT_MS);
+  const found = late.get(item.id);
+  late.delete(item.id);
+  if (found && Date.now() - found.at < FRESH_MS) {
+    rememberCopy(item.id, found);
+    return { streamUrl: found.url, copy: found };
+  }
+  // Play waits a couple of seconds at most; a host slower than that is still
+  // heard, from the feed's address, and its copy kept for the next play.
+  const resolving = resolveAudioCopy(item.audioUrl, PATIENT_WAIT_MS);
+  const copy = await Promise.race([resolving, wait(PLAY_WAIT_MS)]);
+  if (copy === undefined) {
+    void resolving.then((answer) => answer && late.set(item.id, { ...answer, at: Date.now() }));
+    rememberCopy(item.id, null);
+    return { streamUrl: null, copy: null };
+  }
   rememberCopy(item.id, copy);
   return { streamUrl: copy?.url ?? null, copy };
+}
+
+/**
+ * The episode was taken back up already playing: the app's JavaScript
+ * started again while its audio carried on (an update applied, Android
+ * waking the app for a background event). The copy is whatever the native
+ * player holds: the download's, the copy at its address, or, at the feed's
+ * own address, one not known.
+ */
+export async function copyBeingPlayed(item: EpisodeItem, playingUrl: string | null | undefined): Promise<AudioCopy | null> {
+  const row = readCopyRow(item.id);
+  if (localFileUri(item) !== null) {
+    rememberCopy(item.id, row.downloadCopy);
+    return row.downloadCopy;
+  }
+  if (!row.transcriptCopy || !playingUrl || playingUrl === item.audioUrl) {
+    rememberCopy(item.id, null);
+    return null;
+  }
+  const copy = await resolveAudioCopy(playingUrl, PATIENT_WAIT_MS);
+  rememberCopy(item.id, copy);
+  return copy;
 }
 
 /**

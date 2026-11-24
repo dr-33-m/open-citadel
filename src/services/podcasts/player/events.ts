@@ -16,7 +16,10 @@ import { finishEpisode, persistProgress, ranToTheEnd, session, track } from "@/s
 import { addPlayerHandler, readyPlayer } from "@/services/player/events";
 import { store } from "@/services/player/session";
 import { selectEpisode } from "@/stores/player";
+import type { EpisodeItem } from "@/services/podcasts/records";
 import { getShow } from "@/services/podcasts/shows";
+import { copyBeingPlayed } from "@/services/podcasts/transcript/audio-copy";
+import { ensureTimeMap } from "@/services/podcasts/transcript/time-map";
 import { podcastPrefs, usePodcastPrefs } from "@/stores/podcast-prefs";
 import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
 
@@ -57,7 +60,21 @@ async function adopt(mediaId: string): Promise<boolean> {
   const show = await getShow(item.podcastId);
   track(item, item.positionSec, show?.skipEndingSec ?? 0);
   store().patch({ current: nowPlayingFrom(item), loaded: true });
+  mapCopyBeingPlayed(item);
   return true;
+}
+
+/** Which copy the native player is playing, for the transcript's map (`transcript/audio-copy.ts`). */
+function mapCopyBeingPlayed(item: EpisodeItem): void {
+  let url: string | undefined;
+  try {
+    // An address the app gave it is a string; anything else is no copy of ours.
+    const active = TrackPlayer.getActiveMediaItem()?.url;
+    url = typeof active === "string" ? active : undefined;
+  } catch {
+    url = undefined;
+  }
+  void copyBeingPlayed(item, url).then((copy) => ensureTimeMap(item.id, copy));
 }
 
 /** Finishes the tracked episode and moves on. Lets go first, so no later tick writes a position back onto it. */
@@ -153,6 +170,7 @@ export async function restoreNowPlaying(): Promise<void> {
     // controls, and nothing else says them again for an episode already playing.
     applyCommands("episode");
     track(item, TrackPlayer.getProgress().position);
+    mapCopyBeingPlayed(item);
     store().patch({
       current: nowPlayingFrom(item),
       loaded: true,
