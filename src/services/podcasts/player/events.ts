@@ -7,9 +7,10 @@ import TrackPlayer, { Event, PlaybackState, type BackgroundEvent, type MediaItem
 
 import { isBookItem } from "@/services/audiobook/media-id";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
-import { watchNetwork } from "@/lib/network";
+import { phoneHasNetwork, watchNetwork } from "@/lib/network";
 import { advance, becomeCurrent, syncNativeQueue } from "@/services/podcasts/player/lifecycle";
 import { recoverFromFailedStream } from "@/services/podcasts/player/recover";
+import { moveToDownload } from "@/services/podcasts/player/to-file";
 import { nowPlayingFrom, speedFor } from "@/services/podcasts/player/media";
 import { applyCommands } from "@/services/player/commands";
 import { finishEpisode, persistProgress, ranToTheEnd, session, track } from "@/services/podcasts/player/session";
@@ -136,9 +137,18 @@ async function handleEvent(event: BackgroundEvent): Promise<void> {
 
 addPlayerHandler('episode', handleEvent);
 
-// What can play next depends on the network, and the native queue was filled
-// before it changed.
-watchNetwork(() => void syncNativeQueue());
+/**
+ * What can play next depends on the network, and the native queue was filled
+ * before it changed. Gone offline, an episode being streamed that is
+ * downloaded moves onto its file first (`to-file.ts`), which fills the queue
+ * behind it as it goes.
+ */
+async function onNetworkChange(): Promise<void> {
+  if (!phoneHasNetwork() && (await moveToDownload())) return;
+  await syncNativeQueue();
+}
+
+watchNetwork(() => void onNetworkChange().catch(() => {}));
 
 /**
  * Puts the last episode back in the mini player after a restart, paused and

@@ -76,6 +76,22 @@ export function toTranscriptTime(map: TimeMap, audioSec: number): number | null 
 }
 
 /**
+ * The same moment of the show in another copy: from a time in the copy
+ * mapped by `from`, through the transcript's clock, to the copy mapped by
+ * `to`. Inside an ad only the first copy has, the moment is where the show
+ * picks up after it.
+ */
+export function carryAcross(from: TimeMap, to: TimeMap, audioSec: number): number {
+  const heard = toTranscriptTime(from, audioSec);
+  if (heard !== null) return toAudioTime(to, heard);
+  const resumes = from.filter((segment) => segment.audioStart > audioSec).sort((a, b) => a.audioStart - b.audioStart)[0];
+  if (resumes) return toAudioTime(to, resumes.transcriptStart);
+  // An ad after the last stretch: the show is over, so where it ends in the other copy.
+  const showEnds = Math.max(...from.map(transcriptEnd));
+  return toAudioTime(to, showEnds);
+}
+
+/**
  * Which copy of an episode a file is: where it was finally served from and
  * how long it is. An ad server names each stitched copy by its own address,
  * and a different set of ads all but always changes the length, so two

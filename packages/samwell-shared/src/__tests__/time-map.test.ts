@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { audioIdentity, TimeMapAnswerSchema, toAudioTime, toTranscriptTime, type TimeMap } from '../time-map';
+import { audioIdentity, carryAcross, TimeMapAnswerSchema, toAudioTime, toTranscriptTime, type TimeMap } from '../time-map';
 
 // The transcribed copy opened with a 30s ad and had a 60s one at 10:00 of the
 // show; the copy being played has neither.
@@ -46,6 +46,24 @@ describe('toTranscriptTime', () => {
 
   it('is the time itself with no map', () => {
     expect(toTranscriptTime([], 42)).toBe(42);
+  });
+});
+
+describe('carryAcross', () => {
+  it('finds the same moment of the show in another copy', () => {
+    // 7:00 into the copy with its own ad is 6:40 of the show, which the
+    // copy with fewer ads reaches at 6:10.
+    expect(carryAcross(moreAds, fewerAds, 420)).toBe(370);
+    // From the transcribed copy itself, whose map is empty.
+    expect(carryAcross([], fewerAds, 700)).toBe(610);
+  });
+
+  it('goes to where the show picks up from inside an ad only the first copy has', () => {
+    expect(carryAcross(moreAds, fewerAds, 310)).toBe(270);
+  });
+
+  it('goes to where the show ends from an ad after it', () => {
+    expect(carryAcross([{ audioStart: 0, audioEnd: 100, transcriptStart: 0 }], [], 150)).toBe(100);
   });
 });
 

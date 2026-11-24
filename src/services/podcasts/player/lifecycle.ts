@@ -1,5 +1,5 @@
 /** Starting, moving on from, stopping and handing over the episode in the player. */
-import TrackPlayer from "@rntp/player";
+import TrackPlayer, { type MediaItem } from "@rntp/player";
 
 import { ensureChapters } from "@/services/podcasts/chapters";
 import { getEpisodeItem } from "@/services/podcasts/episodes";
@@ -19,6 +19,12 @@ import { invalidatePodcastLibrary } from "@/query-manager/podcasts/invalidate";
 
 /** The latest `syncNativeQueue`; anything loading the native queue also moves it on, so older runs stand down. */
 let syncRun = 0;
+
+/** Loads the native queue afresh, the first item playing; a `syncNativeQueue` still reading stands down. */
+export function loadNativeQueue(items: MediaItem[]): void {
+  syncRun += 1;
+  TrackPlayer.setMediaItems(items, 0);
+}
 
 /**
  * Takes on an episode that has just become current, however it got there.
@@ -97,8 +103,7 @@ export async function startEpisode(episodeId: string, startAt: StartAt = null): 
   // Tracked before the native queue changes, so the transition event that
   // loading fires is recognised as this episode rather than read as a skip.
   track(item, start);
-  syncRun += 1;
-  TrackPlayer.setMediaItems([mediaItemFrom(item, start, streamUrl), ...upNext], 0);
+  loadNativeQueue([mediaItemFrom(item, start, streamUrl), ...upNext]);
   await becomeCurrent(item, start, copy);
   TrackPlayer.play();
 }
